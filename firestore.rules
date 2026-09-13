@@ -1,0 +1,125 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'upfrontretaile@gmail.com' ||
+        (request.auth.token.role != null && request.auth.token.role == 'super_admin')
+      );
+    }
+
+    function isBusinessOwner(bizId) {
+      return isSignedIn() && bizId != null &&
+        exists(/databases/$(database)/documents/businesses/$(bizId)) &&
+        get(/databases/$(database)/documents/businesses/$(bizId)).data.ownerEmail == request.auth.token.email;
+    }
+
+    function isBusinessMember(bizId) {
+      return isSignedIn() && (
+        isSuperAdmin() ||
+        (request.auth.token.businessId != null && request.auth.token.businessId == bizId) ||
+        isBusinessOwner(bizId) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.businessId == bizId)
+      );
+    }
+
+    // Test connection endpoint
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+
+    // Businesses collection
+    match /businesses/{businessId} {
+      allow read: if isSignedIn() && (
+        isSuperAdmin() ||
+        resource.data.ownerEmail == request.auth.token.email ||
+        (request.auth.token.businessId != null && request.auth.token.businessId == businessId) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.businessId == businessId)
+      );
+      allow create: if isSignedIn() && (
+        request.resource.data.ownerEmail == request.auth.token.email ||
+        isSuperAdmin()
+      );
+      allow update: if isSignedIn() && (
+        resource.data.ownerEmail == request.auth.token.email ||
+        request.resource.data.ownerEmail == request.auth.token.email ||
+        isSuperAdmin()
+      );
+      allow delete: if isSuperAdmin();
+    }
+
+    // Products collection (Tenant Row-Level Security)
+    match /products/{productId} {
+      allow read: if isSignedIn() && isBusinessMember(resource.data.businessId);
+      allow create: if isSignedIn() && isBusinessMember(request.resource.data.businessId);
+      allow update: if isSignedIn() && isBusinessMember(resource.data.businessId);
+      allow delete: if isSignedIn() && isBusinessMember(resource.data.businessId);
+    }
+
+    // Transactions collection (Tenant Row-Level Security)
+    match /transactions/{transactionId} {
+      allow read: if isSignedIn() && isBusinessMember(resource.data.businessId);
+      allow create: if isSignedIn() && isBusinessMember(request.resource.data.businessId);
+      allow update: if isSignedIn() && isBusinessMember(resource.data.businessId);
+      allow delete: if isSuperAdmin();
+    }
+
+    // Locations collection (Tenant Row-Level Security)
+    match /locations/{locationId} {
+      allow read: if isSignedIn() && isBusinessMember(resource.data.businessId);
+      allow create: if isSignedIn() && isBusinessMember(request.resource.data.businessId);
+      allow update: if isSignedIn() && isBusinessMember(resource.data.businessId);
+      allow delete: if isSignedIn() && isBusinessMember(resource.data.businessId);
+    }
+
+    // Cashiers / Staff collection (Tenant Row-Level Security)
+    match /cashiers/{cashierId} {
+      allow read: if isSignedIn() && isBusinessMember(resource.data.businessId);
+      allow create: if isSignedIn() && isBusinessMember(request.resource.data.businessId);
+      allow update: if isSignedIn() && isBusinessMember(resource.data.businessId);
+      allow delete: if isSignedIn() && isBusinessMember(resource.data.businessId);
+    }
+
+    // Stock Transfers collection (Tenant Row-Level Security)
+    match /stock_transfers/{transferId} {
+      allow read: if isSignedIn() && isBusinessMember(resource.data.businessId);
+      allow create: if isSignedIn() && isBusinessMember(request.resource.data.businessId);
+      allow update: if isSignedIn() && isBusinessMember(resource.data.businessId);
+      allow delete: if isSuperAdmin();
+    }
+
+    // Sync Logs collection (Tenant Row-Level Security)
+    match /sync_logs/{syncLogId} {
+      allow read: if isSignedIn() && isBusinessMember(resource.data.businessId);
+      allow create: if isSignedIn() && isBusinessMember(request.resource.data.businessId);
+      allow update: if isSignedIn() && isBusinessMember(resource.data.businessId);
+      allow delete: if isSuperAdmin();
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isSignedIn() && (
+        request.auth.uid == userId ||
+        isBusinessMember(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+      allow create, update: if isSignedIn() && (
+        request.auth.uid == userId ||
+        isSuperAdmin()
+      );
+      allow delete: if isSuperAdmin();
+    }
+  }
+}
+
