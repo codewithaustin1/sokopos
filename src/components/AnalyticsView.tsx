@@ -23,11 +23,13 @@ import {
   Calendar,
   CreditCard,
   CheckCircle,
+  RotateCcw,
+  Receipt,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 
 export const AnalyticsView: React.FC = () => {
-  const { transactions, locations, currentLocation } = usePos();
+  const { transactions, locations, currentLocation, openReturnsModal, setActiveReceipt } = usePos();
 
   const [selectedLocationId, setSelectedLocationId] = useState<string>('all');
   const [timeframe, setTimeframe] = useState<'today' | 'week' | 'month'>('today');
@@ -44,7 +46,18 @@ export const AnalyticsView: React.FC = () => {
 
   // Aggregate Metrics
   const grossSales = filteredTxs.reduce((sum, tx) => sum + tx.total, 0);
+  const totalRefunded = filteredTxs.reduce(
+    (sum, tx) =>
+      sum +
+      (tx.totalRefunded ||
+        (tx.refunds?.reduce((s, r) => s + r.totalRefund, 0) || 0)),
+    0
+  );
+  const netSales = Math.max(0, grossSales - totalRefunded);
   const ordersCount = filteredTxs.length;
+  const refundedOrdersCount = filteredTxs.filter(
+    (tx) => tx.status === 'refunded' || tx.status === 'partially_refunded'
+  ).length;
   const avgOrderValue = ordersCount > 0 ? grossSales / ordersCount : 0;
 
   const mpesaTxs = filteredTxs.filter((t) => t.paymentMethod === 'mpesa');
@@ -130,25 +143,25 @@ export const AnalyticsView: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col bg-slate-100 overflow-y-auto">
       {/* Analytics Header */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 shrink-0 shadow-2xs">
+      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3.5 sm:py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0 shadow-2xs">
         <div>
-          <h2 className="text-lg font-black text-slate-800">Sales & Real-Time Analytics</h2>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <h2 className="text-base sm:text-lg font-black text-slate-800">Sales & Real-Time Analytics</h2>
+          <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
             Cloud-aggregated telemetry across all retail branch nodes
           </p>
         </div>
 
         {/* Filters */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Location Filter */}
           <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-700">
-            <Building2 className="w-3.5 h-3.5 text-blue-600" />
+            <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
             <select
               value={selectedLocationId}
               onChange={(e) => setSelectedLocationId(e.target.value)}
-              className="bg-transparent focus:outline-none cursor-pointer font-bold"
+              className="bg-transparent focus:outline-none cursor-pointer font-bold text-xs"
             >
-              <option value="all">All Store Locations</option>
+              <option value="all">All Locations</option>
               {locations.map((loc) => (
                 <option key={loc.id} value={loc.id}>
                   {loc.name}
@@ -161,34 +174,34 @@ export const AnalyticsView: React.FC = () => {
           <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200 text-xs font-bold">
             <button
               onClick={() => setTimeframe('today')}
-              className={`px-3 py-1 rounded transition ${
+              className={`px-2.5 sm:px-3 py-1 rounded transition text-[11px] sm:text-xs ${
                 timeframe === 'today' ? 'bg-white text-slate-800 shadow-2xs' : 'text-slate-500'
               }`}
             >
-              Today (Shift 1)
+              Today
             </button>
             <button
               onClick={() => setTimeframe('week')}
-              className={`px-3 py-1 rounded transition ${
+              className={`px-2.5 sm:px-3 py-1 rounded transition text-[11px] sm:text-xs ${
                 timeframe === 'week' ? 'bg-white text-slate-800 shadow-2xs' : 'text-slate-500'
               }`}
             >
-              7 Days
+              7D
             </button>
             <button
               onClick={() => setTimeframe('month')}
-              className={`px-3 py-1 rounded transition ${
+              className={`px-2.5 sm:px-3 py-1 rounded transition text-[11px] sm:text-xs ${
                 timeframe === 'month' ? 'bg-white text-slate-800 shadow-2xs' : 'text-slate-500'
               }`}
             >
-              30 Days
+              30D
             </button>
           </div>
         </div>
       </div>
 
       {/* Analytics Dashboard Grid */}
-      <div className="p-4 sm:p-6 space-y-6">
+      <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 pb-24 md:pb-8">
         {/* KPI Cards (matching Screen 6) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Gross Sales */}
@@ -395,6 +408,158 @@ export const AnalyticsView: React.FC = () => {
                 </BarChart>
               </ResponsiveContainer>
             </div>
+          </div>
+        </div>
+
+        {/* Transactions & Returns Reconciliation Desk */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+          <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-slate-800 text-sm">
+                  Sales Ledger & Returns Reconciliation
+                </h3>
+                {totalRefunded > 0 && (
+                  <span className="bg-amber-100 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full">
+                    {currentLocation.currency} {totalRefunded.toFixed(2)} refunded
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Complete transactional audit log with direct item return and credit note processing
+              </p>
+            </div>
+
+            <button
+              onClick={() => openReturnsModal(null)}
+              className="bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer self-start sm:self-auto"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Open Returns Desk</span>
+            </button>
+          </div>
+
+          {/* Refund Stats Quick Bar */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 bg-slate-50 border-b border-slate-100 divide-x divide-slate-200 text-xs">
+            <div className="p-3">
+              <span className="text-slate-400 text-[10px] font-bold block uppercase">Gross Sales</span>
+              <span className="font-black text-slate-800 font-mono">
+                {currentLocation.currency} {grossSales.toFixed(2)}
+              </span>
+            </div>
+            <div className="p-3">
+              <span className="text-slate-400 text-[10px] font-bold block uppercase">Total Refunded</span>
+              <span className="font-black text-amber-700 font-mono">
+                -{currentLocation.currency} {totalRefunded.toFixed(2)}
+              </span>
+            </div>
+            <div className="p-3">
+              <span className="text-slate-400 text-[10px] font-bold block uppercase">Net Realized Revenue</span>
+              <span className="font-black text-emerald-700 font-mono">
+                {currentLocation.currency} {netSales.toFixed(2)}
+              </span>
+            </div>
+            <div className="p-3">
+              <span className="text-slate-400 text-[10px] font-bold block uppercase">Return Frequency</span>
+              <span className="font-bold text-slate-700">
+                {ordersCount > 0 ? ((refundedOrdersCount / ordersCount) * 100).toFixed(1) : '0'}% ({refundedOrdersCount} returned)
+              </span>
+            </div>
+          </div>
+
+          {/* Transactions Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-600">
+              <thead className="bg-slate-100/70 text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                <tr>
+                  <th className="py-3 px-4">Receipt #</th>
+                  <th className="py-3 px-4">Date / Time</th>
+                  <th className="py-3 px-4">Branch & Cashier</th>
+                  <th className="py-3 px-4">Items</th>
+                  <th className="py-3 px-4">Payment</th>
+                  <th className="py-3 px-4 text-right">Amount</th>
+                  <th className="py-3 px-4 text-center">Status</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredTxs.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-slate-400">
+                      No transaction records recorded yet.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredTxs.slice(0, 15).map((tx) => {
+                    const isFullyRefunded = tx.status === 'refunded';
+                    const isPartiallyRefunded = tx.status === 'partially_refunded';
+
+                    return (
+                      <tr key={tx.id} className="hover:bg-slate-50/80 transition">
+                        <td className="py-3 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
+                          #{tx.receiptNumber}
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap text-slate-500 text-[11px]">
+                          {new Date(tx.timestamp).toLocaleString()}
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <div className="font-bold text-slate-800 text-[11px]">{tx.locationName}</div>
+                          <div className="text-[10px] text-slate-400">{tx.cashierName}</div>
+                        </td>
+                        <td className="py-3 px-4 max-w-[200px] truncate text-[11px] text-slate-500">
+                          {tx.items.map((it) => `${it.quantity}x ${it.productName}`).join(', ')}
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap uppercase font-bold text-[10px] text-slate-600">
+                          {tx.paymentMethod}
+                        </td>
+                        <td className="py-3 px-4 font-mono font-black text-slate-900 text-right whitespace-nowrap">
+                          {currentLocation.currency} {tx.total.toFixed(2)}
+                          {tx.totalRefunded ? (
+                            <div className="text-[10px] font-mono text-amber-700">
+                              -{currentLocation.currency} {tx.totalRefunded.toFixed(2)}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td className="py-3 px-4 text-center whitespace-nowrap">
+                          {isFullyRefunded ? (
+                            <span className="inline-block bg-red-100 text-red-800 text-[10px] font-black px-2 py-0.5 rounded">
+                              REFUNDED
+                            </span>
+                          ) : isPartiallyRefunded ? (
+                            <span className="inline-block bg-amber-100 text-amber-800 text-[10px] font-black px-2 py-0.5 rounded">
+                              PARTIAL
+                            </span>
+                          ) : (
+                            <span className="inline-block bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded">
+                              COMPLETED
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-right whitespace-nowrap space-x-1">
+                          <button
+                            onClick={() => setActiveReceipt(tx)}
+                            className="text-[11px] font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded transition cursor-pointer"
+                            title="View / Print Receipt"
+                          >
+                            Receipt
+                          </button>
+                          {!isFullyRefunded && (
+                            <button
+                              onClick={() => openReturnsModal(tx)}
+                              className="text-[11px] font-bold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-1 rounded transition cursor-pointer inline-flex items-center gap-1"
+                              title="Process Return / Refund"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              <span>Return</span>
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

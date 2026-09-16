@@ -49,3 +49,23 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* Dark theme scrollbar */
+.dark-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.dark-scrollbar::-webkit-scrollbar-track {
+  background: #090d16;
+}
+
+.dark-scrollbar::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 9999px;
+  border: 1px solid #1e293b;
+}
+
+.dark-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}

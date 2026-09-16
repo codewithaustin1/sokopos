@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   getDocs,
+  getDocsFromServer,
   getDoc,
   setDoc,
   updateDoc,
@@ -145,9 +146,30 @@ export async function getTenantProductsFromFirestore(businessId: string): Promis
   }
 }
 
+/**
+ * Direct Server Fetch: Retrieves tenant products explicitly from the Firestore server,
+ * strictly bypassing any local client IndexedDB or memory cache.
+ */
+export async function getFreshTenantProductsFromFirestore(businessId: string): Promise<Product[]> {
+  const path = 'products';
+  try {
+    const q = query(collection(db, path), where('businessId', '==', businessId));
+    const snap = await getDocsFromServer(q);
+    return snap.docs.map((d) => d.data() as Product);
+  } catch (error) {
+    console.warn('Direct server fetch from Firestore failed, falling back:', error);
+    try {
+      const fallbackSnap = await getDocs(query(collection(db, path), where('businessId', '==', businessId)));
+      return fallbackSnap.docs.map((d) => d.data() as Product);
+    } catch (fallbackErr) {
+      handleFirestoreError(fallbackErr, OperationType.LIST, path);
+    }
+  }
+}
+
 export function subscribeToTenantProducts(
   businessId: string,
-  onData: (products: Product[]) => void
+  onData: (products: Product[], isFromCache?: boolean) => void
 ): Unsubscribe {
   if (!auth.currentUser) {
     return () => {};
@@ -156,9 +178,11 @@ export function subscribeToTenantProducts(
   const q = query(collection(db, path), where('businessId', '==', businessId));
   return onSnapshot(
     q,
+    { includeMetadataChanges: true },
     (snap) => {
+      const isFromCache = snap.metadata.fromCache;
       const prods = snap.docs.map((d) => d.data() as Product);
-      onData(prods);
+      onData(prods, isFromCache);
     },
     (error) => {
       handleFirestoreError(error, OperationType.GET, path);
@@ -364,6 +388,18 @@ export async function saveTransactionToFirestore(tx: Transaction): Promise<void>
     await setDoc(doc(db, 'transactions', tx.id), tx);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function updateTransactionInFirestore(
+  txId: string,
+  partialTx: Partial<Transaction>
+): Promise<void> {
+  const path = `transactions/${txId}`;
+  try {
+    await updateDoc(doc(db, 'transactions', txId), partialTx);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }
 

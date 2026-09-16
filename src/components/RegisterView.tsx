@@ -9,6 +9,7 @@ import {
   ShoppingBag,
   Sparkles,
   AlertTriangle,
+  RotateCcw,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 
@@ -34,10 +35,14 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
     cartTax,
     cartTotal,
     handleBarcodeScanned,
+    openReturnsModal,
   } = usePos();
 
   const [selectedCategory, setSelectedCategory] = useState<string>('All Items');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [mobileActiveView, setMobileActiveView] = useState<'catalog' | 'cart'>('catalog');
+
+  const totalCartCount = cart.reduce((acc, item) => acc + item.quantity, 0);
 
   // Filtered products
   const filteredProducts = useMemo(() => {
@@ -55,26 +60,72 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && searchQuery.trim()) {
-      // Check if it's a barcode or exact SKU
+      e.preventDefault();
+      // 1. Direct barcode or SKU lookup
       const res = handleBarcodeScanned(searchQuery.trim());
       if (res.success) {
+        setSearchQuery('');
+        return;
+      }
+      // 2. If exactly one product matches the search query, add it directly to cart
+      if (filteredProducts.length === 1) {
+        addToCart(filteredProducts[0], 1);
         setSearchQuery('');
       }
     }
   };
 
   return (
-    <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-slate-100">
-      {/* Products Workspace (Left / 62%) */}
-      <div className="flex-1 md:w-[62%] p-4 flex flex-col gap-3 border-r border-slate-200 bg-slate-50 overflow-hidden">
+    <div id="register-pos-workspace" className="flex-1 flex flex-col md:flex-row overflow-hidden bg-slate-100 relative">
+      {/* Mobile Top Segmented View Switcher */}
+      <div className="md:hidden bg-white border-b border-slate-200 px-3 py-2 flex items-center gap-2 shrink-0 z-20">
+        <button
+          type="button"
+          onClick={() => setMobileActiveView('catalog')}
+          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+            mobileActiveView === 'catalog'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+          }`}
+        >
+          <ShoppingBag className="w-3.5 h-3.5" />
+          <span>Catalog ({filteredProducts.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMobileActiveView('cart')}
+          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer relative ${
+            mobileActiveView === 'cart'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+          }`}
+        >
+          <div className="relative">
+            <span>Cart ({totalCartCount})</span>
+            {totalCartCount > 0 && (
+              <span className="ml-1 text-[10px] font-black text-emerald-600">
+                • {currentLocation.currency} {cartTotal.toFixed(0)}
+              </span>
+            )}
+          </div>
+        </button>
+      </div>
+
+      {/* Products Workspace (Left / 62% on desktop, full screen on mobile catalog view) */}
+      <div
+        className={`flex-1 md:w-[62%] p-3 sm:p-4 flex-col gap-2.5 sm:gap-3 border-r border-slate-200 bg-slate-50 overflow-hidden relative ${
+          mobileActiveView === 'catalog' ? 'flex' : 'hidden md:flex'
+        }`}
+      >
         {/* Search & Category Header */}
-        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between shrink-0">
+        <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3 items-stretch sm:items-center justify-between shrink-0">
           {/* Quick Search with Barcode Enter support */}
           <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 sm:top-3" />
             <input
               type="text"
-              placeholder="Scan barcode or search name/SKU (Press Enter to scan)..."
+              placeholder="Search product, SKU or scan barcode..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={handleSearchKeyDown}
@@ -82,7 +133,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             />
             <button
               onClick={openBarcodeScanner}
-              className="absolute right-1.5 top-1.5 bottom-1.5 px-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-[10px] font-bold flex items-center gap-1 border border-blue-200"
+              className="absolute right-1.5 top-1.5 bottom-1.5 px-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-[10px] font-bold flex items-center gap-1 border border-blue-200 cursor-pointer"
             >
               <Scan className="w-3 h-3" /> Scan (F2)
             </button>
@@ -94,12 +145,12 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         </div>
 
         {/* Category Filter Chips */}
-        <div className="flex gap-2 overflow-x-auto pb-1 shrink-0 scrollbar-thin">
+        <div className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-1 shrink-0 scrollbar-none touch-pan-x">
           {categories.map((cat) => (
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap shadow-2xs ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap shadow-2xs cursor-pointer ${
                 selectedCategory === cat
                   ? 'bg-blue-600 text-white shadow-xs'
                   : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
@@ -111,7 +162,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         </div>
 
         {/* Product Cards Grid */}
-        <div className="flex-1 overflow-y-auto pr-1">
+        <div className="flex-1 overflow-y-auto pr-0.5 sm:pr-1 pb-16 md:pb-0">
           {filteredProducts.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center p-8 text-slate-400">
               <ShoppingBag className="w-12 h-12 mb-3 stroke-1 text-slate-300" />
@@ -119,7 +170,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               <p className="text-xs text-slate-400 mt-1">Try another category or clear the search query</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-3 gap-2 sm:gap-3">
               {filteredProducts.map((prod) => {
                 const stock = prod.stockByLocation[currentLocation.id] ?? 0;
                 const isOutOfStock = stock <= 0;
@@ -130,7 +181,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                   <div
                     key={prod.id}
                     onClick={() => addToCart(prod)}
-                    className={`bg-white border rounded-xl p-3.5 flex flex-col justify-between hover:border-blue-500 cursor-pointer shadow-2xs hover:shadow-md transition group select-none relative ${
+                    className={`bg-white border rounded-xl p-2.5 sm:p-3.5 flex flex-col justify-between hover:border-blue-500 cursor-pointer shadow-2xs hover:shadow-md transition group select-none relative ${
                       inCart
                         ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/20'
                         : 'border-slate-200'
@@ -143,37 +194,37 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                     )}
 
                     <div>
-                      <div className="flex items-start justify-between gap-2 pr-5">
-                        <h4 className="text-xs font-bold text-slate-800 leading-snug group-hover:text-blue-600 transition">
+                      <div className="flex items-start justify-between gap-1 pr-4">
+                        <h4 className="text-xs font-bold text-slate-800 leading-snug group-hover:text-blue-600 transition line-clamp-2">
                           {prod.name}
                         </h4>
                       </div>
-                      <div className="flex items-center gap-1.5 mt-1.5">
-                        <span className="text-[10px] text-slate-400 font-mono">{prod.sku}</span>
-                        <span className="text-slate-300">•</span>
-                        <span className="text-[10px] text-slate-500 font-medium">{prod.category}</span>
+                      <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-400">
+                        <span className="font-mono">{prod.sku}</span>
+                        <span>•</span>
+                        <span className="truncate">{prod.category}</span>
                       </div>
                     </div>
 
-                    <div className="mt-3.5 pt-2 border-t border-slate-100 flex items-end justify-between">
+                    <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-end justify-between gap-1">
                       <div>
                         {isOutOfStock ? (
-                          <span className="text-[10px] bg-red-100 text-red-700 font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
-                            <AlertTriangle className="w-2.5 h-2.5" /> Out of stock
+                          <span className="text-[9px] sm:text-[10px] bg-red-100 text-red-700 font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                            <AlertTriangle className="w-2.5 h-2.5 shrink-0" /> Out
                           </span>
                         ) : isLowStock ? (
-                          <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded">
-                            Qty: {stock} (Low)
+                          <span className="text-[9px] sm:text-[10px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded">
+                            Qty: {stock}
                           </span>
                         ) : (
-                          <span className="text-[10px] bg-slate-100 text-slate-600 font-semibold px-1.5 py-0.5 rounded">
+                          <span className="text-[9px] sm:text-[10px] bg-slate-100 text-slate-600 font-semibold px-1.5 py-0.5 rounded">
                             Qty: {stock}
                           </span>
                         )}
                       </div>
 
                       <div className="text-right">
-                        <div className="text-sm font-black text-blue-600 tracking-tight">
+                        <div className="text-xs sm:text-sm font-black text-blue-600 tracking-tight">
                           {currentLocation.currency} {prod.sellingPrice.toFixed(2)}
                         </div>
                       </div>
@@ -184,35 +235,93 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             </div>
           )}
         </div>
+
+        {/* Mobile Floating Order Bottom Bar */}
+        {cart.length > 0 && (
+          <div className="md:hidden absolute bottom-2 inset-x-2 z-20 animate-in slide-in-from-bottom-2">
+            <div className="bg-slate-900 text-white px-3.5 py-2.5 rounded-2xl shadow-xl flex items-center justify-between border border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center font-black text-xs text-white shadow-xs">
+                  {totalCartCount}
+                </div>
+                <div>
+                  <div className="text-[10px] text-slate-400 font-bold uppercase">Order Total</div>
+                  <div className="text-sm font-black text-white">
+                    {currentLocation.currency} {cartTotal.toFixed(2)}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMobileActiveView('cart')}
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs px-3 py-2 rounded-xl transition cursor-pointer"
+                >
+                  View
+                </button>
+                <button
+                  type="button"
+                  onClick={onProceedToPayment}
+                  className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+                >
+                  <span>Pay</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Cart & Checkout Sidebar (Right / 38%) */}
-      <div className="md:w-[38%] bg-white flex flex-col justify-between border-t md:border-t-0 md:border-l border-slate-200 shadow-lg md:shadow-none h-full max-h-[calc(100vh-4rem)]">
+      {/* Cart & Checkout Sidebar (Right / 38% on desktop, full screen on mobile cart view) */}
+      <div
+        className={`md:w-[38%] bg-white flex-col justify-between border-t md:border-t-0 md:border-l border-slate-200 shadow-lg md:shadow-none h-full overflow-hidden ${
+          mobileActiveView === 'cart' ? 'flex flex-1' : 'hidden md:flex'
+        }`}
+      >
         {/* Cart Header */}
-        <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/80 shrink-0">
+        <div className="p-3 sm:p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/80 shrink-0">
           <div>
             <div className="flex items-center gap-2">
               <h2 className="font-black text-slate-800 text-sm">Active Order</h2>
               <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                {cart.reduce((a, b) => a + b.quantity, 0)} items
+                {totalCartCount} items
               </span>
             </div>
             <p className="text-[10px] text-slate-400 mt-0.5">
               {currentLocation.terminalName}
             </p>
           </div>
-          {cart.length > 0 && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={clearCart}
-              className="text-xs text-red-600 font-bold hover:bg-red-50 px-2.5 py-1 rounded-lg transition"
+              type="button"
+              onClick={() => openReturnsModal(null)}
+              className="text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer"
+              title="Open Returns & Refunds Desk"
             >
-              Clear Cart
+              <RotateCcw className="w-3 h-3 text-amber-700" />
+              <span>Returns</span>
             </button>
-          )}
+            <button
+              type="button"
+              onClick={() => setMobileActiveView('catalog')}
+              className="md:hidden text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg hover:bg-blue-100 transition cursor-pointer"
+            >
+              + Add Items
+            </button>
+            {cart.length > 0 && (
+              <button
+                onClick={clearCart}
+                className="text-xs text-red-600 font-bold hover:bg-red-50 px-2.5 py-1 rounded-lg transition cursor-pointer"
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Cart Item List */}
-        <div className="flex-1 overflow-y-auto p-4 divide-y divide-slate-100">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 divide-y divide-slate-100">
           {cart.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center p-8 text-center text-slate-400">
               <ShoppingBag className="w-10 h-10 mb-2 stroke-1 text-slate-300" />
@@ -220,6 +329,13 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               <p className="text-[11px] text-slate-400 mt-1 max-w-[200px]">
                 Scan a barcode, search, or click any product card to start checkout.
               </p>
+              <button
+                type="button"
+                onClick={() => setMobileActiveView('catalog')}
+                className="mt-3 md:hidden text-xs font-bold text-white bg-blue-600 px-4 py-2 rounded-xl"
+              >
+                Browse Catalog
+              </button>
             </div>
           ) : (
             cart.map((item) => {
@@ -227,8 +343,8 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                 item.unitPrice * (1 - item.discountPercent / 100) * item.quantity;
 
               return (
-                <div key={item.productId} className="py-3 flex items-center justify-between gap-3 group">
-                  <div className="flex-1 min-w-0">
+                <div key={item.productId} className="py-2.5 sm:py-3 flex items-center justify-between gap-2 group">
+                  <div className="flex-1 min-w-0 pr-1">
                     <h4 className="text-xs font-bold text-slate-800 truncate">
                       {item.productName}
                     </h4>
@@ -244,29 +360,29 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Quantity Stepper */}
-                  <div className="flex items-center gap-3 shrink-0">
+                  {/* Quantity Stepper with touch-friendly targets */}
+                  <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                     <div className="flex items-center border border-slate-200 rounded-lg bg-slate-50 overflow-hidden">
                       <button
                         onClick={() => updateCartQuantity(item.productId, item.quantity - 1)}
-                        className="w-7 h-7 flex items-center justify-center text-slate-600 hover:bg-slate-200 font-bold transition"
+                        className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-200 font-bold transition cursor-pointer"
                         title="Reduce"
                       >
-                        <Minus className="w-3 h-3" />
+                        <Minus className="w-3.5 h-3.5" />
                       </button>
-                      <span className="w-8 text-center text-xs font-black text-slate-800">
+                      <span className="w-7 text-center text-xs font-black text-slate-800">
                         {item.quantity}
                       </span>
                       <button
                         onClick={() => updateCartQuantity(item.productId, item.quantity + 1)}
-                        className="w-7 h-7 flex items-center justify-center text-slate-600 hover:bg-slate-200 font-bold transition"
+                        className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-200 font-bold transition cursor-pointer"
                         title="Increase"
                       >
-                        <Plus className="w-3 h-3" />
+                        <Plus className="w-3.5 h-3.5" />
                       </button>
                     </div>
 
-                    <div className="text-right min-w-[75px]">
+                    <div className="text-right min-w-[65px] sm:min-w-[75px]">
                       <div className="text-xs font-black text-slate-800">
                         {currentLocation.currency} {lineTotal.toFixed(2)}
                       </div>
@@ -274,7 +390,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
                     <button
                       onClick={() => removeFromCart(item.productId)}
-                      className="text-slate-300 hover:text-red-600 transition p-1"
+                      className="text-slate-300 hover:text-red-600 transition p-1.5 cursor-pointer"
                       title="Remove Item"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -287,7 +403,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         </div>
 
         {/* Totals & Checkout Box */}
-        <div className="p-4 bg-slate-50 border-t border-slate-200 space-y-2 shrink-0">
+        <div className="p-3.5 sm:p-4 bg-slate-50 border-t border-slate-200 space-y-1.5 sm:space-y-2 shrink-0">
           <div className="flex justify-between text-xs text-slate-500">
             <span>Subtotal (Net)</span>
             <span className="font-semibold text-slate-700">
@@ -300,9 +416,9 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               {currentLocation.currency} {cartTax.toFixed(2)}
             </span>
           </div>
-          <div className="flex justify-between text-base font-black text-slate-900 pt-2 border-t border-slate-200">
+          <div className="flex justify-between text-sm sm:text-base font-black text-slate-900 pt-2 border-t border-slate-200">
             <span>Total Payable</span>
-            <span className="text-blue-600">
+            <span className="text-blue-600 font-black">
               {currentLocation.currency} {cartTotal.toFixed(2)}
             </span>
           </div>
@@ -310,9 +426,9 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
           <button
             disabled={cart.length === 0}
             onClick={onProceedToPayment}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-black py-3 px-4 rounded-xl shadow-md hover:shadow-lg transition text-sm mt-2 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-black py-3 sm:py-3.5 px-4 rounded-xl shadow-md hover:shadow-lg transition text-xs sm:text-sm mt-1 sm:mt-2 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
           >
-            <span>Proceed to Payment</span>
+            <span>Proceed to Payment ({currentLocation.currency} {cartTotal.toFixed(2)})</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </div>

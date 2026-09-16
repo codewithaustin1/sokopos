@@ -23,7 +23,7 @@ export const DestructiveConfirmModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-150">
       <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden border-2 border-red-500">
         {/* Red Header Bar */}
         <div className="bg-red-600 px-6 py-4 text-white flex items-center justify-between">
@@ -33,10 +33,10 @@ export const DestructiveConfirmModal: React.FC = () => {
             </div>
             <div>
               <h3 className="font-black text-base leading-none">
-                Destructive Action Confirmation
+                {isSuperAdmin ? 'Destructive Action Confirmation' : 'Confirm Account Removal'}
               </h3>
               <p className="text-[11px] text-red-100 mt-0.5">
-                Super-Admin Safeguard Protocol
+                {isSuperAdmin ? 'Super-Admin Safeguard Protocol' : 'Tenant Account Management Safeguard'}
               </p>
             </div>
           </div>
@@ -117,7 +117,7 @@ export const DestructiveConfirmModal: React.FC = () => {
             className="bg-red-600 hover:bg-red-700 disabled:bg-slate-300 disabled:text-slate-500 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition shadow-sm cursor-pointer disabled:cursor-not-allowed flex items-center gap-1.5"
           >
             <AlertTriangle className="w-3.5 h-3.5" />
-            <span>Confirm & Execute Deletion</span>
+            <span>{isSuperAdmin ? 'Confirm & Execute Deletion' : 'Remove Account'}</span>
           </button>
         </div>
       </div>

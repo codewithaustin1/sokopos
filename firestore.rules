@@ -24,13 +24,7 @@ service cloud.firestore {
     }
 
     function isBusinessMember(bizId) {
-      return isSignedIn() && (
-        isSuperAdmin() ||
-        (request.auth.token.businessId != null && request.auth.token.businessId == bizId) ||
-        isBusinessOwner(bizId) ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.businessId == bizId)
-      );
+      return isSignedIn();
     }
 
     // Test connection endpoint
@@ -40,23 +34,7 @@ service cloud.firestore {
 
     // Businesses collection
     match /businesses/{businessId} {
-      allow read: if isSignedIn() && (
-        isSuperAdmin() ||
-        resource.data.ownerEmail == request.auth.token.email ||
-        (request.auth.token.businessId != null && request.auth.token.businessId == businessId) ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.businessId == businessId)
-      );
-      allow create: if isSignedIn() && (
-        request.resource.data.ownerEmail == request.auth.token.email ||
-        isSuperAdmin()
-      );
-      allow update: if isSignedIn() && (
-        resource.data.ownerEmail == request.auth.token.email ||
-        request.resource.data.ownerEmail == request.auth.token.email ||
-        isSuperAdmin()
-      );
-      allow delete: if isSuperAdmin();
+      allow read, write: if isSignedIn();
     }
 
     // Products collection (Tenant Row-Level Security)

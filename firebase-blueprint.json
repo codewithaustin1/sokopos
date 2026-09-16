@@ -72,7 +72,8 @@
         "total": { "type": "number" },
         "paymentMethod": { "type": "string" },
         "status": { "type": "string" },
-        "syncedToCloud": { "type": "boolean" }
+        "syncedToCloud": { "type": "boolean" },
+        "totalRefunded": { "type": "number" }
       },
       "required": ["id", "businessId", "receiptNumber", "total", "paymentMethod", "status"]
     },

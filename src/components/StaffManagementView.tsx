@@ -163,9 +163,9 @@ export const StaffManagementView: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      <div className="p-6 space-y-6">
+      <div className="p-3.5 sm:p-6 space-y-4 sm:space-y-6 pb-20 md:pb-8">
         {/* Info Banner */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs flex items-start gap-3">
+        <div className="bg-white rounded-2xl border border-slate-200 p-3.5 sm:p-4 shadow-2xs flex items-start gap-3">
           <div className="p-2 bg-blue-50 text-blue-600 rounded-xl shrink-0">
             <Shield className="w-5 h-5" />
           </div>
@@ -180,18 +180,86 @@ export const StaffManagementView: React.FC = () => {
           </div>
         </div>
 
-        {/* Users Table */}
+        {/* Users Container */}
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
-          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
             <h3 className="font-bold text-sm text-slate-800">
               Active System Users ({systemUsers.length})
             </h3>
             <span className="text-xs text-slate-400">
-              Business Owner: <span className="font-bold text-slate-700">{currentBusiness.ownerEmail}</span>
+              Owner: <span className="font-bold text-slate-700">{currentBusiness.ownerEmail}</span>
             </span>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Mobile User Cards (< md) */}
+          <div className="md:hidden divide-y divide-slate-100">
+            {systemUsers.length === 0 ? (
+              <div className="p-6 text-center text-slate-400 text-xs">No users created yet.</div>
+            ) : (
+              systemUsers.map((user) => {
+                const branch = locations.find((l) => l.id === user.assignedLocationId);
+                return (
+                  <div key={user.id} className="p-4 flex flex-col gap-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`w-9 h-9 rounded-full ${user.avatarColor} text-white font-black text-xs flex items-center justify-center shrink-0 shadow-2xs`}
+                        >
+                          {user.initials}
+                        </div>
+                        <div>
+                          <div className="font-bold text-slate-900 text-xs">{user.name}</div>
+                          <div className="text-[11px] text-slate-400">
+                            Username: <span className="font-mono font-bold text-slate-700">{user.username || user.code}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <span
+                        className={`font-bold text-[10px] uppercase px-2 py-0.5 rounded-full shrink-0 ${
+                          user.role === 'manager'
+                            ? 'bg-purple-100 text-purple-800'
+                            : user.role === 'supervisor'
+                            ? 'bg-blue-100 text-blue-800'
+                            : 'bg-emerald-100 text-emerald-800'
+                        }`}
+                      >
+                        {user.role}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs bg-slate-50 p-2 rounded-lg text-slate-600">
+                      <div>
+                        Branch: <strong className="text-slate-800">{branch?.name || 'All Branches'}</strong>
+                      </div>
+                      <div className="flex items-center gap-1 text-[10px] text-emerald-700 font-bold">
+                        <Shield className="w-3 h-3" /> PIN Protected
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100 text-xs">
+                      <button
+                        onClick={() => openEditModal(user)}
+                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+                      >
+                        <Edit2 className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Edit</span>
+                      </button>
+                      <button
+                        onClick={() => deleteSystemUser(user.id)}
+                        className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 font-bold rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Desktop Table (md and up) */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-slate-400 font-bold border-b border-slate-100">
                 <tr>

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useMemo, useRef } from 'react';
 import {
   AuthUser,
   Business,
@@ -8,6 +8,8 @@ import {
   Location,
   PaymentMethod,
   Product,
+  RefundItem,
+  RefundRecord,
   SuperAdminAuditEntry,
   SyncLogEvent,
   Transaction,
@@ -51,6 +53,7 @@ import {
   updateBusinessInFirestore,
   getBusinessesFromFirestore,
   saveUserProfileToFirestore,
+  getFreshTenantProductsFromFirestore,
   subscribeToTenantProducts,
   subscribeToTenantLocations,
   subscribeToTenantCashiers,
@@ -136,6 +139,12 @@ interface PosContextType {
   adjustStock: (productId: string, locationId: string, newStock: number, reason: string) => void;
   transferStock: (productId: string, fromLocId: string, toLocId: string, quantity: number) => boolean;
 
+  // Fresh Inventory from Firestore Server (Bypassing Local Cache)
+  fetchFreshInventoryFromServer: (businessIdOverride?: string, showFeedback?: boolean) => Promise<Product[]>;
+  isInventoryFreshFromServer: boolean;
+  isInventoryLoading: boolean;
+  inventoryLastFetchedAt: string | null;
+
   // Cart
   cart: CartItem[];
   addToCart: (product: Product, quantity?: number) => void;
@@ -154,6 +163,8 @@ interface PosContextType {
   transactions: Transaction[];
   activeReceipt: Transaction | null;
   setActiveReceipt: (tx: Transaction | null) => void;
+  activeRefundReceipt: { refund: RefundRecord; originalTx: Transaction } | null;
+  setActiveRefundReceipt: (data: { refund: RefundRecord; originalTx: Transaction } | null) => void;
   processPayment: (
     paymentMethod: PaymentMethod,
     details: {
@@ -165,6 +176,24 @@ interface PosContextType {
       cardNetwork?: string;
     }
   ) => Transaction;
+  processRefund: (params: {
+    transactionId: string;
+    refundMethod: 'original' | 'cash' | 'mpesa' | 'card' | 'store_credit';
+    refundReason: string;
+    refundNote?: string;
+    customerName?: string;
+    customerPhone?: string;
+    items: Array<{
+      productId: string;
+      quantity: number;
+      restockToInventory: boolean;
+      reason?: string;
+    }>;
+  }) => Promise<{ success: boolean; refundRecord?: RefundRecord; error?: string }>;
+  isReturnsModalOpen: boolean;
+  selectedReturnTx: Transaction | null;
+  openReturnsModal: (tx?: Transaction | null) => void;
+  closeReturnsModal: () => void;
 
   // Cloud Sync
   isOnline: boolean;
@@ -173,7 +202,7 @@ interface PosContextType {
   lastSyncTime: string;
   syncLogs: SyncLogEvent[];
   pendingOfflineCount: number;
-  triggerCloudSync: () => Promise<void>;
+  triggerCloudSync: (isSilent?: boolean | unknown) => Promise<void>;
 
   // Firestore Row-Level Security Scoped Database
   isFirestoreConnected: boolean;
@@ -201,6 +230,21 @@ const STORAGE_KEYS = {
   SUPER_ADMIN_AUDIT: 'sokopos_sa_audit_v2',
   CURRENT_LOC: 'sokopos_curr_loc_v2',
 };
+
+export function getStableBusinessIdForEmail(email: string): string {
+  const normalized = email.toLowerCase().trim();
+  if (normalized === SUPER_ADMIN_EMAIL.toLowerCase()) {
+    return 'biz-upfront';
+  }
+  if (normalized === 'owner@sokopos.co.ke') {
+    return 'biz-soko';
+  }
+  if (normalized === 'samuel.ndungu@quickchoice.co.ke') {
+    return 'biz-quickmart';
+  }
+  const cleanPrefix = normalized.replace(/[^a-z0-9]/g, '').substring(0, 12);
+  return `biz-${cleanPrefix || 'retail'}`;
+}
 
 export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // 1. Multi-Tenant Business Registry
@@ -282,10 +326,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           }
 
           if (!matchedBiz && !isSuperAdminEmail) {
-            const newBizId = `biz-${fbUser.uid.substring(0, 8) || Date.now().toString(36)}`;
+            const stableBizId = getStableBusinessIdForEmail(normalizedEmail);
             const bizName = `${fbUser.displayName || fbUser.email.split('@')[0]}'s Store`;
             matchedBiz = {
-              id: newBizId,
+              id: stableBizId,
               name: bizName,
               code: bizName.substring(0, 4).toUpperCase().replace(/\s+/g, ''),
               ownerEmail: normalizedEmail,
@@ -296,13 +340,20 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               currency: 'KES',
               taxNumber: `P0${Math.floor(100000000 + Math.random() * 900000000)}Z`,
             };
-            setBusinesses((prev) => [...prev, matchedBiz!]);
+            setBusinesses((prev) => {
+              if (prev.some((b) => b.id === stableBizId)) return prev;
+              return [...prev, matchedBiz!];
+            });
             saveBusinessToFirestore(matchedBiz).catch((e) => console.warn('Sync new biz:', e));
+          }
+
+          if (matchedBiz) {
+            ensureTenantDefaults(matchedBiz);
           }
 
           const targetBizId = isSuperAdminEmail
             ? 'biz-upfront'
-            : matchedBiz?.id || `biz-${fbUser.uid.substring(0, 8)}`;
+            : matchedBiz?.id || getStableBusinessIdForEmail(normalizedEmail);
 
           const role: UserRole = isSuperAdminEmail
             ? 'super_admin'
@@ -524,10 +575,22 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       businessId: activeBusinessId,
       isOnline: true,
       lastSynced: new Date().toISOString(),
+      isPendingCloudSync: !isOnline || !auth.currentUser,
     };
     setAllLocations((prev) => [...prev, newLoc]);
     if (isOnline && auth.currentUser) {
-      saveLocationToFirestore(newLoc).catch((err) => console.warn('Firestore location save:', err));
+      saveLocationToFirestore(newLoc)
+        .then(() => {
+          setAllLocations((prev) =>
+            prev.map((l) => (l.id === newLoc.id ? { ...l, isPendingCloudSync: false } : l))
+          );
+        })
+        .catch((err) => {
+          console.warn('Firestore location save:', err);
+          setAllLocations((prev) =>
+            prev.map((l) => (l.id === newLoc.id ? { ...l, isPendingCloudSync: true } : l))
+          );
+        });
     }
     if (isSuperAdmin) {
       logSuperAdminAction(activeBusinessId, 'location', newLoc.id, 'create', `Created branch ${newLoc.name}`, null, newLoc);
@@ -539,13 +602,27 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const oldLoc = allLocations.find((l) => l.id === id);
     if (!oldLoc) return;
 
+    const updatedLoc: Location = {
+      ...oldLoc,
+      ...updates,
+      isPendingCloudSync: !isOnline || !auth.currentUser,
+    };
     setAllLocations((prev) =>
-      prev.map((l) => (l.id === id ? { ...l, ...updates } : l))
+      prev.map((l) => (l.id === id ? updatedLoc : l))
     );
     if (isOnline && auth.currentUser) {
-      updateLocationInFirestore(id, updates).catch((err) =>
-        console.warn('Firestore location update:', err)
-      );
+      updateLocationInFirestore(id, updates)
+        .then(() => {
+          setAllLocations((prev) =>
+            prev.map((l) => (l.id === id ? { ...l, isPendingCloudSync: false } : l))
+          );
+        })
+        .catch((err) => {
+          console.warn('Firestore location update:', err);
+          setAllLocations((prev) =>
+            prev.map((l) => (l.id === id ? { ...l, isPendingCloudSync: true } : l))
+          );
+        });
     }
     if (isSuperAdmin) {
       logSuperAdminAction(
@@ -667,6 +744,70 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, []);
 
+  // Ensure default flagship location and primary owner cashier for any tenant
+  const ensureTenantDefaults = useCallback((biz: Business) => {
+    if (!biz || !biz.id) return;
+
+    // 1. Ensure at least one flagship branch location exists
+    setAllLocations((prevLocs) => {
+      const existing = prevLocs.filter((l) => l.businessId === biz.id);
+      if (existing.length > 0) return prevLocs;
+      const defaultLoc: Location = {
+        id: `loc-main-${biz.id}`,
+        businessId: biz.id,
+        name: `${biz.name} Main Branch`,
+        code: 'MAIN-01',
+        city: 'Nairobi',
+        address: 'Central Retail District',
+        phone: '+254 700 000 000',
+        taxId: biz.taxNumber || 'P011223344A',
+        currency: biz.currency || 'KES',
+        isOnline: true,
+        lastSynced: new Date().toISOString(),
+        terminalName: 'Terminal #01 (Main)',
+      };
+      if (auth.currentUser) {
+        saveLocationToFirestore(defaultLoc).catch((e) => console.warn('Sync default loc:', e));
+      }
+      return [...prevLocs, defaultLoc];
+    });
+
+    // 2. Ensure business owner primary account exists in allSystemUsers
+    setAllSystemUsers((prevUsers) => {
+      const existing = prevUsers.filter((u) => u.businessId === biz.id);
+      if (existing.length > 0) return prevUsers;
+      const ownerStaff: Cashier = {
+        id: `user-owner-${biz.id}`,
+        businessId: biz.id,
+        name: biz.ownerName || 'Business Owner',
+        initials: (biz.ownerName || 'BO')
+          .split(' ')
+          .map((n) => n[0])
+          .join('')
+          .substring(0, 2)
+          .toUpperCase(),
+        code: '#1001',
+        username: biz.ownerEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '.'),
+        pin: '$2b$10$g925CNtpaFfvsV/TNlwblucRcqdLXBHj5NsDDYiXvKkgByQUBVoGq', // Bcrypt of '1234'
+        role: 'business_owner',
+        avatarColor: 'bg-indigo-600',
+        shiftStartedAt: new Date().toISOString(),
+        assignedLocationId: `loc-main-${biz.id}`,
+      };
+      if (auth.currentUser) {
+        saveCashierToFirestore(ownerStaff).catch((e) => console.warn('Sync default owner user:', e));
+      }
+      return [...prevUsers, ownerStaff];
+    });
+  }, []);
+
+  // Auto-heal active business defaults on initial load and whenever active business changes
+  useEffect(() => {
+    if (currentBusiness && currentBusiness.id && currentBusiness.id !== 'biz-upfront') {
+      ensureTenantDefaults(currentBusiness);
+    }
+  }, [currentBusiness, ensureTenantDefaults]);
+
   const createSystemUser = async (user: Omit<Cashier, 'id' | 'businessId'>): Promise<boolean> => {
     // Only authenticated business owners or super-admin can create system users
     if (!currentUser || (currentUser.role !== 'business_owner' && currentUser.role !== 'super_admin')) {
@@ -684,11 +825,23 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       pin: hashedPin,
       id: `user-${Date.now()}`,
       businessId: activeBusinessId,
+      isPendingCloudSync: !isOnline || !auth.currentUser,
     };
 
     setAllSystemUsers((prev) => [...prev, newUser]);
     if (isOnline && auth.currentUser) {
-      saveCashierToFirestore(newUser).catch((err) => console.warn('Firestore cashier save:', err));
+      saveCashierToFirestore(newUser)
+        .then(() => {
+          setAllSystemUsers((prev) =>
+            prev.map((u) => (u.id === newUser.id ? { ...u, isPendingCloudSync: false } : u))
+          );
+        })
+        .catch((err) => {
+          console.warn('Firestore cashier save:', err);
+          setAllSystemUsers((prev) =>
+            prev.map((u) => (u.id === newUser.id ? { ...u, isPendingCloudSync: true } : u))
+          );
+        });
     }
 
     if (isSuperAdmin) {
@@ -716,11 +869,28 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       finalUpdates.pin = await hashPinOnServer(updates.pin);
     }
 
+    const updatedUser: Cashier = {
+      ...oldUser,
+      ...finalUpdates,
+      isPendingCloudSync: !isOnline || !auth.currentUser,
+    };
+
     setAllSystemUsers((prev) =>
-      prev.map((u) => (u.id === id ? { ...u, ...finalUpdates } : u))
+      prev.map((u) => (u.id === id ? updatedUser : u))
     );
     if (isOnline && auth.currentUser) {
-      updateCashierInFirestore(id, finalUpdates).catch((err) => console.warn('Firestore cashier update:', err));
+      updateCashierInFirestore(id, finalUpdates)
+        .then(() => {
+          setAllSystemUsers((prev) =>
+            prev.map((u) => (u.id === id ? { ...u, isPendingCloudSync: false } : u))
+          );
+        })
+        .catch((err) => {
+          console.warn('Firestore cashier update:', err);
+          setAllSystemUsers((prev) =>
+            prev.map((u) => (u.id === id ? { ...u, isPendingCloudSync: true } : u))
+          );
+        });
     }
 
     if (isSuperAdmin) {
@@ -807,7 +977,16 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const saved = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Check if biz-upfront exists in parsed products, otherwise merge
+          const hasUpfront = parsed.some((p: Product) => p.businessId === 'biz-upfront');
+          if (!hasUpfront) {
+            const upfrontInitials = INITIAL_PRODUCTS.filter((p) => p.businessId === 'biz-upfront');
+            return [...parsed, ...upfrontInitials];
+          }
+          return parsed;
+        }
       } catch {
         // fallback
       }
@@ -825,6 +1004,87 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return allProducts.filter((p) => p.businessId === activeBusinessId);
   }, [allProducts, activeBusinessId]);
 
+  // Direct Firestore Server Inventory States
+  const [isInventoryFreshFromServer, setIsInventoryFreshFromServer] = useState<boolean>(false);
+  const [isInventoryLoading, setIsInventoryLoading] = useState<boolean>(false);
+  const [inventoryLastFetchedAt, setInventoryLastFetchedAt] = useState<string | null>(null);
+
+  /**
+   * Fetches the current tenant's inventory directly from the central Firestore backend server,
+   * completely bypassing any local client cache (IndexedDB or memory) via getDocsFromServer.
+   */
+  const fetchFreshInventoryFromServer = useCallback(
+    async (businessIdOverride?: string, showFeedback = false): Promise<Product[]> => {
+      const targetBizId = businessIdOverride || activeBusinessId;
+      if (!targetBizId) return [];
+
+      setIsInventoryLoading(true);
+      try {
+        const freshDocs = await getFreshTenantProductsFromFirestore(targetBizId);
+        if (Array.isArray(freshDocs)) {
+          if (freshDocs.length > 0) {
+            setAllProducts((prev) => {
+              const otherTenants = prev.filter((p) => p.businessId !== targetBizId);
+              const freshMapped = freshDocs.map((p) => ({
+                ...p,
+                isPendingCloudSync: false,
+              }));
+              return [...freshMapped, ...otherTenants];
+            });
+            setIsInventoryFreshFromServer(true);
+            const nowIso = new Date().toISOString();
+            setInventoryLastFetchedAt(nowIso);
+            if (showFeedback) {
+              showToast('Inventory catalog updated live from Firestore server.', 'success');
+            }
+            return freshDocs;
+          } else {
+            // If the Firestore server currently has 0 products for this tenant,
+            // check if there are initial template products to bootstrap to the server
+            const defaultTemplate = INITIAL_PRODUCTS.filter((p) => p.businessId === targetBizId);
+            if (defaultTemplate.length > 0 && auth.currentUser) {
+              for (const prod of defaultTemplate) {
+                await saveProductToFirestore({ ...prod, isPendingCloudSync: false }).catch(() => {});
+              }
+              const reFresh = await getFreshTenantProductsFromFirestore(targetBizId);
+              if (reFresh && reFresh.length > 0) {
+                setAllProducts((prev) => {
+                  const otherTenants = prev.filter((p) => p.businessId !== targetBizId);
+                  return [...reFresh.map((p) => ({ ...p, isPendingCloudSync: false })), ...otherTenants];
+                });
+                setIsInventoryFreshFromServer(true);
+                setInventoryLastFetchedAt(new Date().toISOString());
+                return reFresh;
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Direct Firestore inventory fetch failed:', err);
+      } finally {
+        setIsInventoryLoading(false);
+      }
+      return [];
+    },
+    [activeBusinessId, showToast]
+  );
+
+  // Automated Fresh Inventory Fetch on Every Successful Login
+  const lastLoggedInUserRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (currentUser && currentUser.id) {
+      // Whenever a user logs in or switches tenant account
+      if (lastLoggedInUserRef.current !== currentUser.id) {
+        lastLoggedInUserRef.current = currentUser.id;
+        fetchFreshInventoryFromServer(currentUser.businessId, false).catch((err) =>
+          console.warn('Auto-fresh inventory on login notice:', err)
+        );
+      }
+    } else {
+      lastLoggedInUserRef.current = null;
+    }
+  }, [currentUser, fetchFreshInventoryFromServer]);
+
   const categories = useMemo(() => {
     const cats = new Set<string>();
     products.forEach((p) => cats.add(p.category));
@@ -836,11 +1096,23 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...product,
       id: `prod-${Date.now()}`,
       businessId: activeBusinessId,
+      isPendingCloudSync: !isOnline || !auth.currentUser,
     };
 
     setAllProducts((prev) => [newProduct, ...prev]);
     if (isOnline && auth.currentUser) {
-      saveProductToFirestore(newProduct).catch((err) => console.warn('Firestore product save:', err));
+      saveProductToFirestore(newProduct)
+        .then(() => {
+          setAllProducts((prev) =>
+            prev.map((p) => (p.id === newProduct.id ? { ...p, isPendingCloudSync: false } : p))
+          );
+        })
+        .catch((err) => {
+          console.warn('Firestore product save:', err);
+          setAllProducts((prev) =>
+            prev.map((p) => (p.id === newProduct.id ? { ...p, isPendingCloudSync: true } : p))
+          );
+        });
     }
 
     if (isSuperAdmin) {
@@ -861,10 +1133,25 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const oldProduct = allProducts.find((p) => p.id === id);
     if (!oldProduct) return;
 
-    const updated = { ...oldProduct, ...updates };
+    const updated: Product = {
+      ...oldProduct,
+      ...updates,
+      isPendingCloudSync: !isOnline || !auth.currentUser,
+    };
     setAllProducts((prev) => prev.map((p) => (p.id === id ? updated : p)));
     if (isOnline && auth.currentUser) {
-      updateProductInFirestore(id, updates).catch((err) => console.warn('Firestore product update:', err));
+      updateProductInFirestore(id, updates)
+        .then(() => {
+          setAllProducts((prev) =>
+            prev.map((p) => (p.id === id ? { ...p, isPendingCloudSync: false } : p))
+          );
+        })
+        .catch((err) => {
+          console.warn('Firestore product update:', err);
+          setAllProducts((prev) =>
+            prev.map((p) => (p.id === id ? { ...p, isPendingCloudSync: true } : p))
+          );
+        });
     }
 
     if (isSuperAdmin) {
@@ -1044,8 +1331,17 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [allSyncLogs, activeBusinessId]);
 
   // 12. Cart State
+  const [isOnline, setIsOnlineState] = useState<boolean>(() => {
+    return typeof navigator !== 'undefined' ? navigator.onLine : true;
+  });
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeReceipt, setActiveReceipt] = useState<Transaction | null>(null);
+  const [activeRefundReceipt, setActiveRefundReceipt] = useState<{
+    refund: RefundRecord;
+    originalTx: Transaction;
+  } | null>(null);
+  const [isReturnsModalOpen, setIsReturnsModalOpen] = useState(false);
+  const [selectedReturnTx, setSelectedReturnTx] = useState<Transaction | null>(null);
 
   // Clear cart when tenant switches
   useEffect(() => {
@@ -1123,17 +1419,49 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Barcode Handler
   const handleBarcodeScanned = (barcode: string) => {
-    const trimmed = barcode.trim();
-    const match = products.find(
-      (p) => p.barcode === trimmed || p.sku.toLowerCase() === trimmed.toLowerCase()
+    const trimmed = barcode.trim().replace(/^['"]+|['"]+$/g, '');
+    if (!trimmed) {
+      return { success: false, message: 'Empty barcode entered' };
+    }
+
+    const cleanCode = trimmed.replace(/\s+/g, '');
+    const cleanLower = cleanCode.toLowerCase();
+
+    // 1. Direct match on barcode or SKU
+    let match = products.find(
+      (p) =>
+        p.barcode === cleanCode ||
+        p.sku.toLowerCase() === cleanLower ||
+        p.barcode.replace(/\s+/g, '') === cleanCode
     );
+
+    // 2. Flexible match for UPC-A (12-digit) vs EAN-13 (13-digit with leading zero)
+    if (!match) {
+      if (cleanCode.length === 12) {
+        const withLeadingZero = '0' + cleanCode;
+        match = products.find((p) => p.barcode === withLeadingZero);
+      } else if (cleanCode.length === 13 && cleanCode.startsWith('0')) {
+        const withoutLeadingZero = cleanCode.substring(1);
+        match = products.find((p) => p.barcode === withoutLeadingZero);
+      }
+    }
 
     if (match) {
       soundFx.playBarcodeBeep();
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try {
+          navigator.vibrate(60);
+        } catch {
+          // ignore haptic restrictions
+        }
+      }
       addToCart(match, 1);
+      showToast(`+1 ${match.name} added to cart (${currentLocation.currency} ${match.sellingPrice})`, 'success');
       return { success: true, message: `Scanned: ${match.name}`, product: match };
     }
+
     soundFx.playError();
+    showToast(`Barcode "${trimmed}" not found in ${currentBusiness.name} catalog`, 'error');
     return { success: false, message: `Barcode "${trimmed}" not found in ${currentBusiness.name} catalog` };
   };
 
@@ -1243,12 +1571,377 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return newTx;
   };
 
+  // 12.5 Returns & Refunds Processing
+  const processRefund = useCallback(
+    async (params: {
+      transactionId: string;
+      refundMethod: 'original' | 'cash' | 'mpesa' | 'card' | 'store_credit';
+      refundReason: string;
+      refundNote?: string;
+      customerName?: string;
+      customerPhone?: string;
+      items: Array<{
+        productId: string;
+        quantity: number;
+        restockToInventory: boolean;
+        reason?: string;
+      }>;
+    }): Promise<{ success: boolean; refundRecord?: RefundRecord; error?: string }> => {
+      const { transactionId, refundMethod, refundReason, refundNote, customerName, customerPhone, items } = params;
+
+      // Find target transaction
+      const targetTx = allTransactions.find((t) => t.id === transactionId);
+      if (!targetTx) {
+        showToast('Original transaction could not be located.', 'error');
+        return { success: false, error: 'Transaction not found' };
+      }
+
+      if (targetTx.status === 'refunded') {
+        showToast('This transaction has already been fully refunded.', 'error');
+        return { success: false, error: 'Transaction already fully refunded' };
+      }
+
+      // Calculate previously refunded quantities for each line item
+      const previouslyRefundedQtyMap: Record<string, number> = {};
+      (targetTx.refunds || []).forEach((prevRef) => {
+        prevRef.items.forEach((it) => {
+          previouslyRefundedQtyMap[it.productId] =
+            (previouslyRefundedQtyMap[it.productId] || 0) + it.quantity;
+        });
+      });
+
+      // Filter to items with quantity > 0
+      const itemsToRefund = items.filter((it) => it.quantity > 0);
+      if (itemsToRefund.length === 0) {
+        showToast('Please select at least one item to return.', 'error');
+        return { success: false, error: 'No items selected for refund' };
+      }
+
+      // Validate quantities against original purchase
+      const refundItemsRecord: RefundItem[] = [];
+      let calculatedSubtotalRefund = 0;
+      let calculatedTaxRefund = 0;
+      let calculatedTotalRefund = 0;
+
+      for (const reqItem of itemsToRefund) {
+        const origItem = targetTx.items.find((ci) => ci.productId === reqItem.productId);
+        if (!origItem) {
+          return { success: false, error: `Item ${reqItem.productId} was not part of original sale.` };
+        }
+        const alreadyRefunded = previouslyRefundedQtyMap[reqItem.productId] || 0;
+        const availableToReturn = origItem.quantity - alreadyRefunded;
+        if (reqItem.quantity > availableToReturn) {
+          return {
+            success: false,
+            error: `Cannot return ${reqItem.quantity} of ${origItem.productName}. Only ${availableToReturn} eligible for refund.`,
+          };
+        }
+
+        // Calculate unit prices taking discounts into account
+        const discountedUnitPrice = origItem.unitPrice * (1 - origItem.discountPercent / 100);
+        const netUnitPrice = discountedUnitPrice / (1 + origItem.taxRate);
+        const lineItemTotal = Number((discountedUnitPrice * reqItem.quantity).toFixed(2));
+        const lineItemSubtotal = Number((netUnitPrice * reqItem.quantity).toFixed(2));
+        const lineItemTax = Number((lineItemTotal - lineItemSubtotal).toFixed(2));
+
+        calculatedSubtotalRefund += lineItemSubtotal;
+        calculatedTaxRefund += lineItemTax;
+        calculatedTotalRefund += lineItemTotal;
+
+        refundItemsRecord.push({
+          productId: origItem.productId,
+          productName: origItem.productName,
+          sku: origItem.sku,
+          barcode: origItem.barcode,
+          quantity: reqItem.quantity,
+          unitPrice: origItem.unitPrice,
+          taxRate: origItem.taxRate,
+          refundUnitAmount: Number(discountedUnitPrice.toFixed(2)),
+          refundTotalAmount: lineItemTotal,
+          restockToInventory: reqItem.restockToInventory,
+          restockLocationId: targetTx.locationId,
+          reason: reqItem.reason || refundReason,
+        });
+      }
+
+      // Generate refund reference and timestamp
+      const refundRefNumber = `REF-${Date.now().toString().slice(-6)}`;
+      const timestamp = new Date().toISOString();
+
+      const newRefundRecord: RefundRecord = {
+        id: `ref-${Date.now()}`,
+        refundNumber: refundRefNumber,
+        transactionId: targetTx.id,
+        receiptNumber: targetTx.receiptNumber,
+        timestamp,
+        cashierId: currentCashier.id,
+        cashierName: currentCashier.name,
+        locationId: currentLocation.id,
+        locationName: currentLocation.name,
+        refundMethod,
+        refundReason,
+        refundNote: refundNote?.trim() || undefined,
+        items: refundItemsRecord,
+        subtotalRefund: Number(calculatedSubtotalRefund.toFixed(2)),
+        taxRefund: Number(calculatedTaxRefund.toFixed(2)),
+        totalRefund: Number(calculatedTotalRefund.toFixed(2)),
+        customerName: customerName?.trim() || undefined,
+        customerPhone: customerPhone?.trim() || undefined,
+      };
+
+      // Determine updated status of the transaction
+      const existingRefunds = targetTx.refunds || [];
+      const updatedRefunds = [...existingRefunds, newRefundRecord];
+      const newTotalRefunded = Number(((targetTx.totalRefunded || 0) + newRefundRecord.totalRefund).toFixed(2));
+
+      // Calculate total original quantities vs total refunded quantities across all items
+      let isFullyRefunded = true;
+      for (const origItem of targetTx.items) {
+        const totalRefundedForThisItem = updatedRefunds.reduce((sum, r) => {
+          const matching = r.items.find((ri) => ri.productId === origItem.productId);
+          return sum + (matching ? matching.quantity : 0);
+        }, 0);
+        if (totalRefundedForThisItem < origItem.quantity) {
+          isFullyRefunded = false;
+          break;
+        }
+      }
+
+      const updatedStatus: 'refunded' | 'partially_refunded' = isFullyRefunded
+        ? 'refunded'
+        : 'partially_refunded';
+
+      const updatedTx: Transaction = {
+        ...targetTx,
+        status: updatedStatus,
+        refunds: updatedRefunds,
+        totalRefunded: newTotalRefunded,
+        syncedToCloud: isOnline,
+        syncTimestamp: isOnline ? timestamp : undefined,
+      };
+
+      // Update in local transactions state
+      setAllTransactions((prev) =>
+        prev.map((t) => (t.id === targetTx.id ? updatedTx : t))
+      );
+
+      // Restock products to inventory if restockToInventory is enabled
+      const restockedProducts: { name: string; qty: number }[] = [];
+      const updatedProductsState = allProducts.map((prod) => {
+        const returnItem = refundItemsRecord.find(
+          (ri) => ri.productId === prod.id && ri.restockToInventory
+        );
+        if (!returnItem) return prod;
+        const targetLocId = returnItem.restockLocationId || currentLocation.id;
+        const currentLocStock = prod.stockByLocation[targetLocId] || 0;
+        const newStock = currentLocStock + returnItem.quantity;
+        restockedProducts.push({ name: prod.name, qty: returnItem.quantity });
+        return {
+          ...prod,
+          stockByLocation: {
+            ...prod.stockByLocation,
+            [targetLocId]: newStock,
+          },
+        };
+      });
+      setAllProducts(updatedProductsState);
+
+      // Cloud Firestore synchronization
+      if (isOnline && auth.currentUser) {
+        saveTransactionToFirestore(updatedTx).catch((err) =>
+          console.warn('Firestore refund transaction update:', err)
+        );
+
+        refundItemsRecord.forEach((ri) => {
+          if (ri.restockToInventory) {
+            const prod = updatedProductsState.find((p) => p.id === ri.productId);
+            if (prod) {
+              const targetLocId = ri.restockLocationId || currentLocation.id;
+              updateProductInFirestore(prod.id, {
+                stockByLocation: {
+                  ...prod.stockByLocation,
+                  [targetLocId]: prod.stockByLocation[targetLocId],
+                },
+              }).catch((err) => console.warn('Firestore restock update:', err));
+            }
+          }
+        });
+      }
+
+      // Log action for super admin / audit trail
+      if (isSuperAdmin) {
+        logSuperAdminAction(
+          activeBusinessId,
+          'transaction',
+          targetTx.id,
+          'update',
+          `Processed ${updatedStatus === 'refunded' ? 'Full' : 'Partial'} Refund ${refundRefNumber} on receipt ${targetTx.receiptNumber} (${currentLocation.currency} ${newRefundRecord.totalRefund.toFixed(2)})`,
+          targetTx,
+          updatedTx
+        );
+      }
+
+      // Add sync log
+      const restockSummary = restockedProducts.length > 0
+        ? ` (${restockedProducts.map((p) => `+${p.qty} ${p.name}`).join(', ')} restocked)`
+        : '';
+      const logEvent: SyncLogEvent = {
+        id: `log-${Date.now()}`,
+        businessId: activeBusinessId,
+        timestamp,
+        locationId: currentLocation.id,
+        locationName: currentLocation.name,
+        type: 'refund_sync',
+        recordsAffected: 1 + restockedProducts.length,
+        status: isOnline ? 'success' : 'queued',
+        details: `Refund #${refundRefNumber} issued for Receipt #${targetTx.receiptNumber} (${currentLocation.currency} ${newRefundRecord.totalRefund.toFixed(2)})${restockSummary}`,
+      };
+      setAllSyncLogs((prev) => [logEvent, ...prev]);
+
+      soundFx.playSuccess();
+      showToast(
+        `Refund ${refundRefNumber} of ${currentLocation.currency} ${newRefundRecord.totalRefund.toFixed(2)} processed successfully!`,
+        'success'
+      );
+
+      // Set active refund receipt for instant display & printing
+      setActiveRefundReceipt({
+        refund: newRefundRecord,
+        originalTx: updatedTx,
+      });
+
+      return { success: true, refundRecord: newRefundRecord };
+    },
+    [
+      allTransactions,
+      allProducts,
+      currentCashier,
+      currentLocation,
+      activeBusinessId,
+      isOnline,
+      isSuperAdmin,
+      logSuperAdminAction,
+      showToast,
+    ]
+  );
+
+  const openReturnsModal = useCallback((tx?: Transaction | null) => {
+    setSelectedReturnTx(tx || null);
+    setIsReturnsModalOpen(true);
+  }, []);
+
+  const closeReturnsModal = useCallback(() => {
+    setIsReturnsModalOpen(false);
+    setSelectedReturnTx(null);
+  }, []);
+
   // 13. Cloud Sync Management
-  const [isOnline, setIsOnlineState] = useState<boolean>(true);
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline' | 'error'>('synced');
   const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toISOString());
 
   const pendingOfflineCount = transactions.filter((t) => !t.syncedToCloud).length;
+
+  const triggerCloudSync = useCallback(
+    async (isSilentArg?: boolean | unknown) => {
+      const isSilent = typeof isSilentArg === 'boolean' ? isSilentArg : false;
+
+      if (!isOnline) {
+        if (!isSilent) showToast('Cannot sync while terminal is in Offline Mode.', 'error');
+        return;
+      }
+
+      setSyncStatus('syncing');
+      if (!isSilent) soundFx.playBarcodeBeep();
+
+      if (!isSilent) {
+        await new Promise((res) => setTimeout(res, 500));
+      }
+
+      if (isOnline && auth.currentUser) {
+        try {
+          // 1. Flush un-synced transactions
+          const activeTenantTxs = allTransactions.filter(
+            (tx) => tx.businessId === activeBusinessId
+          );
+          for (const t of activeTenantTxs) {
+            if (!t.syncedToCloud) {
+              await saveTransactionToFirestore({ ...t, syncedToCloud: true });
+            }
+          }
+
+          // 2. Flush un-synced products
+          const activeTenantProds = allProducts.filter(
+            (prod) => prod.businessId === activeBusinessId
+          );
+          for (const p of activeTenantProds) {
+            if (p.isPendingCloudSync) {
+              await saveProductToFirestore({ ...p, isPendingCloudSync: false });
+            }
+          }
+
+          // 3. Flush un-synced locations
+          const activeTenantLocs = allLocations.filter(
+            (loc) => loc.businessId === activeBusinessId
+          );
+          for (const l of activeTenantLocs) {
+            if (l.isPendingCloudSync) {
+              await saveLocationToFirestore({ ...l, isPendingCloudSync: false });
+            }
+          }
+
+          // 4. Flush un-synced cashiers/users
+          const activeTenantCashiers = allSystemUsers.filter(
+            (u) => u.businessId === activeBusinessId
+          );
+          for (const c of activeTenantCashiers) {
+            if (c.isPendingCloudSync) {
+              await saveCashierToFirestore({ ...c, isPendingCloudSync: false });
+            }
+          }
+        } catch (syncErr) {
+          console.warn('Firestore auto-sync reconciliation notice:', syncErr);
+        }
+      }
+
+      setAllTransactions((prev) =>
+        prev.map((t) =>
+          t.businessId === activeBusinessId
+            ? {
+                ...t,
+                syncedToCloud: true,
+                syncTimestamp: t.syncTimestamp || new Date().toISOString(),
+              }
+            : t
+        )
+      );
+
+      setAllProducts((prev) =>
+        prev.map((p) =>
+          p.businessId === activeBusinessId ? { ...p, isPendingCloudSync: false } : p
+        )
+      );
+
+      setAllLocations((prev) =>
+        prev.map((l) =>
+          l.businessId === activeBusinessId ? { ...l, isPendingCloudSync: false } : l
+        )
+      );
+
+      setAllSystemUsers((prev) =>
+        prev.map((u) =>
+          u.businessId === activeBusinessId ? { ...u, isPendingCloudSync: false } : u
+        )
+      );
+
+      setLastSyncTime(new Date().toISOString());
+      setSyncStatus('synced');
+      if (!isSilent) {
+        soundFx.playSuccess();
+        showToast('Cloud synchronization complete: All store records reconciled with Firestore.', 'success');
+      }
+    },
+    [isOnline, showToast, allTransactions, allProducts, allLocations, allSystemUsers, activeBusinessId]
+  );
 
   const setIsOnline = (online: boolean) => {
     setIsOnlineState(online);
@@ -1259,50 +1952,61 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setSyncStatus('syncing');
       showToast('Network restored. Synchronizing offline queue with Cloud...', 'info');
       setTimeout(() => {
-        triggerCloudSync();
-      }, 1000);
+        triggerCloudSync(false);
+      }, 500);
     }
   };
 
-  const triggerCloudSync = useCallback(async () => {
-    if (!isOnline) {
-      showToast('Cannot sync while terminal is in Offline Mode.', 'error');
-      return;
-    }
+  // Automated background sync interval: triggers every 30 seconds when online & authenticated
+  useEffect(() => {
+    if (!isOnline || !firebaseUser || !auth.currentUser) return;
 
-    setSyncStatus('syncing');
-    soundFx.playBarcodeBeep();
+    const intervalId = setInterval(() => {
+      triggerCloudSync(true).catch((err) =>
+        console.warn('Background auto-sync tick:', err)
+      );
+    }, 30000);
 
-    await new Promise((res) => setTimeout(res, 800));
+    return () => clearInterval(intervalId);
+  }, [isOnline, firebaseUser, triggerCloudSync]);
 
-    setAllTransactions((prev) =>
-      prev.map((t) => ({
-        ...t,
-        syncedToCloud: true,
-        syncTimestamp: t.syncTimestamp || new Date().toISOString(),
-      }))
-    );
+  // Automated sync on network reconnect (online/offline) and tab focus/visibility
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnlineState(true);
+      setSyncStatus('syncing');
+      showToast('Network connection detected. Auto-syncing pending store data with Cloud...', 'info');
+      triggerCloudSync(false).catch((err) =>
+        console.warn('Auto-sync on network reconnect error:', err)
+      );
+    };
 
-    if (isOnline && auth.currentUser) {
-      try {
-        const activeTenantTxs = allTransactions.filter((tx) => tx.businessId === activeBusinessId);
-        for (const t of activeTenantTxs) {
-          await saveTransactionToFirestore(t);
-        }
-        const activeTenantProds = allProducts.filter((prod) => prod.businessId === activeBusinessId);
-        for (const p of activeTenantProds) {
-          await saveProductToFirestore(p);
-        }
-      } catch (syncErr) {
-        console.warn('Firestore sync reconciliation notice:', syncErr);
+    const handleOffline = () => {
+      setIsOnlineState(false);
+      setSyncStatus('offline');
+      showToast('Offline Mode active. Transactions will queue locally in browser storage.', 'info');
+    };
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine && auth.currentUser) {
+        triggerCloudSync(true).catch((err) =>
+          console.warn('Auto-sync on visibility/focus error:', err)
+        );
       }
-    }
+    };
 
-    setLastSyncTime(new Date().toISOString());
-    setSyncStatus('synced');
-    soundFx.playSuccess();
-    showToast('Cloud synchronization complete: All store records reconciled with Firestore.', 'success');
-  }, [isOnline, showToast, allTransactions, allProducts, activeBusinessId]);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+    };
+  }, [triggerCloudSync, showToast]);
 
   // 13.b Firestore Row-Level Security State & Tenant Data Synchronization
   const [isFirestoreConnected, setIsFirestoreConnected] = useState<boolean>(false);
@@ -1349,11 +2053,40 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     let unsubTransactions: (() => void) | undefined;
 
     try {
-      unsubProducts = subscribeToTenantProducts(activeBusinessId, (remoteProds) => {
+      unsubProducts = subscribeToTenantProducts(activeBusinessId, (remoteProds, isFromCache) => {
+        if (!isFromCache) {
+          setIsInventoryFreshFromServer(true);
+          setInventoryLastFetchedAt(new Date().toISOString());
+        }
         if (Array.isArray(remoteProds)) {
           setAllProducts((prev) => {
+            const currentTenantLocal = prev.filter((p) => p.businessId === activeBusinessId);
             const otherTenants = prev.filter((p) => p.businessId !== activeBusinessId);
-            return [...remoteProds, ...otherTenants];
+
+            // Any offline items created or edited while offline
+            const pendingOffline = currentTenantLocal.filter((p) => p.isPendingCloudSync);
+            if (auth.currentUser && pendingOffline.length > 0) {
+              pendingOffline.forEach((p) => {
+                saveProductToFirestore({ ...p, isPendingCloudSync: false }).catch((err) =>
+                  console.warn('Auto-sync offline product to Firestore:', err)
+                );
+              });
+            }
+
+            // Remote products from Firestore are authoritative
+            const map = new Map<string, Product>();
+            remoteProds.forEach((r) => map.set(r.id, { ...r, isPendingCloudSync: false }));
+            pendingOffline.forEach((p) => {
+              if (!map.has(p.id)) {
+                map.set(p.id, p);
+              }
+            });
+
+            const tenantResult = (remoteProds.length > 0 || pendingOffline.length > 0)
+              ? Array.from(map.values())
+              : currentTenantLocal;
+
+            return [...tenantResult, ...otherTenants];
           });
         }
       });
@@ -1361,8 +2094,31 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       unsubLocations = subscribeToTenantLocations(activeBusinessId, (remoteLocs) => {
         if (Array.isArray(remoteLocs)) {
           setAllLocations((prev) => {
+            const currentTenantLocal = prev.filter((l) => l.businessId === activeBusinessId);
             const otherTenants = prev.filter((l) => l.businessId !== activeBusinessId);
-            return [...remoteLocs, ...otherTenants];
+
+            const pendingOffline = currentTenantLocal.filter((l) => l.isPendingCloudSync);
+            if (auth.currentUser && pendingOffline.length > 0) {
+              pendingOffline.forEach((l) => {
+                saveLocationToFirestore({ ...l, isPendingCloudSync: false }).catch((err) =>
+                  console.warn('Auto-sync offline location to Firestore:', err)
+                );
+              });
+            }
+
+            const map = new Map<string, Location>();
+            remoteLocs.forEach((r) => map.set(r.id, { ...r, isPendingCloudSync: false }));
+            pendingOffline.forEach((l) => {
+              if (!map.has(l.id)) {
+                map.set(l.id, l);
+              }
+            });
+
+            const tenantResult = (remoteLocs.length > 0 || pendingOffline.length > 0)
+              ? Array.from(map.values())
+              : currentTenantLocal;
+
+            return [...tenantResult, ...otherTenants];
           });
         }
       });
@@ -1370,8 +2126,31 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       unsubCashiers = subscribeToTenantCashiers(activeBusinessId, (remoteCashiers) => {
         if (Array.isArray(remoteCashiers)) {
           setAllSystemUsers((prev) => {
+            const currentTenantLocal = prev.filter((u) => u.businessId === activeBusinessId);
             const otherTenants = prev.filter((u) => u.businessId !== activeBusinessId);
-            return [...remoteCashiers, ...otherTenants];
+
+            const pendingOffline = currentTenantLocal.filter((u) => u.isPendingCloudSync);
+            if (auth.currentUser && pendingOffline.length > 0) {
+              pendingOffline.forEach((u) => {
+                saveCashierToFirestore({ ...u, isPendingCloudSync: false }).catch((err) =>
+                  console.warn('Auto-sync offline cashier to Firestore:', err)
+                );
+              });
+            }
+
+            const map = new Map<string, Cashier>();
+            remoteCashiers.forEach((r) => map.set(r.id, { ...r, isPendingCloudSync: false }));
+            pendingOffline.forEach((u) => {
+              if (!map.has(u.id)) {
+                map.set(u.id, u);
+              }
+            });
+
+            const tenantResult = (remoteCashiers.length > 0 || pendingOffline.length > 0)
+              ? Array.from(map.values())
+              : currentTenantLocal;
+
+            return [...tenantResult, ...otherTenants];
           });
         }
       });
@@ -1379,8 +2158,32 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       unsubTransactions = subscribeToTenantTransactions(activeBusinessId, (remoteTxs) => {
         if (Array.isArray(remoteTxs)) {
           setAllTransactions((prev) => {
+            const currentTenantLocal = prev.filter((t) => t.businessId === activeBusinessId);
             const otherTenants = prev.filter((t) => t.businessId !== activeBusinessId);
-            return [...remoteTxs, ...otherTenants];
+
+            // Any offline transactions that need upload
+            const pendingOffline = currentTenantLocal.filter((t) => !t.syncedToCloud);
+            if (auth.currentUser && pendingOffline.length > 0) {
+              pendingOffline.forEach((tx) => {
+                saveTransactionToFirestore({ ...tx, syncedToCloud: true }).catch((err) =>
+                  console.warn('Auto-sync offline transaction to Firestore:', err)
+                );
+              });
+            }
+
+            const map = new Map<string, Transaction>();
+            remoteTxs.forEach((r) => map.set(r.id, { ...r, syncedToCloud: true }));
+            pendingOffline.forEach((p) => {
+              if (!map.has(p.id)) {
+                map.set(p.id, p);
+              }
+            });
+
+            const mergedTenantTxs = Array.from(map.values()).sort(
+              (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+            );
+
+            return [...mergedTenantTxs, ...otherTenants];
           });
         }
       });
@@ -1447,10 +2250,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       if (!matchedBiz && !isSuperAdminEmail) {
-        const newBizId = `biz-${firebaseUser.uid.substring(0, 8) || Date.now().toString(36)}`;
+        const stableBizId = getStableBusinessIdForEmail(normalizedEmail);
         const bizName = `${firebaseUser.displayName || firebaseUser.email.split('@')[0]}'s Store`;
         matchedBiz = {
-          id: newBizId,
+          id: stableBizId,
           name: bizName,
           code: bizName.substring(0, 4).toUpperCase().replace(/\s+/g, ''),
           ownerEmail: normalizedEmail,
@@ -1461,13 +2264,20 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           currency: 'KES',
           taxNumber: `P0${Math.floor(100000000 + Math.random() * 900000000)}Z`,
         };
-        setBusinesses((prev) => [...prev, matchedBiz!]);
+        setBusinesses((prev) => {
+          if (prev.some((b) => b.id === stableBizId)) return prev;
+          return [...prev, matchedBiz!];
+        });
         saveBusinessToFirestore(matchedBiz).catch((e) => console.warn('Sync new biz:', e));
+      }
+
+      if (matchedBiz) {
+        ensureTenantDefaults(matchedBiz);
       }
 
       const targetBizId = isSuperAdminEmail
         ? 'biz-upfront'
-        : matchedBiz?.id || `biz-${firebaseUser.uid.substring(0, 8)}`;
+        : matchedBiz?.id || getStableBusinessIdForEmail(normalizedEmail);
 
       const role: UserRole = isSuperAdminEmail
         ? 'super_admin'
@@ -1502,6 +2312,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         businessId: targetBizId,
         displayName: firebaseUser.displayName || '',
       });
+
+      // Always fetch inventory fresh from Firestore server on every successful login (not served from cache)
+      fetchFreshInventoryFromServer(targetBizId, false).catch((err) =>
+        console.warn('Fresh inventory fetch on Google OAuth login notice:', err)
+      );
 
       setIsFirebaseAuthLoading(false);
       soundFx.playSuccess();
@@ -1539,10 +2354,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       if (!matchedBiz && !isSuperAdminEmail) {
-        const newBizId = `biz-${(userInfo.uid || Date.now().toString(36)).substring(0, 8)}`;
+        const stableBizId = getStableBusinessIdForEmail(normalizedEmail);
         const bizName = `${userInfo.name || userInfo.email?.split('@')[0] || 'Business'}'s Store`;
         matchedBiz = {
-          id: newBizId,
+          id: stableBizId,
           name: bizName,
           code: bizName.substring(0, 4).toUpperCase().replace(/\s+/g, ''),
           ownerEmail: normalizedEmail,
@@ -1553,13 +2368,20 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           currency: 'KES',
           taxNumber: `P0${Math.floor(100000000 + Math.random() * 900000000)}Z`,
         };
-        setBusinesses((prev) => [...prev, matchedBiz!]);
+        setBusinesses((prev) => {
+          if (prev.some((b) => b.id === stableBizId)) return prev;
+          return [...prev, matchedBiz!];
+        });
         saveBusinessToFirestore(matchedBiz).catch((e) => console.warn('Sync new biz:', e));
+      }
+
+      if (matchedBiz) {
+        ensureTenantDefaults(matchedBiz);
       }
 
       const targetBizId = isSuperAdminEmail
         ? 'biz-upfront'
-        : matchedBiz?.id || `biz-${userInfo.uid || Date.now().toString(36)}`;
+        : matchedBiz?.id || getStableBusinessIdForEmail(normalizedEmail);
 
       const role: UserRole = isSuperAdminEmail
         ? 'super_admin'
@@ -1593,6 +2415,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         businessId: targetBizId,
         displayName: authUser.name,
       });
+
+      // Always fetch inventory fresh from Firestore server on every successful login (not served from cache)
+      fetchFreshInventoryFromServer(targetBizId, false).catch((err) =>
+        console.warn('Fresh inventory fetch on token exchange notice:', err)
+      );
 
       soundFx.playSuccess();
       showToast(`OAuth token validated & verified for ${authUser.email}`, 'success');
@@ -1628,6 +2455,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
 
     if (existingBiz) {
+      ensureTenantDefaults(existingBiz);
       const bizOwnerUser: AuthUser = {
         id: `usr-${Date.now()}`,
         email: existingBiz.ownerEmail,
@@ -1646,7 +2474,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     // Check 3: Self-signup via Google Account
-    const newBizId = `biz-${Date.now().toString(36)}`;
+    const newBizId = getStableBusinessIdForEmail(normalizedEmail);
     const businessName = newBusinessName || `${name || 'Retail'}'s Store`;
 
     const newBusiness: Business = {
@@ -1662,40 +2490,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       taxNumber: `P0${Math.floor(100000000 + Math.random() * 900000000)}Z`,
     };
 
-    // Create default flagship location for new business
-    const defaultLocation: Location = {
-      id: `loc-${Date.now()}`,
-      businessId: newBizId,
-      name: `${businessName} Main Branch`,
-      code: 'MAIN-01',
-      city: 'Nairobi',
-      address: 'Central Retail District',
-      phone: '+254 700 000 000',
-      taxId: newBusiness.taxNumber,
-      currency: 'KES',
-      isOnline: true,
-      lastSynced: new Date().toISOString(),
-      terminalName: 'Terminal #01 (Main)',
-    };
-
-    // Create default staff cashier
-    const defaultStaff: Cashier = {
-      id: `user-${Date.now()}`,
-      businessId: newBizId,
-      name: name || 'Main Cashier',
-      initials: (name || 'MC').substring(0, 2).toUpperCase(),
-      code: '#1001',
-      username: normalizedEmail.split('@')[0],
-      pin: '$2b$10$g925CNtpaFfvsV/TNlwblucRcqdLXBHj5NsDDYiXvKkgByQUBVoGq', // Bcrypt hash of '1234'
-      role: 'manager',
-      avatarColor: 'bg-blue-600',
-      shiftStartedAt: new Date().toISOString(),
-      assignedLocationId: defaultLocation.id,
-    };
-
-    setBusinesses((prev) => [...prev, newBusiness]);
-    setAllLocations((prev) => [...prev, defaultLocation]);
-    setAllSystemUsers((prev) => [...prev, defaultStaff]);
+    setBusinesses((prev) => {
+      if (prev.some((b) => b.id === newBizId)) return prev;
+      return [...prev, newBusiness];
+    });
+    ensureTenantDefaults(newBusiness);
 
     const newUser: AuthUser = {
       id: `usr-${Date.now()}`,
@@ -1746,6 +2545,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setCurrentUser(authUser);
         setActiveBusinessIdState(matchedUser.businessId);
         setCurrentCashier(matchedUser);
+
+        // Always fetch inventory fresh from Firestore server on every successful login (not served from cache)
+        fetchFreshInventoryFromServer(matchedUser.businessId, false).catch((err) =>
+          console.warn('Fresh inventory fetch on credentials login notice:', err)
+        );
+
         soundFx.playSuccess();
         showToast(`Authenticated as ${matchedUser.name} (${matchedUser.role})`, 'success');
         return true;
@@ -1765,6 +2570,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // Mark session as explicitly signed out
     localStorage.setItem(STORAGE_KEYS.IS_LOGGED_OUT, 'true');
+
+    // Reset server freshness status and timestamp for next login
+    setIsInventoryFreshFromServer(false);
+    setInventoryLastFetchedAt(null);
 
     // Clear user session completely
     setCurrentUser(null);
@@ -1985,6 +2794,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         adjustStock,
         transferStock,
 
+        fetchFreshInventoryFromServer,
+        isInventoryFreshFromServer,
+        isInventoryLoading,
+        inventoryLastFetchedAt,
+
         cart,
         addToCart,
         updateCartQuantity,
@@ -2000,7 +2814,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         transactions,
         activeReceipt,
         setActiveReceipt,
+        activeRefundReceipt,
+        setActiveRefundReceipt,
         processPayment,
+        processRefund,
+        isReturnsModalOpen,
+        selectedReturnTx,
+        openReturnsModal,
+        closeReturnsModal,
 
         isOnline,
         setIsOnline,

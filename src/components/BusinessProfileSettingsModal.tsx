@@ -206,16 +206,27 @@ export const BusinessProfileSettingsModal: React.FC = () => {
     }
 
     if (editingUserId) {
+      const initials = userName
+        .trim()
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .substring(0, 2)
+        .toUpperCase();
+
       const updates: Partial<Cashier> = {
         name: userName.trim(),
+        initials,
         role: userRole,
+        username: (userUsername.trim() || userName.trim().toLowerCase().replace(/\s+/g, '.')),
         assignedLocationId: userAssignedLocId || undefined,
       };
       if (userPin.trim()) {
         updates.pin = userPin.trim();
       }
       await updateSystemUser(editingUserId, updates);
-      setEditingUserId(null);
+      cancelUserForm();
+      return;
     } else {
       if (!userPin.trim() || userPin.trim().length < 4) {
         showToast('PIN must be at least 4 digits', 'error');
@@ -305,36 +316,36 @@ export const BusinessProfileSettingsModal: React.FC = () => {
   return (
     <div
       id="business-profile-settings-modal-backdrop"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto"
       onClick={(e) => {
         if (e.target === e.currentTarget) setIsBusinessSettingsOpen(false);
       }}
     >
       <div
         id="business-profile-settings-container"
-        className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] my-auto"
+        className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[96vh] sm:max-h-[92vh] my-auto"
       >
         {/* Modal Top Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white border-b border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-blue-400">
-              <Building2 className="w-5 h-5" />
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 bg-slate-900 text-white border-b border-slate-800">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0">
+              <Building2 className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold tracking-tight text-white">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                <h2 className="text-base sm:text-lg font-bold tracking-tight text-white">
                   {currentBusiness?.name || 'Business Settings'}
                 </h2>
-                <span className="px-2 py-0.5 text-[11px] font-semibold bg-blue-500/20 text-blue-300 rounded border border-blue-400/30 uppercase tracking-wider">
+                <span className="px-1.5 py-0.5 text-[10px] sm:text-[11px] font-semibold bg-blue-500/20 text-blue-300 rounded border border-blue-400/30 uppercase tracking-wider">
                   {currentBusiness?.plan || 'Starter'} Plan
                 </span>
                 {isSuperAdmin && (
-                  <span className="px-2 py-0.5 text-[11px] font-bold bg-amber-500/20 text-amber-300 rounded border border-amber-400/30">
-                    Super-Admin Mode
+                  <span className="px-1.5 py-0.5 text-[10px] sm:text-[11px] font-bold bg-amber-500/20 text-amber-300 rounded border border-amber-400/30">
+                    Super-Admin
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-400">
+              <p className="text-[11px] sm:text-xs text-slate-400 hidden sm:block">
                 Tenant Architecture: Accounts, Roles, Credentials & Multi-Branch Management
               </p>
             </div>
@@ -342,7 +353,7 @@ export const BusinessProfileSettingsModal: React.FC = () => {
           <button
             id="close-business-settings-btn"
             onClick={() => setIsBusinessSettingsOpen(false)}
-            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+            className="p-1.5 sm:p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
             title="Close Settings"
           >
             <X className="w-5 h-5" />
@@ -350,32 +361,32 @@ export const BusinessProfileSettingsModal: React.FC = () => {
         </div>
 
         {/* Tab Selection Bar */}
-        <div className="flex border-b border-slate-200 bg-slate-50 px-6 gap-2 overflow-x-auto">
+        <div className="flex border-b border-slate-200 bg-slate-50 px-3 sm:px-6 gap-1 sm:gap-2 overflow-x-auto">
           <button
             id="tab-profile-btn"
             onClick={() => setActiveTab('profile')}
-            className={`flex items-center gap-2 py-3 px-4 font-semibold text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
+            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
               activeTab === 'profile'
                 ? 'border-blue-600 text-blue-600 bg-white'
                 : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
             }`}
           >
             <Building2 className="w-4 h-4" />
-            <span>Business Profile</span>
+            <span>Profile</span>
           </button>
 
           <button
             id="tab-branches-btn"
             onClick={() => setActiveTab('branches')}
-            className={`flex items-center gap-2 py-3 px-4 font-semibold text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
+            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
               activeTab === 'branches'
                 ? 'border-blue-600 text-blue-600 bg-white'
                 : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
             }`}
           >
             <Store className="w-4 h-4" />
-            <span>Branches & Terminals</span>
-            <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-700 font-bold">
+            <span>Branches</span>
+            <span className="ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-700 font-bold">
               {locations.length}
             </span>
           </button>
@@ -383,15 +394,15 @@ export const BusinessProfileSettingsModal: React.FC = () => {
           <button
             id="tab-accounts-btn"
             onClick={() => setActiveTab('accounts')}
-            className={`flex items-center gap-2 py-3 px-4 font-semibold text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
+            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
               activeTab === 'accounts'
                 ? 'border-blue-600 text-blue-600 bg-white'
                 : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
             }`}
           >
             <Users className="w-4 h-4" />
-            <span>Accounts & RBAC Dashboard</span>
-            <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-700 font-bold">
+            <span>Staff</span>
+            <span className="ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-700 font-bold">
               {systemUsers.length}
             </span>
           </button>
@@ -399,19 +410,19 @@ export const BusinessProfileSettingsModal: React.FC = () => {
           <button
             id="tab-credentials-btn"
             onClick={() => setActiveTab('credentials')}
-            className={`flex items-center gap-2 py-3 px-4 font-semibold text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
+            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
               activeTab === 'credentials'
                 ? 'border-blue-600 text-blue-600 bg-white'
                 : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
             }`}
           >
             <KeyRound className="w-4 h-4" />
-            <span>Credentials & Security</span>
+            <span>Security</span>
           </button>
         </div>
 
         {/* Modal Body (Scrollable) */}
-        <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
+        <div className="flex-1 overflow-y-auto p-3.5 sm:p-6 bg-slate-50/50">
           {/* ========================================================= */}
           {/* TAB 1: BUSINESS PROFILE */}
           {/* ========================================================= */}

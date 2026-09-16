@@ -1,8 +1,5 @@
 import React, { useState } from 'react';
 import {
-  ShoppingCart,
-  Package,
-  BarChart3,
   Cloud,
   CloudOff,
   RefreshCw,
@@ -11,7 +8,6 @@ import {
   ChevronDown,
   Building2,
   CheckCircle2,
-  Radio,
   Users,
   Shield,
   LogOut,
@@ -24,8 +20,8 @@ import {
 import { usePos } from '../context/PosContext';
 
 interface HeaderProps {
-  currentTab: 'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff';
-  setCurrentTab: (tab: 'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff') => void;
+  currentTab?: 'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff';
+  setCurrentTab?: (tab: 'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff') => void;
   openBarcodeScanner: () => void;
   openAuthModal: () => void;
   openSuperAdminModal: () => void;
@@ -33,8 +29,6 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  currentTab,
-  setCurrentTab,
   openBarcodeScanner,
   openAuthModal,
   openSuperAdminModal,
@@ -51,7 +45,6 @@ export const Header: React.FC<HeaderProps> = ({
     syncStatus,
     triggerCloudSync,
     pendingOfflineCount,
-    cart,
     currentUser,
     currentBusiness,
     isSuperAdmin,
@@ -62,43 +55,42 @@ export const Header: React.FC<HeaderProps> = ({
   const [isLocationMenuOpen, setIsLocationMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
-  const cartItemCount = cart.reduce((acc, item) => acc + item.quantity, 0);
-  const isOwnerOrAdmin = currentUser.role === 'business_owner' || isSuperAdmin;
-
   return (
-    <header className="bg-white border-b border-slate-200 h-16 px-4 md:px-6 flex items-center justify-between shrink-0 shadow-xs z-30 relative">
+    <header id="main-pos-header" className="bg-white border-b border-slate-200 h-14 sm:h-16 px-3 sm:px-4 md:px-6 flex items-center justify-between shrink-0 shadow-xs z-30 relative">
       {/* Brand & Business / Location Selector */}
-      <div className="flex items-center gap-4">
-        <div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-xl font-black text-blue-600 tracking-tight leading-none">
+      <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+        <div className="shrink-0">
+          <div className="flex items-center gap-1">
+            <span className="text-lg sm:text-xl font-black text-blue-600 tracking-tight leading-none">
               SokoPoS
             </span>
-            <span className="bg-amber-400 text-slate-900 text-[10px] font-black px-1.5 py-0.5 rounded">
+            <span className="bg-amber-400 text-slate-900 text-[9px] sm:text-[10px] font-black px-1.5 py-0.5 rounded">
               PRO
             </span>
           </div>
-          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate max-w-[140px]">
+          <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate max-w-[90px] sm:max-w-[140px]">
             {currentBusiness?.name || 'Sokoplus Horizon'}
           </span>
         </div>
 
         {/* Multi-Location Switcher Dropdown (scoped to current business) */}
-        <div className="relative">
+        <div className="relative min-w-0">
           <button
+            id="header-location-picker-btn"
             onClick={() => setIsLocationMenuOpen(!isLocationMenuOpen)}
-            className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200/80 px-3 py-1.5 rounded-lg border border-slate-200 transition text-xs font-semibold text-slate-800 cursor-pointer"
+            className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200/80 px-2 sm:px-3 py-1.5 rounded-lg border border-slate-200 transition text-xs font-semibold text-slate-800 cursor-pointer min-w-0"
+            title={`Active Branch: ${currentLocation.name}`}
           >
             <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-            <div className="text-left hidden sm:block">
-              <div className="leading-tight font-bold truncate max-w-[140px]">
+            <div className="text-left min-w-0">
+              <div className="leading-tight font-bold truncate max-w-[80px] xs:max-w-[110px] sm:max-w-[140px]">
                 {currentLocation.name}
               </div>
-              <div className="text-[10px] text-slate-500 font-normal">
+              <div className="text-[9px] sm:text-[10px] text-slate-500 font-normal truncate hidden sm:block">
                 {currentLocation.terminalName.split(' ')[0]}
               </div>
             </div>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-1" />
+            <ChevronDown className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-slate-400 ml-0.5 shrink-0" />
           </button>
 
           {isLocationMenuOpen && (
@@ -162,121 +154,35 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Main Tab Navigation */}
-      <nav className="hidden lg:flex items-center h-full space-x-1">
-        <button
-          onClick={() => setCurrentTab('register')}
-          className={`flex items-center gap-2 px-4 h-full text-xs font-bold transition border-b-2 cursor-pointer ${
-            currentTab === 'register'
-              ? 'text-blue-600 border-blue-600 bg-blue-50/40'
-              : 'text-slate-600 border-transparent hover:bg-slate-50'
-          }`}
-        >
-          <ShoppingCart className="w-4 h-4" />
-          <span>Register</span>
-          {cartItemCount > 0 && (
-            <span className="bg-blue-600 text-white text-[10px] px-1.5 py-0.2 rounded-full">
-              {cartItemCount}
-            </span>
-          )}
-        </button>
-
-        <button
-          onClick={() => setCurrentTab('inventory')}
-          className={`flex items-center gap-2 px-4 h-full text-xs font-bold transition border-b-2 cursor-pointer ${
-            currentTab === 'inventory'
-              ? 'text-blue-600 border-blue-600 bg-blue-50/40'
-              : 'text-slate-600 border-transparent hover:bg-slate-50'
-          }`}
-        >
-          <Package className="w-4 h-4" />
-          <span>Inventory</span>
-        </button>
-
-        <button
-          onClick={() => setCurrentTab('analytics')}
-          className={`flex items-center gap-2 px-4 h-full text-xs font-bold transition border-b-2 cursor-pointer ${
-            currentTab === 'analytics'
-              ? 'text-blue-600 border-blue-600 bg-blue-50/40'
-              : 'text-slate-600 border-transparent hover:bg-slate-50'
-          }`}
-        >
-          <BarChart3 className="w-4 h-4" />
-          <span>Analytics</span>
-        </button>
-
-        <button
-          onClick={() => setCurrentTab('cloud-sync')}
-          className={`flex items-center gap-2 px-4 h-full text-xs font-bold transition border-b-2 cursor-pointer ${
-            currentTab === 'cloud-sync'
-              ? 'text-blue-600 border-blue-600 bg-blue-50/40'
-              : 'text-slate-600 border-transparent hover:bg-slate-50'
-          }`}
-        >
-          <Radio className="w-4 h-4 text-emerald-600" />
-          <span>Cloud Sync</span>
-          {pendingOfflineCount > 0 && (
-            <span className="bg-amber-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">
-              {pendingOfflineCount}
-            </span>
-          )}
-        </button>
-
-        {/* Staff & System Users tab (visible to Owner & Super-Admin) */}
-        {isOwnerOrAdmin && (
-          <button
-            onClick={() => setCurrentTab('staff')}
-            className={`flex items-center gap-2 px-4 h-full text-xs font-bold transition border-b-2 cursor-pointer ${
-              currentTab === 'staff'
-                ? 'text-blue-600 border-blue-600 bg-blue-50/40'
-                : 'text-slate-600 border-transparent hover:bg-slate-50'
-            }`}
-          >
-            <Users className="w-4 h-4 text-purple-600" />
-            <span>Staff Users</span>
-          </button>
-        )}
-
-        {/* Business Profile Settings tab (visible to Owner & Super-Admin) */}
-        {isOwnerOrAdmin && (
-          <button
-            id="nav-business-settings-btn"
-            onClick={() => openBusinessSettings('profile')}
-            className="flex items-center gap-2 px-4 h-full text-xs font-bold transition border-b-2 text-slate-600 border-transparent hover:bg-slate-50 hover:text-blue-600 cursor-pointer"
-            title="Business Profile, Branches, Roles & Credentials"
-          >
-            <Building2 className="w-4 h-4 text-blue-600" />
-            <span>Business Settings</span>
-          </button>
-        )}
-      </nav>
-
       {/* Actions: Barcode Scanner + Sync + User Profile Dropdown */}
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
         {/* Quick Optical Scanner Trigger */}
         <button
+          id="header-barcode-scanner-btn"
           onClick={openBarcodeScanner}
-          className="flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-2 rounded-lg text-xs font-bold border border-blue-200 transition cursor-pointer"
+          className="flex items-center justify-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 p-2 sm:px-3 sm:py-2 rounded-lg text-xs font-bold border border-blue-200 transition cursor-pointer min-w-[36px] min-h-[36px]"
           title="Open Barcode Scanner (F2)"
         >
-          <Scan className="w-4 h-4 text-blue-600" />
-          <span className="hidden sm:inline">Scan Barcode</span>
+          <Scan className="w-4 h-4 text-blue-600 shrink-0" />
+          <span className="hidden sm:inline">Scan</span>
         </button>
 
         {/* Cloud Sync & Online/Offline Pill */}
-        <div className="flex items-center bg-slate-100 rounded-lg p-1 border border-slate-200">
+        <div className="flex items-center bg-slate-100 rounded-lg p-0.5 sm:p-1 border border-slate-200">
           <button
+            id="header-cloud-sync-btn"
             onClick={triggerCloudSync}
             disabled={!isOnline || syncStatus === 'syncing'}
-            className="p-1.5 text-slate-600 hover:text-blue-600 rounded transition disabled:opacity-40 cursor-pointer"
+            className="p-1.5 text-slate-600 hover:text-blue-600 rounded transition disabled:opacity-40 cursor-pointer min-w-[28px] min-h-[28px] flex items-center justify-center"
             title="Sync Data to Cloud Now"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${syncStatus === 'syncing' ? 'animate-spin text-blue-600' : ''}`} />
           </button>
 
           <button
+            id="header-toggle-offline-btn"
             onClick={() => setIsOnline(!isOnline)}
-            className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-bold transition cursor-pointer ${
+            className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 rounded text-[10px] sm:text-[11px] font-bold transition cursor-pointer ${
               isOnline
                 ? 'bg-emerald-100 text-emerald-800'
                 : 'bg-amber-100 text-amber-800'
@@ -291,19 +197,21 @@ export const Header: React.FC<HeaderProps> = ({
             ) : (
               <>
                 <CloudOff className="w-3.5 h-3.5 text-amber-600" />
-                <span>Offline ({pendingOfflineCount})</span>
+                <span>Offline{pendingOfflineCount > 0 ? ` (${pendingOfflineCount})` : ''}</span>
               </>
             )}
           </button>
         </div>
 
         {/* Authenticated User & Google OAuth Profile */}
-        <div className="relative pl-2 border-l border-slate-200">
+        <div className="relative pl-1 sm:pl-2 border-l border-slate-200">
           <button
+            id="header-user-menu-btn"
             onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-            className="flex items-center gap-2 text-right hover:opacity-90 transition group cursor-pointer"
+            className="flex items-center gap-1.5 sm:gap-2 text-right hover:opacity-90 transition group cursor-pointer p-0.5"
+            title="User Profile & Account Menu"
           >
-            <div className="hidden sm:block text-right">
+            <div className="hidden md:block text-right">
               <div className="text-xs font-bold text-slate-800 leading-tight flex items-center justify-end gap-1">
                 <span>{currentUser?.name || 'Authorized User'}</span>
                 {isSuperAdmin && (
@@ -317,9 +225,9 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             </div>
             <div
-              className={`w-8 h-8 ${
+              className={`w-7 h-7 sm:w-8 sm:h-8 ${
                 isSuperAdmin ? 'bg-amber-500 text-slate-950 font-black' : 'bg-blue-600 text-white font-bold'
-              } rounded-full flex items-center justify-center text-xs shadow-xs`}
+              } rounded-full flex items-center justify-center text-xs shadow-xs shrink-0`}
             >
               {currentUser?.initials || 'U'}
             </div>

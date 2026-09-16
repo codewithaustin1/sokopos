@@ -43,26 +43,26 @@ export const StockTransferModal: React.FC<StockTransferModalProps> = ({
   };
 
   return (
-    <div id="stock-transfer-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col">
+    <div id="stock-transfer-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4">
+      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[96vh] sm:max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white shrink-0">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 bg-slate-900 text-white shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
               <ArrowRightLeft className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h3 className="font-bold text-base">Inter-Branch Stock Transfer</h3>
-              <p className="text-xs text-slate-400">Rebalance inventory across cloud store nodes</p>
+              <h3 className="font-bold text-sm sm:text-base">Inter-Branch Stock Transfer</h3>
+              <p className="text-[11px] sm:text-xs text-slate-400">Rebalance inventory across cloud store nodes</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white p-1 rounded">
+          <button onClick={onClose} className="text-slate-400 hover:text-white p-1 rounded cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleTransfer} className="p-6 space-y-4">
+        <form onSubmit={handleTransfer} className="p-3.5 sm:p-6 space-y-3 sm:space-y-4 overflow-y-auto flex-1">
           {/* Select Product */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -82,7 +82,7 @@ export const StockTransferModal: React.FC<StockTransferModalProps> = ({
           </div>
 
           {/* Transfer Route */}
-          <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
             {/* Origin */}
             <div>
               <label className="block text-[11px] font-bold text-slate-500 mb-1">

@@ -15,6 +15,8 @@ import { StaffManagementView } from './components/StaffManagementView';
 import { BarcodeScannerModal } from './components/BarcodeScannerModal';
 import { PaymentModal } from './components/PaymentModal';
 import { ReceiptModal } from './components/ReceiptModal';
+import { RefundReceiptModal } from './components/RefundReceiptModal';
+import { ReturnsModal } from './components/ReturnsModal';
 import { PinLockModal } from './components/PinLockModal';
 import { SuperAdminDashboardModal } from './components/SuperAdminDashboardModal';
 import { DestructiveConfirmModal } from './components/DestructiveConfirmModal';
@@ -22,10 +24,12 @@ import { AuthModal } from './components/AuthModal';
 import { SignInView } from './components/SignInView';
 import { SignOutConfirmModal } from './components/SignOutConfirmModal';
 import { BusinessProfileSettingsModal } from './components/BusinessProfileSettingsModal';
+import { MobileBottomNav } from './components/MobileBottomNav';
+import { SidebarNav } from './components/SidebarNav';
 import { CheckCircle, AlertCircle, Info } from 'lucide-react';
 
 function PosAppContent() {
-  const { toastMessage, currentUser, isSuperAdmin } = usePos();
+  const { toastMessage, currentUser, isSuperAdmin, handleBarcodeScanned } = usePos();
 
   const [currentTab, setCurrentTab] = useState<'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff'>('register');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -35,22 +39,66 @@ function PosAppContent() {
   const [isSuperAdminModalOpen, setIsSuperAdminModalOpen] = useState(false);
   const [superAdminModalDefaultTab, setSuperAdminModalDefaultTab] = useState<'tenants' | 'audit' | 'provision'>('tenants');
 
-  // Global F2 shortcut for optical scanner
+  // Global hardware barcode scanner listener (USB / Bluetooth HID wedge) & F2 hotkey
   useEffect(() => {
+    let charBuffer = '';
+    let lastKeyTime = 0;
+    const SCANNER_BURST_MAX_GAP_MS = 65; // Barcode scanners type with < 50ms intervals
+
     const handleKeyDown = (e: KeyboardEvent) => {
+      const now = Date.now();
+      const target = e.target as HTMLElement | null;
+      const isInputActive =
+        target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+
+      // F2 hotkey toggles optical camera scanner modal
       if (e.key === 'F2') {
         e.preventDefault();
         setIsScannerOpen((prev) => !prev);
+        return;
+      }
+
+      // Enter key: finalize barcode scan
+      if (e.key === 'Enter') {
+        const timeElapsed = now - lastKeyTime;
+        const bufferLen = charBuffer.length;
+        // If rapid burst occurred (scanner) OR if user pressed enter without an active input field
+        const isScannerBurst = bufferLen >= 4 && timeElapsed < 350;
+
+        if (bufferLen >= 3 && (!isInputActive || isScannerBurst)) {
+          const codeToScan = charBuffer.trim();
+          charBuffer = '';
+          if (isScannerBurst) {
+            e.preventDefault();
+          }
+          handleBarcodeScanned(codeToScan);
+          return;
+        }
+        charBuffer = '';
+        return;
+      }
+
+      // Buffer printable characters
+      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (now - lastKeyTime > SCANNER_BURST_MAX_GAP_MS) {
+          // Slow human typing or gap: reset buffer
+          charBuffer = e.key;
+        } else {
+          // Fast keystroke stream from laser gun: append
+          charBuffer += e.key;
+        }
+        lastKeyTime = now;
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [handleBarcodeScanned]);
 
   // Dedicated full-screen authentication gate when signed out
   if (!currentUser) {
     return (
-      <div className="h-screen w-screen overflow-hidden font-sans">
+      <div className="h-screen w-screen overflow-y-auto dark-scrollbar font-sans bg-slate-950">
         {/* Toast Notification Alert */}
         {toastMessage && (
           <div className="fixed top-6 right-6 z-[120] animate-in slide-in-from-top-3 fade-in duration-200">
@@ -119,8 +167,6 @@ function PosAppContent() {
 
       {/* Main Top Header */}
       <Header
-        currentTab={currentTab}
-        setCurrentTab={setCurrentTab}
         openBarcodeScanner={() => setIsScannerOpen(true)}
         openAuthModal={() => setIsAuthModalOpen(true)}
         openSignOutModal={() => setIsSignOutModalOpen(true)}
@@ -130,19 +176,37 @@ function PosAppContent() {
         }}
       />
 
-      {/* Primary Tab Viewport */}
-      <main className="flex-1 flex overflow-hidden relative">
-        {currentTab === 'register' && (
-          <RegisterView
-            onProceedToPayment={() => setIsPaymentOpen(true)}
-            openBarcodeScanner={() => setIsScannerOpen(true)}
-          />
-        )}
-        {currentTab === 'inventory' && <InventoryView />}
-        {currentTab === 'analytics' && <AnalyticsView />}
-        {currentTab === 'cloud-sync' && <CloudSyncView />}
-        {currentTab === 'staff' && <StaffManagementView />}
-      </main>
+      {/* Main Workspace: Left Vertical Navigation Tabs + Primary Viewport */}
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Left Vertical Navigation */}
+        <SidebarNav
+          currentTab={currentTab}
+          setCurrentTab={setCurrentTab}
+          openBarcodeScanner={() => setIsScannerOpen(true)}
+        />
+
+        {/* Primary Tab Viewport */}
+        <main className="flex-1 flex overflow-hidden relative pb-14 lg:pb-0 min-w-0">
+          {currentTab === 'register' && (
+            <RegisterView
+              onProceedToPayment={() => setIsPaymentOpen(true)}
+              openBarcodeScanner={() => setIsScannerOpen(true)}
+            />
+          )}
+          {currentTab === 'inventory' && <InventoryView />}
+          {currentTab === 'analytics' && <AnalyticsView />}
+          {currentTab === 'cloud-sync' && <CloudSyncView />}
+          {currentTab === 'staff' && <StaffManagementView />}
+        </main>
+      </div>
+
+      {/* Mobile Bottom Navigation Bar (< lg screens) */}
+      <MobileBottomNav
+        currentTab={currentTab}
+        setCurrentTab={setCurrentTab}
+        openBarcodeScanner={() => setIsScannerOpen(true)}
+        onRequestSignOut={() => setIsSignOutModalOpen(true)}
+      />
 
       {/* Global Modals & Safeguards */}
       <BarcodeScannerModal
@@ -156,6 +220,8 @@ function PosAppContent() {
       />
 
       <ReceiptModal />
+      <RefundReceiptModal />
+      <ReturnsModal />
 
       <PinLockModal />
 

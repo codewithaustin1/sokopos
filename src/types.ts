@@ -54,6 +54,7 @@ export interface Location {
   isOnline: boolean;
   lastSynced: string;
   terminalName: string;
+  isPendingCloudSync?: boolean;
 }
 
 export interface Product {
@@ -70,6 +71,7 @@ export interface Product {
   stockByLocation: Record<string, number>; // locationId -> count
   reorderPoint: number;
   description?: string;
+  isPendingCloudSync?: boolean;
 }
 
 export interface CartItem {
@@ -81,6 +83,42 @@ export interface CartItem {
   quantity: number;
   discountPercent: number;
   taxRate: number;
+}
+
+export interface RefundItem {
+  productId: string;
+  productName: string;
+  sku: string;
+  barcode?: string;
+  quantity: number;
+  unitPrice: number;
+  taxRate: number;
+  refundUnitAmount: number;
+  refundTotalAmount: number;
+  restockToInventory: boolean;
+  restockLocationId: string;
+  reason: string;
+}
+
+export interface RefundRecord {
+  id: string;
+  refundNumber: string;
+  transactionId: string;
+  receiptNumber: string;
+  timestamp: string;
+  cashierId: string;
+  cashierName: string;
+  locationId: string;
+  locationName: string;
+  refundMethod: 'original' | 'cash' | 'mpesa' | 'card' | 'store_credit';
+  refundReason: string;
+  refundNote?: string;
+  items: RefundItem[];
+  subtotalRefund: number;
+  taxRefund: number;
+  totalRefund: number;
+  customerName?: string;
+  customerPhone?: string;
 }
 
 export interface Transaction {
@@ -108,7 +146,9 @@ export interface Transaction {
     cardNetwork?: string;
     notes?: string;
   };
-  status: 'completed' | 'refunded';
+  status: 'completed' | 'refunded' | 'partially_refunded';
+  refunds?: RefundRecord[];
+  totalRefunded?: number;
   syncedToCloud: boolean;
   syncTimestamp?: string;
 }
@@ -121,10 +161,11 @@ export interface Cashier {
   code: string;
   pin: string; // Stores cryptographic Bcrypt hash ($2b$10$...)
   username?: string;
-  role: 'cashier' | 'manager' | 'supervisor' | 'inventory_clerk';
+  role: 'business_owner' | 'manager' | 'cashier' | 'supervisor' | 'inventory_clerk';
   avatarColor: string;
   shiftStartedAt: string;
   assignedLocationId?: string;
+  isPendingCloudSync?: boolean;
 }
 
 export interface SyncLogEvent {
@@ -133,7 +174,7 @@ export interface SyncLogEvent {
   timestamp: string;
   locationId: string;
   locationName: string;
-  type: 'sale_sync' | 'stock_adjustment' | 'branch_transfer' | 'catalog_sync' | 'heartbeat';
+  type: 'sale_sync' | 'stock_adjustment' | 'branch_transfer' | 'catalog_sync' | 'heartbeat' | 'refund_sync';
   recordsAffected: number;
   status: 'success' | 'queued' | 'syncing';
   details: string;

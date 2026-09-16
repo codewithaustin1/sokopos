@@ -104,35 +104,35 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose }) =
   };
 
   return (
-    <div id="payment-checkout-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-      <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[92vh]">
+    <div id="payment-checkout-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4">
+      <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[96vh] sm:max-h-[92vh]">
         {/* Header */}
-        <div className="bg-white border-b border-slate-200 h-16 px-6 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
+        <div className="bg-white border-b border-slate-200 h-14 sm:h-16 px-4 sm:px-6 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3">
             <button
               onClick={onClose}
-              className="bg-slate-100 p-2 rounded-lg text-slate-600 hover:bg-slate-200 transition"
+              className="bg-slate-100 p-2 rounded-lg text-slate-600 hover:bg-slate-200 transition cursor-pointer"
               title="Return to Cart"
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
             <div>
-              <h2 className="text-base font-bold text-slate-800">Checkout & Payment</h2>
+              <h2 className="text-sm sm:text-base font-bold text-slate-800">Checkout & Payment</h2>
               <p className="text-[10px] text-slate-400">Terminal: {currentLocation.terminalName}</p>
             </div>
           </div>
           <div className="text-right">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+            <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
               Total Amount
             </span>
-            <span className="text-lg font-black text-blue-600">
+            <span className="text-base sm:text-lg font-black text-blue-600">
               {currentLocation.currency} {cartTotal.toFixed(2)}
             </span>
           </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 flex flex-col md:flex-row p-6 gap-6 overflow-y-auto">
+        <div className="flex-1 flex flex-col md:flex-row p-3.5 sm:p-6 gap-3.5 sm:gap-6 overflow-y-auto">
           {/* Payment Method Selector & Inputs (60%) */}
           <div className="flex-1 md:w-[60%] flex flex-col gap-4">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">

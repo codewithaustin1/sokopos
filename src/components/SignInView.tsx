@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Shield,
   Key,
   Building2,
   Lock,
   User,
-  Sparkles,
   CheckCircle2,
   AlertCircle,
   Store,
@@ -16,8 +14,6 @@ import {
   Loader2,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
-import { SUPER_ADMIN_EMAIL } from '../data/initialData';
-import { GoogleOAuthDialog } from './GoogleOAuthDialog';
 import { soundFx } from '../utils/audio';
 
 interface SignInViewProps {
@@ -30,14 +26,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     loginWithFirebaseGoogle,
     isFirebaseAuthLoading,
     loginWithCredentials,
-    businesses,
     systemUsers,
     locations,
     showToast,
   } = usePos();
 
   const [activeTab, setActiveTab] = useState<'google' | 'terminal' | 'register'>('google');
-  const [isGoogleDialogOpen, setIsGoogleDialogOpen] = useState(false);
   const [isFirebaseSigningIn, setIsFirebaseSigningIn] = useState(false);
 
   // Terminal PIN / Staff login state
@@ -171,9 +165,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const activeStaffMember = systemUsers.find((u) => u.id === selectedStaffId);
 
   return (
-    <div className="min-h-screen w-screen bg-slate-950 flex flex-col justify-between text-slate-100 font-sans selection:bg-blue-600 selection:text-white">
+    <div
+      id="pos-login-page"
+      className="min-h-full w-full bg-slate-950 flex flex-col justify-between text-slate-100 font-sans selection:bg-blue-600 selection:text-white"
+    >
       {/* Top Bar: Terminal Status */}
-      <header className="px-6 py-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/50 backdrop-blur-md">
+      <header className="px-6 py-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/50 backdrop-blur-md shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-black text-white shadow-md shadow-blue-500/20">
             S
@@ -185,7 +182,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 PRO RETAIL
               </span>
             </div>
-            <div className="text-[11px] text-slate-400">Cloud Multi-Tenant Point of Sale</div>
+            <div className="text-[11px] text-slate-400">Smart Retail & Business Management</div>
           </div>
         </div>
 
@@ -195,24 +192,24 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             <span className="text-[11px] font-semibold text-slate-300">Terminal Ready</span>
           </div>
           <div className="text-[11px] text-slate-400">
-            Encrypted Session • Offline-First Storage
+            Secure Connection • Works Offline
           </div>
         </div>
       </header>
 
-      {/* Main Authentication Container */}
-      <main className="flex-1 flex items-center justify-center p-4 sm:p-6 my-auto">
-        <div className="w-full max-w-xl bg-slate-900 border border-slate-800/90 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-xl">
+      {/* Main Authentication Container with Vertical Scroll Affordance */}
+      <main className="flex-1 flex items-center justify-center p-4 sm:p-6 my-auto py-8">
+        <div className="w-full max-w-xl bg-slate-900 border border-slate-800/90 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-xl shrink-0 my-4">
           {/* Header Description */}
           <div className="p-6 sm:p-8 pb-4 text-center border-b border-slate-800/60">
             <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-600/10 text-blue-400 border border-blue-500/20 mb-3 shadow-inner">
               <Lock className="w-7 h-7" />
             </div>
             <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-              Sign In to POS Terminal
+              Log In to POS Terminal
             </h1>
             <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-md mx-auto">
-              Select an authentication method to activate your register shift and access store operations.
+              Choose an authentication method to start your register shift and access store operations.
             </p>
 
             {/* Segmented Mode Selector */}
@@ -313,91 +310,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                   />
                 </svg>
-                <span>{isFirebaseSigningIn ? 'Opening Google Auth...' : 'Continue with Google Account'}</span>
+                <span>{isFirebaseSigningIn ? 'Opening Google Auth...' : 'Continue with Google'}</span>
               </button>
-
-              {/* Secondary: Choose from pre-configured accounts */}
-              <button
-                type="button"
-                onClick={() => setIsGoogleDialogOpen(true)}
-                className="w-full bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white font-semibold text-xs py-2.5 px-4 rounded-xl transition border border-slate-700 flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <Fingerprint className="w-3.5 h-3.5 text-blue-400" />
-                <span>Choose from Account Picker Dialog</span>
-              </button>
-
-              <div className="relative flex items-center justify-center my-3">
-                <div className="border-t border-slate-800 w-full" />
-                <span className="bg-slate-900 px-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">
-                  One-Click Verified Google Accounts
-                </span>
-              </div>
-
-              {/* Seeded Platform Super-Admin Card */}
-              <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 rounded-2xl p-4 transition hover:border-amber-500/60">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-amber-400" />
-                    <span className="text-xs font-black text-amber-300">
-                      Platform Super-Administrator
-                    </span>
-                  </div>
-                  <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs">
-                    ROOT OVERVIEW
-                  </span>
-                </div>
-                <p className="text-xs text-slate-300 mb-3 leading-relaxed">
-                  Default enterprise system administrator with uninhibited cross-tenant oversight across all registered stores.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    loginWithGoogle(SUPER_ADMIN_EMAIL, 'Platform Administrator');
-                    onLoginSuccess?.();
-                  }}
-                  className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-amber-500/20"
-                >
-                  <Sparkles className="w-4 h-4 text-slate-950" />
-                  <span>Sign In as {SUPER_ADMIN_EMAIL}</span>
-                </button>
-              </div>
-
-              {/* Registered Store Owners Cards */}
-              <div>
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
-                  Or Sign In as Tenant Business Owner:
-                </span>
-                <div className="space-y-2">
-                  {businesses.map((biz) => (
-                    <button
-                      key={biz.id}
-                      type="button"
-                      onClick={() => {
-                        loginWithGoogle(biz.ownerEmail, biz.ownerName);
-                        onLoginSuccess?.();
-                      }}
-                      className="w-full text-left p-3 rounded-xl bg-slate-950/60 border border-slate-800 hover:border-blue-500/60 hover:bg-slate-800/40 transition flex items-center justify-between text-xs cursor-pointer group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-blue-600/30 text-blue-400 border border-blue-500/30 flex items-center justify-center font-bold text-xs">
-                          {biz.ownerName.substring(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="font-bold text-white group-hover:text-blue-400 transition">
-                            {biz.name}
-                          </div>
-                          <div className="text-[11px] text-slate-400">
-                            {biz.ownerEmail} • Owner: {biz.ownerName}
-                          </div>
-                        </div>
-                      </div>
-                      <span className="text-xs font-bold text-blue-400 group-hover:translate-x-1 transition flex items-center gap-1">
-                        Sign In →
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
             </div>
           )}
 
@@ -409,7 +323,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                     <User className="w-3.5 h-3.5 text-blue-400" />
-                    Select Cashier / Staff Profile:
+                    Choose Cashier / Staff Profile:
                   </label>
                   <button
                     type="button"
@@ -474,7 +388,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               {/* PIN Display & Masked Dots */}
               <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-4 text-center">
                 <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                  Enter 4-Digit Terminal Security PIN
+                  ENTER 4-DIGIT PIN
                 </div>
 
                 {/* Animated PIN Dots */}
@@ -502,7 +416,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 )}
                 {!pinError && (
                   <div className="text-[10px] text-slate-400 mt-1">
-                    Staff authentication requires an assigned 4-digit PIN
+                    Staff authentication requires a registered 4-digit PIN
                   </div>
                 )}
               </div>
@@ -554,7 +468,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 ) : (
                   <Fingerprint className="w-4 h-4" />
                 )}
-                <span>{isSubmittingTerminal ? 'Verifying Bcrypt Hash...' : 'Clock In & Activate Shift'}</span>
+                <span>{isSubmittingTerminal ? 'Verifying...' : 'Clock In & Start Shift'}</span>
               </button>
             </div>
           )}
@@ -563,7 +477,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           {activeTab === 'register' && (
             <form onSubmit={handleRegisterStoreSubmit} className="p-6 sm:p-8 space-y-4">
               <div className="text-xs text-slate-300 mb-2">
-                Register an enterprise retail store in seconds. Your Google Account will be assigned full administrative ownership of the new business tenant.
+                Register a retail store in seconds. Your Google Account will be assigned full administrative ownership of the new business.
               </div>
 
               <div>
@@ -613,7 +527,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-3 px-4 rounded-xl transition shadow-lg flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Store className="w-4 h-4" />
-                  <span>Provision Store & Sign In with Google</span>
+                  <span>Set Up Store & Log In with Google</span>
                 </button>
               </div>
             </form>
@@ -622,36 +536,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       </main>
 
       {/* Footer System Disclaimer */}
-      <footer className="px-6 py-4 border-t border-slate-800/80 bg-slate-900/40 text-center text-xs text-slate-400">
-        <div className="flex flex-wrap items-center justify-center gap-4 text-[11px]">
+      <footer className="px-6 py-4 border-t border-slate-800/80 bg-slate-900/40 text-center text-xs text-slate-400 shrink-0">
+        <div className="flex items-center justify-center text-[11px]">
           <span>© 2026 SokoPoS Enterprise Platform</span>
-          <span>•</span>
-          <span>Multi-Tenant Retail POS</span>
-          <span>•</span>
-          <span>Offline SQLite/LocalStorage Buffer</span>
-          <span>•</span>
-          <button
-            type="button"
-            onClick={() => {
-              loginWithGoogle(SUPER_ADMIN_EMAIL, 'Platform Administrator');
-              onLoginSuccess?.();
-            }}
-            className="text-amber-400 hover:underline font-semibold cursor-pointer"
-          >
-            Instant Admin Bypass ({SUPER_ADMIN_EMAIL})
-          </button>
         </div>
       </footer>
-
-      {/* Google OAuth Modal */}
-      <GoogleOAuthDialog
-        isOpen={isGoogleDialogOpen}
-        onClose={() => setIsGoogleDialogOpen(false)}
-        onSuccess={() => {
-          setIsGoogleDialogOpen(false);
-          onLoginSuccess?.();
-        }}
-      />
     </div>
   );
 };
