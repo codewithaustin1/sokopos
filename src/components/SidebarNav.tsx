@@ -13,6 +13,9 @@ import {
   Store,
   Sparkles,
   RotateCcw,
+  Moon,
+  Sun,
+  Palette,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 
@@ -36,6 +39,8 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
     isSuperAdmin,
     openBusinessSettings,
     openReturnsModal,
+    isDarkMode,
+    toggleDarkMode,
   } = usePos();
 
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -229,6 +234,33 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
               <kbd className="bg-slate-100 border border-slate-200 text-slate-500 font-mono text-[9px] px-1 py-0.5 rounded">
                 F2
               </kbd>
+            </div>
+          )}
+        </button>
+
+        {/* Quick Dark Mode Theme Toggle in Sidebar */}
+        <button
+          type="button"
+          id="sidebar-theme-toggle-btn"
+          onClick={toggleDarkMode}
+          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold transition border cursor-pointer ${
+            isDarkMode
+              ? 'bg-blue-950/70 text-blue-300 border-blue-500/40 hover:bg-blue-900/80 shadow-2xs'
+              : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+          } ${isCollapsed ? 'justify-center px-2' : ''}`}
+          title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dim Retail Dark Mode'}
+        >
+          {isDarkMode ? (
+            <Sun className="w-4 h-4 text-amber-400 shrink-0" />
+          ) : (
+            <Moon className="w-4 h-4 text-slate-600 shrink-0" />
+          )}
+          {!isCollapsed && (
+            <div className="flex-1 flex items-center justify-between text-left">
+              <span>{isDarkMode ? 'Dark Mode' : 'Light Mode'}</span>
+              <span className="text-[10px] font-bold opacity-70">
+                {isDarkMode ? 'Dim Retail' : 'Daytime'}
+              </span>
             </div>
           )}
         </button>

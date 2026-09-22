@@ -45,12 +45,26 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isBusinessMember(resource.data.businessId);
     }
 
+    // Categories collection (Tenant Row-Level Security)
+    match /categories/{categoryId} {
+      allow read: if isSignedIn() && isBusinessMember(resource.data.businessId);
+      allow create: if isSignedIn() && isBusinessMember(request.resource.data.businessId);
+      allow update: if isSignedIn() && isBusinessMember(resource.data.businessId);
+      allow delete: if isSignedIn() && isBusinessMember(resource.data.businessId);
+    }
+
     // Transactions collection (Tenant Row-Level Security)
     match /transactions/{transactionId} {
       allow read: if isSignedIn() && isBusinessMember(resource.data.businessId);
       allow create: if isSignedIn() && isBusinessMember(request.resource.data.businessId);
       allow update: if isSignedIn() && isBusinessMember(resource.data.businessId);
-      allow delete: if isSuperAdmin();
+      allow delete: if isSuperAdmin() || isBusinessOwner(resource.data.businessId);
+    }
+
+    // Purged Sales Backups collection (Archive snapshots before reset)
+    match /purged_sales_backups/{backupId} {
+      allow read, create: if isSignedIn() && (isSuperAdmin() || isBusinessOwner(resource.data.businessId != null ? resource.data.businessId : request.resource.data.businessId));
+      allow update, delete: if isSuperAdmin();
     }
 
     // Locations collection (Tenant Row-Level Security)
@@ -97,6 +111,12 @@ service cloud.firestore {
         isSuperAdmin()
       );
       allow delete: if isSuperAdmin();
+    }
+
+    // Platform Settings & Login Branding (Public read for terminal login screen)
+    match /platform_settings/{settingId} {
+      allow read: if true;
+      allow write: if isSignedIn();
     }
   }
 }

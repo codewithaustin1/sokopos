@@ -17,11 +17,14 @@ import { db, auth } from './firebase';
 import {
   Business,
   Product,
+  Category,
   Location,
   Cashier,
   Transaction,
   SyncLogEvent,
   StockTransfer,
+  StoreSalesBackup,
+  PlatformSettings,
 } from '../types';
 
 export enum OperationType {
@@ -221,6 +224,70 @@ export async function deleteProductFromFirestore(productId: string): Promise<voi
 }
 
 // -------------------------------------------------------------
+// Tenant Categories Firestore API (Unique per Shop)
+// -------------------------------------------------------------
+export async function getTenantCategoriesFromFirestore(businessId: string): Promise<Category[]> {
+  const path = 'categories';
+  try {
+    const q = query(collection(db, path), where('businessId', '==', businessId));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as Category);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export function subscribeToTenantCategories(
+  businessId: string,
+  onData: (categories: Category[]) => void
+): Unsubscribe {
+  if (!auth.currentUser) {
+    return () => {};
+  }
+  const path = 'categories';
+  const q = query(collection(db, path), where('businessId', '==', businessId));
+  return onSnapshot(
+    q,
+    (snap) => {
+      onData(snap.docs.map((d) => d.data() as Category));
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.GET, path);
+    }
+  );
+}
+
+export async function saveCategoryToFirestore(category: Category): Promise<void> {
+  const path = `categories/${category.id}`;
+  try {
+    await setDoc(doc(db, 'categories', category.id), category);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function updateCategoryInFirestore(
+  categoryId: string,
+  updates: Partial<Category>
+): Promise<void> {
+  const path = `categories/${categoryId}`;
+  try {
+    await updateDoc(doc(db, 'categories', categoryId), updates);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function deleteCategoryFromFirestore(categoryId: string): Promise<void> {
+  const path = `categories/${categoryId}`;
+  try {
+    await deleteDoc(doc(db, 'categories', categoryId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+// -------------------------------------------------------------
 // Tenant Locations Firestore API
 // -------------------------------------------------------------
 export async function getTenantLocationsFromFirestore(businessId: string): Promise<Location[]> {
@@ -403,6 +470,34 @@ export async function updateTransactionInFirestore(
   }
 }
 
+export async function savePurgedSalesBackupToFirestore(backup: StoreSalesBackup): Promise<void> {
+  const path = `purged_sales_backups/${backup.id}`;
+  try {
+    await setDoc(doc(db, 'purged_sales_backups', backup.id), backup);
+  } catch (error) {
+    console.warn('Failed to save purged sales backup to Firestore:', error);
+  }
+}
+
+export async function purgeTenantTransactionsFromFirestore(businessId: string): Promise<number> {
+  const path = 'transactions';
+  try {
+    const q = query(collection(db, path), where('businessId', '==', businessId));
+    const snap = await getDocs(q);
+    if (snap.empty) return 0;
+    
+    const batch = writeBatch(db);
+    snap.docs.forEach((d) => {
+      batch.delete(d.ref);
+    });
+    await batch.commit();
+    return snap.docs.length;
+  } catch (error) {
+    console.warn('Failed to purge tenant transactions from Firestore:', error);
+    return 0;
+  }
+}
+
 // -------------------------------------------------------------
 // Tenant Stock Transfers & Sync Logs Firestore API
 // -------------------------------------------------------------
@@ -430,11 +525,12 @@ export async function saveSyncLogToFirestore(log: SyncLogEvent): Promise<void> {
 export async function seedInitialTenantDataToFirestore(params: {
   businesses: Business[];
   products: Product[];
+  categories?: Category[];
   locations: Location[];
   cashiers: Cashier[];
   transactions: Transaction[];
 }): Promise<{ seeded: boolean; counts: Record<string, number> }> {
-  const counts = { businesses: 0, products: 0, locations: 0, cashiers: 0, transactions: 0 };
+  const counts = { businesses: 0, products: 0, categories: 0, locations: 0, cashiers: 0, transactions: 0 };
   try {
     // Check if businesses already exist in Firestore
     const bizSnap = await getDocs(collection(db, 'businesses'));
@@ -450,6 +546,13 @@ export async function seedInitialTenantDataToFirestore(params: {
         batch.set(doc(db, 'products', p.id), p);
         counts.products++;
       });
+
+      if (params.categories) {
+        params.categories.forEach((cat) => {
+          batch.set(doc(db, 'categories', cat.id), cat);
+          counts.categories++;
+        });
+      }
 
       params.locations.forEach((l) => {
         batch.set(doc(db, 'locations', l.id), l);
@@ -473,5 +576,29 @@ export async function seedInitialTenantDataToFirestore(params: {
   } catch (error) {
     console.warn('Tenant data initial seed check/write in Firestore:', error);
     return { seeded: false, counts };
+  }
+}
+
+// -------------------------------------------------------------
+// Platform Global Settings & Branding (Super Admin)
+// -------------------------------------------------------------
+export async function getPlatformSettingsFromFirestore(): Promise<PlatformSettings | null> {
+  try {
+    const snap = await getDoc(doc(db, 'platform_settings', 'global'));
+    if (snap.exists()) {
+      return snap.data() as PlatformSettings;
+    }
+    return null;
+  } catch (error) {
+    console.warn('Failed to load platform settings from Firestore:', error);
+    return null;
+  }
+}
+
+export async function savePlatformSettingsToFirestore(settings: PlatformSettings): Promise<void> {
+  try {
+    await setDoc(doc(db, 'platform_settings', 'global'), settings, { merge: true });
+  } catch (error) {
+    console.warn('Failed to save platform settings to Firestore:', error);
   }
 }

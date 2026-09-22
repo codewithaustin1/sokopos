@@ -32,7 +32,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       setName(productToEdit.name);
       setSku(productToEdit.sku);
       setBarcode(productToEdit.barcode);
-      setCategory(productToEdit.category);
+      setCategory(productToEdit.category || 'All');
       setBuyingPrice(productToEdit.buyingPrice.toString());
       setSellingPrice(productToEdit.sellingPrice.toString());
       setUnit(productToEdit.unit);
@@ -45,7 +45,8 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       const randNum = Math.floor(1000 + Math.random() * 9000);
       setSku(`SKU-${randNum}`);
       setBarcode(`616${Math.floor(100000000 + Math.random() * 900000000)}`);
-      setCategory(categories[1] || 'Flour & Grains');
+      const defaultCat = categories.find((c) => c !== 'All') || categories[0] || 'All';
+      setCategory(defaultCat);
       setBuyingPrice('120');
       setSellingPrice('150');
       setUnit('packet');
@@ -73,13 +74,14 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     const bPrice = parseFloat(buyingPrice) || 0;
     const sPrice = parseFloat(sellingPrice) || 0;
     const reorder = parseInt(reorderPoint, 10) || 10;
+    const finalCat = category?.trim() || 'All';
 
     if (productToEdit) {
       updateProduct(productToEdit.id, {
         name,
         sku,
         barcode,
-        category,
+        category: finalCat,
         buyingPrice: bPrice,
         sellingPrice: sPrice,
         unit,
@@ -92,7 +94,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         name,
         sku,
         barcode,
-        category,
+        category: finalCat,
         buyingPrice: bPrice,
         sellingPrice: sPrice,
         unit,

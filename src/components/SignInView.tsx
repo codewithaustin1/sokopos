@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { soundFx } from '../utils/audio';
+import { SignUpSkeleton } from './SignUpSkeleton';
 
 interface SignInViewProps {
   onLoginSuccess?: () => void;
@@ -29,10 +30,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     systemUsers,
     locations,
     showToast,
+    loginBgGraphic,
   } = usePos();
 
   const [activeTab, setActiveTab] = useState<'google' | 'terminal' | 'register'>('google');
   const [isFirebaseSigningIn, setIsFirebaseSigningIn] = useState(false);
+  const [isRegisteringStore, setIsRegisteringStore] = useState(false);
+  const [isSimulatingSkeleton, setIsSimulatingSkeleton] = useState(false);
 
   // Terminal PIN / Staff login state
   const [selectedStaffId, setSelectedStaffId] = useState<string>(() => systemUsers[0]?.id || '');
@@ -146,31 +150,103 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  const handleRegisterStoreSubmit = (e: React.FormEvent) => {
+  const handleRegisterStoreSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStoreName.trim() || !newOwnerEmail.trim()) {
       showToast('Store name and Google owner email are required', 'error');
       return;
     }
-    const success = loginWithGoogle(
-      newOwnerEmail.trim(),
-      newOwnerName.trim() || 'Store Owner',
-      newStoreName.trim()
-    );
-    if (success) {
-      onLoginSuccess?.();
+    setIsRegisteringStore(true);
+    try {
+      // Allow structural skeleton shimmer to render with deliberate continuity
+      await new Promise((resolve) => setTimeout(resolve, 450));
+      const success = loginWithGoogle(
+        newOwnerEmail.trim(),
+        newOwnerName.trim() || 'Store Owner',
+        newStoreName.trim()
+      );
+      if (success) {
+        onLoginSuccess?.();
+      }
+    } finally {
+      setIsRegisteringStore(false);
     }
   };
 
   const activeStaffMember = systemUsers.find((u) => u.id === selectedStaffId);
 
+  // Structural Skeleton Shimmer Gate while checking initial Firebase session
+  if (isFirebaseAuthLoading) {
+    return (
+      <div
+        id="pos-login-page"
+        className="min-h-full w-full bg-slate-950 flex flex-col justify-between text-slate-100 font-sans selection:bg-blue-600 selection:text-white"
+      >
+        <header className="px-6 py-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/50 backdrop-blur-md shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-black text-white shadow-md shadow-blue-500/20">
+              S
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-black text-sm tracking-tight text-white">SokoPoS</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                  PRO RETAIL
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-400">Smart Retail & Business Management</div>
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-1 flex items-center justify-center p-4 sm:p-6 my-auto py-8">
+          <SignUpSkeleton
+            theme="dark"
+            mode="signup"
+            message="Connecting POS terminal & checking secure session..."
+          />
+        </main>
+
+        <footer className="px-6 py-4 border-t border-slate-800/80 bg-slate-900/40 text-center text-xs text-slate-400 shrink-0">
+          <div className="flex items-center justify-center text-[11px]">
+            <span>© 2026 SokoPoS Enterprise Platform</span>
+          </div>
+        </footer>
+      </div>
+    );
+  }
+
   return (
     <div
       id="pos-login-page"
-      className="min-h-full w-full bg-slate-950 flex flex-col justify-between text-slate-100 font-sans selection:bg-blue-600 selection:text-white"
+      className={`min-h-full w-full flex flex-col justify-between text-slate-100 font-sans selection:bg-blue-600 selection:text-white relative overflow-x-hidden ${
+        loginBgGraphic ? 'bg-slate-950/40 backdrop-blur-[2px]' : 'bg-slate-950'
+      }`}
+      style={
+        loginBgGraphic
+          ? {
+              backgroundImage: `url(${loginBgGraphic})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat',
+              backgroundAttachment: 'fixed',
+            }
+          : undefined
+      }
     >
+      {/* Full-bleed background darkening overlay when custom graphic is active for WCAG AA contrast */}
+      {loginBgGraphic && (
+        <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-[1px] pointer-events-none z-0" />
+      )}
+
       {/* Top Bar: Terminal Status */}
-      <header className="px-6 py-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/50 backdrop-blur-md shrink-0">
+      <header
+        className={`px-6 py-4 border-b flex items-center justify-between shrink-0 relative z-10 ${
+          loginBgGraphic
+            ? 'border-white/10 bg-slate-950/60 backdrop-blur-md'
+            : 'border-slate-800/80 bg-slate-900/50 backdrop-blur-md'
+        }`}
+      >
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-black text-white shadow-md shadow-blue-500/20">
             S
@@ -198,8 +274,14 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       </header>
 
       {/* Main Authentication Container with Vertical Scroll Affordance */}
-      <main className="flex-1 flex items-center justify-center p-4 sm:p-6 my-auto py-8">
-        <div className="w-full max-w-xl bg-slate-900 border border-slate-800/90 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-xl shrink-0 my-4">
+      <main className="flex-1 flex items-center justify-center p-4 sm:p-6 my-auto py-8 relative z-10">
+        <div
+          className={`w-full max-w-xl border rounded-3xl shadow-2xl overflow-hidden shrink-0 my-4 transition-all ${
+            loginBgGraphic
+              ? 'bg-slate-900/90 border-slate-700/60 backdrop-blur-xl ring-1 ring-white/10 shadow-2xl'
+              : 'bg-slate-900 border-slate-800/90 backdrop-blur-xl'
+          }`}
+        >
           {/* Header Description */}
           <div className="p-6 sm:p-8 pb-4 text-center border-b border-slate-800/60">
             <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-600/10 text-blue-400 border border-blue-500/20 mb-3 shadow-inner">
@@ -475,68 +557,116 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
           {/* TAB 3: REGISTER NEW STORE */}
           {activeTab === 'register' && (
-            <form onSubmit={handleRegisterStoreSubmit} className="p-6 sm:p-8 space-y-4">
-              <div className="text-xs text-slate-300 mb-2">
-                Register a retail store in seconds. Your Google Account will be assigned full administrative ownership of the new business.
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">
-                  Store / Business Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newStoreName}
-                  onChange={(e) => setNewStoreName(e.target.value)}
-                  placeholder="e.g. Mombasa Coastal Grocers"
-                  className="w-full px-3.5 py-2.5 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500 font-medium"
+            isRegisteringStore || isSimulatingSkeleton ? (
+              <div className="relative">
+                <div className="px-6 sm:px-8 pt-4 flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-blue-400 uppercase tracking-wider">
+                    {isSimulatingSkeleton ? 'Skeleton Animation Preview' : 'Store Provisioning'}
+                  </span>
+                  {isSimulatingSkeleton && (
+                    <button
+                      type="button"
+                      onClick={() => setIsSimulatingSkeleton(false)}
+                      className="text-xs text-slate-400 hover:text-white underline cursor-pointer"
+                    >
+                      Exit Preview
+                    </button>
+                  )}
+                </div>
+                <SignUpSkeleton
+                  variant="form-only"
+                  theme="dark"
+                  mode="signup"
+                  message={
+                    isSimulatingSkeleton
+                      ? 'Low-contrast diagonal shimmer sweep over layout placeholders'
+                      : 'Setting up store tenant & configuring Google owner credentials...'
+                  }
                 />
               </div>
+            ) : (
+              <form onSubmit={handleRegisterStoreSubmit} className="p-6 sm:p-8 space-y-4">
+                <div className="flex items-center justify-between text-xs text-slate-300 mb-2">
+                  <span>
+                    Register a retail store in seconds. Your Google Account will be assigned full administrative ownership.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSimulatingSkeleton(true);
+                      setTimeout(() => setIsSimulatingSkeleton(false), 3500);
+                    }}
+                    className="shrink-0 text-[11px] font-semibold text-blue-400 hover:text-blue-300 ml-2 px-2 py-1 rounded bg-blue-950/60 border border-blue-900/80 cursor-pointer"
+                    title="Observe structural skeleton shimmer animation"
+                  >
+                    Preview Shimmer
+                  </button>
+                </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">
-                  Business Owner Google Email *
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={newOwnerEmail}
-                  onChange={(e) => setNewOwnerEmail(e.target.value)}
-                  placeholder="e.g. owner@coastal-grocers.com"
-                  className="w-full px-3.5 py-2.5 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500 font-medium"
-                />
-              </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">
+                    Store / Business Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newStoreName}
+                    onChange={(e) => setNewStoreName(e.target.value)}
+                    placeholder="e.g. Mombasa Coastal Grocers"
+                    className="w-full px-3.5 py-2.5 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500 font-medium"
+                  />
+                </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">
-                  Owner Full Name (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={newOwnerName}
-                  onChange={(e) => setNewOwnerName(e.target.value)}
-                  placeholder="e.g. Fatuma Ali"
-                  className="w-full px-3.5 py-2.5 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500 font-medium"
-                />
-              </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">
+                    Business Owner Google Email *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={newOwnerEmail}
+                    onChange={(e) => setNewOwnerEmail(e.target.value)}
+                    placeholder="e.g. owner@coastal-grocers.com"
+                    className="w-full px-3.5 py-2.5 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500 font-medium"
+                  />
+                </div>
 
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-3 px-4 rounded-xl transition shadow-lg flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Store className="w-4 h-4" />
-                  <span>Set Up Store & Log In with Google</span>
-                </button>
-              </div>
-            </form>
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">
+                    Owner Full Name (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={newOwnerName}
+                    onChange={(e) => setNewOwnerName(e.target.value)}
+                    placeholder="e.g. Fatuma Ali"
+                    className="w-full px-3.5 py-2.5 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500 font-medium"
+                  />
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-3 px-4 rounded-xl transition shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Store className="w-4 h-4" />
+                    <span>Set Up Store & Log In with Google</span>
+                  </button>
+                </div>
+              </form>
+            )
           )}
         </div>
       </main>
 
       {/* Footer System Disclaimer */}
-      <footer className="px-6 py-4 border-t border-slate-800/80 bg-slate-900/40 text-center text-xs text-slate-400 shrink-0">
+      <footer
+        className={`px-6 py-4 border-t text-center text-xs text-slate-400 shrink-0 relative z-10 ${
+          loginBgGraphic
+            ? 'border-white/10 bg-slate-950/60 backdrop-blur-md'
+            : 'border-slate-800/80 bg-slate-900/40'
+        }`}
+      >
         <div className="flex items-center justify-center text-[11px]">
           <span>© 2026 SokoPoS Enterprise Platform</span>
         </div>

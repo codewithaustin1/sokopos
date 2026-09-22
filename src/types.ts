@@ -7,6 +7,24 @@ export type UserRole =
   | 'cashier'
   | 'inventory_clerk';
 
+export interface BusinessHardwareSettings {
+  autoPrintReceipt?: boolean;
+  receiptFormat?: '80mm' | '58mm' | 'standard';
+  printerHeaderNote?: string;
+  printerFooterNote?: string;
+  updatedAt?: string;
+}
+
+export interface PlatformSettings {
+  id?: string;
+  loginBgGraphic?: string | null;
+  loginBgGraphicName?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export type RetailTheme = 'classic' | 'emerald' | 'amber' | 'burgundy' | 'industrial';
+
 export interface Business {
   id: string;
   name: string;
@@ -18,6 +36,8 @@ export interface Business {
   status: 'active' | 'suspended';
   currency: string;
   taxNumber: string;
+  hardwareSettings?: BusinessHardwareSettings;
+  retailTheme?: RetailTheme;
 }
 
 export interface AuthUser {
@@ -55,6 +75,20 @@ export interface Location {
   lastSynced: string;
   terminalName: string;
   isPendingCloudSync?: boolean;
+  mpesaType?: 'buy_goods' | 'paybill';
+  mpesaTill?: string;
+  mpesaPaybill?: string;
+  mpesaAccount?: string;
+}
+
+export interface Category {
+  id: string;
+  businessId: string;
+  name: string;
+  description?: string;
+  color?: string;
+  createdAt: string;
+  isPendingCloudSync?: boolean;
 }
 
 export interface Product {
@@ -82,6 +116,10 @@ export interface CartItem {
   unitPrice: number;
   quantity: number;
   discountPercent: number;
+  discountAmount?: number; // Flat discount amount in currency
+  discountType?: 'percentage' | 'flat';
+  discountReason?: string;
+  discountAuthorizedBy?: string;
   taxRate: number;
 }
 
@@ -166,6 +204,9 @@ export interface Cashier {
   shiftStartedAt: string;
   assignedLocationId?: string;
   isPendingCloudSync?: boolean;
+  canApplyDiscount?: boolean; // Permission to apply discounts without manager override
+  maxDiscountPercent?: number; // Optional limit (e.g. max 15%)
+  maxDiscountAmount?: number; // Optional flat limit (e.g. max KES 100)
 }
 
 export interface SyncLogEvent {
@@ -216,4 +257,25 @@ export interface DestructiveActionRequest {
   recordId: string;
   businessId: string;
   onConfirm: () => void;
+}
+
+export interface StoreSalesBackup {
+  id: string;
+  businessId: string;
+  businessName: string;
+  createdAt: string;
+  purgedByEmail: string;
+  purgedByName: string;
+  purgedByRole: string;
+  transactionCount: number;
+  grossSales: number;
+  totalRefunded: number;
+  netSales: number;
+  currency: string;
+  transactions: Transaction[];
+  metadata?: {
+    systemVersion?: string;
+    reason?: string;
+    timestamp?: number;
+  };
 }

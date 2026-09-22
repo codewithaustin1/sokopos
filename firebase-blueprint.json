@@ -28,7 +28,8 @@
         "status": { "type": "string" },
         "currency": { "type": "string" },
         "taxNumber": { "type": "string" },
-        "createdAt": { "type": "string" }
+        "createdAt": { "type": "string" },
+        "retailTheme": { "type": "string", "enum": ["classic", "emerald", "amber", "burgundy", "industrial"] }
       },
       "required": ["id", "name", "ownerEmail", "currency"]
     },
@@ -51,6 +52,20 @@
         "description": { "type": "string" }
       },
       "required": ["id", "businessId", "name", "sku", "sellingPrice"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Tenant product category scoped by businessId",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "businessId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "color": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "businessId", "name"]
     },
     "Transaction": {
       "title": "Transaction",
@@ -150,6 +165,39 @@
         "details": { "type": "string" }
       },
       "required": ["id", "businessId", "timestamp", "type", "status", "details"]
+    },
+    "PurgedSalesBackup": {
+      "title": "PurgedSalesBackup",
+      "description": "Pre-purge archive snapshot of test sales before zero-reset",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "businessId": { "type": "string" },
+        "businessName": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "purgedByEmail": { "type": "string" },
+        "purgedByName": { "type": "string" },
+        "purgedByRole": { "type": "string" },
+        "transactionCount": { "type": "number" },
+        "grossSales": { "type": "number" },
+        "totalRefunded": { "type": "number" },
+        "netSales": { "type": "number" },
+        "currency": { "type": "string" }
+      },
+      "required": ["id", "businessId", "createdAt", "purgedByEmail", "transactionCount", "grossSales"]
+    },
+    "PlatformSettings": {
+      "title": "PlatformSettings",
+      "description": "Global platform configurations including login page background graphics",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "loginBgGraphic": { "type": "string" },
+        "loginBgGraphicName": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["updatedAt"]
     }
   },
   "firestore": {
@@ -164,6 +212,10 @@
     "/products/{productId}": {
       "schema": "Product",
       "description": "Tenant catalog products scoped by businessId"
+    },
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Tenant product categories scoped by businessId"
     },
     "/transactions/{transactionId}": {
       "schema": "Transaction",
@@ -184,6 +236,14 @@
     "/sync_logs/{syncLogId}": {
       "schema": "SyncLog",
       "description": "Tenant synchronization and audit logs scoped by businessId"
+    },
+    "/purged_sales_backups/{backupId}": {
+      "schema": "PurgedSalesBackup",
+      "description": "Tenant test sales archive snapshots preserved prior to clean zero store resets"
+    },
+    "/platform_settings/{settingId}": {
+      "schema": "PlatformSettings",
+      "description": "Platform global configuration and custom login screen graphics"
     }
   }
 }

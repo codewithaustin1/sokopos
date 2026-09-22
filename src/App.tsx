@@ -27,78 +27,250 @@ import { BusinessProfileSettingsModal } from './components/BusinessProfileSettin
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { SidebarNav } from './components/SidebarNav';
 import { CheckCircle, AlertCircle, Info } from 'lucide-react';
+import { PaymentMethod } from './types';
+import { useBackgroundScanner } from './hooks/useBackgroundScanner';
+import { ScannerInterceptHUD } from './components/ScannerInterceptHUD';
 
 function PosAppContent() {
-  const { toastMessage, currentUser, isSuperAdmin, handleBarcodeScanned } = usePos();
+  const {
+    toastMessage,
+    currentUser,
+    isSuperAdmin,
+    handleBarcodeScanned,
+    isDarkMode,
+    loginBgGraphic,
+    cart,
+    cartTotal,
+    settleExactCash,
+    updateCartQuantity,
+    activeReceipt,
+    setActiveReceipt,
+    activeRefundReceipt,
+    setActiveRefundReceipt,
+    isReturnsModalOpen,
+    closeReturnsModal,
+    soundFx,
+  } = usePos();
 
   const [currentTab, setCurrentTab] = useState<'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff'>('register');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
+  const [paymentInitialMethod, setPaymentInitialMethod] = useState<PaymentMethod>('mpesa');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
   const [isSuperAdminModalOpen, setIsSuperAdminModalOpen] = useState(false);
-  const [superAdminModalDefaultTab, setSuperAdminModalDefaultTab] = useState<'tenants' | 'audit' | 'provision'>('tenants');
+  const [superAdminModalDefaultTab, setSuperAdminModalDefaultTab] = useState<'tenants' | 'audit' | 'provision' | 'branding'>('tenants');
 
-  // Global hardware barcode scanner listener (USB / Bluetooth HID wedge) & F2 hotkey
+  const handleOpenPayment = (method: PaymentMethod = 'mpesa') => {
+    setPaymentInitialMethod(method);
+    setIsPaymentOpen(true);
+  };
+
+  // Persistent Background Barcode Scanner Listener:
+  // Operates in the capture phase to capture high-speed keyboard wedge barcode bursts (< 55ms inter-key latency)
+  // regardless of which input or modal element is currently focused, with automatic input restoration.
+  useBackgroundScanner({
+    onBarcodeScanned: (barcode) => {
+      // If currently in another view, switch to register so the scanned item is visible in the cart
+      if (currentTab !== 'register') {
+        setCurrentTab('register');
+      }
+      handleBarcodeScanned(barcode);
+    },
+    enabled: true,
+    maxInterKeyLatencyMs: 55,
+    enableInputRestoration: true,
+  });
+
+  // Global POS Hotkeys:
+  // Space/Enter: Settle
+  // F1: Cash
+  // F2: M-Pesa
+  // F3: Card
+  // Esc: Close/Cancel
+  // +/-: Item quantities
   useEffect(() => {
-    let charBuffer = '';
-    let lastKeyTime = 0;
-    const SCANNER_BURST_MAX_GAP_MS = 65; // Barcode scanners type with < 50ms intervals
-
     const handleKeyDown = (e: KeyboardEvent) => {
-      const now = Date.now();
       const target = e.target as HTMLElement | null;
       const isInputActive =
         target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
 
-      // F2 hotkey toggles optical camera scanner modal
-      if (e.key === 'F2') {
-        e.preventDefault();
-        setIsScannerOpen((prev) => !prev);
-        return;
-      }
-
-      // Enter key: finalize barcode scan
-      if (e.key === 'Enter') {
-        const timeElapsed = now - lastKeyTime;
-        const bufferLen = charBuffer.length;
-        // If rapid burst occurred (scanner) OR if user pressed enter without an active input field
-        const isScannerBurst = bufferLen >= 4 && timeElapsed < 350;
-
-        if (bufferLen >= 3 && (!isInputActive || isScannerBurst)) {
-          const codeToScan = charBuffer.trim();
-          charBuffer = '';
-          if (isScannerBurst) {
-            e.preventDefault();
-          }
-          handleBarcodeScanned(codeToScan);
+      // 1. Esc: Global Close / Cancel
+      if (e.key === 'Escape') {
+        if (isInputActive) {
+          (target as HTMLElement).blur();
+        }
+        if (activeReceipt) {
+          e.preventDefault();
+          setActiveReceipt(null);
           return;
         }
-        charBuffer = '';
+        if (activeRefundReceipt) {
+          e.preventDefault();
+          setActiveRefundReceipt(null);
+          return;
+        }
+        if (isPaymentOpen) {
+          e.preventDefault();
+          setIsPaymentOpen(false);
+          return;
+        }
+        if (isScannerOpen) {
+          e.preventDefault();
+          setIsScannerOpen(false);
+          return;
+        }
+        if (isReturnsModalOpen) {
+          e.preventDefault();
+          closeReturnsModal();
+          return;
+        }
+        if (isAuthModalOpen) {
+          e.preventDefault();
+          setIsAuthModalOpen(false);
+          return;
+        }
+        if (isSignOutModalOpen) {
+          e.preventDefault();
+          setIsSignOutModalOpen(false);
+          return;
+        }
+        if (isSuperAdminModalOpen) {
+          e.preventDefault();
+          setIsSuperAdminModalOpen(false);
+          return;
+        }
         return;
       }
 
-      // Buffer printable characters
-      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        if (now - lastKeyTime > SCANNER_BURST_MAX_GAP_MS) {
-          // Slow human typing or gap: reset buffer
-          charBuffer = e.key;
-        } else {
-          // Fast keystroke stream from laser gun: append
-          charBuffer += e.key;
+      // 2. F1: Cash
+      if (e.key === 'F1') {
+        e.preventDefault();
+        if (isPaymentOpen) {
+          setPaymentInitialMethod('cash');
+        } else if (currentTab === 'register' && cart.length > 0 && !activeReceipt && !activeRefundReceipt && !isReturnsModalOpen) {
+          // Direct 1-tap Exact Cash settlement
+          settleExactCash();
         }
-        lastKeyTime = now;
+        return;
+      }
+
+      // 3. F2: M-Pesa
+      if (e.key === 'F2') {
+        e.preventDefault();
+        if (isPaymentOpen) {
+          setPaymentInitialMethod('mpesa');
+        } else if (currentTab === 'register' && cart.length > 0 && !activeReceipt && !activeRefundReceipt && !isReturnsModalOpen) {
+          handleOpenPayment('mpesa');
+        }
+        return;
+      }
+
+      // 4. F3: Card
+      if (e.key === 'F3') {
+        e.preventDefault();
+        if (isPaymentOpen) {
+          setPaymentInitialMethod('card');
+        } else if (currentTab === 'register' && cart.length > 0 && !activeReceipt && !activeRefundReceipt && !isReturnsModalOpen) {
+          handleOpenPayment('card');
+        }
+        return;
+      }
+
+      // 5. +/- for Item Quantities
+      // Active when not in an active text input, register view is active, cart has items, and no modal is blocking
+      const isModalActive =
+        isPaymentOpen ||
+        isScannerOpen ||
+        activeReceipt !== null ||
+        activeRefundReceipt !== null ||
+        isReturnsModalOpen ||
+        isAuthModalOpen ||
+        isSignOutModalOpen ||
+        isSuperAdminModalOpen;
+
+      if (!isInputActive && !isModalActive && currentTab === 'register' && cart.length > 0) {
+        if (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd') {
+          e.preventDefault();
+          const lastItem = cart[cart.length - 1];
+          updateCartQuantity(lastItem.productId, lastItem.quantity + 1);
+          soundFx.playBeep(520, 0.04);
+          return;
+        }
+        if (e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract') {
+          e.preventDefault();
+          const lastItem = cart[cart.length - 1];
+          updateCartQuantity(lastItem.productId, lastItem.quantity - 1);
+          soundFx.playBeep(420, 0.04);
+          return;
+        }
+      }
+
+      // 6. Enter Key Handling for POS Settlement
+      if (e.key === 'Enter') {
+        // If not typing in an input and on register tab with items in cart:
+        if (!isInputActive && !isModalActive && currentTab === 'register' && cart.length > 0) {
+          e.preventDefault();
+          handleOpenPayment('mpesa');
+          return;
+        }
+
+        // If active receipt is open and Enter is pressed, dismiss receipt
+        if (activeReceipt && !isInputActive) {
+          e.preventDefault();
+          setActiveReceipt(null);
+          return;
+        }
+
+        return;
+      }
+
+      // 7. Space to Settle
+      if (e.key === ' ' && !isInputActive && !isModalActive && currentTab === 'register' && cart.length > 0) {
+        e.preventDefault();
+        handleOpenPayment('mpesa');
+        return;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [handleBarcodeScanned]);
+  }, [
+    currentTab,
+    cart,
+    isPaymentOpen,
+    isScannerOpen,
+    activeReceipt,
+    activeRefundReceipt,
+    isReturnsModalOpen,
+    isAuthModalOpen,
+    isSignOutModalOpen,
+    isSuperAdminModalOpen,
+    settleExactCash,
+    updateCartQuantity,
+    setActiveReceipt,
+    setActiveRefundReceipt,
+    closeReturnsModal,
+    soundFx,
+  ]);
 
   // Dedicated full-screen authentication gate when signed out
   if (!currentUser) {
     return (
-      <div className="h-screen w-screen overflow-y-auto dark-scrollbar font-sans bg-slate-950">
+      <div
+        className="h-screen w-screen overflow-y-auto dark-scrollbar font-sans bg-slate-950"
+        style={
+          loginBgGraphic
+            ? {
+                backgroundImage: `url(${loginBgGraphic})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+                backgroundAttachment: 'fixed',
+                backgroundRepeat: 'no-repeat',
+              }
+            : undefined
+        }
+      >
         {/* Toast Notification Alert */}
         {toastMessage && (
           <div className="fixed top-6 right-6 z-[120] animate-in slide-in-from-top-3 fade-in duration-200">
@@ -128,7 +300,12 @@ function PosAppContent() {
   }
 
   return (
-    <div className="h-screen w-screen flex flex-col overflow-hidden bg-slate-100 font-sans select-none">
+    <div
+      id="pos-app-root"
+      className={`h-screen w-screen flex flex-col overflow-hidden font-sans select-none transition-colors duration-200 ${
+        isDarkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-900'
+      }`}
+    >
       {/* Toast Notification Alert */}
       {toastMessage && (
         <div className="fixed top-24 right-6 z-50 animate-in slide-in-from-top-3 fade-in duration-200">
@@ -163,6 +340,10 @@ function PosAppContent() {
           setSuperAdminModalDefaultTab('provision');
           setIsSuperAdminModalOpen(true);
         }}
+        onOpenBrandingModal={() => {
+          setSuperAdminModalDefaultTab('branding');
+          setIsSuperAdminModalOpen(true);
+        }}
       />
 
       {/* Main Top Header */}
@@ -170,8 +351,8 @@ function PosAppContent() {
         openBarcodeScanner={() => setIsScannerOpen(true)}
         openAuthModal={() => setIsAuthModalOpen(true)}
         openSignOutModal={() => setIsSignOutModalOpen(true)}
-        openSuperAdminModal={() => {
-          setSuperAdminModalDefaultTab('tenants');
+        openSuperAdminModal={(tab) => {
+          setSuperAdminModalDefaultTab(tab || 'tenants');
           setIsSuperAdminModalOpen(true);
         }}
       />
@@ -189,7 +370,7 @@ function PosAppContent() {
         <main className="flex-1 flex overflow-hidden relative pb-14 lg:pb-0 min-w-0">
           {currentTab === 'register' && (
             <RegisterView
-              onProceedToPayment={() => setIsPaymentOpen(true)}
+              onProceedToPayment={() => handleOpenPayment('mpesa')}
               openBarcodeScanner={() => setIsScannerOpen(true)}
             />
           )}
@@ -217,6 +398,7 @@ function PosAppContent() {
       <PaymentModal
         isOpen={isPaymentOpen}
         onClose={() => setIsPaymentOpen(false)}
+        initialMethod={paymentInitialMethod}
       />
 
       <ReceiptModal />
@@ -246,6 +428,9 @@ function PosAppContent() {
 
       {/* Destructive Action Confirmation Safeguard Modal */}
       <DestructiveConfirmModal />
+
+      {/* Persistent Background Hardware Scanner Interception Telemetry HUD */}
+      <ScannerInterceptHUD />
     </div>
   );
 }

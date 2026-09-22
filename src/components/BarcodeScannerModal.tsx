@@ -16,6 +16,8 @@ import {
   History,
   Check,
   Sparkles,
+  Volume2,
+  Keyboard,
 } from 'lucide-react';
 import {
   BrowserMultiFormatReader,
@@ -23,8 +25,10 @@ import {
   BarcodeFormat,
 } from '@zxing/library';
 import { usePos } from '../context/PosContext';
+import { soundFx } from '../utils/audio';
 import { BarcodeVisual } from './BarcodeVisual';
 import { Product } from '../types';
+import { simulateHardwareBarcodeBurst } from '../utils/backgroundScanner';
 
 interface BarcodeScannerModalProps {
   isOpen: boolean;
@@ -358,15 +362,28 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
             </div>
           </div>
 
-          <button
-            type="button"
-            id="close-scanner-modal-btn"
-            onClick={onClose}
-            className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition cursor-pointer"
-            title="Close scanner (Esc)"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              id="scanner-test-beep-btn"
+              onClick={() => soundFx.playBarcodeBeep()}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-blue-300 hover:text-white border border-slate-700 text-xs font-bold transition cursor-pointer"
+              title="Test Retail Barcode Scanner Beep"
+            >
+              <Volume2 className="w-3.5 h-3.5 text-blue-400" />
+              <span className="hidden xs:inline">Test Sound</span>
+            </button>
+
+            <button
+              type="button"
+              id="close-scanner-modal-btn"
+              onClick={onClose}
+              className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition cursor-pointer"
+              title="Close scanner (Esc)"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Navigation Tabs: Camera vs Interactive Test Lab */}
@@ -621,15 +638,27 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
                       <BarcodeVisual value={p.barcode} height={42} showText={true} />
                     </div>
 
-                    {/* Quick Simulate Scan Button */}
-                    <button
-                      type="button"
-                      onClick={() => onBarcodeDetected(p.barcode)}
-                      className="w-full flex items-center justify-center gap-2 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white font-bold text-xs py-2 rounded-xl transition border border-blue-200 hover:border-blue-600 cursor-pointer shadow-2xs"
-                    >
-                      <Zap className="w-3.5 h-3.5" />
-                      <span>Simulate Scan ({p.barcode.slice(-4)})</span>
-                    </button>
+                    {/* Quick Simulation Buttons */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onBarcodeDetected(p.barcode)}
+                        className="flex items-center justify-center gap-1.5 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white font-bold text-xs py-2 rounded-xl transition border border-blue-200 hover:border-blue-600 cursor-pointer shadow-2xs"
+                      >
+                        <Zap className="w-3.5 h-3.5" />
+                        <span>Instant Add</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => simulateHardwareBarcodeBurst(p.barcode, 12)}
+                        className="flex items-center justify-center gap-1.5 bg-amber-50 hover:bg-amber-600 text-amber-700 hover:text-white font-bold text-xs py-2 rounded-xl transition border border-amber-200 hover:border-amber-600 cursor-pointer shadow-2xs"
+                        title="Simulate hardware barcode gun wedge burst in background (< 15ms/keystroke)"
+                      >
+                        <Keyboard className="w-3.5 h-3.5 text-amber-600 group-hover:text-white" />
+                        <span>Wedge Burst</span>
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

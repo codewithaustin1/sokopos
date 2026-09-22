@@ -12,11 +12,13 @@ import {
   Trash2,
   RefreshCw,
   Cloud,
+  Tag,
 } from 'lucide-react';
 import { Product } from '../types';
 import { usePos } from '../context/PosContext';
 import { ProductFormModal } from './ProductFormModal';
 import { StockTransferModal } from './StockTransferModal';
+import { CategoryManagerModal } from './CategoryManagerModal';
 
 export const InventoryView: React.FC = () => {
   const {
@@ -43,6 +45,7 @@ export const InventoryView: React.FC = () => {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [transferTargetProduct, setTransferTargetProduct] = useState<Product | null>(null);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
 
   // Quick adjust inline state
   const [quickAdjustProductId, setQuickAdjustProductId] = useState<string | null>(null);
@@ -163,11 +166,22 @@ export const InventoryView: React.FC = () => {
           </button>
 
           <button
+            id="btn-add-product"
             onClick={handleOpenAddModal}
             className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Add Product</span>
+          </button>
+
+          <button
+            id="btn-inventory-categories"
+            onClick={() => setIsCategoryModalOpen(true)}
+            className="bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+            title="Manage shop product categories"
+          >
+            <Tag className="w-3.5 h-3.5 text-blue-400" />
+            <span>Categories</span>
           </button>
         </div>
       </div>
@@ -608,6 +622,11 @@ export const InventoryView: React.FC = () => {
         isOpen={isTransferModalOpen}
         onClose={() => setIsTransferModalOpen(false)}
         defaultProduct={transferTargetProduct}
+      />
+
+      <CategoryManagerModal
+        isOpen={isCategoryModalOpen}
+        onClose={() => setIsCategoryModalOpen(false)}
       />
     </div>
   );

@@ -18,6 +18,10 @@ import {
   Cloud,
   CheckCircle2,
   Store,
+  Moon,
+  Sun,
+  Palette,
+  Printer,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 
@@ -49,6 +53,9 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     isSuperAdmin,
     setIsSuperAdminDashboardOpen,
     syncStatus,
+    isDarkMode,
+    toggleDarkMode,
+    autoPrintReceipt,
   } = usePos();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -202,6 +209,52 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
                   <span>Security & Terminal PIN</span>
                 </div>
                 <ChevronRight className="w-4 h-4 text-slate-400" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  openBusinessSettings('appearance');
+                }}
+                className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs transition cursor-pointer border border-slate-200/80"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Palette className="w-4 h-4 text-blue-600" />
+                  <span>Appearance & Dark Mode</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">
+                    {isDarkMode ? 'Dark' : 'Light'}
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-slate-400" />
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  openBusinessSettings('hardware');
+                }}
+                className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs transition cursor-pointer border border-slate-200/80"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Printer className="w-4 h-4 text-slate-600" />
+                  <span>Printing & Hardware</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                      autoPrintReceipt
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    {autoPrintReceipt ? 'Auto Print ON' : 'Manual'}
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-slate-400" />
+                </div>
               </button>
 
               {isSuperAdmin && (

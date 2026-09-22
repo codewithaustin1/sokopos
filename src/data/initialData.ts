@@ -2,6 +2,7 @@ import {
   AuthUser,
   Business,
   Cashier,
+  Category,
   Location,
   Product,
   SuperAdminAuditEntry,
@@ -34,6 +35,7 @@ export const INITIAL_BUSINESSES: Business[] = [
     status: 'active',
     currency: 'KES',
     taxNumber: 'P011223344A',
+    retailTheme: 'classic',
   },
   {
     id: 'biz-soko',
@@ -46,6 +48,7 @@ export const INITIAL_BUSINESSES: Business[] = [
     status: 'active',
     currency: 'KES',
     taxNumber: 'P051239912Z',
+    retailTheme: 'classic',
   },
   {
     id: 'biz-quickmart',
@@ -58,6 +61,7 @@ export const INITIAL_BUSINESSES: Business[] = [
     status: 'active',
     currency: 'KES',
     taxNumber: 'P059988112Y',
+    retailTheme: 'emerald',
   },
 ];
 
@@ -76,6 +80,10 @@ export const INITIAL_LOCATIONS: Location[] = [
     isOnline: true,
     lastSynced: new Date(Date.now() - 30000).toISOString(),
     terminalName: 'HQ Terminal #01',
+    mpesaType: 'buy_goods',
+    mpesaTill: '882910',
+    mpesaPaybill: '522522',
+    mpesaAccount: 'UPFRONT-01',
   },
   // Locations for SokoPoS Horizon
   {
@@ -91,6 +99,10 @@ export const INITIAL_LOCATIONS: Location[] = [
     isOnline: true,
     lastSynced: new Date(Date.now() - 45000).toISOString(),
     terminalName: 'Terminal #01 (Main Register)',
+    mpesaType: 'buy_goods',
+    mpesaTill: '774120',
+    mpesaPaybill: '400200',
+    mpesaAccount: 'SOKO-NBI',
   },
   {
     id: 'loc-wst',
@@ -105,6 +117,10 @@ export const INITIAL_LOCATIONS: Location[] = [
     isOnline: true,
     lastSynced: new Date(Date.now() - 120000).toISOString(),
     terminalName: 'Terminal #02 (Express Checkout)',
+    mpesaType: 'buy_goods',
+    mpesaTill: '774121',
+    mpesaPaybill: '400200',
+    mpesaAccount: 'SOKO-WST',
   },
   {
     id: 'loc-msa',
@@ -119,6 +135,10 @@ export const INITIAL_LOCATIONS: Location[] = [
     isOnline: true,
     lastSynced: new Date(Date.now() - 300000).toISOString(),
     terminalName: 'Terminal #03 (Front Desk)',
+    mpesaType: 'buy_goods',
+    mpesaTill: '774122',
+    mpesaPaybill: '400200',
+    mpesaAccount: 'SOKO-MSA',
   },
   {
     id: 'loc-ksm',
@@ -133,6 +153,10 @@ export const INITIAL_LOCATIONS: Location[] = [
     isOnline: false,
     lastSynced: new Date(Date.now() - 900000).toISOString(),
     terminalName: 'Terminal #04 (Lake Basin)',
+    mpesaType: 'buy_goods',
+    mpesaTill: '774123',
+    mpesaPaybill: '400200',
+    mpesaAccount: 'SOKO-KSM',
   },
 
   // Locations for QuickChoice Fresh Grocers
@@ -180,6 +204,7 @@ export const INITIAL_SYSTEM_USERS: Cashier[] = [
     avatarColor: 'bg-amber-500',
     shiftStartedAt: new Date().toISOString(),
     assignedLocationId: 'loc-upfront-01',
+    canApplyDiscount: true,
   },
   // Staff for SokoPoS Horizon
   {
@@ -194,6 +219,7 @@ export const INITIAL_SYSTEM_USERS: Cashier[] = [
     avatarColor: 'bg-blue-600',
     shiftStartedAt: new Date(Date.now() - 4 * 3600000).toISOString(),
     assignedLocationId: 'loc-nbi',
+    canApplyDiscount: false, // Standard cashier requires manager override PIN
   },
   {
     id: 'cash-02',
@@ -207,6 +233,7 @@ export const INITIAL_SYSTEM_USERS: Cashier[] = [
     avatarColor: 'bg-emerald-600',
     shiftStartedAt: new Date(Date.now() - 6 * 3600000).toISOString(),
     assignedLocationId: 'loc-wst',
+    canApplyDiscount: true,
   },
   {
     id: 'cash-03',
@@ -220,6 +247,7 @@ export const INITIAL_SYSTEM_USERS: Cashier[] = [
     avatarColor: 'bg-amber-600',
     shiftStartedAt: new Date(Date.now() - 2 * 3600000).toISOString(),
     assignedLocationId: 'loc-msa',
+    canApplyDiscount: true,
   },
 
   // Staff for QuickChoice Fresh Grocers
@@ -235,6 +263,7 @@ export const INITIAL_SYSTEM_USERS: Cashier[] = [
     avatarColor: 'bg-teal-600',
     shiftStartedAt: new Date(Date.now() - 3 * 3600000).toISOString(),
     assignedLocationId: 'loc-qck-klm',
+    canApplyDiscount: false,
   },
   {
     id: 'cash-qck-02',
@@ -248,6 +277,143 @@ export const INITIAL_SYSTEM_USERS: Cashier[] = [
     avatarColor: 'bg-indigo-600',
     shiftStartedAt: new Date(Date.now() - 5 * 3600000).toISOString(),
     assignedLocationId: 'loc-qck-krn',
+    canApplyDiscount: true,
+  },
+];
+
+export const INITIAL_CATEGORIES: Category[] = [
+  // Categories for Upfront Retail Solutions (biz-upfront)
+  {
+    id: 'cat-upfront-all',
+    businessId: 'biz-upfront',
+    name: 'All',
+    description: 'All items and uncategorized store products',
+    color: '#3b82f6',
+    createdAt: '2026-01-01T08:00:00.000Z',
+  },
+  {
+    id: 'cat-upfront-flour',
+    businessId: 'biz-upfront',
+    name: 'Flour & Grains',
+    description: 'Wheat flour, maize meal, rice, and bulk whole grains',
+    color: '#f59e0b',
+    createdAt: '2026-01-01T08:00:00.000Z',
+  },
+  {
+    id: 'cat-upfront-dairy',
+    businessId: 'biz-upfront',
+    name: 'Dairy & Bakery',
+    description: 'Fresh milk, butter, cheese, yogurts, and loaves',
+    color: '#10b981',
+    createdAt: '2026-01-01T08:00:00.000Z',
+  },
+  {
+    id: 'cat-upfront-bev',
+    businessId: 'biz-upfront',
+    name: 'Beverages',
+    description: 'Tea, coffee, sodas, juices, and ciders',
+    color: '#6366f1',
+    createdAt: '2026-01-01T08:00:00.000Z',
+  },
+  {
+    id: 'cat-upfront-pantry',
+    businessId: 'biz-upfront',
+    name: 'Pantry & Oil',
+    description: 'Cooking oil, sugar, seasonings, salt, and spices',
+    color: '#ec4899',
+    createdAt: '2026-01-01T08:00:00.000Z',
+  },
+  {
+    id: 'cat-upfront-clean',
+    businessId: 'biz-upfront',
+    name: 'Household & Cleaning',
+    description: 'Washing detergents, soaps, disinfectants, and paper towels',
+    color: '#06b6d4',
+    createdAt: '2026-01-01T08:00:00.000Z',
+  },
+  {
+    id: 'cat-upfront-care',
+    businessId: 'biz-upfront',
+    name: 'Personal Care',
+    description: 'Bath soaps, oral care, shampoos, and hygiene essentials',
+    color: '#8b5cf6',
+    createdAt: '2026-01-01T08:00:00.000Z',
+  },
+
+  // Categories for SokoPoS Horizon Retailers (biz-soko)
+  {
+    id: 'cat-soko-all',
+    businessId: 'biz-soko',
+    name: 'All',
+    description: 'All items and uncategorized store products',
+    color: '#3b82f6',
+    createdAt: '2026-01-15T08:30:00.000Z',
+  },
+  {
+    id: 'cat-soko-flour',
+    businessId: 'biz-soko',
+    name: 'Flour & Grains',
+    description: 'Maize flour, wheat flour, and sorghum grains',
+    color: '#f59e0b',
+    createdAt: '2026-01-15T08:30:00.000Z',
+  },
+  {
+    id: 'cat-soko-dairy',
+    businessId: 'biz-soko',
+    name: 'Dairy & Bakery',
+    description: 'Fresh milk pouches and packaged breads',
+    color: '#10b981',
+    createdAt: '2026-01-15T08:30:00.000Z',
+  },
+  {
+    id: 'cat-soko-pantry',
+    businessId: 'biz-soko',
+    name: 'Pantry & Oil',
+    description: 'Cooking fats, vegetable oil, and cane sugar',
+    color: '#ec4899',
+    createdAt: '2026-01-15T08:30:00.000Z',
+  },
+  {
+    id: 'cat-soko-bev',
+    businessId: 'biz-soko',
+    name: 'Beverages',
+    description: 'Black tea, soft drinks, and bottled water',
+    color: '#6366f1',
+    createdAt: '2026-01-15T08:30:00.000Z',
+  },
+  {
+    id: 'cat-soko-snacks',
+    businessId: 'biz-soko',
+    name: 'Snacks',
+    description: 'Instant noodles, biscuits, and confectionery',
+    color: '#f97316',
+    createdAt: '2026-01-15T08:30:00.000Z',
+  },
+
+  // Categories for QuickChoice Fresh Grocers (biz-quickmart)
+  {
+    id: 'cat-qck-all',
+    businessId: 'biz-quickmart',
+    name: 'All',
+    description: 'All items and uncategorized store products',
+    color: '#3b82f6',
+    createdAt: '2026-02-01T10:15:00.000Z',
+  },
+  {
+    id: 'cat-qck-produce',
+    businessId: 'biz-quickmart',
+    name: 'Fresh Produce',
+    description: 'Farm avocados, greens, eggs, and orchard fruits',
+    color: '#10b981',
+    createdAt: '2026-02-01T10:15:00.000Z',
+  },
+  {
+    id: 'cat-qck-bev',
+    businessId: 'biz-quickmart',
+    name: 'Beverages',
+    description: 'Natural mineral waters and freshly pressed juices',
+    color: '#6366f1',
+    createdAt: '2026-02-01T10:15:00.000Z',
   },
 ];
 

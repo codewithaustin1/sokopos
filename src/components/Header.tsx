@@ -16,15 +16,21 @@ import {
   Store,
   KeyRound,
   Settings,
+  Moon,
+  Sun,
+  Palette,
+  Printer,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
+import { ScannerStatusBadge } from './ScannerStatusBadge';
 
 interface HeaderProps {
   currentTab?: 'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff';
   setCurrentTab?: (tab: 'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff') => void;
   openBarcodeScanner: () => void;
   openAuthModal: () => void;
-  openSuperAdminModal: () => void;
+  openSuperAdminModal: (tab?: 'tenants' | 'audit' | 'provision' | 'branding') => void;
   openSignOutModal?: () => void;
 }
 
@@ -50,6 +56,9 @@ export const Header: React.FC<HeaderProps> = ({
     isSuperAdmin,
     logout,
     openBusinessSettings,
+    isDarkMode,
+    toggleDarkMode,
+    autoPrintReceipt,
   } = usePos();
 
   const [isLocationMenuOpen, setIsLocationMenuOpen] = useState(false);
@@ -156,6 +165,9 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Actions: Barcode Scanner + Sync + User Profile Dropdown */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+        {/* Hardware Background Scanner Indicator & Diagnostics */}
+        <ScannerStatusBadge />
+
         {/* Quick Optical Scanner Trigger */}
         <button
           id="header-barcode-scanner-btn"
@@ -165,6 +177,25 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Scan className="w-4 h-4 text-blue-600 shrink-0" />
           <span className="hidden sm:inline">Scan</span>
+        </button>
+
+        {/* Quick Dim Retail Dark Theme Toggle */}
+        <button
+          id="header-theme-toggle-btn"
+          type="button"
+          onClick={toggleDarkMode}
+          className={`p-2 rounded-lg text-xs font-bold border transition cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center ${
+            isDarkMode
+              ? 'bg-blue-950/70 border-blue-500/50 text-blue-300 hover:bg-blue-900/80 shadow-xs'
+              : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+          }`}
+          title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dim Retail Dark Mode'}
+        >
+          {isDarkMode ? (
+            <Sun className="w-4 h-4 text-amber-400" />
+          ) : (
+            <Moon className="w-4 h-4 text-slate-700" />
+          )}
         </button>
 
         {/* Cloud Sync & Online/Offline Pill */}
@@ -281,16 +312,30 @@ export const Header: React.FC<HeaderProps> = ({
                 <div className="space-y-0.5">
                   {/* Super-admin console */}
                   {isSuperAdmin && (
-                    <button
-                      onClick={() => {
-                        setIsUserMenuOpen(false);
-                        openSuperAdminModal();
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 transition cursor-pointer"
-                    >
-                      <Shield className="w-4 h-4 text-amber-600" />
-                      <span>Super-Admin Console & Audit</span>
-                    </button>
+                    <div className="space-y-1 mb-1 pb-1 border-b border-slate-100">
+                      <button
+                        onClick={() => {
+                          setIsUserMenuOpen(false);
+                          openSuperAdminModal('tenants');
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 transition cursor-pointer"
+                      >
+                        <Shield className="w-4 h-4 text-amber-600" />
+                        <span>Super-Admin Console & Audit</span>
+                      </button>
+
+                      <button
+                        id="user-menu-branding-btn"
+                        onClick={() => {
+                          setIsUserMenuOpen(false);
+                          openSuperAdminModal('branding');
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-xs font-bold text-blue-900 bg-blue-50 hover:bg-blue-100 transition cursor-pointer"
+                      >
+                        <ImageIcon className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Login Screen Background Control</span>
+                      </button>
+                    </div>
                   )}
 
                   {/* Credential & PIN Settings */}
@@ -304,6 +349,48 @@ export const Header: React.FC<HeaderProps> = ({
                   >
                     <KeyRound className="w-4 h-4 text-slate-500" />
                     <span>Credential & PIN Settings</span>
+                  </button>
+
+                  {/* Appearance & Dark Mode Settings */}
+                  <button
+                    id="user-menu-appearance-btn"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      openBusinessSettings('appearance');
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Palette className="w-4 h-4 text-slate-500" />
+                      <span>Appearance & Dark Mode</span>
+                    </div>
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                      {isDarkMode ? 'Dark' : 'Light'}
+                    </span>
+                  </button>
+
+                  {/* Printing & Hardware Preferences */}
+                  <button
+                    id="user-menu-hardware-btn"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      openBusinessSettings('hardware');
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Printer className="w-4 h-4 text-slate-500" />
+                      <span>Printing & Hardware</span>
+                    </div>
+                    <span
+                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                        autoPrintReceipt
+                          ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                          : 'bg-slate-100 text-slate-600 border border-slate-200'
+                      }`}
+                    >
+                      {autoPrintReceipt ? 'Auto Print ON' : 'Manual'}
+                    </span>
                   </button>
 
                   {/* Register PIN Lock */}

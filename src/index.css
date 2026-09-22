@@ -1,20 +1,299 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   body {
     font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     color: #1e293b;
     background-color: #f1f5f9;
   }
+
+  html.dark body {
+    color: #f8fafc;
+    background-color: #090d16;
+  }
 }
 
-/* Print Stylesheet for POS Thermal Receipt Printing */
+/* =========================================================================
+   RETAIL DOMAIN ACCENT PALETTES
+   Tailored domain color themes:
+   - Enterprise Classic: Modern indigo & cobalt blue (#2563eb)
+   - Fresh Market Emerald: Deep emerald & mint (#059669)
+   - Artisan Cafe & Bakery: Warm amber, espresso & terracotta (#d97706)
+   - Boutique & Luxury: Burgundy, rosewood & champagne gold (#9f1239)
+   - Industrial & Hardware: High-visibility graphite & caution amber (#1e293b / #f59e0b)
+   ========================================================================= */
+
+:root,
+html[data-retail-theme="classic"] {
+  --retail-primary: #2563eb;
+  --retail-primary-hover: #1d4ed8;
+  --retail-primary-active: #1e40af;
+  --retail-primary-light: #eff6ff;
+  --retail-primary-border: #bfdbfe;
+  --retail-primary-text: #1d4ed8;
+  --retail-primary-ring: rgba(37, 99, 235, 0.4);
+  --retail-accent: #3b82f6;
+  --retail-dark-highlight: #60a5fa;
+  --retail-gradient: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+}
+
+html[data-retail-theme="emerald"] {
+  --retail-primary: #059669;
+  --retail-primary-hover: #047857;
+  --retail-primary-active: #065f46;
+  --retail-primary-light: #ecfdf5;
+  --retail-primary-border: #a7f3d0;
+  --retail-primary-text: #047857;
+  --retail-primary-ring: rgba(5, 150, 105, 0.4);
+  --retail-accent: #10b981;
+  --retail-dark-highlight: #34d399;
+  --retail-gradient: linear-gradient(135deg, #059669 0%, #10b981 100%);
+}
+
+html[data-retail-theme="amber"] {
+  --retail-primary: #d97706;
+  --retail-primary-hover: #b45309;
+  --retail-primary-active: #92400e;
+  --retail-primary-light: #fffbeb;
+  --retail-primary-border: #fde68a;
+  --retail-primary-text: #b45309;
+  --retail-primary-ring: rgba(217, 119, 6, 0.4);
+  --retail-accent: #f59e0b;
+  --retail-dark-highlight: #fbbf24;
+  --retail-gradient: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+}
+
+html[data-retail-theme="burgundy"] {
+  --retail-primary: #9f1239;
+  --retail-primary-hover: #881337;
+  --retail-primary-active: #4c0519;
+  --retail-primary-light: #fff1f2;
+  --retail-primary-border: #fecdd3;
+  --retail-primary-text: #9f1239;
+  --retail-primary-ring: rgba(159, 18, 57, 0.4);
+  --retail-accent: #e11d48;
+  --retail-dark-highlight: #f43f5e;
+  --retail-gradient: linear-gradient(135deg, #9f1239 0%, #e11d48 100%);
+}
+
+html[data-retail-theme="industrial"] {
+  --retail-primary: #1e293b;
+  --retail-primary-hover: #0f172a;
+  --retail-primary-active: #020617;
+  --retail-primary-light: #f8fafc;
+  --retail-primary-border: #cbd5e1;
+  --retail-primary-text: #0f172a;
+  --retail-primary-ring: rgba(245, 158, 11, 0.4);
+  --retail-accent: #f59e0b;
+  --retail-dark-highlight: #fbbf24;
+  --retail-gradient: linear-gradient(135deg, #1e293b 0%, #f59e0b 100%);
+}
+
+/* Dynamic theme overrides for retail domain accent colors */
+html[data-retail-theme]:not([data-retail-theme="classic"]) .bg-blue-600:not(.keep-blue),
+html[data-retail-theme]:not([data-retail-theme="classic"]) .bg-blue-700:not(.keep-blue) {
+  background-color: var(--retail-primary) !important;
+}
+
+html[data-retail-theme]:not([data-retail-theme="classic"]) .hover\:bg-blue-700:hover:not(.keep-blue),
+html[data-retail-theme]:not([data-retail-theme="classic"]) .hover\:bg-blue-800:hover:not(.keep-blue) {
+  background-color: var(--retail-primary-hover) !important;
+}
+
+html[data-retail-theme]:not([data-retail-theme="classic"]) .text-blue-600:not(.keep-blue),
+html[data-retail-theme]:not([data-retail-theme="classic"]) .text-blue-700:not(.keep-blue) {
+  color: var(--retail-primary) !important;
+}
+
+html[data-retail-theme]:not([data-retail-theme="classic"]) .border-blue-600:not(.keep-blue),
+html[data-retail-theme]:not([data-retail-theme="classic"]) .border-blue-500:not(.keep-blue) {
+  border-color: var(--retail-primary) !important;
+}
+
+html[data-retail-theme]:not([data-retail-theme="classic"]) .bg-blue-50:not(.keep-blue),
+html[data-retail-theme]:not([data-retail-theme="classic"]) .bg-blue-50\/50:not(.keep-blue),
+html[data-retail-theme]:not([data-retail-theme="classic"]) .bg-blue-50\/60:not(.keep-blue),
+html[data-retail-theme]:not([data-retail-theme="classic"]) .bg-blue-50\/70:not(.keep-blue) {
+  background-color: var(--retail-primary-light) !important;
+}
+
+html[data-retail-theme]:not([data-retail-theme="classic"]) .border-blue-200:not(.keep-blue),
+html[data-retail-theme]:not([data-retail-theme="classic"]) .border-blue-300:not(.keep-blue),
+html[data-retail-theme]:not([data-retail-theme="classic"]) .border-blue-100:not(.keep-blue) {
+  border-color: var(--retail-primary-border) !important;
+}
+
+html[data-retail-theme]:not([data-retail-theme="classic"]) .focus\:border-blue-600:focus,
+html[data-retail-theme]:not([data-retail-theme="classic"]) .focus\:border-blue-500:focus {
+  border-color: var(--retail-primary) !important;
+}
+
+html[data-retail-theme]:not([data-retail-theme="classic"]) .focus\:ring-blue-600:focus,
+html[data-retail-theme]:not([data-retail-theme="classic"]) .focus\:ring-blue-500:focus {
+  --tw-ring-color: var(--retail-primary-ring) !important;
+}
+
+/* Industrial custom highlights */
+html[data-retail-theme="industrial"] .text-blue-600:not(.keep-blue) {
+  color: #d97706 !important;
+}
+html[data-retail-theme="industrial"] .border-blue-600:not(.keep-blue) {
+  border-color: #f59e0b !important;
+}
+
+/* Dark mode retail theme tints */
+html.dark[data-retail-theme]:not([data-retail-theme="classic"]) .text-blue-400:not(.keep-blue),
+html.dark[data-retail-theme]:not([data-retail-theme="classic"]) .text-blue-300:not(.keep-blue) {
+  color: var(--retail-dark-highlight) !important;
+}
+
+html.dark[data-retail-theme]:not([data-retail-theme="classic"]) .border-blue-500\/40:not(.keep-blue),
+html.dark[data-retail-theme]:not([data-retail-theme="classic"]) .border-blue-500\/30:not(.keep-blue),
+html.dark[data-retail-theme]:not([data-retail-theme="classic"]) .border-blue-400\/30:not(.keep-blue) {
+  border-color: var(--retail-primary-border) !important;
+}
+
+html.dark[data-retail-theme]:not([data-retail-theme="classic"]) .bg-blue-600\/20:not(.keep-blue),
+html.dark[data-retail-theme]:not([data-retail-theme="classic"]) .bg-blue-600\/30:not(.keep-blue),
+html.dark[data-retail-theme]:not([data-retail-theme="classic"]) .bg-blue-500\/20:not(.keep-blue) {
+  background-color: var(--retail-primary-ring) !important;
+}
+
+/* =========================================================================
+   DIM RETAIL ENVIRONMENT DARK PALETTE SYSTEM
+   Engineered for low-glare night registers, bars, and dim cashier counters
+   ========================================================================= */
+
+html.dark {
+  color-scheme: dark;
+}
+
+/* Base surface overrides */
+html.dark .bg-white:not(.keep-white) {
+  background-color: #0f172a !important;
+  color: #f8fafc;
+}
+
+html.dark .bg-slate-50:not(.keep-light),
+html.dark .bg-slate-50\/50:not(.keep-light),
+html.dark .bg-slate-50\/70:not(.keep-light),
+html.dark .bg-slate-50\/80:not(.keep-light),
+html.dark .bg-slate-50\/90:not(.keep-light) {
+  background-color: #090d16 !important;
+}
+
+html.dark .bg-slate-100:not(.keep-light) {
+  background-color: #131d31 !important;
+}
+
+html.dark .bg-slate-200:not(.keep-light) {
+  background-color: #1e293b !important;
+}
+
+/* Borders */
+html.dark .border-slate-200,
+html.dark .border-slate-100 {
+  border-color: #1e293b !important;
+}
+
+html.dark .border-slate-300 {
+  border-color: #334155 !important;
+}
+
+/* Typography contrast */
+html.dark .text-slate-900,
+html.dark .text-slate-800 {
+  color: #f8fafc !important;
+}
+
+html.dark .text-slate-700,
+html.dark .text-slate-600 {
+  color: #cbd5e1 !important;
+}
+
+html.dark .text-slate-500 {
+  color: #94a3b8 !important;
+}
+
+html.dark .text-slate-400 {
+  color: #64748b !important;
+}
+
+/* Inputs & interactive fields */
+html.dark input:not([type="checkbox"]):not([type="radio"]):not(.keep-light),
+html.dark select:not(.keep-light),
+html.dark textarea:not(.keep-light) {
+  background-color: #090d16 !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+html.dark input:focus:not([type="checkbox"]):not([type="radio"]):not(.keep-light),
+html.dark select:focus:not(.keep-light),
+html.dark textarea:focus:not(.keep-light) {
+  border-color: #3b82f6 !important;
+  background-color: #0d1527 !important;
+}
+
+/* Table dark mode */
+html.dark table thead tr,
+html.dark table thead th {
+  background-color: #090d16 !important;
+  color: #94a3b8 !important;
+  border-color: #1e293b !important;
+}
+
+html.dark table tbody tr {
+  border-color: #1e293b !important;
+}
+
+html.dark table tbody tr:hover {
+  background-color: #141e33 !important;
+}
+
+/* Hover highlights */
+html.dark .hover\:bg-slate-50:hover,
+html.dark .hover\:bg-slate-100:hover,
+html.dark .hover\:bg-slate-100\/70:hover,
+html.dark .hover\:bg-slate-100\/80:hover {
+  background-color: #1e293b !important;
+}
+
+html.dark .hover\:text-slate-900:hover,
+html.dark .hover\:text-slate-800:hover {
+  color: #ffffff !important;
+}
+
+/* Modals backdrop & card in dark mode */
+html.dark .bg-slate-900\/60,
+html.dark .bg-slate-900\/70,
+html.dark .bg-black\/50,
+html.dark .bg-black\/60 {
+  background-color: rgba(2, 6, 23, 0.85) !important;
+}
+
+/* Ensure thermal receipts always retain white paper look */
+#receipt-display-modal,
+.keep-white {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+#receipt-display-modal * {
+  color: inherit;
+}
+
+/* Print Stylesheet for POS Thermal Receipt Printing & A4 Report Documents */
 @media print {
   body * {
     visibility: hidden;
   }
   #receipt-display-modal,
-  #receipt-display-modal * {
+  #receipt-display-modal *,
+  #report-printable-document,
+  #report-printable-document * {
     visibility: visible;
   }
   #receipt-display-modal {
@@ -28,6 +307,25 @@
   }
   #receipt-display-modal button {
     display: none !important;
+  }
+  #report-printable-document {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 10mm 15mm;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+  tr {
+    page-break-inside: avoid;
   }
 }
 
@@ -69,3 +367,193 @@
 .dark-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
+
+/* =========================================================================
+   STRUCTURAL SKELETON SHIMMER ANIMATION SYSTEM
+   Subtle diagonal shimmer gradient sweep (translateX(-100%) to translateX(100%))
+   with low-contrast 4-6% brightness sweep over light slate or dark slate base.
+   ========================================================================= */
+
+@keyframes skeleton-diagonal-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Reusable skeleton shimmer utility: Light Slate Base (4-6% brightness sweep) */
+.skeleton-shimmer-light {
+  position: relative;
+  overflow: hidden;
+  background-color: #f1f5f9; /* slate-100 base */
+}
+
+.skeleton-shimmer-light::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0) 25%,
+    rgba(255, 255, 255, 0.45) 50%,
+    rgba(255, 255, 255, 0) 75%,
+    transparent 100%
+  );
+  animation: skeleton-diagonal-shimmer 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* Reusable skeleton shimmer utility: Dark Slate Base (4-6% brightness sweep) */
+.skeleton-shimmer-dark {
+  position: relative;
+  overflow: hidden;
+  background-color: #1e293b; /* slate-800 base */
+}
+
+.skeleton-shimmer-dark::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0) 25%,
+    rgba(255, 255, 255, 0.06) 50%,
+    rgba(255, 255, 255, 0) 75%,
+    transparent 100%
+  );
+  animation: skeleton-diagonal-shimmer 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* Context-adaptive skeleton shimmer (light slate default, dark in dark mode) */
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+  background-color: #e2e8f0; /* slate-200 base */
+}
+
+.skeleton-shimmer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0) 25%,
+    rgba(255, 255, 255, 0.5) 50%,
+    rgba(255, 255, 255, 0) 75%,
+    transparent 100%
+  );
+  animation: skeleton-diagonal-shimmer 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+html.dark .skeleton-shimmer {
+  background-color: #1e293b !important;
+}
+
+html.dark .skeleton-shimmer::after {
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0) 25%,
+    rgba(255, 255, 255, 0.06) 50%,
+    rgba(255, 255, 255, 0) 75%,
+    transparent 100%
+  );
+}
+
+/* =========================================================================
+   COMMERCIAL THERMAL RECEIPT PRINTING SYSTEM
+   Optimized for 80mm & 58mm POS thermal slips and standard A4 printing
+   ========================================================================= */
+
+@media print {
+  @page {
+    margin: 0;
+    size: auto;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide interactive application chrome, navigation, headers, and action buttons */
+  #main-pos-header,
+  #sidebar-nav,
+  #mobile-bottom-nav,
+  .no-print,
+  button,
+  #payment-checkout-modal,
+  #business-profile-settings-modal-backdrop,
+  #reset-store-modal-backdrop {
+    display: none !important;
+  }
+
+  /* Unbox receipt modal for print stream */
+  #receipt-display-modal,
+  #refund-receipt-display-modal {
+    position: static !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  #receipt-display-modal > div,
+  #refund-receipt-display-modal > div {
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    box-shadow: none !important;
+    border: none !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  #receipt-printable-canvas {
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 8px 12px !important;
+    margin: 0 auto !important;
+    width: 100% !important;
+    max-width: 80mm !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Ensure text remains crisp black and contrast is sharp */
+  #receipt-printable-canvas * {
+    color: #000000 !important;
+    border-color: #000000 !important;
+    text-shadow: none !important;
+  }
+}
+
+

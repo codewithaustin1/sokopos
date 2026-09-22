@@ -1,10 +1,57 @@
-import React, { useRef } from 'react';
-import { Printer, MessageSquare, ArrowRight, Check, Share2, RotateCcw, AlertTriangle } from 'lucide-react';
+import React, { useRef, useEffect, useState } from 'react';
+import { Printer, MessageSquare, ArrowRight, Check, Share2, RotateCcw, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
+import { getItemDiscountedUnitPrice, formatDiscountBadge } from '../utils/discountUtils';
 
 export const ReceiptModal: React.FC = () => {
-  const { activeReceipt, setActiveReceipt, currentLocation, showToast, openReturnsModal } = usePos();
+  const {
+    activeReceipt,
+    setActiveReceipt,
+    currentLocation,
+    showToast,
+    openReturnsModal,
+    autoPrintReceipt,
+    toggleAutoPrintReceipt,
+    receiptFormat,
+  } = usePos();
   const receiptRef = useRef<HTMLDivElement | null>(null);
+  const hasAutoPrintedRef = useRef<string | null>(null);
+  const [isAutoPrinting, setIsAutoPrinting] = useState<boolean>(false);
+
+  // Auto-Print on Checkout: Automatically invoke browser window.print() dialog once transaction completes
+  useEffect(() => {
+    if (activeReceipt && autoPrintReceipt) {
+      if (hasAutoPrintedRef.current !== activeReceipt.id) {
+        hasAutoPrintedRef.current = activeReceipt.id;
+        setIsAutoPrinting(true);
+
+        const timer = setTimeout(() => {
+          try {
+            window.print();
+          } catch (err) {
+            console.warn('Auto-print invocation error:', err);
+          } finally {
+            setIsAutoPrinting(false);
+          }
+        }, 280);
+
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [activeReceipt, autoPrintReceipt]);
+
+  // Keyboard shortcut listener for receipt modal: Esc or Enter to dismiss/next sale
+  useEffect(() => {
+    if (!activeReceipt) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.key === 'Enter') {
+        e.preventDefault();
+        setActiveReceipt(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeReceipt, setActiveReceipt]);
 
   if (!activeReceipt) return null;
 
@@ -30,16 +77,82 @@ export const ReceiptModal: React.FC = () => {
   const isPartiallyRefunded = activeReceipt.status === 'partially_refunded';
   const hasRefunds = (activeReceipt.refunds && activeReceipt.refunds.length > 0) || (activeReceipt.totalRefunded && activeReceipt.totalRefunded > 0);
 
+  // Paper width styling based on user hardware preference
+  const receiptMaxWidthClass =
+    receiptFormat === '58mm'
+      ? 'max-w-[280px]'
+      : receiptFormat === 'standard'
+      ? 'max-w-[420px]'
+      : 'max-w-[360px]';
+
   return (
     <div
       id="receipt-display-modal"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto"
     >
-      <div className="bg-slate-200/90 p-3 sm:p-6 rounded-2xl shadow-2xl flex flex-col items-center max-h-[96vh] sm:max-h-[95vh] overflow-y-auto w-full max-w-[380px]">
+      <div className={`bg-slate-200/90 p-3 sm:p-5 rounded-2xl shadow-2xl flex flex-col items-center max-h-[96vh] sm:max-h-[95vh] overflow-y-auto w-full ${receiptFormat === 'standard' ? 'max-w-[460px]' : receiptFormat === '58mm' ? 'max-w-[320px]' : 'max-w-[400px]'}`}>
+        
+        {/* Quick Auto-Print Preference Toggle Banner */}
+        <div className="no-print w-full mb-3 px-3 py-2 rounded-xl bg-white border border-slate-300 flex items-center justify-between shadow-xs">
+          <div className="flex items-center gap-2">
+            <div
+              className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+                autoPrintReceipt
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : 'bg-slate-100 text-slate-500'
+              }`}
+            >
+              <Printer className="w-4 h-4" />
+            </div>
+            <div className="text-left">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-bold text-slate-900 leading-tight">
+                  Auto-Print on Checkout
+                </span>
+                {autoPrintReceipt && (
+                  <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 uppercase tracking-wider">
+                    ON
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px] text-slate-500 block leading-tight">
+                {isAutoPrinting ? (
+                  <span className="text-blue-600 font-bold animate-pulse">
+                    Dispatching to printer dialog...
+                  </span>
+                ) : autoPrintReceipt ? (
+                  'Browser print dialog triggers automatically on sale'
+                ) : (
+                  'Manual printing mode active'
+                )}
+              </span>
+            </div>
+          </div>
+
+          <button
+            id="receipt-auto-print-quick-toggle"
+            type="button"
+            role="switch"
+            aria-checked={autoPrintReceipt}
+            onClick={toggleAutoPrintReceipt}
+            className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1 ${
+              autoPrintReceipt ? 'bg-emerald-600' : 'bg-slate-300'
+            }`}
+            title={autoPrintReceipt ? 'Turn off Auto-Print' : 'Turn on Auto-Print'}
+          >
+            <span
+              className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                autoPrintReceipt ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+
         {/* Printable Thermal Receipt Canvas */}
         <div
           ref={receiptRef}
-          className="bg-white w-full max-w-[360px] rounded-xl shadow-xl border border-slate-300 p-4 sm:p-6 flex flex-col justify-between text-slate-800 font-mono text-xs select-text"
+          id="receipt-printable-canvas"
+          className={`receipt-printable-canvas bg-white w-full ${receiptMaxWidthClass} rounded-xl shadow-xl border border-slate-300 p-4 sm:p-6 flex flex-col justify-between text-slate-800 font-mono text-xs select-text`}
         >
           {/* Header */}
           <div className="text-center space-y-1 pb-3 border-b border-dashed border-slate-300">
@@ -107,16 +220,26 @@ export const ReceiptModal: React.FC = () => {
               <span>QTY / ITEM</span>
               <span>AMOUNT</span>
             </div>
-            {activeReceipt.items.map((it, idx) => (
-              <div key={idx} className="flex justify-between text-[11px] leading-tight">
-                <div className="pr-2">
-                  <span className="font-bold">{it.quantity}x</span> {it.productName}
+            {activeReceipt.items.map((it, idx) => {
+              const discountedUnit = getItemDiscountedUnitPrice(it);
+              const lineTotal = discountedUnit * it.quantity;
+              const discountBadge = formatDiscountBadge(it, currentLocation.currency);
+              return (
+                <div key={idx} className="flex justify-between text-[11px] leading-tight">
+                  <div className="pr-2">
+                    <span className="font-bold">{it.quantity}x</span> {it.productName}
+                    {discountBadge && (
+                      <span className="ml-1.5 text-[9px] text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded font-bold">
+                        {discountBadge}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-right font-mono shrink-0">
+                    {lineTotal.toFixed(2)}
+                  </div>
                 </div>
-                <div className="text-right font-mono shrink-0">
-                  {(it.unitPrice * (1 - it.discountPercent / 100) * it.quantity).toFixed(2)}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Calculations */}
@@ -209,7 +332,7 @@ export const ReceiptModal: React.FC = () => {
         </div>
 
         {/* Action Buttons Below Receipt */}
-        <div className="w-full max-w-[360px] mt-3 sm:mt-4 space-y-2">
+        <div className="no-print w-full max-w-[360px] mt-3 sm:mt-4 space-y-2">
           {!isFullyRefunded && (
             <button
               onClick={handleInitiateReturn}

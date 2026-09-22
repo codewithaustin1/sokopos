@@ -6,17 +6,20 @@ import {
   PlusCircle,
   ChevronDown,
   AlertTriangle,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 
 interface SuperAdminBannerProps {
   onOpenAuditLog: () => void;
   onOpenProvisionModal: () => void;
+  onOpenBrandingModal?: () => void;
 }
 
 export const SuperAdminBanner: React.FC<SuperAdminBannerProps> = ({
   onOpenAuditLog,
   onOpenProvisionModal,
+  onOpenBrandingModal,
 }) => {
   const {
     isSuperAdmin,
@@ -25,6 +28,7 @@ export const SuperAdminBanner: React.FC<SuperAdminBannerProps> = ({
     activeBusinessId,
     setActiveBusinessId,
     superAdminAuditLogs,
+    loginBgGraphic,
   } = usePos();
 
   if (!isSuperAdmin) return null;
@@ -74,6 +78,21 @@ export const SuperAdminBanner: React.FC<SuperAdminBannerProps> = ({
           <FileText className="w-3.5 h-3.5" />
           <span>Write Audit Log ({superAdminAuditLogs.length})</span>
         </button>
+
+        {/* Login Graphic Branding Button */}
+        {onOpenBrandingModal && (
+          <button
+            onClick={onOpenBrandingModal}
+            className="flex items-center gap-1.5 bg-slate-900 text-white hover:bg-slate-800 px-2.5 py-1 rounded-lg text-xs font-bold transition shadow-2xs cursor-pointer border border-amber-600/40"
+            title="Configure POS terminal login background graphic"
+          >
+            <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
+            <span>Login Graphic</span>
+            {loginBgGraphic && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Custom Graphic Active" />
+            )}
+          </button>
+        )}
 
         {/* Provision Business Button */}
         <button

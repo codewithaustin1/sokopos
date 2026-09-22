@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { SUPER_ADMIN_EMAIL } from '../data/initialData';
+import { SignUpSkeleton } from './SignUpSkeleton';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -45,6 +46,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [googleEmail, setGoogleEmail] = useState('');
   const [googleName, setGoogleName] = useState('');
   const [newStoreName, setNewStoreName] = useState('');
+  const [isSubmittingSignup, setIsSubmittingSignup] = useState(false);
 
   // Credentials fields
   const [credUsername, setCredUsername] = useState('');
@@ -74,14 +76,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   // 2. Custom Google Sign-In
-  const handleGoogleSubmit = (e: React.FormEvent) => {
+  const handleGoogleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!googleEmail.trim()) return;
+
+    if (mode === 'signup') {
+      setIsSubmittingSignup(true);
+      try {
+        // Render structural skeleton shimmer for mental model continuity
+        await new Promise((resolve) => setTimeout(resolve, 450));
+        const ok = loginWithGoogle(
+          googleEmail.trim(),
+          googleName.trim() || undefined,
+          newStoreName.trim()
+        );
+        if (ok) {
+          onClose();
+        }
+      } finally {
+        setIsSubmittingSignup(false);
+      }
+      return;
+    }
 
     const ok = loginWithGoogle(
       googleEmail.trim(),
       googleName.trim() || undefined,
-      mode === 'signup' ? newStoreName.trim() : undefined
+      undefined
     );
     if (ok) {
       onClose();
@@ -312,60 +333,71 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
           {/* TAB 2: BUSINESS OWNER SELF-SIGNUP (GOOGLE) */}
           {mode === 'signup' && (
-            <form onSubmit={handleGoogleSubmit} className="space-y-3">
-              <p className="text-xs text-slate-500">
-                Self-signup: Register a new business tenant and link it directly to your Google Account.
-              </p>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Business / Store Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newStoreName}
-                  onChange={(e) => setNewStoreName(e.target.value)}
-                  placeholder="e.g. Rift Valley Mart"
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:border-blue-600 font-medium"
+            isSubmittingSignup ? (
+              <div className="py-2">
+                <SignUpSkeleton
+                  variant="form-only"
+                  theme="light"
+                  mode="signup"
+                  message="Provisioning business tenant & linking Google credentials..."
                 />
               </div>
+            ) : (
+              <form onSubmit={handleGoogleSubmit} className="space-y-3">
+                <p className="text-xs text-slate-500">
+                  Self-signup: Register a new business tenant and link it directly to your Google Account.
+                </p>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Google Account Email *
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={googleEmail}
-                  onChange={(e) => setGoogleEmail(e.target.value)}
-                  placeholder="e.g. owner@riftvalleymart.com"
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:border-blue-600 font-medium"
-                />
-              </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Business / Store Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newStoreName}
+                    onChange={(e) => setNewStoreName(e.target.value)}
+                    placeholder="e.g. Rift Valley Mart"
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:border-blue-600 font-medium"
+                  />
+                </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Your Full Name
-                </label>
-                <input
-                  type="text"
-                  value={googleName}
-                  onChange={(e) => setGoogleName(e.target.value)}
-                  placeholder="e.g. Daniel Kiprop"
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:border-blue-600 font-medium"
-                />
-              </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Google Account Email *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={googleEmail}
+                    onChange={(e) => setGoogleEmail(e.target.value)}
+                    placeholder="e.g. owner@riftvalleymart.com"
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:border-blue-600 font-medium"
+                  />
+                </div>
 
-              <button
-                type="submit"
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 rounded-xl transition shadow-xs cursor-pointer flex items-center justify-center gap-2 mt-2"
-              >
-                <CheckCircle className="w-4 h-4" />
-                <span>Complete Signup via Google Account</span>
-              </button>
-            </form>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Your Full Name
+                  </label>
+                  <input
+                    type="text"
+                    value={googleName}
+                    onChange={(e) => setGoogleName(e.target.value)}
+                    placeholder="e.g. Daniel Kiprop"
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:border-blue-600 font-medium"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 rounded-xl transition shadow-xs cursor-pointer flex items-center justify-center gap-2 mt-2"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  <span>Complete Signup via Google Account</span>
+                </button>
+              </form>
+            )
           )}
 
           {/* TAB 3: SYSTEM USER CREDENTIALS LOGIN */}

@@ -26,13 +26,30 @@ import {
   Layers,
   ChevronDown,
   ChevronUp,
+  Moon,
+  Sun,
+  Palette,
+  Monitor,
+  Sparkles,
+  RotateCcw,
+  Archive,
+  Download,
+  ShieldAlert,
+  History,
+  Printer,
+  Coffee,
+  Leaf,
+  Wrench,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
-import { UserRole, Location, Cashier } from '../types';
+import { UserRole, Location, Cashier, RetailTheme } from '../types';
+import { RETAIL_THEMES, RetailThemeConfig } from '../data/retailThemes';
+import { ResetStoreModal } from './ResetStoreModal';
 
 export const BusinessProfileSettingsModal: React.FC = () => {
   const {
     currentBusiness,
+    activeBusinessId,
     updateBusinessProfile,
     locations,
     currentLocation,
@@ -51,11 +68,33 @@ export const BusinessProfileSettingsModal: React.FC = () => {
     businessSettingsDefaultTab,
     updateActiveUserCredentials,
     showToast,
+    isDarkMode,
+    toggleDarkMode,
+    setIsDarkMode,
+    retailTheme,
+    setRetailTheme,
+    autoPrintReceipt,
+    setAutoPrintReceipt,
+    toggleAutoPrintReceipt,
+    receiptFormat,
+    setReceiptFormat,
+    transactions,
+    storeSalesBackups,
+    downloadSalesBackup,
+    canResetStore,
   } = usePos();
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'branches' | 'accounts' | 'credentials'>(
+  const [activeTab, setActiveTab] = useState<'profile' | 'branches' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset'>(
     businessSettingsDefaultTab || 'profile'
   );
+
+  const [isResetStoreModalOpen, setIsResetStoreModalOpen] = useState(false);
+
+  React.useEffect(() => {
+    if (businessSettingsDefaultTab) {
+      setActiveTab(businessSettingsDefaultTab);
+    }
+  }, [businessSettingsDefaultTab]);
 
   // Profile Form State
   const [profileName, setProfileName] = useState(currentBusiness?.name || '');
@@ -350,14 +389,41 @@ export const BusinessProfileSettingsModal: React.FC = () => {
               </p>
             </div>
           </div>
-          <button
-            id="close-business-settings-btn"
-            onClick={() => setIsBusinessSettingsOpen(false)}
-            className="p-1.5 sm:p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-            title="Close Settings"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Quick Dark Mode Toggle in Header */}
+            <button
+              id="settings-modal-header-theme-toggle"
+              type="button"
+              onClick={toggleDarkMode}
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                isDarkMode
+                  ? 'bg-blue-950/70 border-blue-500/40 text-blue-300 hover:bg-blue-900/80'
+                  : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'
+              }`}
+              title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dim Retail Dark Mode'}
+            >
+              {isDarkMode ? (
+                <>
+                  <Sun className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="hidden xs:inline">Light Mode</span>
+                </>
+              ) : (
+                <>
+                  <Moon className="w-3.5 h-3.5 text-blue-400" />
+                  <span className="hidden xs:inline">Dark Mode</span>
+                </>
+              )}
+            </button>
+
+            <button
+              id="close-business-settings-btn"
+              onClick={() => setIsBusinessSettingsOpen(false)}
+              className="p-1.5 sm:p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              title="Close Settings"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Tab Selection Bar */}
@@ -418,6 +484,68 @@ export const BusinessProfileSettingsModal: React.FC = () => {
           >
             <KeyRound className="w-4 h-4" />
             <span>Security</span>
+          </button>
+
+          <button
+            id="tab-appearance-btn"
+            onClick={() => setActiveTab('appearance')}
+            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
+              activeTab === 'appearance'
+                ? 'border-blue-600 text-blue-600 bg-white'
+                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
+            }`}
+          >
+            <Palette className="w-4 h-4" />
+            <span>Appearance</span>
+            <span
+              className={`ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                retailTheme !== 'classic'
+                  ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                  : isDarkMode
+                  ? 'bg-blue-900/60 text-blue-300 border border-blue-700/50'
+                  : 'bg-slate-200 text-slate-700'
+              }`}
+            >
+              {RETAIL_THEMES.find((t) => t.id === retailTheme)?.name.split(' ')[0] || 'Theme'}
+            </span>
+          </button>
+
+          <button
+            id="tab-hardware-btn"
+            onClick={() => setActiveTab('hardware')}
+            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
+              activeTab === 'hardware'
+                ? 'border-blue-600 text-blue-600 bg-white'
+                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
+            }`}
+          >
+            <Printer className="w-4 h-4" />
+            <span>Printing & Hardware</span>
+            <span
+              className={`ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                autoPrintReceipt
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                  : 'bg-slate-200 text-slate-600'
+              }`}
+            >
+              {autoPrintReceipt ? 'Auto ON' : 'Manual'}
+            </span>
+          </button>
+
+          <button
+            id="tab-reset-store-btn"
+            onClick={() => setActiveTab('reset')}
+            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
+              activeTab === 'reset'
+                ? 'border-rose-600 text-rose-600 bg-white'
+                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
+            }`}
+          >
+            <RotateCcw className="w-4 h-4 text-rose-500" />
+            <span>Store Reset</span>
+            <span className="ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full bg-rose-100 text-rose-700 font-extrabold border border-rose-200">
+              Clean Zero
+            </span>
           </button>
         </div>
 
@@ -581,6 +709,31 @@ export const BusinessProfileSettingsModal: React.FC = () => {
                     <div className="text-lg font-bold text-white">Bcrypt 10x</div>
                     <div className="text-[11px] text-slate-400">Credential Crypto</div>
                   </div>
+                </div>
+
+                {/* Display & Lighting Mode Quick Section in Profile */}
+                <div className="mt-4 pt-3 border-t border-slate-700/60 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-left">
+                    <Palette className="w-4 h-4 text-blue-400 shrink-0" />
+                    <div>
+                      <div className="text-xs font-bold text-white">Dim Retail Lighting Mode</div>
+                      <div className="text-[10px] text-slate-400">
+                        {isDarkMode ? 'Low-glare dark theme active' : 'Standard light theme active'}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={toggleDarkMode}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      isDarkMode
+                        ? 'bg-blue-600 hover:bg-blue-500 text-white'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+                    }`}
+                  >
+                    {isDarkMode ? <Sun className="w-3.5 h-3.5 text-amber-300" /> : <Moon className="w-3.5 h-3.5 text-blue-400" />}
+                    <span>{isDarkMode ? 'Switch to Light' : 'Switch to Dark'}</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -1355,6 +1508,942 @@ export const BusinessProfileSettingsModal: React.FC = () => {
               </div>
             </div>
           )}
+
+          {/* ========================================================= */}
+          {/* TAB 5: APPEARANCE & DIM RETAIL LIGHTING MODE */}
+          {/* ========================================================= */}
+          {activeTab === 'appearance' && (
+            <div className="space-y-6 max-w-3xl mx-auto">
+              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+                <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-blue-600 shrink-0">
+                      <Palette className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">
+                        Display Theme & Retail Lighting Environment
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Optimize POS terminal visibility for low-glare night registers, bars, evening shifts, and dim store counters.
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className={`px-2.5 py-1 text-xs font-bold rounded-lg border shrink-0 ${
+                      isDarkMode
+                        ? 'bg-blue-900/40 text-blue-300 border-blue-600/40'
+                        : 'bg-amber-50 text-amber-800 border-amber-200'
+                    }`}
+                  >
+                    {isDarkMode ? 'Low-Glare Dark Theme' : 'High-Visibility Light Theme'}
+                  </span>
+                </div>
+
+                {/* Primary Persistent Toggle Switch */}
+                <div className="mt-5 p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                        isDarkMode ? 'bg-slate-800 text-blue-400' : 'bg-amber-100 text-amber-600'
+                      }`}
+                    >
+                      {isDarkMode ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                        <span>Terminal Dark Mode</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold">
+                          Persistent
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {isDarkMode
+                          ? 'Deep slate palette enabled. Eye fatigue & counter screen reflections are actively minimized.'
+                          : 'Standard high-contrast light theme active for sunlit day shifts.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Toggle Control */}
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-xs font-bold text-slate-500">
+                      {isDarkMode ? 'Dark Mode On' : 'Dark Mode Off'}
+                    </span>
+                    <button
+                      type="button"
+                      id="settings-theme-main-toggle"
+                      role="switch"
+                      aria-checked={isDarkMode}
+                      onClick={toggleDarkMode}
+                      className={`relative inline-flex h-7 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 ${
+                        isDarkMode ? 'bg-blue-600' : 'bg-slate-300'
+                      }`}
+                      title={isDarkMode ? 'Disable Dark Mode' : 'Enable Dark Mode'}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out flex items-center justify-center ${
+                          isDarkMode ? 'translate-x-7' : 'translate-x-0'
+                        }`}
+                      >
+                        {isDarkMode ? (
+                          <Moon className="w-3.5 h-3.5 text-blue-600" />
+                        ) : (
+                          <Sun className="w-3.5 h-3.5 text-amber-500" />
+                        )}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Theme Choice Cards */}
+                <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Light Theme Card */}
+                  <div
+                    onClick={() => {
+                      if (isDarkMode) toggleDarkMode();
+                    }}
+                    className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
+                      !isDarkMode
+                        ? 'border-blue-600 bg-blue-50/20 ring-2 ring-blue-500/20 shadow-sm'
+                        : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Sun className="w-4 h-4 text-amber-500" />
+                          <h4 className="text-sm font-bold text-slate-900">Light Palette</h4>
+                        </div>
+                        {!isDarkMode && (
+                          <span className="text-[10px] bg-blue-600 text-white font-bold px-1.5 py-0.5 rounded">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-2">
+                        High ambient readability with crisp slate backgrounds and sharp typographic contrast.
+                      </p>
+                      <div className="mt-3 p-2.5 rounded-lg bg-slate-100 border border-slate-200 text-[11px] space-y-1">
+                        <div className="flex justify-between font-bold text-slate-700">
+                          <span>Store Register</span>
+                          <span className="text-blue-600 font-black">KES 1,250.00</span>
+                        </div>
+                        <div className="text-[10px] text-slate-400">Sunlit storefronts • Day shifts</div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className={`mt-4 w-full py-1.5 px-3 rounded-lg text-xs font-bold transition ${
+                        !isDarkMode
+                          ? 'bg-blue-600 text-white cursor-default'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      {!isDarkMode ? 'Current Active Mode' : 'Switch to Light Mode'}
+                    </button>
+                  </div>
+
+                  {/* Dark Theme Card (Dim Retail) */}
+                  <div
+                    onClick={() => {
+                      if (!isDarkMode) toggleDarkMode();
+                    }}
+                    className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
+                      isDarkMode
+                        ? 'border-blue-500 bg-slate-900 ring-2 ring-blue-500/20 shadow-sm'
+                        : 'border-slate-200 bg-slate-900 hover:border-blue-400'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Moon className="w-4 h-4 text-blue-400" />
+                          <h4 className="text-sm font-bold text-white">Dim Retail Dark Palette</h4>
+                        </div>
+                        {isDarkMode && (
+                          <span className="text-[10px] bg-blue-600 text-white font-bold px-1.5 py-0.5 rounded">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400 mt-2">
+                        Deep midnight slate (#090d16) engineered for dim retail environments, evening bars, and late shifts.
+                      </p>
+                      <div className="mt-3 p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] space-y-1">
+                        <div className="flex justify-between font-bold text-slate-200">
+                          <span>Night Register</span>
+                          <span className="text-blue-400 font-black">KES 1,250.00</span>
+                        </div>
+                        <div className="text-[10px] text-slate-500">Low-glare • Barcode friendly</div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className={`mt-4 w-full py-1.5 px-3 rounded-lg text-xs font-bold transition ${
+                        isDarkMode
+                          ? 'bg-blue-600 text-white cursor-default'
+                          : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+                      }`}
+                    >
+                      {isDarkMode ? 'Current Active Mode' : 'Switch to Dark Mode'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Dim Retail Environment Operational Benefits */}
+                <div className="mt-5 p-4 rounded-xl bg-blue-50/50 border border-blue-100">
+                  <h4 className="text-xs font-bold text-blue-900 flex items-center gap-1.5 mb-2">
+                    <Sparkles className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    <span>Retail Advantages in Dim Environments</span>
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-[11px] text-slate-600">
+                    <div className="p-2.5 bg-white rounded-lg border border-blue-100/80">
+                      <strong className="text-slate-800 block mb-0.5">Glare Reduction</strong>
+                      Prevents high-intensity display reflection on counter glass and laser scanner lenses.
+                    </div>
+                    <div className="p-2.5 bg-white rounded-lg border border-blue-100/80">
+                      <strong className="text-slate-800 block mb-0.5">Cashier Eye Comfort</strong>
+                      Drastically decreases ocular strain and pupil dilation fatigue during 8+ hour evening shifts.
+                    </div>
+                    <div className="p-2.5 bg-white rounded-lg border border-blue-100/80">
+                      <strong className="text-slate-800 block mb-0.5">Barcode Scan Speed</strong>
+                      Dark UI reduces ambient scatter, helping camera & laser barcode scanners lock on faster.
+                    </div>
+                  </div>
+                </div>
+
+                {/* Storage & Persistence Details */}
+                <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between text-[11px] text-slate-400 px-1 gap-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    Theme choice automatically persisted in register local memory (key: sokopos_dark_mode_v2)
+                  </span>
+                  <span className="font-semibold text-slate-500">Instant application-wide switch</span>
+                </div>
+
+                {/* ========================================================= */}
+                {/* RETAIL DOMAIN ACCENT PALETTES SELECTOR */}
+                {/* ========================================================= */}
+                <div id="retail-domain-palettes-section" className="mt-8 pt-6 border-t border-slate-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                          <Palette className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                            <span>Retail Domain Accent Palettes</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-bold uppercase tracking-wider">
+                              Trade Styling
+                            </span>
+                          </h3>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            Tailor your terminal's accent colors to your specific trade environment — from fresh organic greens to warm bakery ambers and high-visibility industrial graphite.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-center">
+                      <span className="text-[11px] text-slate-500">Active Trade Palette:</span>
+                      <span className="px-2.5 py-1 text-xs font-bold rounded-md bg-slate-900 text-white flex items-center gap-1.5 shadow-xs">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
+                          style={{
+                            backgroundColor:
+                              RETAIL_THEMES.find((t) => t.id === retailTheme)?.primaryColor || '#2563eb',
+                          }}
+                        />
+                        <span>{RETAIL_THEMES.find((t) => t.id === retailTheme)?.name.split(' (')[0] || 'Enterprise Classic'}</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 5 Retail Theme Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                    {RETAIL_THEMES.map((theme) => {
+                      const isSelected = retailTheme === theme.id;
+                      return (
+                        <div
+                          key={theme.id}
+                          id={`retail-palette-card-${theme.id}`}
+                          onClick={() => setRetailTheme(theme.id)}
+                          className={`group relative p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between hover:shadow-md ${
+                            isSelected
+                              ? 'border-blue-600 bg-white ring-2 ring-blue-500/20 shadow-sm'
+                              : 'border-slate-200 bg-slate-50/60 hover:border-slate-300 hover:bg-white'
+                          }`}
+                        >
+                          <div>
+                            {/* Card Top: Header & Active Indicator */}
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="w-7 h-7 rounded-lg flex items-center justify-center text-white shadow-xs shrink-0"
+                                  style={{ background: theme.swatchGradient }}
+                                >
+                                  {theme.id === 'emerald' && <Leaf className="w-3.5 h-3.5" />}
+                                  {theme.id === 'amber' && <Coffee className="w-3.5 h-3.5" />}
+                                  {theme.id === 'burgundy' && <Sparkles className="w-3.5 h-3.5" />}
+                                  {theme.id === 'industrial' && <Wrench className="w-3.5 h-3.5" />}
+                                  {theme.id === 'classic' && <Building2 className="w-3.5 h-3.5" />}
+                                </div>
+                                <div>
+                                  <h4 className="text-xs font-bold text-slate-900 leading-tight">
+                                    {theme.name}
+                                  </h4>
+                                  <p className="text-[10px] text-slate-500 font-medium">
+                                    {theme.subtitle}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {isSelected ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-black bg-blue-600 text-white px-2 py-0.5 rounded-full shrink-0 shadow-xs">
+                                  <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                  Active
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-semibold text-slate-400 group-hover:text-slate-600 transition shrink-0">
+                                  Select
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Trade & Domain Description */}
+                            <p className="text-[11px] text-slate-600 leading-relaxed mb-3">
+                              {theme.description}
+                            </p>
+
+                            {/* Trade Target Chips */}
+                            <div className="flex flex-wrap gap-1 mb-3">
+                              {theme.tags.map((tag) => (
+                                <span
+                                  key={tag}
+                                  className="text-[9px] px-1.5 py-0.5 rounded font-medium bg-slate-100 text-slate-600 border border-slate-200/70"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+
+                            {/* Color Swatch Demonstration */}
+                            <div className="p-2.5 rounded-lg bg-white border border-slate-200/80 mb-3 space-y-1.5">
+                              <div className="flex items-center justify-between text-[10px] text-slate-500">
+                                <span className="font-semibold">Palette Swatches:</span>
+                                <span className="font-mono text-[9px]">{theme.primaryColor}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="w-5 h-5 rounded-full border border-black/10 shadow-xs shrink-0"
+                                  style={{ backgroundColor: theme.primaryColor }}
+                                  title={`Primary: ${theme.primaryColor}`}
+                                />
+                                <div
+                                  className="w-5 h-5 rounded-full border border-black/10 shadow-xs shrink-0"
+                                  style={{ backgroundColor: theme.accentColor }}
+                                  title={`Accent: ${theme.accentColor}`}
+                                />
+                                <div
+                                  className="w-5 h-5 rounded-full border border-black/10 shadow-xs shrink-0"
+                                  style={{ backgroundColor: theme.highlightColor }}
+                                  title={`Highlight: ${theme.highlightColor}`}
+                                />
+                                <div
+                                  className="flex-1 h-5 rounded-md border border-slate-200 flex items-center justify-center text-[9px] font-bold text-slate-700"
+                                  style={{ backgroundColor: theme.lightBg }}
+                                >
+                                  Surface Tint
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Live Interactive UI Element Sample */}
+                            <div className="p-2 rounded-lg bg-slate-100/80 border border-slate-200 text-[10px] flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 font-bold text-slate-700">
+                                <span>Cart Item</span>
+                                <span
+                                  className="px-1.5 py-0.2 rounded font-black text-[9px]"
+                                  style={{
+                                    backgroundColor: theme.lightBg,
+                                    color: theme.primaryColor,
+                                    border: `1px solid ${theme.lightBorder}`,
+                                  }}
+                                >
+                                  KES 750
+                                </span>
+                              </div>
+                              <span
+                                className="px-2 py-0.5 rounded text-[10px] font-bold text-white shadow-xs"
+                                style={{ backgroundColor: theme.primaryColor }}
+                              >
+                                Charge
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Action Button */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRetailTheme(theme.id);
+                            }}
+                            className={`mt-3 w-full py-1.5 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                              isSelected
+                                ? 'bg-slate-900 text-white cursor-default'
+                                : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                            }`}
+                          >
+                            {isSelected ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>Currently Active Palette</span>
+                              </>
+                            ) : (
+                              <span>Apply {theme.name.split(' ')[0]} Palette</span>
+                            )}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Live POS Terminal Component Preview Strip */}
+                  <div className="mt-5 p-4 rounded-xl bg-slate-900 text-white border border-slate-800">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                      <div className="flex items-center gap-2">
+                        <Monitor className="w-4 h-4 text-blue-400" />
+                        <h4 className="text-xs font-bold text-white tracking-wide uppercase">
+                          Active Terminal Accent Preview
+                        </h4>
+                      </div>
+                      <span className="text-[11px] text-slate-400">
+                        Live visual preview of cashier buttons, badges, and focus rings
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      {/* Register Checkout Action Button */}
+                      <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+                        <div className="text-[10px] text-slate-400 mb-1.5">Primary Register Action</div>
+                        <button
+                          type="button"
+                          className="w-full py-2 px-3 rounded-lg text-xs font-bold bg-blue-600 text-white shadow-sm flex items-center justify-center gap-1.5"
+                        >
+                          <Receipt className="w-3.5 h-3.5" />
+                          <span>Charge KES 1,840.00</span>
+                        </button>
+                      </div>
+
+                      {/* Active Filter / Category Tab */}
+                      <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+                        <div className="text-[10px] text-slate-400 mb-1.5">Active Category Tab</div>
+                        <div className="flex gap-1.5">
+                          <span className="flex-1 text-center py-1.5 px-2 rounded-md text-xs font-bold bg-blue-600 text-white">
+                            Selected Tab
+                          </span>
+                          <span className="flex-1 text-center py-1.5 px-2 rounded-md text-xs font-medium bg-slate-800 text-slate-400">
+                            Inactive
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Product Price Tag Badge */}
+                      <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+                        <div className="text-[10px] text-slate-400 mb-1.5">Counter Price Badge</div>
+                        <div className="flex items-center justify-between p-1.5 rounded-md bg-slate-900 border border-slate-800">
+                          <span className="text-xs font-medium text-slate-300">Fresh Produce</span>
+                          <span className="text-xs font-black text-blue-400">KES 420.00</span>
+                        </div>
+                      </div>
+
+                      {/* Focus Ring & Input Highlight */}
+                      <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+                        <div className="text-[10px] text-slate-400 mb-1.5">Barcode Scan Field</div>
+                        <div className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-slate-900 border border-blue-500 ring-2 ring-blue-500/40 text-xs text-white">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                          <span className="font-mono text-[11px] text-slate-200">600123456789</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Persistence & Cloud Sync Footer Note */}
+                  <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between text-[11px] text-slate-500 px-1 gap-1">
+                    <span className="flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>Saved to business profile ({currentBusiness?.name || 'Current Business'}) and synced with Cloud Firestore</span>
+                    </span>
+                    <span className="text-slate-400 font-mono text-[10px]">
+                      tenantKey: {activeBusinessId}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* TAB: HARDWARE & RECEIPT PRINTING PREFERENCES */}
+          {/* ========================================================= */}
+          {activeTab === 'hardware' && (
+            <div className="space-y-6 max-w-3xl mx-auto">
+              {/* Header Card */}
+              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border border-blue-200 flex items-center justify-center">
+                      <Printer className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-slate-900">
+                        Printing & Hardware Preferences
+                      </h3>
+                      <p className="text-xs text-slate-500">
+                        Configure automatic thermal receipt printing, paper sizing, and checkout dispatch.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                      Tenant: {currentBusiness?.name || 'Current Shop'}
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
+                        autoPrintReceipt
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : 'bg-slate-100 text-slate-700 border border-slate-200'
+                      }`}
+                    >
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          autoPrintReceipt ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
+                        }`}
+                      />
+                      {autoPrintReceipt ? 'Auto-Print Active' : 'Manual Print Mode'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Primary Feature Setting: Auto-Print on Checkout */}
+                <div className="mt-5 p-4 sm:p-5 rounded-xl bg-slate-50 border border-slate-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-bold text-slate-900">
+                          Auto-Print on Checkout
+                        </h4>
+                        <span className="text-[10px] px-2 py-0.5 rounded-md font-extrabold bg-blue-100 text-blue-800">
+                          Recommended
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 max-w-lg">
+                        Automatically invokes the browser's native print dialog for the receipt immediately once a transaction is successfully authorized, eliminating the need to click &quot;Print&quot; manually.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-3 shrink-0">
+                      <button
+                        id="settings-auto-print-switch"
+                        type="button"
+                        role="switch"
+                        aria-checked={autoPrintReceipt}
+                        onClick={toggleAutoPrintReceipt}
+                        className={`relative inline-flex h-6 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                          autoPrintReceipt ? 'bg-emerald-600' : 'bg-slate-300'
+                        }`}
+                        title={autoPrintReceipt ? 'Disable Auto-Print' : 'Enable Auto-Print'}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                            autoPrintReceipt ? 'translate-x-6' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Flow Diagram */}
+                  <div className="mt-4 pt-3 border-t border-slate-200/80 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                    <span className="font-semibold text-slate-700">Checkout Dispatch Sequence:</span>
+                    <span className="px-2 py-0.5 rounded bg-white border border-slate-200 font-mono text-slate-700">
+                      1. Confirm Tender
+                    </span>
+                    <span>→</span>
+                    <span className="px-2 py-0.5 rounded bg-white border border-slate-200 font-mono text-slate-700">
+                      2. Authorize Sale
+                    </span>
+                    <span>→</span>
+                    <span className={`px-2 py-0.5 rounded border font-mono font-bold ${
+                      autoPrintReceipt
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                        : 'bg-slate-100 border-slate-200 text-slate-600'
+                    }`}>
+                      3. {autoPrintReceipt ? 'Browser Print Dialog Opens Automatically' : 'Receipt Modal Displays (Manual Print)'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Thermal Receipt Paper Sizing Preference */}
+                <div className="mt-6 space-y-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">
+                      Receipt Paper Format & Thermal Width
+                    </h4>
+                    <p className="text-xs text-slate-500">
+                      Select the paper roll specification matching your countertop receipt printer hardware.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* 80mm Standard POS Thermal */}
+                    <div
+                      onClick={() => setReceiptFormat('80mm')}
+                      className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
+                        receiptFormat === '80mm'
+                          ? 'border-blue-600 bg-blue-50/40 shadow-xs'
+                          : 'border-slate-200 bg-white hover:border-slate-300'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs font-black text-slate-900">
+                            80mm Thermal (3&quot;)
+                          </span>
+                          {receiptFormat === '80mm' && (
+                            <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-600">
+                          Standard commercial POS format (Epson TM-T88, Star Micronics, Rongta, Xprinter).
+                        </p>
+                      </div>
+                      <span className="mt-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                        Full Width • 48 Columns
+                      </span>
+                    </div>
+
+                    {/* 58mm Compact Mobile Thermal */}
+                    <div
+                      onClick={() => setReceiptFormat('58mm')}
+                      className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
+                        receiptFormat === '58mm'
+                          ? 'border-blue-600 bg-blue-50/40 shadow-xs'
+                          : 'border-slate-200 bg-white hover:border-slate-300'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs font-black text-slate-900">
+                            58mm Mini (2&quot;)
+                          </span>
+                          {receiptFormat === '58mm' && (
+                            <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-600">
+                          Compact handheld mobile Bluetooth and portable thermal belt clip printers.
+                        </p>
+                      </div>
+                      <span className="mt-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                        Narrow Slip • 32 Columns
+                      </span>
+                    </div>
+
+                    {/* Standard A4 / Document */}
+                    <div
+                      onClick={() => setReceiptFormat('standard')}
+                      className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
+                        receiptFormat === 'standard'
+                          ? 'border-blue-600 bg-blue-50/40 shadow-xs'
+                          : 'border-slate-200 bg-white hover:border-slate-300'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs font-black text-slate-900">
+                            Standard A4 / Letter
+                          </span>
+                          {receiptFormat === 'standard' && (
+                            <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-600">
+                          Standard laser or inkjet full-page document invoices for B2B or trade counters.
+                        </p>
+                      </div>
+                      <span className="mt-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                        Page Invoice • PDF Export
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Printer Diagnostics & Test Print */}
+                <div className="mt-6 pt-5 border-t border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <span className="text-xs font-bold text-slate-900 block">
+                      Hardware Connection Test
+                    </span>
+                    <span className="text-[11px] text-slate-500 block">
+                      Verify that your browser can communicate with your printer and test page margins.
+                    </span>
+                  </div>
+
+                  <button
+                    id="test-hardware-printer-btn"
+                    type="button"
+                    onClick={() => {
+                      showToast('Invoking browser printer dialog for test slip...', 'info');
+                      window.print();
+                    }}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl font-bold text-xs transition cursor-pointer border border-slate-300"
+                  >
+                    <Printer className="w-4 h-4 text-slate-600" />
+                    <span>Test Browser Print Dialog</span>
+                  </button>
+                </div>
+
+                {/* Commercial Silent Kiosk Printing Pro-Tip */}
+                <div className="mt-5 p-4 rounded-xl bg-amber-50/70 border border-amber-200/80">
+                  <h5 className="text-xs font-bold text-amber-900 flex items-center gap-1.5 mb-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Commercial Pro-Tip: 100% Silent Background Printing</span>
+                  </h5>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    In enterprise POS registers, launch Google Chrome or Edge with the flag{' '}
+                    <code className="px-1.5 py-0.5 bg-white/90 rounded border border-amber-300 font-mono text-[10px] text-slate-800">
+                      --kiosk-printing
+                    </code>
+                    . When combined with <strong>Auto-Print on Checkout</strong>, the thermal receipt prints instantly directly to your default ESC/POS printer with zero confirmation dialog popups required.
+                  </p>
+                </div>
+
+                {/* Persistence Notice */}
+                <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-slate-500 px-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    Isolated per tenant: Applied strictly to <strong>{currentBusiness?.name}</strong> (ID: {currentBusiness?.id})
+                  </span>
+                  <span className="font-semibold text-slate-600">
+                    Tenant-Isolated & Cloud-Synced
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* TAB 6: RESET STORE TO CLEAN ZERO (CLEAR TEST SALES) */}
+          {/* ========================================================= */}
+          {activeTab === 'reset' && (() => {
+            const authStatus = canResetStore(currentBusiness?.id || '');
+            const tenantTxs = transactions.filter((tx) => tx.businessId === currentBusiness?.id);
+            const totalGross = tenantTxs.reduce((sum, tx) => sum + (tx.total || 0), 0);
+            const totalRefunded = tenantTxs.reduce((sum, tx) => sum + (tx.totalRefunded || 0), 0);
+            const totalNet = totalGross - totalRefunded;
+            const tenantBackups = storeSalesBackups.filter((b) => b.businessId === currentBusiness?.id);
+
+            return (
+              <div className="space-y-6 max-w-3xl mx-auto">
+                {/* Authorization Barrier */}
+                {!authStatus.allowed ? (
+                  <div className="bg-white rounded-xl border border-rose-200 p-8 shadow-sm text-center space-y-4">
+                    <div className="w-14 h-14 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+                      <ShieldAlert className="w-8 h-8" />
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="text-lg font-black text-slate-900">
+                        Restricted Access: Store Owner or Super-Admin Only
+                      </h3>
+                      <p className="text-sm text-slate-600 max-w-md mx-auto">
+                        {authStatus.reason ||
+                          'Resetting store sales to clean zero is restricted to the verified Business Owner or a Platform Super-Admin.'}
+                      </p>
+                    </div>
+                    <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 text-xs text-slate-600 font-mono">
+                      <span>Logged in as: {currentUser?.name} ({currentUser?.email})</span>
+                      <span>•</span>
+                      <span>Role: {currentUser?.role}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Header Card */}
+                    <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center">
+                            <RotateCcw className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-base font-black text-slate-900">
+                              Store Go-Live & Test Sales Reset
+                            </h3>
+                            <p className="text-xs text-slate-500">
+                              Prepare {currentBusiness?.name} for official retail trading by permanently clearing test sales.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
+                            tenantTxs.length === 0
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : 'bg-amber-100 text-amber-800 border border-amber-200'
+                          }`}>
+                            <span className={`w-2 h-2 rounded-full ${
+                              tenantTxs.length === 0 ? 'bg-emerald-600' : 'bg-amber-600'
+                            }`} />
+                            {tenantTxs.length === 0 ? 'Store Clean Zero' : `${tenantTxs.length} Test Sales`}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Store Sales Status Metrics */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 my-5">
+                        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-center">
+                          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                            Test Transactions
+                          </div>
+                          <div className="text-2xl font-black text-slate-800 mt-1">
+                            {tenantTxs.length}
+                          </div>
+                          <div className="text-[10px] text-slate-400">Recorded orders</div>
+                        </div>
+
+                        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-center">
+                          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                            Gross Sales Volume
+                          </div>
+                          <div className="text-xl font-black text-slate-800 mt-1 truncate">
+                            {currentBusiness?.currency || 'KES'} {totalGross.toLocaleString()}
+                          </div>
+                          <div className="text-[10px] text-slate-400">Total transaction amount</div>
+                        </div>
+
+                        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-center">
+                          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                            Net Sales Impact
+                          </div>
+                          <div className="text-xl font-black text-slate-800 mt-1 truncate">
+                            {currentBusiness?.currency || 'KES'} {totalNet.toLocaleString()}
+                          </div>
+                          <div className="text-[10px] text-slate-400">Revenue to zero</div>
+                        </div>
+                      </div>
+
+                      {/* What is Safe & Preserved */}
+                      <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 space-y-2">
+                        <div className="flex items-center gap-2 text-xs font-black text-emerald-900">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          <span>Guaranteed Safe: Only sales records are wiped</span>
+                        </div>
+                        <p className="text-xs text-emerald-800 leading-relaxed">
+                          Your SKU product catalog, inventory stock counts across all branches, barcode registers,
+                          cashier logins, and business tax configurations are completely preserved and untouched.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Destructive Action Trigger Card */}
+                    <div className="bg-white rounded-xl border-2 border-rose-200 p-6 shadow-sm space-y-4">
+                      <div className="flex items-start gap-3.5">
+                        <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 mt-0.5">
+                          <Trash2 className="w-5 h-5" />
+                        </div>
+                        <div className="space-y-1">
+                          <h4 className="text-sm font-black text-rose-950">
+                            Reset Store to Clean Zero (Clear Test Sales)
+                          </h4>
+                          <p className="text-xs text-slate-600 leading-relaxed">
+                            This action clears all {tenantTxs.length} transaction records for <strong>{currentBusiness?.name}</strong>.
+                            Before wiping, the system automatically creates a timestamped JSON backup archive.
+                            Requires type-to-confirm verification.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-100">
+                        <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                          <ShieldCheck className="w-4 h-4 text-blue-600" />
+                          <span>Secured by type-to-confirm, soft-delete archive & audit log</span>
+                        </div>
+                        <button
+                          id="open-reset-store-modal-btn"
+                          onClick={() => setIsResetStoreModalOpen(true)}
+                          disabled={tenantTxs.length === 0}
+                          className={`flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm text-white shadow-sm transition cursor-pointer ${
+                            tenantTxs.length > 0
+                              ? 'bg-rose-600 hover:bg-rose-700 active:scale-[0.98]'
+                              : 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                          }`}
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                          <span>{tenantTxs.length === 0 ? 'Store Already at Clean Zero' : 'Reset Store to Clean Zero'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Previous Pre-Purge Backups Archive */}
+                    <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
+                      <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                          <Archive className="w-4 h-4 text-blue-600" />
+                          <h4 className="text-sm font-bold text-slate-900">
+                            Pre-Purge Backup Archive History
+                          </h4>
+                        </div>
+                        <span className="text-xs font-semibold text-slate-500">
+                          {tenantBackups.length} archived snapshots
+                        </span>
+                      </div>
+
+                      {tenantBackups.length === 0 ? (
+                        <div className="text-center py-6 text-xs text-slate-500">
+                          <History className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                          No previous sales reset backups on record for this store.
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-slate-100">
+                          {tenantBackups.map((b) => (
+                            <div
+                              key={b.id}
+                              className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                            >
+                              <div className="space-y-0.5">
+                                <div className="font-bold text-slate-800 flex items-center gap-2">
+                                  <span>{new Date(b.createdAt).toLocaleDateString()} at {new Date(b.createdAt).toLocaleTimeString()}</span>
+                                  <span className="font-mono text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                                    {b.id}
+                                  </span>
+                                </div>
+                                <div className="text-slate-500">
+                                  {b.transactionCount} transactions • {b.currency} {b.grossSales.toLocaleString()} gross • Purged by {b.purgedByName} ({b.purgedByRole})
+                                </div>
+                              </div>
+                              <button
+                                id={`download-backup-${b.id}`}
+                                onClick={() => downloadSalesBackup(b.id)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-xs border border-blue-200 transition cursor-pointer self-start sm:self-auto"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>Download JSON</span>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Modal Footer */}
@@ -1371,6 +2460,13 @@ export const BusinessProfileSettingsModal: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Reset Store Modal Dialog */}
+      <ResetStoreModal
+        isOpen={isResetStoreModalOpen}
+        onClose={() => setIsResetStoreModalOpen(false)}
+        businessId={currentBusiness?.id}
+      />
     </div>
   );
 };
