@@ -1,13 +1,16 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Printer, MessageSquare, ArrowRight, Check, Share2, RotateCcw, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Printer, MessageSquare, ArrowRight, Check, Share2, RotateCcw, AlertTriangle, CheckCircle2, Download } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { getItemDiscountedUnitPrice, formatDiscountBadge } from '../utils/discountUtils';
+import { ReceiptShareModal } from './ReceiptShareModal';
+import { generateReceiptPdf } from '../utils/receiptPdfGenerator';
 
 export const ReceiptModal: React.FC = () => {
   const {
     activeReceipt,
     setActiveReceipt,
     currentLocation,
+    currentBusiness,
     showToast,
     openReturnsModal,
     autoPrintReceipt,
@@ -17,6 +20,7 @@ export const ReceiptModal: React.FC = () => {
   const receiptRef = useRef<HTMLDivElement | null>(null);
   const hasAutoPrintedRef = useRef<string | null>(null);
   const [isAutoPrinting, setIsAutoPrinting] = useState<boolean>(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
 
   // Auto-Print on Checkout: Automatically invoke browser window.print() dialog once transaction completes
   useEffect(() => {
@@ -59,8 +63,26 @@ export const ReceiptModal: React.FC = () => {
     window.print();
   };
 
-  const handleSendSms = () => {
-    showToast(`Digital SMS receipt dispatched to customer`, 'success');
+  const handleDownloadPdf = () => {
+    if (!activeReceipt) return;
+    const { fileName, url } = generateReceiptPdf({
+      transaction: activeReceipt,
+      location: currentLocation,
+      businessName: currentBusiness?.name,
+      businessTaxNumber: currentBusiness?.taxNumber,
+    });
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    showToast(`PDF receipt (${fileName}) downloaded`, 'success');
+  };
+
+  const handleOpenShare = () => {
+    setIsShareModalOpen(true);
   };
 
   const handleClose = () => {
@@ -166,15 +188,14 @@ export const ReceiptModal: React.FC = () => {
                 <RotateCcw className="w-3 h-3 text-amber-700" /> Partially Refunded
               </div>
             )}
-            <h2 className="text-lg font-black tracking-tight text-slate-900 font-sans leading-none">
-              SOKOPOS RETAIL
+            <h2 className="text-lg font-black tracking-tight text-slate-900 font-sans leading-none uppercase">
+              {currentBusiness?.name || 'SokoPoS Retail'}
             </h2>
-            <p className="text-[10px] text-slate-500 font-medium">Sokoplus Horizon Ltd</p>
             <p className="text-[10px] text-slate-500">
               {currentLocation.name} • {currentLocation.address}
             </p>
             <p className="text-[10px] text-slate-500">
-              KRA PIN: {currentLocation.taxId} • Tel: {currentLocation.phone}
+              KRA PIN: {currentBusiness?.taxNumber || currentLocation.taxId} • Tel: {currentLocation.phone}
             </p>
           </div>
 
@@ -256,12 +277,36 @@ export const ReceiptModal: React.FC = () => {
                 {currentLocation.currency} {activeReceipt.taxAmount.toFixed(2)}
               </span>
             </div>
+            {activeReceipt.rawTotal !== undefined && activeReceipt.roundingAmount !== undefined && activeReceipt.roundingAmount !== 0 && (
+              <>
+                <div className="flex justify-between text-slate-600 text-[11px]">
+                  <span>Cart Total (Exact):</span>
+                  <span>
+                    {currentLocation.currency} {activeReceipt.rawTotal.toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-600 text-[11px]">
+                  <span>Cash Rounding (Half-up):</span>
+                  <span>
+                    {activeReceipt.roundingAmount >= 0 ? '+' : ''}
+                    {currentLocation.currency} {activeReceipt.roundingAmount.toFixed(2)}
+                  </span>
+                </div>
+              </>
+            )}
+
             <div className="flex justify-between text-sm font-black text-slate-900 pt-2 border-t border-slate-200">
-              <span>TOTAL PAID:</span>
+              <span>TOTAL PAID ({activeReceipt.paymentMethod.toUpperCase()}):</span>
               <span>
                 {currentLocation.currency} {activeReceipt.total.toFixed(2)}
               </span>
             </div>
+
+            {activeReceipt.paymentMethod !== 'cash' && activeReceipt.total % 1 !== 0 && (
+              <div className="text-[9px] text-slate-500 text-right italic">
+                Exact electronic settlement (no rounding applied)
+              </div>
+            )}
 
             {activeReceipt.paymentMethod === 'cash' &&
               activeReceipt.paymentDetails.cashTendered !== undefined && (
@@ -343,32 +388,54 @@ export const ReceiptModal: React.FC = () => {
             </button>
           )}
 
-          <div className="flex gap-2">
+          <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
             <button
               onClick={handlePrint}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
+              className="bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-1 cursor-pointer"
+              title="Print thermal receipt"
             >
-              <Printer className="w-4 h-4" />
+              <Printer className="w-3.5 h-3.5" />
               <span>Print</span>
             </button>
             <button
-              onClick={handleSendSms}
-              className="flex-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 py-2.5 rounded-xl font-bold text-xs shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+              onClick={handleDownloadPdf}
+              className="bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 py-2.5 rounded-xl font-bold text-xs shadow-xs transition flex items-center justify-center gap-1 cursor-pointer"
+              title="Download official 80mm PDF receipt"
             >
-              <MessageSquare className="w-4 h-4" />
-              <span>SMS / Share</span>
+              <Download className="w-3.5 h-3.5 text-rose-600" />
+              <span>PDF</span>
+            </button>
+            <button
+              id="receipt-sms-share-btn"
+              onClick={handleOpenShare}
+              className="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 py-2.5 rounded-xl font-bold text-xs shadow-xs transition flex items-center justify-center gap-1 cursor-pointer"
+              title="Share receipt via Instagram, WhatsApp, SMS, Email, or PDF"
+            >
+              <Share2 className="w-3.5 h-3.5 text-blue-600" />
+              <span>Share</span>
             </button>
             <button
               onClick={handleClose}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-md transition flex items-center gap-1 cursor-pointer"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-1 cursor-pointer"
               title="Start Next Sale"
             >
               <span>Next</span>
-              <ArrowRight className="w-4 h-4" />
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
       </div>
+
+      {/* Share Modal Dialog */}
+      <ReceiptShareModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        transaction={activeReceipt}
+        location={currentLocation}
+        businessName={currentBusiness?.name}
+        businessTaxNumber={currentBusiness?.taxNumber}
+        showToast={showToast}
+      />
     </div>
   );
 };

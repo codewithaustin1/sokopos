@@ -345,7 +345,7 @@ export const BusinessProfileSettingsModal: React.FC = () => {
     }
   };
 
-  const filteredBranches = locations.filter(
+  const filteredBranches = (locations || []).filter(
     (l) =>
       l.name.toLowerCase().includes(branchSearch.toLowerCase()) ||
       l.code.toLowerCase().includes(branchSearch.toLowerCase()) ||
@@ -2242,11 +2242,11 @@ export const BusinessProfileSettingsModal: React.FC = () => {
           {/* ========================================================= */}
           {activeTab === 'reset' && (() => {
             const authStatus = canResetStore(currentBusiness?.id || '');
-            const tenantTxs = transactions.filter((tx) => tx.businessId === currentBusiness?.id);
+            const tenantTxs = (transactions || []).filter((tx) => tx.businessId === currentBusiness?.id);
             const totalGross = tenantTxs.reduce((sum, tx) => sum + (tx.total || 0), 0);
             const totalRefunded = tenantTxs.reduce((sum, tx) => sum + (tx.totalRefunded || 0), 0);
             const totalNet = totalGross - totalRefunded;
-            const tenantBackups = storeSalesBackups.filter((b) => b.businessId === currentBusiness?.id);
+            const tenantBackups = (storeSalesBackups || []).filter((b) => b.businessId === currentBusiness?.id);
 
             return (
               <div className="space-y-6 max-w-3xl mx-auto">

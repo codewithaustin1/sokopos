@@ -39,6 +39,7 @@ export const ItemDiscountModal: React.FC<ItemDiscountModalProps> = ({
     removeItemDiscount,
     hasDiscountPermission,
     verifyManagerOverridePin,
+    systemUsers,
     allSystemUsers,
     showToast,
   } = usePos();
@@ -64,15 +65,17 @@ export const ItemDiscountModal: React.FC<ItemDiscountModalProps> = ({
 
   // Eligible managers for override in this location/store
   const eligibleManagers = useMemo(() => {
-    return allSystemUsers.filter(
+    const userPool = systemUsers || allSystemUsers || [];
+    const targetBizId = currentLocation?.businessId;
+    return userPool.filter(
       (u) =>
-        u.businessId === currentLocation.businessId &&
+        (!targetBizId || u.businessId === targetBizId) &&
         (u.role === 'manager' ||
           u.role === 'supervisor' ||
           u.role === 'business_owner' ||
           u.canApplyDiscount === true)
     );
-  }, [allSystemUsers, currentLocation.businessId]);
+  }, [systemUsers, allSystemUsers, currentLocation?.businessId]);
 
   // Sync state when item opens
   useEffect(() => {

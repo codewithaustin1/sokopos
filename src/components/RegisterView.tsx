@@ -22,6 +22,7 @@ import {
   getItemLineTotal,
   formatDiscountBadge,
 } from '../utils/discountUtils';
+import { roundCashHalfUp, hasCents } from '../utils/cashRounding';
 
 interface RegisterViewProps {
   onProceedToPayment: () => void;
@@ -56,11 +57,11 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
   const [selectedDiscountItem, setSelectedDiscountItem] = useState<CartItem | null>(null);
   const [isDiscountModalOpen, setIsDiscountModalOpen] = useState<boolean>(false);
 
-  const totalCartCount = cart.reduce((acc, item) => acc + item.quantity, 0);
+  const totalCartCount = (cart || []).reduce((acc, item) => acc + item.quantity, 0);
 
   // Filtered products
   const filteredProducts = useMemo(() => {
-    return products.filter((p) => {
+    return (products || []).filter((p) => {
       const matchCategory =
         selectedCategory === 'All Items' || p.category === selectedCategory;
       const matchSearch =
@@ -517,6 +518,18 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             </span>
           </div>
 
+          {hasCents(cartTotal) && (
+            <div className="text-[10px] text-slate-500 font-medium flex justify-between items-center bg-slate-50 border border-slate-200/80 px-2 py-1 rounded-md">
+              <span className="text-slate-600">
+                Cash: <strong className="text-emerald-700">{currentLocation.currency} {roundCashHalfUp(cartTotal).toFixed(2)}</strong> (half-up)
+              </span>
+              <span className="text-slate-400">•</span>
+              <span className="text-slate-600">
+                Electronic: <strong className="text-blue-700">{currentLocation.currency} {cartTotal.toFixed(2)}</strong> (exact)
+              </span>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1 sm:mt-2">
             {/* Direct Exact Cash 1-tap checkout */}
             <button
@@ -525,11 +538,11 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               disabled={cart.length === 0}
               onClick={() => settleExactCash()}
               className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-slate-300 text-white font-black py-3 sm:py-3.5 px-3 rounded-xl shadow-md hover:shadow-lg transition text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed group"
-              title="Instant single-tap cash checkout with exact amount (Shortcut: F1)"
+              title="Instant single-tap cash checkout with standard half-up rounding (Shortcut: F1)"
             >
               <Banknote className="w-4 h-4 text-emerald-100 group-hover:scale-110 transition-transform shrink-0" />
               <span className="truncate">
-                Exact Cash ({currentLocation.currency} {cartTotal.toFixed(2)})
+                Exact Cash ({currentLocation.currency} {roundCashHalfUp(cartTotal).toFixed(2)})
               </span>
               <kbd className="hidden xl:inline-block text-[10px] bg-emerald-700/80 border border-emerald-500/40 text-emerald-100 px-1.5 py-0.5 rounded font-mono font-bold shrink-0">
                 F1

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   X,
   Smartphone,
@@ -20,6 +20,7 @@ import confetti from 'canvas-confetti';
 import QRCode from 'qrcode';
 import { PaymentMethod } from '../types';
 import { usePos } from '../context/PosContext';
+import { calculatePaymentGuardrails, roundCashHalfUp } from '../utils/cashRounding';
 import { CustomerFacingMpesaQrModal } from './CustomerFacingMpesaQrModal';
 
 interface PaymentModalProps {
@@ -43,19 +44,36 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
 
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>(initialMethod || 'mpesa');
 
-  // Synchronize initialMethod when modal is opened
+  // Guardrail computation for current selection and cash
+  const currentGuardrail = useMemo(
+    () => calculatePaymentGuardrails(cartTotal, selectedMethod),
+    [cartTotal, selectedMethod]
+  );
+  const cashPayable = useMemo(() => roundCashHalfUp(cartTotal), [cartTotal]);
+
+  // Cash state initialized to cash payable
+  const [cashTendered, setCashTendered] = useState<string>(roundCashHalfUp(cartTotal).toString());
+
+  // Synchronize initialMethod and default cash tendered when modal is opened
   useEffect(() => {
     if (isOpen) {
       if (initialMethod) {
         setSelectedMethod(initialMethod);
       }
-      setCashTendered(Math.ceil(cartTotal).toString());
+      setCashTendered(cashPayable.toString());
     }
-  }, [isOpen, initialMethod, cartTotal]);
+  }, [isOpen, initialMethod, cartTotal, cashPayable]);
+
+  const handleSelectMethod = (method: PaymentMethod) => {
+    setSelectedMethod(method);
+    if (method === 'cash') {
+      setCashTendered(cashPayable.toString());
+    }
+  };
 
   // Check for items with 0 stock
-  const zeroStockItems = cart.filter((ci) => {
-    const p = products.find((prod) => prod.id === ci.productId);
+  const zeroStockItems = (cart || []).filter((ci) => {
+    const p = (products || []).find((prod) => prod.id === ci.productId);
     const stock = p ? (p.stockByLocation[currentLocation.id] ?? 0) : 0;
     return stock <= 0;
   });
@@ -126,9 +144,6 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
     currentLocation.name,
   ]);
 
-  // Cash state
-  const [cashTendered, setCashTendered] = useState<string>(Math.ceil(cartTotal).toString());
-
   // Card state
   const [cardLast4, setCardLast4] = useState('4192');
   const [cardNetwork, setCardNetwork] = useState('Visa');
@@ -136,15 +151,17 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
   const [isProcessing, setIsProcessing] = useState(false);
 
   const tenderedAmount = parseFloat(cashTendered) || 0;
-  const cashChange = Math.max(0, tenderedAmount - cartTotal);
+  const cashChange = Math.max(0, tenderedAmount - cashPayable);
 
-  // Quick cash amounts suggestions
-  const roundedUp100 = Math.ceil(cartTotal / 100) * 100;
-  const roundedUp500 = Math.ceil(cartTotal / 500) * 500;
-  const roundedUp1000 = Math.ceil(cartTotal / 1000) * 1000;
-  const quickCashOptions = Array.from(
-    new Set([Math.ceil(cartTotal), roundedUp100, roundedUp500, roundedUp1000].filter((v) => v >= cartTotal))
-  );
+  // Quick cash amounts suggestions (based on standard half-up rounded cash payable)
+  const roundedUp100 = Math.ceil(cashPayable / 100) * 100;
+  const roundedUp500 = Math.ceil(cashPayable / 500) * 500;
+  const roundedUp1000 = Math.ceil(cashPayable / 1000) * 1000;
+  const quickCashOptions = useMemo(() => {
+    return Array.from(
+      new Set([cashPayable, roundedUp100, roundedUp500, roundedUp1000].filter((v) => v >= cashPayable))
+    );
+  }, [cashPayable, roundedUp100, roundedUp500, roundedUp1000]);
 
   const handleMpesaStkPush = async () => {
     setIsSendingMpesaPrompt(true);
@@ -157,7 +174,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
   const handleCompletePayment = useCallback(async () => {
     if (isProcessing) return;
     if (hasZeroStock) return;
-    if (selectedMethod === 'cash' && tenderedAmount < cartTotal) return;
+    if (selectedMethod === 'cash' && tenderedAmount < currentGuardrail.payableAmount) return;
 
     setIsProcessing(true);
 
@@ -175,16 +192,19 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
         mpesaMode: mpesaSubMode,
         mpesaType: mpesaQrType,
         mpesaTarget: mpesaQrType === 'buy_goods' ? `Till ${tillNumber}` : `Paybill ${paybillNumber} / Acc ${accountNumber}`,
+        roundingDifference: 0,
       };
     } else if (selectedMethod === 'cash') {
       details = {
         cashTendered: tenderedAmount,
         cashChange: Number(cashChange.toFixed(2)),
+        roundingDifference: currentGuardrail.roundingDifference,
       };
     } else if (selectedMethod === 'card') {
       details = {
         cardLast4,
         cardNetwork,
+        roundingDifference: 0,
       };
     }
 
@@ -208,8 +228,14 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
     hasZeroStock,
     selectedMethod,
     tenderedAmount,
-    cartTotal,
+    currentGuardrail.payableAmount,
+    currentGuardrail.roundingDifference,
     mpesaPhone,
+    mpesaSubMode,
+    mpesaQrType,
+    tillNumber,
+    paybillNumber,
+    accountNumber,
     cashChange,
     cardLast4,
     cardNetwork,
@@ -229,24 +255,24 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
       }
       if (e.key === 'F1') {
         e.preventDefault();
-        setSelectedMethod('cash');
+        handleSelectMethod('cash');
         return;
       }
       if (e.key === 'F2') {
         e.preventDefault();
-        setSelectedMethod('mpesa');
+        handleSelectMethod('mpesa');
         return;
       }
       if (e.key === 'F3') {
         e.preventDefault();
-        setSelectedMethod('card');
+        handleSelectMethod('card');
         return;
       }
       if (e.key === 'Enter') {
         const canComplete =
           !isProcessing &&
           !hasZeroStock &&
-          !(selectedMethod === 'cash' && tenderedAmount < cartTotal);
+          !(selectedMethod === 'cash' && tenderedAmount < currentGuardrail.payableAmount);
         if (canComplete) {
           e.preventDefault();
           handleCompletePayment();
@@ -256,7 +282,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose, isProcessing, hasZeroStock, selectedMethod, tenderedAmount, cartTotal, handleCompletePayment]);
+  }, [isOpen, onClose, isProcessing, hasZeroStock, selectedMethod, tenderedAmount, currentGuardrail.payableAmount, handleCompletePayment, cashPayable]);
 
   if (!isOpen) return null;
 
@@ -280,11 +306,18 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
           </div>
           <div className="text-right">
             <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
-              Total Amount
+              {currentGuardrail.isCash ? 'Cash Payable (Half-Up)' : 'Total Amount (Exact)'}
             </span>
-            <span className="text-base sm:text-lg font-black text-blue-600">
-              {currentLocation.currency} {cartTotal.toFixed(2)}
-            </span>
+            <div className="flex items-baseline justify-end gap-1.5">
+              <span className="text-base sm:text-lg font-black text-blue-600">
+                {currentLocation.currency} {currentGuardrail.payableAmount.toFixed(2)}
+              </span>
+              {currentGuardrail.isCash && currentGuardrail.roundingDifference !== 0 && (
+                <span className="text-[10px] font-mono text-slate-400 line-through">
+                  {currentLocation.currency} {cartTotal.toFixed(2)}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -301,7 +334,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
               {/* M-PESA (F2) */}
               <button
                 type="button"
-                onClick={() => setSelectedMethod('mpesa')}
+                onClick={() => handleSelectMethod('mpesa')}
                 title="Select M-Pesa (Shortcut: F2)"
                 className={`p-3.5 rounded-xl border-2 flex flex-col items-center justify-center gap-1.5 transition text-left cursor-pointer relative ${
                   selectedMethod === 'mpesa'
@@ -329,7 +362,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
               {/* Cash (F1) */}
               <button
                 type="button"
-                onClick={() => setSelectedMethod('cash')}
+                onClick={() => handleSelectMethod('cash')}
                 title="Select Cash (Shortcut: F1)"
                 className={`p-3.5 rounded-xl border-2 flex flex-col items-center justify-center gap-1.5 transition text-left cursor-pointer relative ${
                   selectedMethod === 'cash'
@@ -349,13 +382,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                   <Banknote className="w-4 h-4 text-slate-600" />
                 </div>
                 <span className="font-bold text-xs">Cash</span>
-                <span className="text-[9px] text-slate-400">Drawer Tender</span>
+                <span className="text-[9px] text-slate-400">
+                  {currentGuardrail.hasCents ? 'Half-Up Rounded' : 'Drawer Tender'}
+                </span>
               </button>
 
               {/* Card (F3) */}
               <button
                 type="button"
-                onClick={() => setSelectedMethod('card')}
+                onClick={() => handleSelectMethod('card')}
                 title="Select Card (Shortcut: F3)"
                 className={`p-3.5 rounded-xl border-2 flex flex-col items-center justify-center gap-1.5 transition text-left cursor-pointer relative ${
                   selectedMethod === 'card'
@@ -375,7 +410,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                   <CreditCard className="w-4 h-4 text-slate-600" />
                 </div>
                 <span className="font-bold text-xs">Card</span>
-                <span className="text-[9px] text-slate-400">Visa / MC</span>
+                <span className="text-[9px] text-slate-400">Exact Charge</span>
               </button>
             </div>
 
@@ -653,6 +688,33 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                     <span className="text-[10px] text-slate-400">Open Drawer on Complete</span>
                   </div>
 
+                  {/* Cash Cents Guardrail Banner */}
+                  {currentGuardrail.hasCents && (
+                    <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-xl text-left space-y-1.5">
+                      <div className="flex items-center justify-between text-xs font-black text-amber-900">
+                        <span className="flex items-center gap-1.5">
+                          <Banknote className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                          <span>Cash Cents Guardrail: Standard Half-Up</span>
+                        </span>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-200/70 text-amber-900">
+                          {currentGuardrail.roundingDifference >= 0 ? '+' : ''}
+                          {currentGuardrail.roundingDifference.toFixed(2)} {currentLocation.currency}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-amber-800 leading-snug">
+                        Where the total involves cents and cash is paid, Standard Half-Up Rounding applies: <strong>0.50 and above goes up to KES 1</strong>, below 0.50 goes down to KES 0.
+                      </p>
+                      <div className="text-[11px] font-bold text-slate-700 flex justify-between pt-1 border-t border-amber-200/80">
+                        <span>Exact Cart Total:</span>
+                        <span className="font-mono text-slate-600">{currentLocation.currency} {cartTotal.toFixed(2)}</span>
+                      </div>
+                      <div className="text-[11px] font-black text-amber-950 flex justify-between">
+                        <span>Adjusted Cash Payable:</span>
+                        <span className="font-mono text-sm text-emerald-800">{currentLocation.currency} {currentGuardrail.payableAmount.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  )}
+
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">
                       Amount Tendered ({currentLocation.currency})
@@ -682,7 +744,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                               : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
                           }`}
                         >
-                          {currentLocation.currency} {amt}
+                          {amt === currentGuardrail.payableAmount ? `Exact (${amt})` : `${currentLocation.currency} ${amt}`}
                         </button>
                       ))}
                     </div>
@@ -707,6 +769,19 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                       Contactless / EMV
                     </span>
                   </div>
+
+                  {/* Electronic Guardrail for Card */}
+                  {currentGuardrail.hasCents && (
+                    <div className="p-2.5 bg-purple-50 border border-purple-200 rounded-lg flex items-center justify-between text-xs text-purple-900">
+                      <div className="flex items-center gap-1.5">
+                        <CreditCard className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                        <span>Electronic Payment Guardrail: Exact amount charged.</span>
+                      </div>
+                      <span className="font-mono font-black text-purple-800">
+                        {currentLocation.currency} {cartTotal.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -780,11 +855,40 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                   </span>
                 </div>
 
-                <div className="pt-3 border-t border-slate-200 flex justify-between items-baseline">
-                  <span className="text-xs font-bold text-slate-800">Amount Due</span>
-                  <span className="text-xl font-black text-blue-600">
-                    {currentLocation.currency} {cartTotal.toFixed(2)}
-                  </span>
+                <div className="pt-3 border-t border-slate-200 space-y-1.5">
+                  <div className="flex justify-between items-baseline">
+                    <span className="text-xs text-slate-500 font-semibold">Exact Total</span>
+                    <span className="text-xs font-mono font-bold text-slate-700">
+                      {currentLocation.currency} {cartTotal.toFixed(2)}
+                    </span>
+                  </div>
+
+                  {currentGuardrail.isCash && currentGuardrail.roundingDifference !== 0 && (
+                    <div className="flex justify-between items-baseline text-xs text-blue-700 bg-blue-50/80 px-2 py-1 rounded">
+                      <span className="font-semibold">Cash Rounding (Half-up):</span>
+                      <span className="font-mono font-bold">
+                        {currentGuardrail.roundingDifference >= 0 ? '+' : ''}
+                        {currentLocation.currency} {currentGuardrail.roundingDifference.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between items-baseline pt-1">
+                    <span className="text-xs font-bold text-slate-800">
+                      {currentGuardrail.isCash ? 'Cash Payable' : 'Amount Due (Exact)'}
+                    </span>
+                    <span className="text-xl font-black text-blue-600">
+                      {currentLocation.currency} {currentGuardrail.payableAmount.toFixed(2)}
+                    </span>
+                  </div>
+
+                  {currentGuardrail.hasCents && (
+                    <p className="text-[10px] text-slate-500 text-right italic">
+                      {currentGuardrail.isCash
+                        ? 'Standard half-up rounding (0.50+ rounds up, <0.50 rounds down)'
+                        : 'Exact electronic payment (no rounding applied)'}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -841,7 +945,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
               <button
                 type="button"
                 onClick={handleCompletePayment}
-                disabled={isProcessing || hasZeroStock || (selectedMethod === 'cash' && tenderedAmount < cartTotal)}
+                disabled={isProcessing || hasZeroStock || (selectedMethod === 'cash' && tenderedAmount < currentGuardrail.payableAmount)}
                 className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-black py-3 px-4 rounded-xl shadow-md transition text-xs flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
               >
                 {isProcessing ? (
@@ -858,7 +962,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                   <>
                     <CheckCircle className="w-4 h-4" />
                     <span>
-                      Complete Sale ({currentLocation.currency} {cartTotal.toFixed(2)})
+                      Complete Sale ({currentLocation.currency} {currentGuardrail.payableAmount.toFixed(2)})
                     </span>
                     <kbd className="hidden sm:inline-block text-[10px] bg-emerald-800/60 border border-emerald-400/40 text-emerald-100 px-1.5 py-0.5 rounded font-mono font-bold ml-1.5">
                       Enter ↵
@@ -871,9 +975,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                 <p className="text-[10px] text-red-600 font-bold text-center mt-1.5">
                   Products with 0 stock cannot be sold. Please remove them to proceed.
                 </p>
-              ) : selectedMethod === 'cash' && tenderedAmount < cartTotal ? (
+              ) : selectedMethod === 'cash' && tenderedAmount < currentGuardrail.payableAmount ? (
                 <p className="text-[10px] text-red-600 font-bold text-center mt-1.5">
-                  Tendered amount must be at least {currentLocation.currency} {cartTotal.toFixed(2)}
+                  Tendered amount must be at least {currentLocation.currency} {currentGuardrail.payableAmount.toFixed(2)}
                 </p>
               ) : null}
             </div>

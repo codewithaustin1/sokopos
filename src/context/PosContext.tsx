@@ -31,6 +31,7 @@ import {
   SUPER_ADMIN_EMAIL,
 } from '../data/initialData';
 import { soundFx } from '../utils/audio';
+import { calculatePaymentGuardrails } from '../utils/cashRounding';
 import confetti from 'canvas-confetti';
 import {
   auth,
@@ -134,6 +135,7 @@ interface PosContextType {
 
   // System Users Management (Business Owner & Super Admin only)
   systemUsers: Cashier[];
+  allSystemUsers: Cashier[];
   createSystemUser: (user: Omit<Cashier, 'id' | 'businessId'>) => Promise<boolean>;
   updateSystemUser: (id: string, updates: Partial<Cashier>) => Promise<void>;
   deleteSystemUser: (id: string) => void;
@@ -235,6 +237,7 @@ interface PosContextType {
       cashChange?: number;
       cardLast4?: string;
       cardNetwork?: string;
+      roundingDifference?: number;
     }
   ) => Transaction;
   settleExactCash: () => boolean;
@@ -2203,6 +2206,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       cashChange?: number;
       cardLast4?: string;
       cardNetwork?: string;
+      roundingDifference?: number;
     }
   ): Transaction => {
     // Final Rule Enforcement: Ensure NO product with zero (0) stock is sold
@@ -2233,6 +2237,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const receiptNum = `RCP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
+    const guardrail = calculatePaymentGuardrails(cartTotal, paymentMethod);
+
     const newTx: Transaction = {
       id: `tx-${Date.now()}`,
       businessId: activeBusinessId,
@@ -2247,9 +2253,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       subtotal: Number(cartSubtotal.toFixed(2)),
       taxAmount: Number(cartTax.toFixed(2)),
       discountAmount: cartDiscount,
-      total: Number(cartTotal.toFixed(2)),
+      rawTotal: guardrail.rawTotal,
+      roundingAmount: guardrail.roundingDifference,
+      total: guardrail.payableAmount,
       paymentMethod,
-      paymentDetails: details,
+      paymentDetails: {
+        ...details,
+        roundingDifference: guardrail.roundingDifference,
+      },
       status: 'completed',
       syncedToCloud: isOnline,
       syncTimestamp: isOnline ? new Date().toISOString() : undefined,
@@ -2350,9 +2361,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     try {
+      const guardrail = calculatePaymentGuardrails(cartTotal, 'cash');
       processPayment('cash', {
-        cashTendered: cartTotal,
+        cashTendered: guardrail.payableAmount,
         cashChange: 0,
+        roundingDifference: guardrail.roundingDifference,
       });
       try {
         confetti({
@@ -2363,7 +2376,17 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       } catch {
         // ignore
       }
-      showToast(`Exact Cash (${currentLocation.currency} ${cartTotal.toFixed(2)}) settled successfully!`, 'success');
+      if (guardrail.roundingDifference !== 0) {
+        showToast(
+          `Exact Cash (${currentLocation.currency} ${guardrail.payableAmount.toFixed(2)}) settled! (Half-up rounded from ${currentLocation.currency} ${cartTotal.toFixed(2)})`,
+          'success'
+        );
+      } else {
+        showToast(
+          `Exact Cash (${currentLocation.currency} ${cartTotal.toFixed(2)}) settled successfully!`,
+          'success'
+        );
+      }
       return true;
     } catch (err) {
       console.error('Exact cash checkout error:', err);
@@ -3660,6 +3683,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setBusinesses((prev) =>
       prev.map((b) => (b.id === activeBusinessId ? updatedBiz : b))
     );
+    if (updates.taxNumber) {
+      setAllLocations((prev) =>
+        prev.map((loc) => (loc.businessId === activeBusinessId ? { ...loc, taxId: updates.taxNumber! } : loc))
+      );
+    }
     if (isOnline && auth.currentUser) {
       updateBusinessInFirestore(activeBusinessId, updates).catch((err) =>
         console.warn('Firestore business update:', err)
@@ -3788,6 +3816,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setReceiptFormat,
 
         systemUsers,
+        allSystemUsers,
         createSystemUser,
         updateSystemUser,
         deleteSystemUser,

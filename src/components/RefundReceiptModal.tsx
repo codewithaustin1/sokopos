@@ -1,10 +1,13 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { Printer, MessageSquare, Check, X, RotateCcw } from 'lucide-react';
 import { usePos } from '../context/PosContext';
+import { ReceiptShareModal } from './ReceiptShareModal';
+import { formatRefundVoucherText } from '../utils/receiptFormatter';
 
 export const RefundReceiptModal: React.FC = () => {
-  const { activeRefundReceipt, setActiveRefundReceipt, currentLocation, showToast } = usePos();
+  const { activeRefundReceipt, setActiveRefundReceipt, currentLocation, currentBusiness, showToast } = usePos();
   const receiptRef = useRef<HTMLDivElement | null>(null);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
   if (!activeRefundReceipt) return null;
 
@@ -14,13 +17,20 @@ export const RefundReceiptModal: React.FC = () => {
     window.print();
   };
 
-  const handleSendSms = () => {
-    showToast(`Refund confirmation SMS sent to ${refund.customerPhone || 'customer'}`, 'success');
+  const handleOpenShare = () => {
+    setIsShareModalOpen(true);
   };
 
   const handleClose = () => {
     setActiveRefundReceipt(null);
   };
+
+  const voucherText = formatRefundVoucherText(
+    refund,
+    currentLocation,
+    currentBusiness?.name,
+    currentBusiness?.taxNumber
+  );
 
   const totalRestockedCount = refund.items.reduce(
     (sum, item) => sum + (item.restockToInventory ? item.quantity : 0),
@@ -43,15 +53,14 @@ export const RefundReceiptModal: React.FC = () => {
             <div className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider mb-1">
               <RotateCcw className="w-3 h-3" /> Official Credit Note
             </div>
-            <h2 className="text-lg font-black tracking-tight text-slate-900 font-sans leading-none">
-              SOKOPOS RETAIL
+            <h2 className="text-lg font-black tracking-tight text-slate-900 font-sans leading-none uppercase">
+              {currentBusiness?.name || 'SokoPoS Retail'}
             </h2>
-            <p className="text-[10px] text-slate-500 font-medium">Sokoplus Horizon Ltd</p>
             <p className="text-[10px] text-slate-500">
               {currentLocation.name} • {currentLocation.address}
             </p>
             <p className="text-[10px] text-slate-500">
-              KRA PIN: {currentLocation.taxId} • Tel: {currentLocation.phone}
+              KRA PIN: {currentBusiness?.taxNumber || currentLocation.taxId} • Tel: {currentLocation.phone}
             </p>
           </div>
 
@@ -187,8 +196,9 @@ export const RefundReceiptModal: React.FC = () => {
                 ? `${totalRestockedCount} units returned to active store stock`
                 : 'Inventory write-off / damaged goods recorded'}
             </p>
+            <p className="text-[10px] text-slate-400 mt-2">Powered by Sokoplus Horizon</p>
             <p className="text-[10px] text-slate-500 font-sans font-bold mt-1">
-              Customer copy • Powered by SokoPOS
+              Customer copy
             </p>
           </div>
         </div>
@@ -203,11 +213,13 @@ export const RefundReceiptModal: React.FC = () => {
             <span>Print Credit Note</span>
           </button>
           <button
-            onClick={handleSendSms}
+            id="refund-share-voucher-btn"
+            onClick={handleOpenShare}
             className="flex-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 py-2.5 rounded-xl font-bold text-xs shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+            title="Share credit note via WhatsApp, SMS, Email, or System Share"
           >
-            <MessageSquare className="w-4 h-4" />
-            <span>SMS Voucher</span>
+            <MessageSquare className="w-4 h-4 text-blue-600" />
+            <span>SMS / Share</span>
           </button>
           <button
             onClick={handleClose}
@@ -219,6 +231,20 @@ export const RefundReceiptModal: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Share Modal Dialog for Credit Note */}
+      <ReceiptShareModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        customText={voucherText}
+        customTitle={`Credit Note #${refund.refundNumber}`}
+        customSubtitle={`-${currentLocation.currency} ${refund.totalRefund.toFixed(2)}`}
+        defaultPhone={refund.customerPhone}
+        location={currentLocation}
+        businessName={currentBusiness?.name}
+        businessTaxNumber={currentBusiness?.taxNumber}
+        showToast={showToast}
+      />
     </div>
   );
 };

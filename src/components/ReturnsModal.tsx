@@ -104,7 +104,7 @@ export const ReturnsModal: React.FC = () => {
 
   // Filter transactions for lookup
   const filteredTransactions = useMemo(() => {
-    return transactions.filter((tx) => {
+    return (transactions || []).filter((tx) => {
       const q = searchQuery.trim().toLowerCase();
       const matchesSearch =
         !q ||

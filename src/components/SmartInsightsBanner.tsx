@@ -72,7 +72,7 @@ export const SmartInsightsBanner: React.FC<SmartInsightsBannerProps> = ({
 
   // Filter transactions by selected location
   const scopedTransactions = useMemo(() => {
-    return transactions.filter((tx) => {
+    return (transactions || []).filter((tx) => {
       if (selectedLocationId !== 'all' && tx.locationId !== selectedLocationId) {
         return false;
       }

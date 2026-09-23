@@ -174,6 +174,8 @@ export interface Transaction {
   taxAmount: number;
   discountAmount: number;
   total: number;
+  rawTotal?: number;
+  roundingAmount?: number;
   paymentMethod: PaymentMethod;
   paymentDetails: {
     mpesaPhone?: string;
@@ -182,6 +184,7 @@ export interface Transaction {
     cashChange?: number;
     cardLast4?: string;
     cardNetwork?: string;
+    roundingDifference?: number;
     notes?: string;
   };
   status: 'completed' | 'refunded' | 'partially_refunded';

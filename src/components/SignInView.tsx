@@ -16,6 +16,7 @@ import {
 import { usePos } from '../context/PosContext';
 import { soundFx } from '../utils/audio';
 import { SignUpSkeleton } from './SignUpSkeleton';
+import { LegalAndFaqModal, LegalTab } from './LegalAndFaqModal';
 
 interface SignInViewProps {
   onLoginSuccess?: () => void;
@@ -37,6 +38,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const [isFirebaseSigningIn, setIsFirebaseSigningIn] = useState(false);
   const [isRegisteringStore, setIsRegisteringStore] = useState(false);
   const [isSimulatingSkeleton, setIsSimulatingSkeleton] = useState(false);
+  const [legalModalTab, setLegalModalTab] = useState<LegalTab | null>(null);
 
   // Terminal PIN / Staff login state
   const [selectedStaffId, setSelectedStaffId] = useState<string>(() => systemUsers[0]?.id || '');
@@ -208,10 +210,43 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         </main>
 
         <footer className="px-6 py-4 border-t border-slate-800/80 bg-slate-900/40 text-center text-xs text-slate-400 shrink-0">
-          <div className="flex items-center justify-center text-[11px]">
-            <span>© 2026 SokoPoS Enterprise Platform</span>
+          <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5 text-[11px]">
+            <div className="flex items-center gap-1.5 flex-wrap justify-center text-slate-400">
+              <span>© 2026 SokoPoS Enterprise Platform</span>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap justify-center font-medium">
+              <button
+                type="button"
+                onClick={() => setLegalModalTab('terms')}
+                className="text-slate-400 hover:text-blue-400 transition cursor-pointer"
+              >
+                Terms of Service
+              </button>
+              <span className="text-slate-600">•</span>
+              <button
+                type="button"
+                onClick={() => setLegalModalTab('privacy')}
+                className="text-slate-400 hover:text-blue-400 transition cursor-pointer"
+              >
+                Privacy Policy
+              </button>
+              <span className="text-slate-600">•</span>
+              <button
+                type="button"
+                onClick={() => setLegalModalTab('faq')}
+                className="text-blue-400 hover:text-blue-300 font-semibold transition cursor-pointer"
+              >
+                FAQ
+              </button>
+            </div>
           </div>
         </footer>
+
+        <LegalAndFaqModal
+          isOpen={legalModalTab !== null}
+          initialTab={legalModalTab || 'terms'}
+          onClose={() => setLegalModalTab(null)}
+        />
       </div>
     );
   }
@@ -659,7 +694,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         </div>
       </main>
 
-      {/* Footer System Disclaimer */}
+      {/* Footer System Disclaimer with Legal & FAQ Links */}
       <footer
         className={`px-6 py-4 border-t text-center text-xs text-slate-400 shrink-0 relative z-10 ${
           loginBgGraphic
@@ -667,10 +702,59 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             : 'border-slate-800/80 bg-slate-900/40'
         }`}
       >
-        <div className="flex items-center justify-center text-[11px]">
-          <span>© 2026 SokoPoS Enterprise Platform</span>
+        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px]">
+          {/* Copyright statement */}
+          <div className="flex items-center gap-1.5 flex-wrap justify-center text-slate-400">
+            <span>© 2026 SokoPoS Enterprise Platform</span>
+          </div>
+
+          {/* Legal Navigation Links */}
+          <div className="flex items-center gap-2.5 sm:gap-4 flex-wrap justify-center font-medium">
+            <button
+              type="button"
+              id="footer-terms-btn"
+              onClick={() => setLegalModalTab('terms')}
+              className="text-slate-400 hover:text-blue-400 transition cursor-pointer"
+            >
+              Terms of Service
+            </button>
+            <span className="text-slate-600">•</span>
+            <button
+              type="button"
+              id="footer-privacy-btn"
+              onClick={() => setLegalModalTab('privacy')}
+              className="text-slate-400 hover:text-blue-400 transition cursor-pointer"
+            >
+              Privacy Policy
+            </button>
+            <span className="text-slate-600">•</span>
+            <button
+              type="button"
+              id="footer-faq-btn"
+              onClick={() => setLegalModalTab('faq')}
+              className="text-blue-400 hover:text-blue-300 font-semibold transition cursor-pointer flex items-center gap-1"
+            >
+              <span>FAQ</span>
+            </button>
+            <span className="text-slate-600">•</span>
+            <button
+              type="button"
+              id="footer-legal-notice-btn"
+              onClick={() => setLegalModalTab('ownership')}
+              className="text-slate-400 hover:text-blue-400 transition cursor-pointer"
+            >
+              Legal & IP
+            </button>
+          </div>
         </div>
       </footer>
+
+      {/* Legal & FAQ Modal */}
+      <LegalAndFaqModal
+        isOpen={legalModalTab !== null}
+        initialTab={legalModalTab || 'terms'}
+        onClose={() => setLegalModalTab(null)}
+      />
     </div>
   );
 };

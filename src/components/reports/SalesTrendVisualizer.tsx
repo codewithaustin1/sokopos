@@ -47,7 +47,7 @@ export const SalesTrendVisualizer: React.FC<SalesTrendVisualizerProps> = ({
 
   // Filter transactions for current period
   const currentPeriodTxs = useMemo(() => {
-    return transactions.filter((tx) => {
+    return (transactions || []).filter((tx) => {
       if (selectedLocationId !== 'all' && tx.locationId !== selectedLocationId) return false;
       return isTimestampInRange(tx.timestamp, dateRange);
     });
@@ -56,7 +56,7 @@ export const SalesTrendVisualizer: React.FC<SalesTrendVisualizerProps> = ({
   // Filter transactions for previous equivalent period
   const previousRange = useMemo(() => getPreviousEquivalentRange(dateRange), [dateRange]);
   const previousPeriodTxs = useMemo(() => {
-    return transactions.filter((tx) => {
+    return (transactions || []).filter((tx) => {
       if (selectedLocationId !== 'all' && tx.locationId !== selectedLocationId) return false;
       return isTimestampInRange(tx.timestamp, previousRange);
     });

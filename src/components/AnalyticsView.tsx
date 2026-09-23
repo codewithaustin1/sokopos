@@ -62,7 +62,7 @@ export const AnalyticsView: React.FC = () => {
 
   // Filter transactions by both global time-range and location
   const filteredTxs = useMemo(() => {
-    return transactions.filter((tx) => {
+    return (transactions || []).filter((tx) => {
       if (selectedLocationId !== 'all' && tx.locationId !== selectedLocationId) {
         return false;
       }

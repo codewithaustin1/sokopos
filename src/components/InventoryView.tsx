@@ -53,7 +53,7 @@ export const InventoryView: React.FC = () => {
 
   // Low stock counts
   const lowStockItems = useMemo(() => {
-    return products.filter((p) => {
+    return (products || []).filter((p) => {
       const stock = p.stockByLocation[currentLocation.id] ?? 0;
       return stock <= p.reorderPoint;
     });
@@ -61,7 +61,7 @@ export const InventoryView: React.FC = () => {
 
   // Filtered products
   const filteredProducts = useMemo(() => {
-    return products.filter((p) => {
+    return (products || []).filter((p) => {
       const matchCategory =
         selectedCategory === 'All Categories' || p.category === selectedCategory;
 

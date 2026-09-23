@@ -45,7 +45,7 @@ export const ResetStoreModal: React.FC<ResetStoreModalProps> = ({
   }, [businesses, targetBizId, currentBusiness]);
 
   const tenantTransactions = useMemo(() => {
-    return transactions.filter((tx) => tx.businessId === targetBizId);
+    return (transactions || []).filter((tx) => tx.businessId === targetBizId);
   }, [transactions, targetBizId]);
 
   const totalGross = useMemo(() => {
