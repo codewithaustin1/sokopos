@@ -13,12 +13,18 @@ import {
   RefreshCw,
   Cloud,
   Tag,
+  Sparkles,
+  Camera,
+  FileText,
 } from 'lucide-react';
 import { Product } from '../types';
 import { usePos } from '../context/PosContext';
 import { ProductFormModal } from './ProductFormModal';
 import { StockTransferModal } from './StockTransferModal';
 import { CategoryManagerModal } from './CategoryManagerModal';
+import { SupplierInvoiceModal } from './SupplierInvoiceModal';
+import { PackageScannerModal } from './PackageScannerModal';
+import { ParsedProductPackage } from '../types/aiVision';
 
 export const InventoryView: React.FC = () => {
   const {
@@ -46,6 +52,9 @@ export const InventoryView: React.FC = () => {
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [transferTargetProduct, setTransferTargetProduct] = useState<Product | null>(null);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [isPackageScannerOpen, setIsPackageScannerOpen] = useState(false);
+  const [stagedAiProduct, setStagedAiProduct] = useState<ParsedProductPackage | null>(null);
 
   // Quick adjust inline state
   const [quickAdjustProductId, setQuickAdjustProductId] = useState<string | null>(null);
@@ -142,7 +151,28 @@ export const InventoryView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* AI Vision Action Buttons */}
+          <button
+            id="btn-ai-invoice-onboarding"
+            onClick={() => setIsInvoiceModalOpen(true)}
+            className="bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+            title="Digitize supplier paper delivery invoices with Gemini Multimodal Vision"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+            <span>AI Invoice Onboarding</span>
+          </button>
+
+          <button
+            id="btn-ai-package-scan"
+            onClick={() => setIsPackageScannerOpen(true)}
+            className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs px-3 py-2 rounded-xl transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+            title="Parse brand, name, weight, and barcode from packaging via Vision AI"
+          >
+            <Camera className="w-3.5 h-3.5 text-indigo-600" />
+            <span className="hidden sm:inline">AI Package Scan</span>
+          </button>
+
           <button
             id="btn-refresh-inventory-fresh"
             onClick={() => fetchFreshInventoryFromServer(undefined, true)}
@@ -614,8 +644,12 @@ export const InventoryView: React.FC = () => {
       {/* Modals */}
       <ProductFormModal
         isOpen={isProductModalOpen}
-        onClose={() => setIsProductModalOpen(false)}
+        onClose={() => {
+          setIsProductModalOpen(false);
+          setStagedAiProduct(null);
+        }}
         productToEdit={editingProduct}
+        initialAiProduct={stagedAiProduct}
       />
 
       <StockTransferModal
@@ -627,6 +661,22 @@ export const InventoryView: React.FC = () => {
       <CategoryManagerModal
         isOpen={isCategoryModalOpen}
         onClose={() => setIsCategoryModalOpen(false)}
+      />
+
+      <SupplierInvoiceModal
+        isOpen={isInvoiceModalOpen}
+        onClose={() => setIsInvoiceModalOpen(false)}
+      />
+
+      <PackageScannerModal
+        isOpen={isPackageScannerOpen}
+        onClose={() => setIsPackageScannerOpen(false)}
+        onApplyParsedProduct={(parsed) => {
+          setStagedAiProduct(parsed);
+          setEditingProduct(null);
+          setIsProductModalOpen(true);
+          setIsPackageScannerOpen(false);
+        }}
       />
     </div>
   );

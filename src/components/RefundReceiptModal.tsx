@@ -150,7 +150,7 @@ export const RefundReceiptModal: React.FC = () => {
               </span>
             </div>
             <div className="flex justify-between text-slate-600">
-              <span>VAT / Tax Refunded (16%):</span>
+              <span>{currentBusiness?.taxSettings?.taxLabel || 'VAT'} Refunded:</span>
               <span>
                 {currentLocation.currency} {refund.taxRefund.toFixed(2)}
               </span>

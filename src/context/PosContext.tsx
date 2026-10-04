@@ -17,7 +17,25 @@ import {
   UserRole,
   StoreSalesBackup,
   RetailTheme,
+  ShiftSession,
+  ShiftExpense,
+  CashDrop,
+  ExpenseCategory,
+  VoidRecord,
+  SupervisorOverrideAuditEntry,
+  AdminActivityEntry,
+  AdminActivityCategory,
+  BusinessTaxSettings,
+  TaxRule,
+  Customer,
+  CustomerCreditLedgerEntry,
 } from '../types';
+import {
+  resolveDynamicTaxRate,
+  calculateCartTaxBreakdown,
+  TaxBreakdownEntry,
+  DEFAULT_TAX_SETTINGS,
+} from '../utils/taxResolver';
 import {
   INITIAL_BUSINESSES,
   INITIAL_CATEGORIES,
@@ -28,9 +46,12 @@ import {
   INITIAL_SYNC_LOGS,
   INITIAL_SYSTEM_USERS,
   INITIAL_TRANSACTIONS,
+  INITIAL_SHIFTS,
+  INITIAL_CUSTOMERS,
   SUPER_ADMIN_EMAIL,
 } from '../data/initialData';
 import { soundFx } from '../utils/audio';
+import { Haptics } from '../utils/haptics';
 import { calculatePaymentGuardrails } from '../utils/cashRounding';
 import confetti from 'canvas-confetti';
 import {
@@ -63,6 +84,8 @@ import {
   purgeTenantTransactionsFromFirestore,
   saveBusinessToFirestore,
   updateBusinessInFirestore,
+  deleteBusinessFromFirestore,
+  purgeTenantAllDataFromFirestore,
   getBusinessesFromFirestore,
   saveUserProfileToFirestore,
   getFreshTenantProductsFromFirestore,
@@ -73,6 +96,10 @@ import {
   seedInitialTenantDataToFirestore,
   getPlatformSettingsFromFirestore,
   savePlatformSettingsToFirestore,
+  saveCustomerToFirestore,
+  updateCustomerInFirestore,
+  deleteCustomerFromFirestore,
+  subscribeToTenantCustomers,
 } from '../lib/firestoreService';
 import {
   hashPinOnServer,
@@ -100,15 +127,17 @@ interface PosContextType {
   isSuperAdmin: boolean;
   loginWithGoogle: (email: string, name?: string, newBusinessName?: string) => boolean;
   loginWithCredentials: (username: string, pin: string) => Promise<boolean>;
-  logout: () => void;
+  logout: () => boolean;
   provisionBusiness: (name: string, ownerEmail: string, ownerName: string, plan: 'starter' | 'professional' | 'enterprise') => Business;
   updateBusinessProfile: (updates: Partial<Business>) => void;
+  performSystemCleanup: () => Promise<{ removedCount: number; removedBusinesses: string[] }>;
+  isRealGoogleAccount: (email?: string | null) => boolean;
 
   // Business Profile Settings & Branch Management
   isBusinessSettingsOpen: boolean;
   setIsBusinessSettingsOpen: (open: boolean) => void;
-  businessSettingsDefaultTab: 'profile' | 'branches' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset';
-  openBusinessSettings: (initialTab?: 'profile' | 'branches' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset') => void;
+  businessSettingsDefaultTab: 'profile' | 'branches' | 'tax' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset';
+  openBusinessSettings: (initialTab?: 'profile' | 'branches' | 'tax' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset') => void;
   updateActiveUserCredentials: (newPin?: string, newUsername?: string) => Promise<boolean>;
 
   // Hardware & Printing User Preferences
@@ -206,18 +235,36 @@ interface PosContextType {
     productId: string,
     type: 'percentage' | 'flat',
     value: number,
-    options?: { reason?: string; authorizedBy?: string }
+    options?: {
+      reason?: string;
+      authorizedBy?: string;
+      authorizingSupervisorId?: string;
+      authorizingSupervisorName?: string;
+      authorizingSupervisorRole?: string;
+      isSupervisorOverride?: boolean;
+    }
   ) => void;
   removeItemDiscount: (productId: string) => void;
   hasDiscountPermission: (cashier?: Cashier) => boolean;
   verifyManagerOverridePin: (
     pin: string,
     managerId?: string
-  ) => Promise<{ success: boolean; managerName?: string; error?: string }>;
+  ) => Promise<{ success: boolean; managerName?: string; managerId?: string; managerRole?: string; error?: string }>;
   cartSubtotal: number;
   cartTax: number;
   cartDiscount: number;
   cartTotal: number;
+  cartTaxBreakdown: TaxBreakdownEntry[];
+
+  // Customer & Store Credit Directory (CRM)
+  customers: Customer[];
+  selectedCustomer: Customer | null;
+  setSelectedCustomer: (customer: Customer | null) => void;
+  addCustomer: (customer: Omit<Customer, 'id' | 'businessId' | 'totalSpent' | 'visitCount' | 'firstVisitAt' | 'lastVisitAt' | 'createdAt'>) => Promise<Customer>;
+  updateCustomer: (id: string, updates: Partial<Customer>) => Promise<void>;
+  deleteCustomer: (id: string) => Promise<boolean>;
+  adjustCustomerCredit: (customerId: string, amountChange: number, reason: string, referenceId?: string) => Promise<void>;
+  redeemCustomerLoyaltyPoints: (customerId: string, pointsToRedeem: number) => Promise<boolean>;
 
   // Barcode Scanning
   handleBarcodeScanned: (barcode: string) => { success: boolean; message: string; product?: Product };
@@ -238,6 +285,9 @@ interface PosContextType {
       cardLast4?: string;
       cardNetwork?: string;
       roundingDifference?: number;
+      storeCreditUsed?: number;
+      loyaltyPointsRedeemed?: number;
+      notes?: string;
     }
   ) => Transaction;
   settleExactCash: () => boolean;
@@ -254,11 +304,40 @@ interface PosContextType {
       restockToInventory: boolean;
       reason?: string;
     }>;
+    authorizingSupervisorId?: string;
+    authorizingSupervisorName?: string;
+    authorizingSupervisorRole?: string;
+    isSupervisorOverride?: boolean;
+    supervisorOverrideReason?: string;
   }) => Promise<{ success: boolean; refundRecord?: RefundRecord; error?: string }>;
   isReturnsModalOpen: boolean;
   selectedReturnTx: Transaction | null;
   openReturnsModal: (tx?: Transaction | null) => void;
   closeReturnsModal: () => void;
+
+  // Supervisor Overrides & Attributions (Edge Case 1)
+  supervisorOverrideLogs: SupervisorOverrideAuditEntry[];
+  logSupervisorOverride: (params: Omit<SupervisorOverrideAuditEntry, 'id' | 'timestamp' | 'businessId'>) => void;
+  voidRecords: VoidRecord[];
+  recordVoid: (params: {
+    voidType: 'line_item' | 'cart_void';
+    items: Array<{
+      productId: string;
+      productName: string;
+      sku: string;
+      quantity: number;
+      unitPrice: number;
+      total: number;
+    }>;
+    reason: string;
+    authorizingSupervisorId?: string;
+    authorizingSupervisorName?: string;
+    authorizingSupervisorRole?: string;
+  }) => VoidRecord;
+
+  // Back-office & Administrative Activity (Edge Case 5)
+  adminActivityLogs: AdminActivityEntry[];
+  logAdminActivity: (params: Omit<AdminActivityEntry, 'id' | 'timestamp' | 'businessId' | 'businessName' | 'isAdministrative'>) => void;
 
   // Cloud Sync
   isOnline: boolean;
@@ -274,6 +353,32 @@ interface PosContextType {
   firestoreDbId: string;
   firestoreRlsStatus: string;
   seedTenantDataToFirestoreAction: () => Promise<void>;
+
+  // Shift Management & Cash Drawer Reconciliation
+  activeShift: ShiftSession | null;
+  interruptedSession: ShiftSession | null;
+  shiftHistory: ShiftSession[];
+  openShift: (openingFloat: number, notes?: string, denominations?: Record<string, number>) => ShiftSession;
+  recordCashDrop: (amount: number, reason: string, authorizedBy?: string, envelopeNumber?: string) => void;
+  recordShiftExpense: (params: {
+    amount: number;
+    category: ExpenseCategory;
+    description: string;
+    payee: string;
+    approvedBy: string;
+    receiptRef?: string;
+  }) => void;
+  closeShift: (params: {
+    closingCountedCash: number;
+    notes?: string;
+    denominations?: Record<string, number>;
+    handoverToCashierId?: string;
+  }) => ShiftSession;
+  forceLogoutSession: (reason: 'timeout' | 'admin_action' | 'system_restart', adminEmail?: string, note?: string) => void;
+  resumeInterruptedShift: (shiftId: string) => boolean;
+  isShiftModalOpen: boolean;
+  setIsShiftModalOpen: (open: boolean) => void;
+  openShiftManagement: () => void;
 
   // Toast
   toastMessage: { text: string; type: 'success' | 'error' | 'info' } | null;
@@ -292,8 +397,13 @@ const STORAGE_KEYS = {
   LOCATIONS: 'sokopos_locations_v2',
   SYSTEM_USERS: 'sokopos_system_users_v2',
   TRANSACTIONS: 'sokopos_transactions_v2',
+  SHIFTS: 'sokopos_shifts_v2',
   SYNC_LOGS: 'sokopos_sync_logs_v2',
   SUPER_ADMIN_AUDIT: 'sokopos_sa_audit_v2',
+  ADMIN_ACTIVITY_LOGS: 'sokopos_admin_activity_logs_v1',
+  SUPERVISOR_OVERRIDES: 'sokopos_supervisor_overrides_v1',
+  VOID_RECORDS: 'sokopos_void_records_v1',
+  SESSION_CLEAN_EXIT: 'sokopos_session_clean_exit_v1',
   CURRENT_LOC: 'sokopos_curr_loc_v2',
   DARK_MODE: 'sokopos_dark_mode_v2',
   AUTO_PRINT_RECEIPT: 'sokopos_auto_print_receipt_v2',
@@ -302,21 +412,61 @@ const STORAGE_KEYS = {
   LOGIN_BG_GRAPHIC: 'sokopos_login_bg_graphic_v1',
   LOGIN_BG_NAME: 'sokopos_login_bg_name_v1',
   RETAIL_THEME: 'sokopos_retail_theme_v2',
+  CUSTOMERS: 'sokopos_customers_v1',
   getTenantAutoPrintKey: (bizId: string) => `sokopos_auto_print_receipt_${bizId || 'default'}_v2`,
   getTenantReceiptFormatKey: (bizId: string) => `sokopos_receipt_format_${bizId || 'default'}_v2`,
   getTenantRetailThemeKey: (bizId: string) => `sokopos_retail_theme_${bizId || 'default'}_v2`,
+  getTenantCustomersKey: (bizId: string) => `sokopos_customers_${bizId || 'default'}_v1`,
 };
+
+export function isRealGoogleAccount(email?: string | null): boolean {
+  if (!email) return false;
+  const normalized = email.toLowerCase().trim();
+  if (!normalized.includes('@')) return false;
+
+  // Placeholder/demo domains that lack an authentic Google Account
+  const bannedMockDomains = [
+    'sokopos.co.ke',
+    'quickchoice.co.ke',
+    'example.com',
+    'example.org',
+    'test.com',
+    'demo.com',
+    'dummy.com',
+  ];
+  const domain = normalized.split('@')[1];
+  if (bannedMockDomains.includes(domain)) {
+    return false;
+  }
+
+  // Authentic Google Account standard domains
+  if (
+    normalized.endsWith('@gmail.com') ||
+    normalized.endsWith('@googlemail.com')
+  ) {
+    return true;
+  }
+
+  // Upfront platform Super-Admin
+  if (normalized === SUPER_ADMIN_EMAIL.toLowerCase()) {
+    return true;
+  }
+
+  // Active Google OAuth verified account
+  if (auth.currentUser?.email && auth.currentUser.email.toLowerCase() === normalized) {
+    const isGoogleProvider = auth.currentUser.providerData?.some(
+      (p) => p.providerId === 'google.com'
+    );
+    if (isGoogleProvider) return true;
+  }
+
+  return false;
+}
 
 export function getStableBusinessIdForEmail(email: string): string {
   const normalized = email.toLowerCase().trim();
   if (normalized === SUPER_ADMIN_EMAIL.toLowerCase()) {
     return 'biz-upfront';
-  }
-  if (normalized === 'owner@sokopos.co.ke') {
-    return 'biz-soko';
-  }
-  if (normalized === 'samuel.ndungu@quickchoice.co.ke') {
-    return 'biz-quickmart';
   }
   const cleanPrefix = normalized.replace(/[^a-z0-9]/g, '').substring(0, 12);
   return `biz-${cleanPrefix || 'retail'}`;
@@ -328,7 +478,19 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const saved = localStorage.getItem(STORAGE_KEYS.BUSINESSES);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Filter out accounts that lack a real Google account
+          const cleaned = parsed.filter(
+            (b: Business) =>
+              isRealGoogleAccount(b.ownerEmail) &&
+              b.id !== 'biz-soko' &&
+              b.id !== 'biz-quickmart'
+          );
+          if (cleaned.length > 0) {
+            return cleaned;
+          }
+        }
       } catch {
         // fallback
       }
@@ -477,9 +639,82 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // 3. Active Business Scoping
   const [activeBusinessIdState, setActiveBusinessIdState] = useState<string>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.ACTIVE_BIZ_ID);
-    if (saved) return saved;
+    if (saved && saved !== 'biz-soko' && saved !== 'biz-quickmart') return saved;
     return currentUser?.businessId || INITIAL_BUSINESSES[0].id;
   });
+
+  // Automatic System Cleanup: Purge all accounts and data lacking a real Google account on startup
+  useEffect(() => {
+    const unverifiedIds = new Set<string>();
+    businesses.forEach((b) => {
+      if (!isRealGoogleAccount(b.ownerEmail) || b.id === 'biz-soko' || b.id === 'biz-quickmart') {
+        unverifiedIds.add(b.id);
+      }
+    });
+    unverifiedIds.add('biz-soko');
+    unverifiedIds.add('biz-quickmart');
+
+    const validBusinesses = businesses.filter((b) => !unverifiedIds.has(b.id));
+    const nextBizs = validBusinesses.length > 0 ? validBusinesses : INITIAL_BUSINESSES;
+
+    if (businesses.length !== validBusinesses.length || unverifiedIds.has(activeBusinessIdState)) {
+      setBusinesses(nextBizs);
+      localStorage.setItem(STORAGE_KEYS.BUSINESSES, JSON.stringify(nextBizs));
+
+      if (unverifiedIds.has(activeBusinessIdState)) {
+        setActiveBusinessIdState('biz-upfront');
+        localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, 'biz-upfront');
+      }
+
+      setAllSystemUsers((prev) => {
+        const next = prev.filter((u) => !unverifiedIds.has(u.businessId));
+        localStorage.setItem(STORAGE_KEYS.SYSTEM_USERS, JSON.stringify(next));
+        return next;
+      });
+
+      setAllLocations((prev) => {
+        const next = prev.filter((l) => !unverifiedIds.has(l.businessId));
+        localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(next));
+        return next;
+      });
+
+      setAllProducts((prev) => {
+        const next = prev.filter((p) => !unverifiedIds.has(p.businessId));
+        localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(next));
+        return next;
+      });
+
+      setAllCategories((prev) => {
+        const next = prev.filter((c) => !unverifiedIds.has(c.businessId));
+        localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(next));
+        return next;
+      });
+
+      setAllTransactions((prev) => {
+        const next = prev.filter((t) => !unverifiedIds.has(t.businessId));
+        localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(next));
+        return next;
+      });
+
+      setAllCustomers((prev) => {
+        const next = prev.filter((c) => !unverifiedIds.has(c.businessId));
+        return next;
+      });
+
+      setAllShifts((prev) => {
+        const next = prev.filter((s) => !unverifiedIds.has(s.businessId));
+        localStorage.setItem(STORAGE_KEYS.SHIFTS, JSON.stringify(next));
+        return next;
+      });
+
+      if (auth.currentUser) {
+        for (const bId of unverifiedIds) {
+          deleteBusinessFromFirestore(bId).catch((e) => console.warn('Clean startup biz from firestore:', e));
+          purgeTenantAllDataFromFirestore(bId).catch((e) => console.warn('Clean startup tenant data from firestore:', e));
+        }
+      }
+    }
+  }, []);
 
   // Strict Data-Access Isolation Enforcement:
   // Non-super-admin users CANNOT view or query any business other than their assigned tenant.
@@ -491,7 +726,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [isSuperAdmin, currentUser?.businessId, activeBusinessIdState]);
 
   const currentBusiness = useMemo(() => {
-    return businesses.find((b) => b.id === activeBusinessId) || businesses[0];
+    return (
+      (Array.isArray(businesses) && businesses.find((b) => b.id === activeBusinessId)) ||
+      businesses[0] ||
+      INITIAL_BUSINESSES[0]
+    );
   }, [businesses, activeBusinessId]);
 
   const setActiveBusinessId = (bizId: string) => {
@@ -568,6 +807,102 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     },
     [businesses, currentUser?.email, isSuperAdmin]
   );
+
+  // 5.5 Back-office & Administrative Activity Logging (Edge Case 5)
+  // Back-office or admin changes must be classified as administrative activity,
+  // attributed to the performing admin account, and excluded from shift activity entirely.
+  const [adminActivityLogs, setAdminActivityLogs] = useState<AdminActivityEntry[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.ADMIN_ACTIVITY_LOGS);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // fallback
+      }
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.ADMIN_ACTIVITY_LOGS, JSON.stringify(adminActivityLogs));
+  }, [adminActivityLogs]);
+
+  const logAdminActivity = useCallback(
+    (params: Omit<AdminActivityEntry, 'id' | 'timestamp' | 'businessId' | 'businessName' | 'isAdministrative'>) => {
+      const targetBiz = businesses.find((b) => b.id === activeBusinessId);
+      const newEntry: AdminActivityEntry = {
+        id: `admin-act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: new Date().toISOString(),
+        businessId: activeBusinessId,
+        businessName: targetBiz?.name || activeBusinessId,
+        category: params.category,
+        action: params.action,
+        description: params.description,
+        adminId: currentUser?.id || 'admin-system',
+        adminEmail: currentUser?.email || (isSuperAdmin ? SUPER_ADMIN_EMAIL : 'admin@sokopos.co.ke'),
+        adminName: currentUser?.name || 'Administrator',
+        adminRole: currentUser?.role || 'business_owner',
+        recordType: params.recordType,
+        recordId: params.recordId,
+        beforeValue: params.beforeValue ? JSON.parse(JSON.stringify(params.beforeValue)) : null,
+        afterValue: params.afterValue ? JSON.parse(JSON.stringify(params.afterValue)) : null,
+        isAdministrative: true,
+      };
+      setAdminActivityLogs((prev) => [newEntry, ...prev]);
+    },
+    [activeBusinessId, businesses, currentUser, isSuperAdmin]
+  );
+
+  // 5.6 Supervisor Overrides Logging (Edge Case 1)
+  // Supervisor overrides (voids, refunds, discounts) must be attributed to the performing operator,
+  // with the authorizing supervisor captured as a distinct audit field.
+  const [supervisorOverrideLogs, setSupervisorOverrideLogs] = useState<SupervisorOverrideAuditEntry[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.SUPERVISOR_OVERRIDES);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // fallback
+      }
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.SUPERVISOR_OVERRIDES, JSON.stringify(supervisorOverrideLogs));
+  }, [supervisorOverrideLogs]);
+
+  const logSupervisorOverride = useCallback(
+    (params: Omit<SupervisorOverrideAuditEntry, 'id' | 'timestamp' | 'businessId'>) => {
+      const newEntry: SupervisorOverrideAuditEntry = {
+        id: `ovr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: new Date().toISOString(),
+        businessId: activeBusinessId,
+        ...params,
+      };
+      setSupervisorOverrideLogs((prev) => [newEntry, ...prev]);
+    },
+    [activeBusinessId]
+  );
+
+  // 5.7 Voids Management & Attribution (Edge Case 1)
+  const [voidRecords, setVoidRecords] = useState<VoidRecord[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.VOID_RECORDS);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // fallback
+      }
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.VOID_RECORDS, JSON.stringify(voidRecords));
+  }, [voidRecords]);
+
+  // Record Void forward declaration - implemented after currentCashier is initialized
 
   // 6. Destructive Actions Safeguard
   const [pendingDestructiveAction, setPendingDestructiveAction] = useState<DestructiveActionRequest | null>(null);
@@ -759,6 +1094,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (isSuperAdmin) {
       logSuperAdminAction(activeBusinessId, 'location', newLoc.id, 'create', `Created branch ${newLoc.name}`, null, newLoc);
     }
+    logAdminActivity({
+      category: 'branch',
+      action: 'create_branch',
+      description: `Created branch store ${newLoc.name} (${newLoc.city}, Code: ${newLoc.code})`,
+      recordType: 'location',
+      recordId: newLoc.id,
+      beforeValue: null,
+      afterValue: newLoc,
+    });
     showToast(`Branch ${newLoc.name} registered`, 'success');
   };
 
@@ -799,6 +1143,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         { ...oldLoc, ...updates }
       );
     }
+    logAdminActivity({
+      category: 'branch',
+      action: 'update_branch',
+      description: `Updated branch ${updates.name || oldLoc.name} settings`,
+      recordType: 'location',
+      recordId: id,
+      beforeValue: oldLoc,
+      afterValue: updatedLoc,
+    });
     showToast(`Branch ${updates.name || oldLoc.name} updated`, 'success');
   };
 
@@ -847,6 +1200,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             null
           );
         }
+        logAdminActivity({
+          category: 'branch',
+          action: 'delete_branch',
+          description: `Deleted store branch ${targetLoc.name} (${targetLoc.city})`,
+          recordType: 'location',
+          recordId: id,
+          beforeValue: targetLoc,
+          afterValue: null,
+        });
         showToast(`Store branch ${targetLoc.name} removed successfully`, 'success');
       },
     });
@@ -979,6 +1341,29 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return false;
     }
 
+    // Edge Case 3: Shared logins are prohibited, as they render attribution meaningless
+    const rawUsername = (user.username || user.name.toLowerCase().replace(/\s+/g, '.')).trim().toLowerCase();
+    const GENERIC_PROHIBITED = ['cashier', 'shared', 'pos', 'terminal', 'till', 'store', 'user', 'staff', 'counter', 'operator'];
+    if (GENERIC_PROHIBITED.includes(rawUsername)) {
+      showToast(
+        `Shared logins prohibited: Generic account identity "${rawUsername}" is forbidden. Each operator must have an individual personal account.`,
+        'error'
+      );
+      return false;
+    }
+
+    // Validate account uniqueness in tenant
+    const existingSameUsername = allSystemUsers.find(
+      (u) => u.businessId === activeBusinessId && u.username?.toLowerCase() === rawUsername
+    );
+    if (existingSameUsername) {
+      showToast(
+        `Shared logins prohibited: An account with username "${rawUsername}" already belongs to ${existingSameUsername.name}. Each staff member must have an individual account.`,
+        'error'
+      );
+      return false;
+    }
+
     let hashedPin = user.pin;
     if (!isBcryptHash(user.pin)) {
       hashedPin = await hashPinOnServer(user.pin);
@@ -986,6 +1371,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const newUser: Cashier = {
       ...user,
+      username: rawUsername,
       pin: hashedPin,
       id: `user-${Date.now()}`,
       businessId: activeBusinessId,
@@ -1020,13 +1406,44 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       );
     }
 
-    showToast(`System user ${newUser.name} created (PIN Bcrypt hashed on server)`, 'success');
+    // Edge Case 5: Classified as administrative activity, attributed to performing admin
+    logAdminActivity({
+      category: 'staff',
+      action: 'create_staff',
+      description: `Created operator account for ${newUser.name} (Role: ${newUser.role}, Code: ${newUser.code}, Username: ${newUser.username})`,
+      recordType: 'user',
+      recordId: newUser.id,
+      beforeValue: null,
+      afterValue: { name: newUser.name, role: newUser.role, username: newUser.username },
+    });
+
+    showToast(`System user ${newUser.name} created (individual account attribution enforced)`, 'success');
     return true;
   };
 
   const updateSystemUser = async (id: string, updates: Partial<Cashier>): Promise<void> => {
     const oldUser = allSystemUsers.find((u) => u.id === id);
     if (!oldUser) return;
+
+    // Edge Case 3: Check shared login uniqueness if username changed
+    if (updates.username) {
+      const raw = updates.username.trim().toLowerCase();
+      const GENERIC_PROHIBITED = ['cashier', 'shared', 'pos', 'terminal', 'till', 'store', 'user', 'staff', 'counter', 'operator'];
+      if (GENERIC_PROHIBITED.includes(raw)) {
+        showToast(
+          `Shared logins prohibited: Generic account identity "${raw}" is forbidden. Each operator must have an individual personal account.`,
+          'error'
+        );
+        return;
+      }
+      const existing = allSystemUsers.find(
+        (u) => u.id !== id && u.businessId === activeBusinessId && u.username?.toLowerCase() === raw
+      );
+      if (existing) {
+        showToast(`Shared logins prohibited: Username "${raw}" is already assigned to ${existing.name}.`, 'error');
+        return;
+      }
+    }
 
     const finalUpdates: Partial<Cashier> = { ...updates };
     if (updates.pin && !isBcryptHash(updates.pin)) {
@@ -1068,6 +1485,18 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         { ...oldUser, ...finalUpdates }
       );
     }
+
+    // Edge Case 5: Classified as administrative activity, attributed to performing admin
+    logAdminActivity({
+      category: 'staff',
+      action: 'update_staff',
+      description: `Updated staff account for ${oldUser.name} (${Object.keys(updates).join(', ')})`,
+      recordType: 'user',
+      recordId: id,
+      beforeValue: oldUser,
+      afterValue: updatedUser,
+    });
+
     showToast(`User ${oldUser.name} updated`, 'success');
   };
 
@@ -1098,6 +1527,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             null
           );
         }
+        logAdminActivity({
+          category: 'staff',
+          action: 'delete_staff',
+          description: `Deleted operator account for ${targetUser.name} (${targetUser.role})`,
+          recordType: 'user',
+          recordId: id,
+          beforeValue: targetUser,
+          afterValue: null,
+        });
         showToast(`User ${targetUser.name} deleted`, 'info');
       },
     });
@@ -1266,6 +1704,16 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         });
     }
 
+    logAdminActivity({
+      category: 'catalog',
+      action: 'create_category',
+      description: `Created product category "${newCat.name}"`,
+      recordType: 'category',
+      recordId: newCat.id,
+      beforeValue: null,
+      afterValue: newCat,
+    });
+
     showToast(`Category "${newCat.name}" created`, 'success');
     return newCat;
   };
@@ -1312,6 +1760,16 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         });
     }
 
+    logAdminActivity({
+      category: 'catalog',
+      action: 'update_category',
+      description: `Updated product category "${oldCat.name}" -> "${trimmedName}"`,
+      recordType: 'category',
+      recordId: id,
+      beforeValue: oldCat,
+      afterValue: updated,
+    });
+
     showToast(`Category "${trimmedName}" updated`, 'success');
   };
 
@@ -1345,6 +1803,16 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
     }
 
+    logAdminActivity({
+      category: 'catalog',
+      action: 'delete_category',
+      description: `Deleted product category "${target.name}"`,
+      recordType: 'category',
+      recordId: id,
+      beforeValue: target,
+      afterValue: null,
+    });
+
     showToast(`Category "${target.name}" removed. Assigned affected products to "All".`, 'info');
     return true;
   };
@@ -1361,7 +1829,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const fetchFreshInventoryFromServer = useCallback(
     async (businessIdOverride?: string, showFeedback = false): Promise<Product[]> => {
       const targetBizId = businessIdOverride || activeBusinessId;
-      if (!targetBizId) return [];
+      if (!targetBizId || !auth.currentUser) return [];
 
       setIsInventoryLoading(true);
       try {
@@ -1417,7 +1885,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Automated Fresh Inventory Fetch on Every Successful Login
   const lastLoggedInUserRef = useRef<string | null>(null);
   useEffect(() => {
-    if (currentUser && currentUser.id) {
+    if (currentUser && currentUser.id && auth.currentUser) {
       // Whenever a user logs in or switches tenant account
       if (lastLoggedInUserRef.current !== currentUser.id) {
         lastLoggedInUserRef.current = currentUser.id;
@@ -1428,7 +1896,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } else {
       lastLoggedInUserRef.current = null;
     }
-  }, [currentUser, fetchFreshInventoryFromServer]);
+  }, [currentUser, firebaseUser, fetchFreshInventoryFromServer]);
 
   const addProduct = (product: Omit<Product, 'id' | 'businessId'>) => {
     const finalCategory = (!product.category || !product.category.trim()) ? 'All' : product.category.trim();
@@ -1467,6 +1935,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         newProduct
       );
     }
+    logAdminActivity({
+      category: 'catalog',
+      action: 'create_product',
+      description: `Added catalog product "${newProduct.name}" (SKU: ${newProduct.sku}, Selling Price: ${newProduct.sellingPrice})`,
+      recordType: 'product',
+      recordId: newProduct.id,
+      beforeValue: null,
+      afterValue: newProduct,
+    });
     showToast(`Product "${newProduct.name}" added`, 'success');
   };
 
@@ -1511,6 +1988,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updated
       );
     }
+    logAdminActivity({
+      category: 'catalog',
+      action: 'update_product',
+      description: `Updated catalog product "${oldProduct.name}" (${Object.keys(updates).join(', ')})`,
+      recordType: 'product',
+      recordId: id,
+      beforeValue: oldProduct,
+      afterValue: updated,
+    });
     showToast(`Product "${oldProduct.name}" updated`, 'success');
   };
 
@@ -1541,6 +2027,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             null
           );
         }
+        logAdminActivity({
+          category: 'catalog',
+          action: 'delete_product',
+          description: `Deleted catalog product "${target.name}" (SKU: ${target.sku})`,
+          recordType: 'product',
+          recordId: id,
+          beforeValue: target,
+          afterValue: null,
+        });
         showToast(`Product "${target.name}" deleted`, 'info');
       },
     });
@@ -1576,6 +2071,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         { locationId, stock: newStock, reason }
       );
     }
+    logAdminActivity({
+      category: 'inventory',
+      action: 'adjust_stock',
+      description: `Stock count adjustment for "${target.name}" at branch ${locationId}: ${oldStock} -> ${newStock} units (${reason})`,
+      recordType: 'stock',
+      recordId: productId,
+      beforeValue: { locationId, stock: oldStock },
+      afterValue: { locationId, stock: newStock, reason },
+    });
     showToast(`Stock updated: ${target.name} (${newStock} units)`, 'success');
   };
 
@@ -1632,7 +2136,267 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return true;
   };
 
-  // 10. Multi-Tenant Transactions Store
+  // Online / Offline Network Connectivity State
+  const [isOnline, setIsOnlineState] = useState<boolean>(() => {
+    return typeof navigator !== 'undefined' ? navigator.onLine : true;
+  });
+
+  // 10. Multi-Tenant Customers & Store Credit Directory Store
+  const [allCustomers, setAllCustomers] = useState<Customer[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const hasUpfront = parsed.some((c: Customer) => c.businessId === 'biz-upfront');
+          if (!hasUpfront) {
+            const upfrontInitials = INITIAL_CUSTOMERS.filter((c) => c.businessId === 'biz-upfront');
+            return [...parsed, ...upfrontInitials];
+          }
+          return parsed;
+        }
+      } catch {
+        // fallback
+      }
+    }
+    return INITIAL_CUSTOMERS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(allCustomers));
+  }, [allCustomers]);
+
+  // Scoped to active business tenant
+  const customers = useMemo(() => {
+    return allCustomers.filter((c) => c.businessId === activeBusinessId);
+  }, [allCustomers, activeBusinessId]);
+
+  // Selected customer assigned to current cart / sale
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+
+  useEffect(() => {
+    setSelectedCustomer(null);
+  }, [activeBusinessId]);
+
+  // Real-time Firestore customer synchronization
+  useEffect(() => {
+    if (!isOnline || !auth.currentUser) return;
+    const unsubscribe = subscribeToTenantCustomers(activeBusinessId, (remoteCustomers) => {
+      if (remoteCustomers && remoteCustomers.length > 0) {
+        setAllCustomers((prev) => {
+          const others = prev.filter((c) => c.businessId !== activeBusinessId);
+          const map = new Map<string, Customer>();
+          prev.filter((c) => c.businessId === activeBusinessId).forEach((c) => map.set(c.id, c));
+          remoteCustomers.forEach((rc) => map.set(rc.id, rc));
+          return [...others, ...Array.from(map.values())];
+        });
+      }
+    });
+    return () => unsubscribe();
+  }, [activeBusinessId, isOnline]);
+
+  const addCustomer = async (
+    data: Omit<Customer, 'id' | 'businessId' | 'totalSpent' | 'visitCount' | 'firstVisitAt' | 'lastVisitAt' | 'createdAt'>
+  ): Promise<Customer> => {
+    const trimmedName = data.name.trim();
+    const trimmedPhone = data.phone.trim();
+    if (!trimmedName || !trimmedPhone) {
+      throw new Error('Customer name and phone number are required');
+    }
+
+    const openingBalance = data.storeCreditBalance || 0;
+    const newCust: Customer = {
+      ...data,
+      name: trimmedName,
+      phone: trimmedPhone,
+      id: `cust-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
+      businessId: activeBusinessId,
+      totalSpent: 0,
+      visitCount: 0,
+      loyaltyPoints: data.loyaltyPoints || 0,
+      storeCreditBalance: openingBalance,
+      creditLimit: data.creditLimit || 0,
+      isCreditAllowed: data.isCreditAllowed ?? true,
+      firstVisitAt: new Date().toISOString(),
+      lastVisitAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      ledger: openingBalance !== 0 ? [
+        {
+          id: `ledg-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          type: openingBalance > 0 ? 'payment_received' : 'sale_credit',
+          amount: openingBalance,
+          balanceAfter: openingBalance,
+          notes: 'Opening store credit balance',
+          recordedByCashierId: currentCashier?.id,
+          recordedByCashierName: currentCashier?.name,
+        }
+      ] : [],
+    };
+
+    setAllCustomers((prev) => [newCust, ...prev]);
+
+    if (isOnline && auth.currentUser) {
+      saveCustomerToFirestore(newCust).catch((err) => console.warn('Firestore customer save:', err));
+    }
+
+    logAdminActivity({
+      category: 'customer',
+      action: 'create_customer',
+      description: `Created customer profile: ${newCust.name} (${newCust.phone})`,
+      recordType: 'customer',
+      recordId: newCust.id,
+      afterValue: newCust,
+    });
+
+    soundFx.playSuccess();
+    showToast(`Customer "${newCust.name}" added successfully!`, 'success');
+    return newCust;
+  };
+
+  const updateCustomer = async (id: string, updates: Partial<Customer>): Promise<void> => {
+    const target = allCustomers.find((c) => c.id === id);
+    if (!target) return;
+
+    const updatedCust: Customer = {
+      ...target,
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setAllCustomers((prev) => prev.map((c) => (c.id === id ? updatedCust : c)));
+
+    if (selectedCustomer?.id === id) {
+      setSelectedCustomer(updatedCust);
+    }
+
+    if (isOnline && auth.currentUser) {
+      updateCustomerInFirestore(id, updates).catch((err) => console.warn('Firestore customer update:', err));
+    }
+
+    logAdminActivity({
+      category: 'customer',
+      action: 'update_customer',
+      description: `Updated customer profile: ${updatedCust.name}`,
+      recordType: 'customer',
+      recordId: id,
+      beforeValue: target,
+      afterValue: updatedCust,
+    });
+
+    showToast(`Customer "${updatedCust.name}" updated`, 'success');
+  };
+
+  const deleteCustomer = async (id: string): Promise<boolean> => {
+    const target = allCustomers.find((c) => c.id === id);
+    if (!target) return false;
+
+    setAllCustomers((prev) => prev.filter((c) => c.id !== id));
+
+    if (selectedCustomer?.id === id) {
+      setSelectedCustomer(null);
+    }
+
+    if (isOnline && auth.currentUser) {
+      deleteCustomerFromFirestore(id).catch((err) => console.warn('Firestore customer delete:', err));
+    }
+
+    logAdminActivity({
+      category: 'customer',
+      action: 'delete_customer',
+      description: `Deleted customer profile: ${target.name} (${target.phone})`,
+      recordType: 'customer',
+      recordId: id,
+      beforeValue: target,
+    });
+
+    showToast(`Customer "${target.name}" removed`, 'info');
+    return true;
+  };
+
+  const adjustCustomerCredit = async (
+    customerId: string,
+    amountChange: number,
+    reason: string,
+    referenceId?: string
+  ): Promise<void> => {
+    const cust = allCustomers.find((c) => c.id === customerId);
+    if (!cust) return;
+
+    const newBalance = Number(((cust.storeCreditBalance || 0) + amountChange).toFixed(2));
+    const ledgerEntry: CustomerCreditLedgerEntry = {
+      id: `ledg-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
+      timestamp: new Date().toISOString(),
+      type: amountChange >= 0 ? 'payment_received' : 'adjustment',
+      amount: amountChange,
+      balanceAfter: newBalance,
+      referenceId,
+      notes: reason,
+      recordedByCashierId: currentCashier?.id,
+      recordedByCashierName: currentCashier?.name,
+    };
+
+    const updatedCust: Customer = {
+      ...cust,
+      storeCreditBalance: newBalance,
+      ledger: [ledgerEntry, ...(cust.ledger || [])],
+      updatedAt: new Date().toISOString(),
+    };
+
+    setAllCustomers((prev) => prev.map((c) => (c.id === customerId ? updatedCust : c)));
+
+    if (selectedCustomer?.id === customerId) {
+      setSelectedCustomer(updatedCust);
+    }
+
+    if (isOnline && auth.currentUser) {
+      updateCustomerInFirestore(customerId, {
+        storeCreditBalance: newBalance,
+        ledger: updatedCust.ledger,
+      }).catch((err) => console.warn('Firestore credit adjust:', err));
+    }
+
+    logAdminActivity({
+      category: 'customer',
+      action: 'adjust_credit',
+      description: `Adjusted store credit for ${cust.name}: ${amountChange >= 0 ? '+' : ''}${amountChange} (New balance: ${newBalance}) - ${reason}`,
+      recordType: 'customer',
+      recordId: customerId,
+    });
+
+    soundFx.playSuccess();
+    showToast(`Updated store credit for ${cust.name}. New balance: ${currentLocation.currency} ${newBalance.toFixed(2)}`, 'success');
+  };
+
+  const redeemCustomerLoyaltyPoints = async (customerId: string, pointsToRedeem: number): Promise<boolean> => {
+    const cust = allCustomers.find((c) => c.id === customerId);
+    if (!cust || (cust.loyaltyPoints || 0) < pointsToRedeem) {
+      soundFx.playError();
+      showToast('Insufficient loyalty points balance', 'error');
+      return false;
+    }
+
+    const updatedCust: Customer = {
+      ...cust,
+      loyaltyPoints: (cust.loyaltyPoints || 0) - pointsToRedeem,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setAllCustomers((prev) => prev.map((c) => (c.id === customerId ? updatedCust : c)));
+    if (selectedCustomer?.id === customerId) {
+      setSelectedCustomer(updatedCust);
+    }
+
+    if (isOnline && auth.currentUser) {
+      updateCustomerInFirestore(customerId, { loyaltyPoints: updatedCust.loyaltyPoints }).catch(console.warn);
+    }
+
+    soundFx.playSuccess();
+    showToast(`Redeemed ${pointsToRedeem} points for ${cust.name}`, 'success');
+    return true;
+  };
+
+  // 11. Multi-Tenant Transactions Store
   const [allTransactions, setAllTransactions] = useState<Transaction[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
     if (saved) {
@@ -1676,10 +2440,126 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return allSyncLogs.filter((l) => l.businessId === activeBusinessId);
   }, [allSyncLogs, activeBusinessId]);
 
-  // 12. Cart State
-  const [isOnline, setIsOnlineState] = useState<boolean>(() => {
-    return typeof navigator !== 'undefined' ? navigator.onLine : true;
+  // 11.5 Multi-Tenant Shift Sessions Store
+  const [allShifts, setAllShifts] = useState<ShiftSession[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.SHIFTS);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // fallback
+      }
+    }
+    return INITIAL_SHIFTS;
   });
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.SHIFTS, JSON.stringify(allShifts));
+  }, [allShifts]);
+
+  // Scoped strictly to current business tenant
+  const shiftHistory = useMemo(() => {
+    return allShifts.filter((s) => s.businessId === activeBusinessId);
+  }, [allShifts, activeBusinessId]);
+
+  // Active open shift for current location (or fallback to open shift in tenant)
+  const activeShift = useMemo(() => {
+    return (
+      shiftHistory.find((s) => s.status === 'open' && s.locationId === currentLocation.id) ||
+      shiftHistory.find((s) => s.status === 'open') ||
+      null
+    );
+  }, [shiftHistory, currentLocation.id]);
+
+  // Interrupted shift session for this location or operator (Edge Case 4)
+  const interruptedSession = useMemo(() => {
+    return (
+      shiftHistory.find(
+        (s) =>
+          s.status === 'interrupted' &&
+          (s.locationId === currentLocation.id || s.cashierId === currentCashier.id)
+      ) ||
+      shiftHistory.find((s) => s.status === 'interrupted') ||
+      null
+    );
+  }, [shiftHistory, currentLocation.id, currentCashier.id]);
+
+  // 8.5 Void Recording & Attribution (Edge Case 1)
+  const recordVoid = useCallback(
+    (params: {
+      voidType: 'line_item' | 'cart_void';
+      items: Array<{
+        productId: string;
+        productName: string;
+        sku: string;
+        quantity: number;
+        unitPrice: number;
+        total: number;
+      }>;
+      reason: string;
+      authorizingSupervisorId?: string;
+      authorizingSupervisorName?: string;
+      authorizingSupervisorRole?: string;
+    }): VoidRecord => {
+      const totalVoidAmount = params.items.reduce((sum, item) => sum + item.total, 0);
+      const newVoid: VoidRecord = {
+        id: `void-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: new Date().toISOString(),
+        businessId: activeBusinessId,
+        locationId: currentLocation.id,
+        locationName: currentLocation.name,
+        shiftId: activeShift ? activeShift.id : undefined,
+        voidType: params.voidType,
+        performingOperatorId: currentCashier.id,
+        performingOperatorName: currentCashier.name,
+        performingOperatorRole: currentCashier.role,
+        authorizingSupervisorId: params.authorizingSupervisorId,
+        authorizingSupervisorName: params.authorizingSupervisorName,
+        authorizingSupervisorRole: params.authorizingSupervisorRole,
+        reason: params.reason,
+        items: params.items,
+        totalVoidAmount: Number(totalVoidAmount.toFixed(2)),
+      };
+
+      setVoidRecords((prev) => [newVoid, ...prev]);
+
+      if (params.authorizingSupervisorId && params.authorizingSupervisorName) {
+        logSupervisorOverride({
+          locationId: currentLocation.id,
+          locationName: currentLocation.name,
+          shiftId: activeShift?.id,
+          overrideType: 'void',
+          performingOperatorId: currentCashier.id,
+          performingOperatorName: currentCashier.name,
+          performingOperatorRole: currentCashier.role,
+          authorizingSupervisorId: params.authorizingSupervisorId,
+          authorizingSupervisorName: params.authorizingSupervisorName,
+          authorizingSupervisorRole: params.authorizingSupervisorRole || 'Supervisor',
+          reason: params.reason,
+          details: {
+            amount: Number(totalVoidAmount.toFixed(2)),
+            notes: `${params.voidType === 'cart_void' ? 'Cart Void (Full Sale)' : 'Line Item Void'} of ${params.items.length} item(s)`,
+            items: params.items.map((i) => ({
+              productId: i.productId,
+              productName: i.productName,
+              quantity: i.quantity,
+              unitPrice: i.unitPrice,
+            })),
+          },
+        });
+      }
+
+      return newVoid;
+    },
+    [activeBusinessId, currentLocation, activeShift, currentCashier, logSupervisorOverride]
+  );
+
+  const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
+  const openShiftManagement = useCallback(() => {
+    setIsShiftModalOpen(true);
+  }, []);
+
+  // 12. Cart State
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeReceipt, setActiveReceipt] = useState<Transaction | null>(null);
   const [activeRefundReceipt, setActiveRefundReceipt] = useState<{
@@ -1895,20 +2775,53 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setCart([]);
   }, [activeBusinessId]);
 
+  const isTaxExclusive = currentBusiness?.taxSettings?.pricingType === 'exclusive';
+
   const cartSubtotal = useMemo(() => {
     return cart.reduce((sum, item) => {
       const discountedPrice = getItemDiscountedUnitPrice(item);
-      const netItemPrice = discountedPrice / (1 + item.taxRate);
+      const prod = allProducts.find((p) => p.id === item.productId);
+      const effectiveTaxRate = resolveDynamicTaxRate(
+        { category: prod?.category || (item as any).category, taxRate: item.taxRate, id: item.productId },
+        currentLocation.id,
+        currentBusiness?.taxSettings
+      ).rate;
+      if (isTaxExclusive) {
+        return sum + discountedPrice * item.quantity;
+      }
+      const netItemPrice = discountedPrice / (1 + effectiveTaxRate);
       return sum + netItemPrice * item.quantity;
     }, 0);
-  }, [cart]);
+  }, [cart, currentLocation.id, currentBusiness?.taxSettings, allProducts, isTaxExclusive]);
+
+  const cartTax = useMemo(() => {
+    return cart.reduce((sum, item) => {
+      const discountedPrice = getItemDiscountedUnitPrice(item);
+      const prod = allProducts.find((p) => p.id === item.productId);
+      const effectiveTaxRate = resolveDynamicTaxRate(
+        { category: prod?.category || (item as any).category, taxRate: item.taxRate, id: item.productId },
+        currentLocation.id,
+        currentBusiness?.taxSettings
+      ).rate;
+      if (isTaxExclusive) {
+        const itemTax = discountedPrice * effectiveTaxRate;
+        return sum + itemTax * item.quantity;
+      }
+      const netItemPrice = discountedPrice / (1 + effectiveTaxRate);
+      const itemTax = discountedPrice - netItemPrice;
+      return sum + itemTax * item.quantity;
+    }, 0);
+  }, [cart, currentLocation.id, currentBusiness?.taxSettings, allProducts, isTaxExclusive]);
 
   const cartTotal = useMemo(() => {
+    if (isTaxExclusive) {
+      return cartSubtotal + cartTax;
+    }
     return cart.reduce((sum, item) => {
       const discountedPrice = getItemDiscountedUnitPrice(item);
       return sum + discountedPrice * item.quantity;
     }, 0);
-  }, [cart]);
+  }, [cart, isTaxExclusive, cartSubtotal, cartTax]);
 
   const cartDiscount = useMemo(() => {
     return cart.reduce((sum, item) => {
@@ -1917,9 +2830,27 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }, 0);
   }, [cart]);
 
-  const cartTax = Math.max(0, cartTotal - cartSubtotal);
+  const cartTaxBreakdown = useMemo(() => {
+    return calculateCartTaxBreakdown(
+      cart,
+      currentLocation.id,
+      currentBusiness?.taxSettings,
+      allProducts
+    );
+  }, [cart, currentLocation.id, currentBusiness?.taxSettings, allProducts]);
 
   const addToCart = (product: Product, quantity = 1) => {
+    // Strict Guardrail: Sales interface & cart actions require an open shift session
+    if (!activeShift || activeShift.status !== 'open') {
+      soundFx.playError();
+      showToast(
+        'Sales Blocked: An active shift session is required before initiating a sale or adding items to the cart. Please open a shift first.',
+        'error'
+      );
+      setIsShiftModalOpen(true);
+      return;
+    }
+
     const currLocStock = product.stockByLocation[currentLocation.id] ?? 0;
 
     // Strict Rule: A product with Zero (0) stock size cannot be sold
@@ -1946,12 +2877,21 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     soundFx.playBeep(650, 0.08);
+    Haptics.light();
+
+    const resolvedTax = resolveDynamicTaxRate(
+      product,
+      currentLocation.id,
+      currentBusiness?.taxSettings
+    );
 
     setCart((prev) => {
       const itemIndex = prev.findIndex((item) => item.productId === product.id);
       if (itemIndex > -1) {
         return prev.map((item, idx) =>
-          idx === itemIndex ? { ...item, quantity: item.quantity + quantity } : item
+          idx === itemIndex
+            ? { ...item, quantity: item.quantity + quantity, taxRate: resolvedTax.rate }
+            : item
         );
       }
       return [
@@ -1964,7 +2904,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           unitPrice: product.sellingPrice,
           quantity,
           discountPercent: 0,
-          taxRate: product.taxRate,
+          taxRate: resolvedTax.rate,
         },
       ];
     });
@@ -2005,12 +2945,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return;
     }
 
+    Haptics.light();
     setCart((prev) =>
       prev.map((item) => (item.productId === productId ? { ...item, quantity } : item))
     );
   };
 
   const removeFromCart = (productId: string) => {
+    Haptics.warning();
     setCart((prev) => prev.filter((item) => item.productId !== productId));
   };
 
@@ -2022,8 +2964,16 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     productId: string,
     type: 'percentage' | 'flat',
     value: number,
-    options?: { reason?: string; authorizedBy?: string }
+    options?: {
+      reason?: string;
+      authorizedBy?: string;
+      authorizingSupervisorId?: string;
+      authorizingSupervisorName?: string;
+      authorizingSupervisorRole?: string;
+      isSupervisorOverride?: boolean;
+    }
   ) => {
+    const itemTarget = cart.find((i) => i.productId === productId);
     setCart((prev) =>
       prev.map((item) => {
         if (item.productId !== productId) return item;
@@ -2035,6 +2985,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             discountType: undefined,
             discountReason: undefined,
             discountAuthorizedBy: undefined,
+            authorizingSupervisorId: undefined,
+            authorizingSupervisorName: undefined,
+            authorizingSupervisorRole: undefined,
+            performingOperatorId: undefined,
+            performingOperatorName: undefined,
           };
         }
         if (type === 'flat') {
@@ -2045,7 +3000,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             discountAmount: boundedAmount,
             discountPercent: 0,
             discountReason: options?.reason,
-            discountAuthorizedBy: options?.authorizedBy,
+            discountAuthorizedBy: options?.authorizingSupervisorName || options?.authorizedBy,
+            authorizingSupervisorId: options?.authorizingSupervisorId,
+            authorizingSupervisorName: options?.authorizingSupervisorName,
+            authorizingSupervisorRole: options?.authorizingSupervisorRole,
+            performingOperatorId: currentCashier.id,
+            performingOperatorName: currentCashier.name,
           };
         } else {
           const boundedPercent = Math.min(100, Math.max(0, value));
@@ -2055,11 +3015,40 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             discountPercent: boundedPercent,
             discountAmount: 0,
             discountReason: options?.reason,
-            discountAuthorizedBy: options?.authorizedBy,
+            discountAuthorizedBy: options?.authorizingSupervisorName || options?.authorizedBy,
+            authorizingSupervisorId: options?.authorizingSupervisorId,
+            authorizingSupervisorName: options?.authorizingSupervisorName,
+            authorizingSupervisorRole: options?.authorizingSupervisorRole,
+            performingOperatorId: currentCashier.id,
+            performingOperatorName: currentCashier.name,
           };
         }
       })
     );
+
+    // Edge Case 1: If supervisor override was performed, log to dedicated supervisor audit ledger
+    if (itemTarget && value > 0 && (options?.isSupervisorOverride || options?.authorizingSupervisorId)) {
+      logSupervisorOverride({
+        locationId: currentLocation.id,
+        locationName: currentLocation.name,
+        shiftId: activeShift?.id,
+        overrideType: 'discount',
+        performingOperatorId: currentCashier.id,
+        performingOperatorName: currentCashier.name,
+        performingOperatorRole: currentCashier.role,
+        authorizingSupervisorId: options.authorizingSupervisorId || 'Supervisor',
+        authorizingSupervisorName: options.authorizingSupervisorName || options.authorizedBy || 'Authorized Supervisor',
+        authorizingSupervisorRole: options.authorizingSupervisorRole || 'Supervisor',
+        reason: options.reason || 'Manager discount override',
+        details: {
+          productId,
+          productName: itemTarget.productName,
+          discountPercent: type === 'percentage' ? value : undefined,
+          amount: type === 'flat' ? value : undefined,
+          discountType: type,
+        },
+      });
+    }
   };
 
   const removeItemDiscount = (productId: string) => {
@@ -2073,7 +3062,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const verifyManagerOverridePin = async (
     pin: string,
     managerId?: string
-  ): Promise<{ success: boolean; managerName?: string; error?: string }> => {
+  ): Promise<{ success: boolean; managerName?: string; managerId?: string; managerRole?: string; error?: string }> => {
     const trimmed = pin.trim();
     if (!trimmed) {
       return { success: false, error: 'PIN is required' };
@@ -2095,7 +3084,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       const isValid = await verifyPinOnServer(trimmed, target.pin);
       if (isValid) {
-        return { success: true, managerName: target.name };
+        return {
+          success: true,
+          managerName: target.name,
+          managerId: target.id,
+          managerRole: target.role,
+        };
       }
       return { success: false, error: `Incorrect PIN for ${target.name}` };
     }
@@ -2105,7 +3099,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       try {
         const isValid = await verifyPinOnServer(trimmed, mgr.pin);
         if (isValid) {
-          return { success: true, managerName: mgr.name };
+          return {
+            success: true,
+            managerName: mgr.name,
+            managerId: mgr.id,
+            managerRole: mgr.role,
+          };
         }
       } catch {
         // continue
@@ -2114,7 +3113,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // If master administrator PIN 1234
     if (trimmed === '1234') {
-      return { success: true, managerName: 'Administrator' };
+      return {
+        success: true,
+        managerName: 'Administrator',
+        managerId: 'admin-master',
+        managerRole: 'business_owner',
+      };
     }
 
     return { success: false, error: 'Invalid Manager or Supervisor PIN' };
@@ -2122,6 +3126,17 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Barcode Handler
   const handleBarcodeScanned = (barcode: string) => {
+    // Strict Guardrail: Barcode scanning & item entry require an open shift session
+    if (!activeShift || activeShift.status !== 'open') {
+      soundFx.playError();
+      showToast(
+        'Scan Blocked: An active shift session is required before scanning items or initiating sales. Please open a shift first.',
+        'error'
+      );
+      setIsShiftModalOpen(true);
+      return { success: false, message: 'No active shift session open' };
+    }
+
     const trimmed = barcode.trim().replace(/^['"]+|['"]+$/g, '');
     if (!trimmed) {
       return { success: false, message: 'Empty barcode entered' };
@@ -2179,13 +3194,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       soundFx.playBarcodeBeep();
-      if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        try {
-          navigator.vibrate(60);
-        } catch {
-          // ignore haptic restrictions
-        }
-      }
+      Haptics.scanSuccess();
       addToCart(match, 1);
       showToast(`+1 ${match.name} added to cart (${currentLocation.currency} ${match.sellingPrice})`, 'success');
       return { success: true, message: `Scanned: ${match.name}`, product: match };
@@ -2207,8 +3216,22 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       cardLast4?: string;
       cardNetwork?: string;
       roundingDifference?: number;
+      storeCreditUsed?: number;
+      loyaltyPointsRedeemed?: number;
+      notes?: string;
     }
   ): Transaction => {
+    // Strict Guardrail: No transaction may be tendered or completed without an open shift session
+    if (!activeShift || activeShift.status !== 'open') {
+      soundFx.playError();
+      showToast(
+        'Transaction Prohibited: An active shift session is strictly required to tender or complete sales transactions.',
+        'error'
+      );
+      setIsShiftModalOpen(true);
+      throw new Error('Transaction prohibited: No active shift session is open.');
+    }
+
     // Final Rule Enforcement: Ensure NO product with zero (0) stock is sold
     for (const cartItem of cart) {
       const prod = allProducts.find((p) => p.id === cartItem.productId);
@@ -2239,9 +3262,64 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const guardrail = calculatePaymentGuardrails(cartTotal, paymentMethod);
 
+    const itemWithOverride = cart.find((i) => i.authorizingSupervisorId || i.discountAuthorizedBy);
+    const authorizingSupervisorId = itemWithOverride?.authorizingSupervisorId;
+    const authorizingSupervisorName = itemWithOverride?.authorizingSupervisorName || itemWithOverride?.discountAuthorizedBy;
+    const overrideType: 'discount' | 'refund' | 'void' | undefined = itemWithOverride ? 'discount' : undefined;
+
+    // Customer, Loyalty, and Store Credit handling
+    const customer = selectedCustomer;
+    let loyaltyPointsEarned = 0;
+    const loyaltyPointsRedeemed = details.loyaltyPointsRedeemed || 0;
+    const isStoreCreditPayment = paymentMethod === 'store_credit';
+    let storeCreditUsed = isStoreCreditPayment ? guardrail.payableAmount : 0;
+    let newStoreCreditBalance = customer ? customer.storeCreditBalance : undefined;
+
+    if (isStoreCreditPayment) {
+      if (!customer) {
+        soundFx.playError();
+        showToast('Store Credit payment requires an assigned customer profile.', 'error');
+        throw new Error('Store credit payment requires an assigned customer profile.');
+      }
+      if (!customer.isCreditAllowed) {
+        soundFx.playError();
+        showToast(`Store credit is not authorized for ${customer.name}.`, 'error');
+        throw new Error('Store credit not authorized for this customer.');
+      }
+      const potentialDebt = Math.max(0, -((customer.storeCreditBalance || 0) - guardrail.payableAmount));
+      if (potentialDebt > (customer.creditLimit || 0)) {
+        soundFx.playError();
+        showToast(
+          `Credit Limit Exceeded: This sale exceeds ${customer.name}'s credit limit of ${currentLocation.currency} ${(customer.creditLimit || 0).toFixed(2)}.`,
+          'error'
+        );
+        throw new Error('Customer credit limit exceeded.');
+      }
+      newStoreCreditBalance = Number(((customer.storeCreditBalance || 0) - guardrail.payableAmount).toFixed(2));
+    }
+
+    if (customer) {
+      // 1 loyalty point per 100 spent
+      loyaltyPointsEarned = Math.floor(guardrail.payableAmount / 100);
+    }
+
+    const mappedItems: CartItem[] = cart.map((item) => {
+      const prod = allProducts.find((p) => p.id === item.productId);
+      const resolved = resolveDynamicTaxRate(
+        { category: prod?.category || (item as any).category, taxRate: item.taxRate, id: item.productId },
+        currentLocation.id,
+        currentBusiness?.taxSettings
+      );
+      return {
+        ...item,
+        taxRate: resolved.rate,
+      };
+    });
+
     const newTx: Transaction = {
       id: `tx-${Date.now()}`,
       businessId: activeBusinessId,
+      shiftId: activeShift ? activeShift.id : undefined,
       receiptNumber: receiptNum,
       timestamp: new Date().toISOString(),
       locationId: currentLocation.id,
@@ -2249,9 +3327,22 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       terminalName: currentLocation.terminalName,
       cashierId: currentCashier.id,
       cashierName: currentCashier.name,
-      items: [...cart],
+      customerId: customer?.id,
+      customerName: customer?.name,
+      customerPhone: customer?.phone,
+      loyaltyPointsEarned: customer ? loyaltyPointsEarned : undefined,
+      loyaltyPointsRedeemed: customer && loyaltyPointsRedeemed > 0 ? loyaltyPointsRedeemed : undefined,
+      storeCreditUsed: storeCreditUsed > 0 ? storeCreditUsed : undefined,
+      newStoreCreditBalance,
+      authorizingSupervisorId,
+      authorizingSupervisorName,
+      overrideType,
+      items: mappedItems,
       subtotal: Number(cartSubtotal.toFixed(2)),
       taxAmount: Number(cartTax.toFixed(2)),
+      taxLabel: currentBusiness?.taxSettings?.taxLabel || 'VAT',
+      taxBreakdown: cartTaxBreakdown,
+      pricingType: currentBusiness?.taxSettings?.pricingType || 'inclusive',
       discountAmount: cartDiscount,
       rawTotal: guardrail.rawTotal,
       roundingAmount: guardrail.roundingDifference,
@@ -2314,6 +3405,50 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       );
     }
 
+    // Update Customer Profile, Loyalty Points & Credit Ledger
+    if (customer) {
+      const updatedLedger = [...(customer.ledger || [])];
+      if (isStoreCreditPayment) {
+        const ledgerEntry: CustomerCreditLedgerEntry = {
+          id: `ledg-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
+          timestamp: new Date().toISOString(),
+          type: 'sale_credit',
+          amount: -guardrail.payableAmount,
+          balanceAfter: newStoreCreditBalance ?? ((customer.storeCreditBalance || 0) - guardrail.payableAmount),
+          referenceId: receiptNum,
+          notes: `Sale #${receiptNum} charged to credit tab (${cart.length} item${cart.length > 1 ? 's' : ''})`,
+          recordedByCashierId: currentCashier?.id,
+          recordedByCashierName: currentCashier?.name,
+        };
+        updatedLedger.unshift(ledgerEntry);
+      }
+
+      const updatedCustomer: Customer = {
+        ...customer,
+        totalSpent: Number((customer.totalSpent + guardrail.payableAmount).toFixed(2)),
+        visitCount: customer.visitCount + 1,
+        lastVisitAt: new Date().toISOString(),
+        loyaltyPoints: Math.max(0, (customer.loyaltyPoints || 0) + loyaltyPointsEarned - loyaltyPointsRedeemed),
+        storeCreditBalance: newStoreCreditBalance ?? customer.storeCreditBalance,
+        ledger: updatedLedger,
+        updatedAt: new Date().toISOString(),
+      };
+
+      setAllCustomers((prev) => prev.map((c) => (c.id === customer.id ? updatedCustomer : c)));
+      if (isOnline && auth.currentUser) {
+        updateCustomerInFirestore(customer.id, {
+          totalSpent: updatedCustomer.totalSpent,
+          visitCount: updatedCustomer.visitCount,
+          lastVisitAt: updatedCustomer.lastVisitAt,
+          loyaltyPoints: updatedCustomer.loyaltyPoints,
+          storeCreditBalance: updatedCustomer.storeCreditBalance,
+          ledger: updatedCustomer.ledger,
+          updatedAt: updatedCustomer.updatedAt,
+        }).catch((err) => console.warn('Firestore customer sale sync:', err));
+      }
+      setSelectedCustomer(null);
+    }
+
     // Add sync log
     const logEvent: SyncLogEvent = {
       id: `log-${Date.now()}`,
@@ -2338,6 +3473,17 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // 1-Tap Immediate Exact Cash Settlement
   const settleExactCash = useCallback((): boolean => {
+    // Strict Guardrail: Exact cash settlement requires an open shift session
+    if (!activeShift || activeShift.status !== 'open') {
+      soundFx.playError();
+      showToast(
+        'Checkout Blocked: No active shift session is open. Open a shift before tendering cash payments.',
+        'error'
+      );
+      setIsShiftModalOpen(true);
+      return false;
+    }
+
     if (cart.length === 0) {
       soundFx.playError();
       showToast('Cart is empty. Add items before settling.', 'warning');
@@ -2392,7 +3538,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       console.error('Exact cash checkout error:', err);
       return false;
     }
-  }, [cart, allProducts, currentLocation, cartTotal, processPayment, showToast]);
+  }, [cart, allProducts, currentLocation, cartTotal, processPayment, showToast, activeShift, setIsShiftModalOpen]);
 
   // 12.5 Returns & Refunds Processing
   const processRefund = useCallback(
@@ -2409,8 +3555,37 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         restockToInventory: boolean;
         reason?: string;
       }>;
+      authorizingSupervisorId?: string;
+      authorizingSupervisorName?: string;
+      authorizingSupervisorRole?: string;
+      isSupervisorOverride?: boolean;
+      supervisorOverrideReason?: string;
     }): Promise<{ success: boolean; refundRecord?: RefundRecord; error?: string }> => {
-      const { transactionId, refundMethod, refundReason, refundNote, customerName, customerPhone, items } = params;
+      // Strict Guardrail: Refund tendering requires an open shift session
+      if (!activeShift || activeShift.status !== 'open') {
+        soundFx.playError();
+        showToast(
+          'Refund Blocked: An active shift session is required before tendering refunds or processing returns.',
+          'error'
+        );
+        setIsShiftModalOpen(true);
+        return { success: false, error: 'No active shift session open' };
+      }
+
+      const {
+        transactionId,
+        refundMethod,
+        refundReason,
+        refundNote,
+        customerName,
+        customerPhone,
+        items,
+        authorizingSupervisorId,
+        authorizingSupervisorName,
+        authorizingSupervisorRole,
+        isSupervisorOverride,
+        supervisorOverrideReason,
+      } = params;
 
       // Find target transaction
       const targetTx = allTransactions.find((t) => t.id === transactionId);
@@ -2497,8 +3672,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         transactionId: targetTx.id,
         receiptNumber: targetTx.receiptNumber,
         timestamp,
-        cashierId: currentCashier.id,
-        cashierName: currentCashier.name,
+        shiftId: activeShift ? activeShift.id : undefined,
+        cashierId: currentCashier.id, // Performing operator
+        cashierName: currentCashier.name, // Performing operator
+        authorizingSupervisorId,
+        authorizingSupervisorName,
+        authorizingSupervisorRole,
+        isSupervisorOverride,
+        supervisorOverrideReason,
         locationId: currentLocation.id,
         locationName: currentLocation.name,
         refundMethod,
@@ -2511,6 +3692,36 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         customerName: customerName?.trim() || undefined,
         customerPhone: customerPhone?.trim() || undefined,
       };
+
+      // Edge Case 1: If supervisor override was performed, log to dedicated supervisor audit ledger
+      if (authorizingSupervisorId && authorizingSupervisorName) {
+        logSupervisorOverride({
+          locationId: currentLocation.id,
+          locationName: currentLocation.name,
+          shiftId: activeShift?.id,
+          overrideType: 'refund',
+          performingOperatorId: currentCashier.id,
+          performingOperatorName: currentCashier.name,
+          performingOperatorRole: currentCashier.role,
+          authorizingSupervisorId,
+          authorizingSupervisorName,
+          authorizingSupervisorRole: authorizingSupervisorRole || 'Supervisor',
+          transactionId: targetTx.id,
+          receiptNumber: targetTx.receiptNumber,
+          refundNumber: refundRefNumber,
+          reason: supervisorOverrideReason || refundReason,
+          details: {
+            amount: Number(calculatedTotalRefund.toFixed(2)),
+            notes: refundNote,
+            items: refundItemsRecord.map((i) => ({
+              productId: i.productId,
+              productName: i.productName,
+              quantity: i.quantity,
+              unitPrice: i.unitPrice,
+            })),
+          },
+        });
+      }
 
       // Determine updated status of the transaction
       const existingRefunds = targetTx.refunds || [];
@@ -2591,6 +3802,43 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         });
       }
 
+      // If refund was tendered as store credit, credit the customer profile ledger
+      if (refundMethod === 'store_credit') {
+        const custId = targetTx.customerId;
+        const matchingCust = allCustomers.find((c) => (custId && c.id === custId) || (customerPhone && c.phone === customerPhone));
+        if (matchingCust) {
+          const newCreditBalance = Number(((matchingCust.storeCreditBalance || 0) + newRefundRecord.totalRefund).toFixed(2));
+          const ledgerEntry: CustomerCreditLedgerEntry = {
+            id: `ledg-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
+            timestamp,
+            type: 'refund_credit',
+            amount: newRefundRecord.totalRefund,
+            balanceAfter: newCreditBalance,
+            referenceId: refundRefNumber,
+            notes: `Refund #${refundRefNumber} credited to store credit tab (${refundItemsRecord.length} item${refundItemsRecord.length > 1 ? 's' : ''})`,
+            recordedByCashierId: currentCashier?.id,
+            recordedByCashierName: currentCashier?.name,
+          };
+          const updatedCust: Customer = {
+            ...matchingCust,
+            storeCreditBalance: newCreditBalance,
+            ledger: [ledgerEntry, ...(matchingCust.ledger || [])],
+            updatedAt: timestamp,
+          };
+          setAllCustomers((prev) => prev.map((c) => (c.id === matchingCust.id ? updatedCust : c)));
+          if (selectedCustomer?.id === matchingCust.id) {
+            setSelectedCustomer(updatedCust);
+          }
+          if (isOnline && auth.currentUser) {
+            updateCustomerInFirestore(matchingCust.id, {
+              storeCreditBalance: newCreditBalance,
+              ledger: updatedCust.ledger,
+              updatedAt: timestamp,
+            }).catch((err) => console.warn('Firestore customer refund sync:', err));
+          }
+        }
+      }
+
       // Log action for super admin / audit trail
       if (isSuperAdmin) {
         logSuperAdminAction(
@@ -2656,6 +3904,420 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const closeReturnsModal = useCallback(() => {
     setIsReturnsModalOpen(false);
     setSelectedReturnTx(null);
+  }, []);
+
+  // 12.5 Shift Management Operations
+  const openShift = useCallback(
+    (openingFloat: number, notes?: string, denominations?: Record<string, number>): ShiftSession => {
+      // Edge Case 2: Shift handovers must require the outgoing session to be closed and attributed before the incoming session opens, with no cross-session activity sharing
+      if (activeShift && activeShift.status === 'open') {
+        soundFx.playError();
+        const msg = `Shift Handover Required: Shift #${activeShift.shiftNumber} for ${activeShift.cashierName} is currently open. The outgoing session must be balanced, closed, and attributed before an incoming session can open.`;
+        showToast(msg, 'error');
+        throw new Error(msg);
+      }
+
+      // Check for unresolved interrupted session at this location
+      const interrupted = shiftHistory.find(
+        (s) => s.status === 'interrupted' && s.locationId === currentLocation.id
+      );
+      if (interrupted) {
+        soundFx.playError();
+        const msg = `Unresolved Interrupted Session: Shift #${interrupted.shiftNumber} (Operator: ${interrupted.cashierName}) was interrupted. It must be resumed or reconciled/closed before opening a new session.`;
+        showToast(msg, 'error');
+        throw new Error(msg);
+      }
+
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+      const tenantShifts = allShifts.filter((s) => s.businessId === activeBusinessId);
+      const shiftNumber = `SH-${dateStr}-${String(tenantShifts.length + 1).padStart(3, '0')}`;
+      const newShift: ShiftSession = {
+        id: `shift-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        shiftNumber,
+        businessId: activeBusinessId,
+        locationId: currentLocation.id,
+        locationName: currentLocation.name,
+        terminalName: currentLocation.terminalName || 'Terminal #01',
+        cashierId: currentCashier.id,
+        cashierName: currentCashier.name,
+        openedAt: now.toISOString(),
+        openingFloat: Number(openingFloat) || 0,
+        openingFloatDenominations: denominations,
+        openingNotes: notes || '',
+        status: 'open',
+        cashDrops: [],
+        expenses: [],
+        cashSales: 0,
+        cashRefunds: 0,
+        mpesaSales: 0,
+        cardSales: 0,
+        totalSales: 0,
+        transactionCount: 0,
+        isPendingCloudSync: !isOnline,
+      };
+
+      setAllShifts((prev) => [newShift, ...prev]);
+      soundFx.playChime();
+      showToast(
+        `Shift #${shiftNumber} opened with ${currentLocation.currency} ${Number(openingFloat).toLocaleString()} float`,
+        'success'
+      );
+      return newShift;
+    },
+    [allShifts, activeShift, shiftHistory, activeBusinessId, currentLocation, currentCashier, isOnline, showToast]
+  );
+
+  const recordCashDrop = useCallback(
+    (amount: number, reason: string, authorizedBy?: string, envelopeNumber?: string) => {
+      if (!activeShift) {
+        showToast('No active shift is open to record a cash drop.', 'error');
+        return;
+      }
+      const drop: CashDrop = {
+        id: `drop-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        shiftId: activeShift.id,
+        businessId: activeBusinessId,
+        locationId: currentLocation.id,
+        timestamp: new Date().toISOString(),
+        amount: Number(amount) || 0,
+        reason: reason.trim() || 'Safe drop',
+        cashierId: currentCashier.id,
+        cashierName: currentCashier.name,
+        authorizedBy: authorizedBy?.trim() || 'Supervisor',
+        envelopeNumber: envelopeNumber?.trim() || undefined,
+      };
+
+      setAllShifts((prev) =>
+        prev.map((s) => (s.id === activeShift.id ? { ...s, cashDrops: [drop, ...s.cashDrops] } : s))
+      );
+      soundFx.playBarcodeBeep();
+      showToast(
+        `Safe drop of ${currentLocation.currency} ${drop.amount.toLocaleString()} recorded`,
+        'success'
+      );
+    },
+    [activeShift, activeBusinessId, currentLocation, currentCashier, showToast]
+  );
+
+  const recordShiftExpense = useCallback(
+    (params: {
+      amount: number;
+      category: ExpenseCategory;
+      description: string;
+      payee: string;
+      approvedBy: string;
+      receiptRef?: string;
+    }) => {
+      if (!activeShift) {
+        showToast('No active shift is open to record petty cash paid from drawer.', 'error');
+        return;
+      }
+      const expense: ShiftExpense = {
+        id: `exp-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        shiftId: activeShift.id,
+        businessId: activeBusinessId,
+        locationId: currentLocation.id,
+        timestamp: new Date().toISOString(),
+        amount: Number(params.amount) || 0,
+        category: params.category,
+        description: params.description.trim(),
+        payee: params.payee.trim(),
+        approvedBy: params.approvedBy.trim() || 'Manager',
+        cashierId: currentCashier.id,
+        cashierName: currentCashier.name,
+        receiptRef: params.receiptRef?.trim() || undefined,
+      };
+
+      setAllShifts((prev) =>
+        prev.map((s) => (s.id === activeShift.id ? { ...s, expenses: [expense, ...s.expenses] } : s))
+      );
+      soundFx.playBarcodeBeep();
+      showToast(
+        `Petty cash expense of ${currentLocation.currency} ${expense.amount.toLocaleString()} recorded`,
+        'success'
+      );
+    },
+    [activeShift, activeBusinessId, currentLocation, currentCashier, showToast]
+  );
+
+  const closeShift = useCallback(
+    (params: {
+      closingCountedCash: number;
+      notes?: string;
+      denominations?: Record<string, number>;
+      handoverToCashierId?: string;
+    }): ShiftSession => {
+      const targetShift = activeShift || interruptedSession;
+      if (!targetShift) {
+        throw new Error('No active or interrupted shift to close');
+      }
+
+      // Live calculate transactions and refunds completed during this shift (strictly partitioned by shift)
+      const sOpen = new Date(targetShift.openedAt).getTime();
+      const sClose = targetShift.closedAt ? new Date(targetShift.closedAt).getTime() : Infinity;
+
+      const shiftTxs = transactions.filter((t) => {
+        // Tenant match guardrail
+        if (t.businessId && t.businessId !== targetShift.businessId) return false;
+        // Location match guardrail (if both specified)
+        if (t.locationId && targetShift.locationId && t.locationId !== targetShift.locationId) return false;
+
+        // Strict Edge Case 2: Session isolation - transactions with shiftId MUST match this shift
+        if (t.shiftId) {
+          return t.shiftId === targetShift.id;
+        }
+
+        // Fallback for legacy unassigned transactions strictly bounded by this shift's session window
+        const tTime = new Date(t.timestamp).getTime();
+        return !isNaN(tTime) && tTime >= sOpen - 2000 && tTime <= sClose;
+      });
+
+      let cashSales = 0;
+      let cashRefunds = 0;
+      let mpesaSales = 0;
+      let cardSales = 0;
+
+      // 1. Inflow: Counter sales tendered during this shift window
+      shiftTxs.forEach((t) => {
+        if (t.paymentMethod === 'cash') {
+          cashSales += t.total;
+        } else if (t.paymentMethod === 'split') {
+          const cashPortion = t.paymentDetails?.cashTendered || 0;
+          cashSales += cashPortion;
+          const nonCashPortion = Math.max(0, t.total - cashPortion);
+          mpesaSales += nonCashPortion;
+        } else if (t.paymentMethod === 'mpesa') {
+          mpesaSales += t.total;
+        } else if (t.paymentMethod === 'card') {
+          cardSales += t.total;
+        }
+      });
+
+      // 2. Outflow: Cash refunds tendered during this shift (strictly partitioned by shiftId or session window)
+      transactions.forEach((t) => {
+        if (t.locationId !== targetShift.locationId) return;
+        if (t.refunds && t.refunds.length > 0) {
+          t.refunds.forEach((r) => {
+            // Strict session isolation: if refund has shiftId, it must belong to this shift
+            if (r.shiftId) {
+              if (r.shiftId !== targetShift.id) return;
+            } else {
+              const rTime = new Date(r.timestamp).getTime();
+              if (isNaN(rTime) || rTime < sOpen || rTime > sClose) return;
+            }
+
+            const isCashRefund =
+              r.refundMethod === 'cash' ||
+              (r.refundMethod === 'original' && t.paymentMethod === 'cash');
+            if (isCashRefund) {
+              cashRefunds += r.totalRefund;
+            }
+          });
+        }
+      });
+
+      const totalExpenses = Number(
+        targetShift.expenses.reduce((sum, e) => sum + e.amount, 0).toFixed(2)
+      );
+      const totalDrops = Number(
+        targetShift.cashDrops.reduce((sum, d) => sum + d.amount, 0).toFixed(2)
+      );
+      cashSales = Number(cashSales.toFixed(2));
+      cashRefunds = Number(cashRefunds.toFixed(2));
+
+      // Strictly Enforced Formula:
+      // Theoretical Expected Cash = Opening Float + Cash Sales - Cash Refunds - Cash Drops - Petty Cash Expenses
+      const expectedCash = Number(
+        (targetShift.openingFloat + cashSales - cashRefunds - totalDrops - totalExpenses).toFixed(2)
+      );
+      const counted = Number(Number(params.closingCountedCash || 0).toFixed(2));
+      const variance = Number((counted - expectedCash).toFixed(2));
+
+      const handoverCashier = params.handoverToCashierId
+        ? systemUsers.find((u) => u.id === params.handoverToCashierId)
+        : undefined;
+
+      const closedShift: ShiftSession = {
+        ...targetShift,
+        status: 'closed',
+        closedAt: new Date().toISOString(),
+        closedByCashierId: currentCashier.id,
+        closedByCashierName: currentCashier.name,
+        closingCountedCash: counted,
+        closingDenominations: params.denominations,
+        expectedCash,
+        cashVariance: variance,
+        closingNotes: params.notes || '',
+        handoverToCashierId: handoverCashier?.id,
+        handoverToCashierName: handoverCashier?.name,
+        cashSales,
+        cashRefunds,
+        mpesaSales,
+        cardSales,
+        totalSales: cashSales + mpesaSales + cardSales,
+        transactionCount: shiftTxs.length,
+        isPendingCloudSync: !isOnline,
+      };
+
+      setAllShifts((prev) =>
+        prev.map((s) => (s.id === targetShift.id ? closedShift : s))
+      );
+
+      // Clear any pending register cart items and receipts on shift close
+      setCart([]);
+      setActiveReceipt(null);
+
+      soundFx.playPaymentSuccess();
+      showToast(
+        `Shift #${targetShift.shiftNumber} closed. Variance: ${currentLocation.currency} ${variance.toFixed(2)}`,
+        variance === 0 ? 'success' : 'info'
+      );
+      return closedShift;
+    },
+    [activeShift, interruptedSession, transactions, systemUsers, currentCashier, currentLocation, isOnline, showToast]
+  );
+
+  // 12.6 Forced Logout & Interrupted Sessions (Edge Case 4)
+  // Forced logout (timeout, admin action, or system restart) must preserve attribution to the affected user
+  // and flag the session as interrupted, not closed.
+  const forceLogoutSession = useCallback(
+    (reason: 'timeout' | 'admin_action' | 'system_restart', adminEmail?: string, note?: string) => {
+      if (activeShift && activeShift.status === 'open') {
+        const interruptedShift: ShiftSession = {
+          ...activeShift,
+          status: 'interrupted',
+          interruptedAt: new Date().toISOString(),
+          interruptionReason: reason,
+          interruptedByAdminEmail: adminEmail,
+          interruptionNote: note || `Session interrupted due to ${reason}`,
+        };
+
+        setAllShifts((prev) =>
+          prev.map((s) => (s.id === activeShift.id ? interruptedShift : s))
+        );
+
+        if (reason === 'admin_action') {
+          logAdminActivity({
+            category: 'security',
+            action: 'force_logout_operator',
+            description: `Administrator (${adminEmail || 'admin'}) forced logout for operator ${activeShift.cashierName}. Shift #${activeShift.shiftNumber} flagged as interrupted (attribution preserved).`,
+            recordType: 'shift_session',
+            recordId: activeShift.id,
+            beforeValue: { status: 'open', cashier: activeShift.cashierName },
+            afterValue: { status: 'interrupted', reason: 'admin_action' },
+          });
+        }
+      }
+
+      localStorage.setItem(STORAGE_KEYS.IS_LOGGED_OUT, 'true');
+      localStorage.setItem(STORAGE_KEYS.SESSION_CLEAN_EXIT, 'true');
+
+      firebaseSignOut(auth).catch((err) => console.warn('Firebase signout note:', err));
+
+      setCurrentUser(null);
+      setCart([]);
+      setActiveReceipt(null);
+      setIsPinLocked(false);
+
+      const reasonLabels = {
+        timeout: 'Inactivity Timeout',
+        admin_action: 'Administrator Sign-Out Action',
+        system_restart: 'POS System Restart',
+      };
+
+      showToast(
+        `Forced Sign-Out (${reasonLabels[reason]}): Attribution preserved. Shift session flagged as interrupted (not closed).`,
+        'info'
+      );
+    },
+    [activeShift, logAdminActivity, showToast]
+  );
+
+  const resumeInterruptedShift = useCallback(
+    (shiftId: string): boolean => {
+      const target = allShifts.find((s) => s.id === shiftId);
+      if (!target) {
+        showToast('Shift session not found', 'error');
+        return false;
+      }
+      if (target.status !== 'interrupted') {
+        showToast('Shift is not in interrupted status', 'error');
+        return false;
+      }
+
+      const resumedShift: ShiftSession = {
+        ...target,
+        status: 'open',
+        interruptionNote: (target.interruptionNote ? target.interruptionNote + ' | ' : '') + `Resumed on ${new Date().toISOString()} by ${currentCashier.name}`,
+      };
+
+      setAllShifts((prev) =>
+        prev.map((s) => (s.id === shiftId ? resumedShift : s))
+      );
+
+      soundFx.playChime();
+      showToast(`Shift #${target.shiftNumber} resumed. Operator attribution restored for ${target.cashierName}.`, 'success');
+      return true;
+    },
+    [allShifts, currentCashier.name, showToast]
+  );
+
+  // Inactivity timeout handler (15 minutes) - Edge Case 4
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let timeoutId: NodeJS.Timeout;
+    const INACTIVITY_LIMIT_MS = 15 * 60 * 1000; // 15 minutes
+
+    const resetTimer = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        forceLogoutSession('timeout', undefined, 'Inactivity timeout after 15 minutes of idle terminal');
+      }, INACTIVITY_LIMIT_MS);
+    };
+
+    const events = ['mousedown', 'mousemove', 'keydown', 'touchstart', 'scroll'];
+    events.forEach((evt) => window.addEventListener(evt, resetTimer, { passive: true }));
+    resetTimer();
+
+    return () => {
+      clearTimeout(timeoutId);
+      events.forEach((evt) => window.removeEventListener(evt, resetTimer));
+    };
+  }, [currentUser, forceLogoutSession]);
+
+  // Edge Case 4: Detect abnormal termination / system restart while a shift was open
+  useEffect(() => {
+    const wasCleanExit = localStorage.getItem(STORAGE_KEYS.SESSION_CLEAN_EXIT);
+    if (wasCleanExit === 'false') {
+      // System was terminated unexpectedly (e.g. reload, browser crash, restart) while running
+      setAllShifts((prev) =>
+        prev.map((s) => {
+          if (s.status === 'open') {
+            return {
+              ...s,
+              status: 'interrupted',
+              interruptedAt: new Date().toISOString(),
+              interruptionReason: 'system_restart',
+              interruptionNote: 'Flagged as interrupted following unexpected system restart / window reload. Attribution preserved.',
+            };
+          }
+          return s;
+        })
+      );
+    }
+    // Mark as running (not clean exit until explicit logout)
+    localStorage.setItem(STORAGE_KEYS.SESSION_CLEAN_EXIT, 'false');
+
+    const handleBeforeUnload = () => {
+      // Session clean exit remains false unless explicit logout occurred
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
   }, []);
 
   // 13. Cloud Sync Management
@@ -2853,11 +4515,29 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         getBusinessesFromFirestore()
           .then((remoteBizs) => {
             if (remoteBizs && remoteBizs.length > 0) {
+              const validRemote = remoteBizs.filter(
+                (b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'
+              );
+              const unverified = remoteBizs.filter(
+                (b) => !isRealGoogleAccount(b.ownerEmail) || b.id === 'biz-soko' || b.id === 'biz-quickmart'
+              );
+
+              // Auto-purge remote unverified businesses
+              if (unverified.length > 0 && auth.currentUser) {
+                unverified.forEach((b) => {
+                  deleteBusinessFromFirestore(b.id).catch((e) => console.warn('Clean fake remote biz:', e));
+                  purgeTenantAllDataFromFirestore(b.id).catch((e) => console.warn('Purge fake remote data:', e));
+                });
+              }
+
               setBusinesses((prev) => {
                 const map = new Map<string, Business>();
-                prev.forEach((b) => map.set(b.id, b));
-                remoteBizs.forEach((b) => map.set(b.id, b));
-                return Array.from(map.values());
+                prev
+                  .filter((b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart')
+                  .forEach((b) => map.set(b.id, b));
+                validRemote.forEach((b) => map.set(b.id, b));
+                const res = Array.from(map.values());
+                return res.length > 0 ? res : INITIAL_BUSINESSES;
               });
             }
           })
@@ -3005,8 +4685,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             const currentTenantLocal = prev.filter((t) => t.businessId === activeBusinessId);
             const otherTenants = prev.filter((t) => t.businessId !== activeBusinessId);
 
+            const map = new Map<string, Transaction>();
+            // 1. Preserve ALL local in-memory counter transactions first so they are never purged
+            currentTenantLocal.forEach((t) => map.set(t.id, t));
+            // 2. Merge remote authoritative transactions from Firestore
+            remoteTxs.forEach((r) => map.set(r.id, { ...r, syncedToCloud: true }));
+
             // Any offline transactions that need upload
-            const pendingOffline = currentTenantLocal.filter((t) => !t.syncedToCloud);
+            const pendingOffline = Array.from(map.values()).filter((t) => !t.syncedToCloud);
             if (auth.currentUser && pendingOffline.length > 0) {
               pendingOffline.forEach((tx) => {
                 saveTransactionToFirestore({ ...tx, syncedToCloud: true }).catch((err) =>
@@ -3014,14 +4700,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 );
               });
             }
-
-            const map = new Map<string, Transaction>();
-            remoteTxs.forEach((r) => map.set(r.id, { ...r, syncedToCloud: true }));
-            pendingOffline.forEach((p) => {
-              if (!map.has(p.id)) {
-                map.set(p.id, p);
-              }
-            });
 
             const mergedTenantTxs = Array.from(map.values()).sort(
               (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
@@ -3263,9 +4941,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
 
       // Always fetch inventory fresh from Firestore server on every successful login (not served from cache)
-      fetchFreshInventoryFromServer(targetBizId, false).catch((err) =>
-        console.warn('Fresh inventory fetch on token exchange notice:', err)
-      );
+      if (auth.currentUser) {
+        fetchFreshInventoryFromServer(targetBizId, false).catch((err) =>
+          console.warn('Fresh inventory fetch on token exchange notice:', err)
+        );
+      }
 
       soundFx.playSuccess();
       showToast(`OAuth token validated & verified for ${authUser.email}`, 'success');
@@ -3279,6 +4959,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const loginWithGoogle = (email: string, name?: string, newBusinessName?: string): boolean => {
     const normalizedEmail = email.trim().toLowerCase();
+
+    if (!isRealGoogleAccount(normalizedEmail)) {
+      showToast('Validation Error: A verified Google Account (e.g. yourname@gmail.com) is required.', 'error');
+      return false;
+    }
 
     // Check 1: Is this the seeded Platform Super-Admin?
     if (normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase()) {
@@ -3393,9 +5078,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setCurrentCashier(matchedUser);
 
         // Always fetch inventory fresh from Firestore server on every successful login (not served from cache)
-        fetchFreshInventoryFromServer(matchedUser.businessId, false).catch((err) =>
-          console.warn('Fresh inventory fetch on credentials login notice:', err)
-        );
+        if (auth.currentUser) {
+          fetchFreshInventoryFromServer(matchedUser.businessId, false).catch((err) =>
+            console.warn('Fresh inventory fetch on credentials login notice:', err)
+          );
+        }
 
         soundFx.playSuccess();
         showToast(`Authenticated as ${matchedUser.name} (${matchedUser.role})`, 'success');
@@ -3408,7 +5095,18 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return false;
   };
 
-  const logout = () => {
+  const logout = (): boolean => {
+    // Strict Guardrail: An operator may not log out while they have an open session; block logout until closed
+    if (activeShift && activeShift.status === 'open') {
+      soundFx.playError();
+      showToast(
+        `Logout Blocked: Shift #${activeShift.shiftNumber} is currently open for ${activeShift.cashierName}. You must balance the till and close your shift session before signing out.`,
+        'error'
+      );
+      setIsShiftModalOpen(true);
+      return false;
+    }
+
     // Clear Firebase session if active
     firebaseSignOut(auth).catch((err) => {
       console.warn('Firebase signout note:', err);
@@ -3428,6 +5126,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setIsPinLocked(false);
     soundFx.playBeep(440, 0.15);
     showToast('Signed out of POS terminal. Please sign in to resume.', 'info');
+    return true;
   };
 
   // Super-Admin Business Provisioning
@@ -3441,12 +5140,18 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       throw new Error('Unauthorized: Only Super-Admin can provision business tenants.');
     }
 
+    const trimmedEmail = ownerEmail.trim().toLowerCase();
+    if (!isRealGoogleAccount(trimmedEmail)) {
+      showToast('Validation Error: Business owner must have an authentic Google Account (e.g. name@gmail.com).', 'error');
+      throw new Error('Business owner must have an authentic Google Account (e.g. name@gmail.com).');
+    }
+
     const newBizId = `biz-${Date.now().toString(36)}`;
     const newBusiness: Business = {
       id: newBizId,
       name,
       code: name.substring(0, 4).toUpperCase().replace(/\s+/g, ''),
-      ownerEmail: ownerEmail.trim().toLowerCase(),
+      ownerEmail: trimmedEmail,
       ownerName,
       createdAt: new Date().toISOString(),
       plan,
@@ -3509,9 +5214,110 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return newBusiness;
   };
 
+  // System Cleanup: Purge all business owner accounts that lack a real Google account
+  const performSystemCleanup = async (): Promise<{
+    removedCount: number;
+    removedBusinesses: string[];
+  }> => {
+    // 1. Identify businesses lacking a real Google account
+    const toRemove = businesses.filter(
+      (b) => !isRealGoogleAccount(b.ownerEmail) || b.id === 'biz-soko' || b.id === 'biz-quickmart'
+    );
+    const unverifiedIds = new Set<string>(toRemove.map((b) => b.id));
+    unverifiedIds.add('biz-soko');
+    unverifiedIds.add('biz-quickmart');
+    const removedNames = toRemove.map((b) => `${b.name} (${b.ownerEmail})`);
+
+    const validBusinesses = businesses.filter((b) => !unverifiedIds.has(b.id));
+    const nextBizs = validBusinesses.length > 0 ? validBusinesses : INITIAL_BUSINESSES;
+
+    setBusinesses(nextBizs);
+    localStorage.setItem(STORAGE_KEYS.BUSINESSES, JSON.stringify(nextBizs));
+
+    if (unverifiedIds.has(activeBusinessIdState)) {
+      setActiveBusinessIdState('biz-upfront');
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, 'biz-upfront');
+    }
+
+    setAllSystemUsers((prev) => {
+      const next = prev.filter((u) => !unverifiedIds.has(u.businessId));
+      localStorage.setItem(STORAGE_KEYS.SYSTEM_USERS, JSON.stringify(next));
+      return next;
+    });
+
+    setAllLocations((prev) => {
+      const next = prev.filter((l) => !unverifiedIds.has(l.businessId));
+      localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(next));
+      return next;
+    });
+
+    setAllProducts((prev) => {
+      const next = prev.filter((p) => !unverifiedIds.has(p.businessId));
+      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(next));
+      return next;
+    });
+
+    setAllCategories((prev) => {
+      const next = prev.filter((c) => !unverifiedIds.has(c.businessId));
+      localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(next));
+      return next;
+    });
+
+    setAllTransactions((prev) => {
+      const next = prev.filter((t) => !unverifiedIds.has(t.businessId));
+      localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(next));
+      return next;
+    });
+
+    setAllCustomers((prev) => {
+      const next = prev.filter((c) => !unverifiedIds.has(c.businessId));
+      return next;
+    });
+
+    setAllShifts((prev) => {
+      const next = prev.filter((s) => !unverifiedIds.has(s.businessId));
+      localStorage.setItem(STORAGE_KEYS.SHIFTS, JSON.stringify(next));
+      return next;
+    });
+
+    if (auth.currentUser) {
+      for (const bId of unverifiedIds) {
+        deleteBusinessFromFirestore(bId).catch((e) => console.warn('Firestore purge biz:', e));
+        purgeTenantAllDataFromFirestore(bId).catch((e) => console.warn('Firestore purge tenant data:', e));
+      }
+    }
+
+    const auditEntry: SuperAdminAuditEntry = {
+      id: `audit-cleanup-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      adminEmail: currentUser?.email || SUPER_ADMIN_EMAIL,
+      businessId: 'biz-upfront',
+      businessName: 'Upfront Retail Solutions',
+      action: 'system_cleanup' as any,
+      recordType: 'business',
+      recordId: 'all',
+      description: `System Cleanup: Removed ${toRemove.length} business owner accounts lacking a real Google account. (${removedNames.join(', ') || 'Clean state verified'})`,
+      beforeValue: { removedIds: Array.from(unverifiedIds) },
+      afterValue: { remainingBusinessesCount: nextBizs.length },
+    };
+    setSuperAdminAuditLogs((prev) => [auditEntry, ...prev]);
+
+    soundFx.playSuccess();
+    if (toRemove.length > 0) {
+      showToast(`System cleanup complete: Removed ${toRemove.length} business owner accounts lacking real Google accounts.`, 'success');
+    } else {
+      showToast('System cleanup complete: All existing business accounts have verified Google identities.', 'success');
+    }
+
+    return {
+      removedCount: toRemove.length,
+      removedBusinesses: removedNames,
+    };
+  };
+
   // Business Profile Settings & Credential Management
   const [isBusinessSettingsOpen, setIsBusinessSettingsOpen] = useState<boolean>(false);
-  const [businessSettingsDefaultTab, setBusinessSettingsDefaultTab] = useState<'profile' | 'branches' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset'>('profile');
+  const [businessSettingsDefaultTab, setBusinessSettingsDefaultTab] = useState<'profile' | 'branches' | 'tax' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset'>('profile');
 
   // Hardware & Auto-Print Preferences (Browser Print Dialog on Checkout) - Scoped Strictly per Tenant
   const [autoPrintReceipt, setAutoPrintReceiptState] = useState<boolean>(() => {
@@ -3670,7 +5476,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
   };
 
-  const openBusinessSettings = (initialTab: 'profile' | 'branches' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset' = 'profile') => {
+  const openBusinessSettings = (initialTab: 'profile' | 'branches' | 'tax' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset' = 'profile') => {
     setBusinessSettingsDefaultTab(initialTab);
     setIsBusinessSettingsOpen(true);
   };
@@ -3795,6 +5601,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         logout,
         provisionBusiness,
         updateBusinessProfile,
+        performSystemCleanup,
+        isRealGoogleAccount,
 
         isBusinessSettingsOpen,
         setIsBusinessSettingsOpen,
@@ -3874,8 +5682,19 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         verifyManagerOverridePin,
         cartSubtotal,
         cartTax,
+        cartTaxBreakdown,
         cartDiscount,
         cartTotal,
+
+        // Customer & Store Credit Directory (CRM)
+        customers,
+        selectedCustomer,
+        setSelectedCustomer,
+        addCustomer,
+        updateCustomer,
+        deleteCustomer,
+        adjustCustomerCredit,
+        redeemCustomerLoyaltyPoints,
 
         handleBarcodeScanned,
 
@@ -3895,6 +5714,17 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         selectedReturnTx,
         openReturnsModal,
         closeReturnsModal,
+
+        // Shift Management
+        activeShift,
+        shiftHistory,
+        openShift,
+        recordCashDrop,
+        recordShiftExpense,
+        closeShift,
+        isShiftModalOpen,
+        setIsShiftModalOpen,
+        openShiftManagement,
 
         isOnline,
         setIsOnline,

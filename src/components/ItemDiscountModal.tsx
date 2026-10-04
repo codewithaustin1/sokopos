@@ -215,11 +215,15 @@ export const ItemDiscountModal: React.FC<ItemDiscountModalProps> = ({
         setOverrideAuthorizedBy(authName);
         setIsPromptingManagerPin(false);
 
-        // Commit discount
+        // Commit discount with distinct performing operator and authorizing supervisor audit fields
         const val = discountType === 'flat' ? flatAmount : percentValue;
         applyItemDiscount(item.productId, discountType, val, {
           reason: selectedReason,
           authorizedBy: authName,
+          authorizingSupervisorId: result.managerId || selectedManagerId || 'supervisor-mgr',
+          authorizingSupervisorName: authName,
+          authorizingSupervisorRole: result.managerRole || 'supervisor',
+          isSupervisorOverride: true,
         });
 
         showToast(

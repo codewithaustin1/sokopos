@@ -17,6 +17,10 @@ import {
   User,
   Phone,
   HelpCircle,
+  KeyRound,
+  ShieldCheck,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { Transaction } from '../types';
@@ -40,8 +44,15 @@ export const ReturnsModal: React.FC = () => {
     transactions,
     currentLocation,
     currentCashier,
+    systemUsers,
+    verifyManagerOverridePin,
     processRefund,
   } = usePos();
+
+  const isDirectlyAuthorized =
+    currentCashier.role === 'manager' ||
+    currentCashier.role === 'supervisor' ||
+    currentCashier.role === 'business_owner';
 
   // Navigation within modal
   const [activeTx, setActiveTx] = useState<Transaction | null>(null);
@@ -59,6 +70,13 @@ export const ReturnsModal: React.FC = () => {
   const [customerPhone, setCustomerPhone] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Supervisor Override State (Edge Case 1)
+  const [isSupervisorPromptOpen, setIsSupervisorPromptOpen] = useState(false);
+  const [supervisorPin, setSupervisorPin] = useState('');
+  const [selectedSupervisorId, setSelectedSupervisorId] = useState('');
+  const [isVerifyingSupervisorPin, setIsVerifyingSupervisorPin] = useState(false);
+  const [supervisorPinError, setSupervisorPinError] = useState('');
 
   // Sync activeTx with selectedReturnTx prop if provided
   useEffect(() => {
@@ -218,6 +236,49 @@ export const ReturnsModal: React.FC = () => {
       return;
     }
 
+    // Cashiers require supervisor override PIN
+    if (!isDirectlyAuthorized) {
+      setIsSupervisorPromptOpen(true);
+      setSupervisorPin('');
+      setSupervisorPinError('');
+      return;
+    }
+
+    await executeRefund();
+  };
+
+  const handleAuthorizeAndExecuteRefund = async () => {
+    if (!supervisorPin.trim()) {
+      setSupervisorPinError('Supervisor Override PIN is required');
+      return;
+    }
+
+    setIsVerifyingSupervisorPin(true);
+    setSupervisorPinError('');
+
+    try {
+      const result = await verifyManagerOverridePin(supervisorPin, selectedSupervisorId || undefined);
+      if (!result.success) {
+        setSupervisorPinError(result.error || 'Invalid supervisor PIN. Try again.');
+        setIsVerifyingSupervisorPin(false);
+        return;
+      }
+
+      setIsSupervisorPromptOpen(false);
+      await executeRefund({
+        id: result.managerId || selectedSupervisorId || 'supervisor-mgr',
+        name: result.managerName || 'Store Supervisor',
+        role: result.managerRole || 'supervisor',
+      });
+    } catch {
+      setSupervisorPinError('Verification error. Please retry.');
+    } finally {
+      setIsVerifyingSupervisorPin(false);
+    }
+  };
+
+  const executeRefund = async (overrideSupervisor?: { id: string; name: string; role: string }) => {
+    if (!activeTx) return;
     setErrorMessage(null);
     setIsSubmitting(true);
 
@@ -244,6 +305,11 @@ export const ReturnsModal: React.FC = () => {
         customerName,
         customerPhone,
         items: refundItems,
+        authorizingSupervisorId: overrideSupervisor?.id || (isDirectlyAuthorized ? currentCashier.id : undefined),
+        authorizingSupervisorName: overrideSupervisor?.name || (isDirectlyAuthorized ? currentCashier.name : undefined),
+        authorizingSupervisorRole: overrideSupervisor?.role || (isDirectlyAuthorized ? currentCashier.role : undefined),
+        isSupervisorOverride: !isDirectlyAuthorized || !!overrideSupervisor,
+        supervisorOverrideReason: generalReason,
       });
 
       if (!result.success) {
@@ -825,6 +891,118 @@ export const ReturnsModal: React.FC = () => {
           </span>
         </div>
       </div>
+
+      {/* Supervisor Override PIN Modal (Edge Case 1) */}
+      {isSupervisorPromptOpen && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+            <div className="bg-amber-600 text-white px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center">
+                  <KeyRound className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black">Supervisor Authorization</h3>
+                  <p className="text-[11px] text-amber-100">Refund Override Required</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsSupervisorPromptOpen(false)}
+                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs">
+              <div className="bg-amber-50 border border-amber-200 p-2.5 rounded-xl text-amber-800 text-[11px] space-y-1">
+                <div className="font-bold flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>Cashier Refund Audit Guardrail</span>
+                </div>
+                <p className="text-amber-700">
+                  Performing Operator: <strong>{currentCashier.name}</strong> ({currentCashier.role}).
+                  Attribution remains with this account; authorizing supervisor is captured as a distinct audit field.
+                </p>
+              </div>
+
+              {systemUsers.filter((u) => u.role === 'manager' || u.role === 'supervisor' || u.role === 'business_owner').length > 1 && (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                    Select Supervisor / Manager
+                  </label>
+                  <select
+                    value={selectedSupervisorId}
+                    onChange={(e) => setSelectedSupervisorId(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
+                  >
+                    <option value="">Any Eligible Supervisor</option>
+                    {systemUsers
+                      .filter((u) => u.role === 'manager' || u.role === 'supervisor' || u.role === 'business_owner')
+                      .map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} ({m.role.replace('_', ' ')})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                  Supervisor 4-Digit Security PIN
+                </label>
+                <input
+                  type="password"
+                  maxLength={6}
+                  value={supervisorPin}
+                  onChange={(e) => {
+                    setSupervisorPin(e.target.value);
+                    setSupervisorPinError('');
+                  }}
+                  placeholder="••••"
+                  autoFocus
+                  className="w-full tracking-widest text-center text-lg font-mono bg-slate-50 border border-slate-300 rounded-xl p-2.5 focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              {supervisorPinError && (
+                <p className="text-xs text-red-600 font-bold text-center animate-shake">
+                  {supervisorPinError}
+                </p>
+              )}
+            </div>
+
+            <div className="bg-slate-50 p-4 border-t border-slate-200 flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setIsSupervisorPromptOpen(false)}
+                className="px-3.5 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isVerifyingSupervisorPin || !supervisorPin.trim()}
+                onClick={handleAuthorizeAndExecuteRefund}
+                className="px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
+              >
+                {isVerifyingSupervisorPin ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Verifying...</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>Authorize & Issue Refund</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

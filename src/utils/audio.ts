@@ -238,6 +238,14 @@ class SoundFx {
     this.playSuccessChime();
   }
 
+  playChime() {
+    this.playSuccessChime();
+  }
+
+  playPaymentSuccess() {
+    this.playSuccessChime();
+  }
+
   playError() {
     this.playErrorTone();
   }

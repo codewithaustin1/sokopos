@@ -16,12 +16,14 @@ import {
   Moon,
   Sun,
   Palette,
+  Clock,
+  FileText,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 
 interface SidebarNavProps {
-  currentTab: 'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff';
-  setCurrentTab: (tab: 'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff') => void;
+  currentTab: 'register' | 'inventory' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers';
+  setCurrentTab: (tab: 'register' | 'inventory' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers') => void;
   openBarcodeScanner: () => void;
 }
 
@@ -32,10 +34,12 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
 }) => {
   const {
     cart,
+    customers,
     pendingOfflineCount,
     currentUser,
     currentLocation,
     currentBusiness,
+    activeShift,
     isSuperAdmin,
     openBusinessSettings,
     openReturnsModal,
@@ -54,9 +58,18 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       tab: 'register' as const,
       label: 'Sell',
       icon: ShoppingCart,
-      badge: cartItemCount > 0 ? `${cartItemCount}` : null,
-      badgeColor: 'bg-blue-500 text-white',
-      activeBadgeColor: 'bg-white text-blue-600',
+      badge: !activeShift ? 'Till Closed' : cartItemCount > 0 ? `${cartItemCount}` : null,
+      badgeColor: !activeShift ? 'bg-amber-500 text-white text-[9px]' : 'bg-blue-500 text-white',
+      activeBadgeColor: !activeShift ? 'bg-amber-400 text-slate-950 font-black text-[9px]' : 'bg-white text-blue-600',
+    },
+    {
+      id: 'customers',
+      tab: 'customers' as const,
+      label: 'Customers',
+      icon: Users,
+      badge: (customers?.length || 0) > 0 ? `${customers.length}` : null,
+      badgeColor: 'bg-indigo-100 text-indigo-700 text-[10px]',
+      activeBadgeColor: 'bg-white text-indigo-600 font-black text-[10px]',
     },
     {
       id: 'inventory',
@@ -68,6 +81,15 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       activeBadgeColor: '',
     },
     {
+      id: 'shifts',
+      tab: 'shifts' as const,
+      label: 'Shifts & Till',
+      icon: Clock,
+      badge: activeShift ? 'Active' : 'Declare',
+      badgeColor: activeShift ? 'bg-emerald-500 text-white' : 'bg-amber-500 text-white',
+      activeBadgeColor: activeShift ? 'bg-white text-emerald-600 font-black' : 'bg-white text-amber-600 font-black',
+    },
+    {
       id: 'analytics',
       tab: 'analytics' as const,
       label: 'Analytics',
@@ -75,6 +97,15 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       badge: null,
       badgeColor: '',
       activeBadgeColor: '',
+    },
+    {
+      id: 'reports',
+      tab: 'reports' as const,
+      label: 'Reports',
+      icon: FileText,
+      badge: '15',
+      badgeColor: 'bg-blue-100 text-blue-700 text-[10px]',
+      activeBadgeColor: 'bg-white text-blue-600 font-black text-[10px]',
     },
     {
       id: 'cloud-sync',

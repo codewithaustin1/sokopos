@@ -58,7 +58,7 @@ export const BarcodeVisual: React.FC<BarcodeVisualProps> = ({
     return bars;
   };
 
-  const bars = generateBars(value || '000000000000');
+  const bars = generateBars(String(value || '000000000000'));
   const totalWidth = bars.reduce((sum, b) => sum + b.width, 0);
 
   let currentX = 0;

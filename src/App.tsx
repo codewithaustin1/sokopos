@@ -10,8 +10,11 @@ import { SuperAdminBanner } from './components/SuperAdminBanner';
 import { RegisterView } from './components/RegisterView';
 import { InventoryView } from './components/InventoryView';
 import { AnalyticsView } from './components/AnalyticsView';
+import { ReportsView } from './components/ReportsView';
 import { CloudSyncView } from './components/CloudSyncView';
 import { StaffManagementView } from './components/StaffManagementView';
+import { ShiftManagementView } from './components/ShiftManagementView';
+import { CustomerManagementView } from './components/CustomerManagementView';
 import { BarcodeScannerModal } from './components/BarcodeScannerModal';
 import { PaymentModal } from './components/PaymentModal';
 import { ReceiptModal } from './components/ReceiptModal';
@@ -20,7 +23,6 @@ import { ReturnsModal } from './components/ReturnsModal';
 import { PinLockModal } from './components/PinLockModal';
 import { SuperAdminDashboardModal } from './components/SuperAdminDashboardModal';
 import { DestructiveConfirmModal } from './components/DestructiveConfirmModal';
-import { AuthModal } from './components/AuthModal';
 import { SignInView } from './components/SignInView';
 import { SignOutConfirmModal } from './components/SignOutConfirmModal';
 import { BusinessProfileSettingsModal } from './components/BusinessProfileSettingsModal';
@@ -50,18 +52,39 @@ function PosAppContent() {
     isReturnsModalOpen,
     closeReturnsModal,
     soundFx,
+    isShiftModalOpen,
+    setIsShiftModalOpen,
+    activeShift,
+    showToast,
+    setSelectedCustomer,
   } = usePos();
 
-  const [currentTab, setCurrentTab] = useState<'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff'>('register');
+  const [currentTab, setCurrentTab] = useState<'register' | 'inventory' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers'>('register');
+
+  useEffect(() => {
+    if (isShiftModalOpen) {
+      setCurrentTab('shifts');
+      setIsShiftModalOpen(false);
+    }
+  }, [isShiftModalOpen, setIsShiftModalOpen]);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [paymentInitialMethod, setPaymentInitialMethod] = useState<PaymentMethod>('mpesa');
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
   const [isSuperAdminModalOpen, setIsSuperAdminModalOpen] = useState(false);
   const [superAdminModalDefaultTab, setSuperAdminModalDefaultTab] = useState<'tenants' | 'audit' | 'provision' | 'branding'>('tenants');
 
-  const handleOpenPayment = (method: PaymentMethod = 'mpesa') => {
+  const handleOpenPayment = (method: PaymentMethod = 'cash') => {
+    // Strict Guardrail: No transaction may be tendered or completed without an open session
+    if (!activeShift || activeShift.status !== 'open') {
+      soundFx.playErrorTone();
+      showToast(
+        'Tendering Blocked: An active shift session is required before initiating or tendering payment.',
+        'error'
+      );
+      setCurrentTab('shifts');
+      return;
+    }
     setPaymentInitialMethod(method);
     setIsPaymentOpen(true);
   };
@@ -71,6 +94,16 @@ function PosAppContent() {
   // regardless of which input or modal element is currently focused, with automatic input restoration.
   useBackgroundScanner({
     onBarcodeScanned: (barcode) => {
+      // Strict Guardrail: No barcode transaction may be initiated without an active session
+      if (!activeShift || activeShift.status !== 'open') {
+        soundFx.playErrorTone();
+        showToast(
+          'Scan Blocked: An active shift session is required before scanning items or initiating transactions.',
+          'error'
+        );
+        setCurrentTab('shifts');
+        return;
+      }
       // If currently in another view, switch to register so the scanned item is visible in the cart
       if (currentTab !== 'register') {
         setCurrentTab('register');
@@ -123,11 +156,6 @@ function PosAppContent() {
         if (isReturnsModalOpen) {
           e.preventDefault();
           closeReturnsModal();
-          return;
-        }
-        if (isAuthModalOpen) {
-          e.preventDefault();
-          setIsAuthModalOpen(false);
           return;
         }
         if (isSignOutModalOpen) {
@@ -185,7 +213,6 @@ function PosAppContent() {
         activeReceipt !== null ||
         activeRefundReceipt !== null ||
         isReturnsModalOpen ||
-        isAuthModalOpen ||
         isSignOutModalOpen ||
         isSuperAdminModalOpen;
 
@@ -211,7 +238,7 @@ function PosAppContent() {
         // If not typing in an input and on register tab with items in cart:
         if (!isInputActive && !isModalActive && currentTab === 'register' && cart.length > 0) {
           e.preventDefault();
-          handleOpenPayment('mpesa');
+          handleOpenPayment('cash');
           return;
         }
 
@@ -228,7 +255,7 @@ function PosAppContent() {
       // 7. Space to Settle
       if (e.key === ' ' && !isInputActive && !isModalActive && currentTab === 'register' && cart.length > 0) {
         e.preventDefault();
-        handleOpenPayment('mpesa');
+        handleOpenPayment('cash');
         return;
       }
     };
@@ -243,7 +270,6 @@ function PosAppContent() {
     activeReceipt,
     activeRefundReceipt,
     isReturnsModalOpen,
-    isAuthModalOpen,
     isSignOutModalOpen,
     isSuperAdminModalOpen,
     settleExactCash,
@@ -349,7 +375,6 @@ function PosAppContent() {
       {/* Main Top Header */}
       <Header
         openBarcodeScanner={() => setIsScannerOpen(true)}
-        openAuthModal={() => setIsAuthModalOpen(true)}
         openSignOutModal={() => setIsSignOutModalOpen(true)}
         openSuperAdminModal={(tab) => {
           setSuperAdminModalDefaultTab(tab || 'tenants');
@@ -370,14 +395,24 @@ function PosAppContent() {
         <main className="flex-1 flex overflow-hidden relative pb-14 lg:pb-0 min-w-0">
           {currentTab === 'register' && (
             <RegisterView
-              onProceedToPayment={() => handleOpenPayment('mpesa')}
+              onProceedToPayment={() => handleOpenPayment('cash')}
               openBarcodeScanner={() => setIsScannerOpen(true)}
             />
           )}
           {currentTab === 'inventory' && <InventoryView />}
-          {currentTab === 'analytics' && <AnalyticsView />}
+          {currentTab === 'analytics' && <AnalyticsView onNavigateToReports={() => setCurrentTab('reports')} />}
+          {currentTab === 'reports' && <ReportsView />}
           {currentTab === 'cloud-sync' && <CloudSyncView />}
           {currentTab === 'staff' && <StaffManagementView />}
+          {currentTab === 'shifts' && <ShiftManagementView />}
+          {currentTab === 'customers' && (
+            <CustomerManagementView
+              onAssignCustomerToCart={(cust) => {
+                setSelectedCustomer(cust);
+                setCurrentTab('register');
+              }}
+            />
+          )}
         </main>
       </div>
 
@@ -406,11 +441,6 @@ function PosAppContent() {
       <ReturnsModal />
 
       <PinLockModal />
-
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-      />
 
       <SignOutConfirmModal
         isOpen={isSignOutModalOpen}

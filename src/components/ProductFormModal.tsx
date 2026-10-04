@@ -1,18 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { X, Barcode, Save, Sparkles, Trash2 } from 'lucide-react';
+import { X, Barcode, Save, Sparkles, Trash2, Camera, CheckCircle2 } from 'lucide-react';
 import { Product } from '../types';
 import { usePos } from '../context/PosContext';
+import { PackageScannerModal } from './PackageScannerModal';
+import { ParsedProductPackage } from '../types/aiVision';
 
 interface ProductFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   productToEdit?: Product | null;
+  initialAiProduct?: ParsedProductPackage | null;
 }
 
 export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   isOpen,
   onClose,
   productToEdit,
+  initialAiProduct,
 }) => {
   const { categories, locations, addProduct, updateProduct, deleteProduct, currentLocation } = usePos();
 
@@ -26,6 +30,8 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const [reorderPoint, setReorderPoint] = useState('15');
   const [description, setDescription] = useState('');
   const [initialStocks, setInitialStocks] = useState<Record<string, number>>({});
+  const [isAiScannerOpen, setIsAiScannerOpen] = useState(false);
+  const [aiPopulatedNotice, setAiPopulatedNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (productToEdit) {
@@ -39,6 +45,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       setReorderPoint(productToEdit.reorderPoint.toString());
       setDescription(productToEdit.description || '');
       setInitialStocks(productToEdit.stockByLocation);
+      setAiPopulatedNotice(null);
+    } else if (initialAiProduct) {
+      applyAiParsedData(initialAiProduct);
     } else {
       // Reset for new product
       setName('');
@@ -52,6 +61,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       setUnit('packet');
       setReorderPoint('20');
       setDescription('');
+      setAiPopulatedNotice(null);
       // Default stock 25 across locations
       const defaultStocks: Record<string, number> = {};
       locations.forEach((loc) => {
@@ -59,7 +69,21 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       });
       setInitialStocks(defaultStocks);
     }
-  }, [productToEdit, isOpen, categories, locations]);
+  }, [productToEdit, initialAiProduct, isOpen, categories, locations]);
+
+  const applyAiParsedData = (data: ParsedProductPackage) => {
+    setName(data.productName);
+    setBarcode(data.barcode);
+    if (data.category && categories.includes(data.category)) {
+      setCategory(data.category);
+    }
+    setBuyingPrice(data.suggestedBuyingPrice.toString());
+    setSellingPrice(data.suggestedSellingPrice.toString());
+    setUnit(data.unit || 'packet');
+    setReorderPoint((data.suggestedReorderPoint || 15).toString());
+    setDescription(data.description || `Extracted via Gemini Vision from ${data.brand} packaging`);
+    setAiPopulatedNotice(`Auto-populated from ${data.brand} packaging via Gemini Vision AI`);
+  };
 
   if (!isOpen) return null;
 
@@ -128,6 +152,43 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-3.5 sm:p-6 overflow-y-auto space-y-3.5 sm:space-y-4 flex-1">
+          {/* AI Vision Packaging Scan Trigger */}
+          {!productToEdit && (
+            <div className="space-y-2">
+              <button
+                type="button"
+                id="btn-ai-package-scan-form"
+                onClick={() => setIsAiScannerOpen(true)}
+                className="w-full flex items-center justify-between p-3 rounded-2xl bg-gradient-to-r from-indigo-50 via-blue-50 to-indigo-50 hover:from-indigo-100 hover:to-blue-100 border border-indigo-200 text-indigo-950 font-bold text-xs transition cursor-pointer shadow-2xs group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition-transform">
+                    <Camera className="w-4 h-4" />
+                  </div>
+                  <div className="text-left">
+                    <div className="flex items-center gap-2">
+                      <span className="font-black text-xs">Scan Package with Vision AI</span>
+                      <span className="text-[9px] font-black uppercase bg-indigo-200 text-indigo-800 px-1.5 py-0.2 rounded-full">
+                        Gemini Vision
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-indigo-600/80 font-normal mt-0.5">
+                      Point camera or upload packaging to extract brand, title, weight, barcode & prices
+                    </div>
+                  </div>
+                </div>
+                <Sparkles className="w-4 h-4 text-amber-500 group-hover:scale-110 transition-transform shrink-0" />
+              </button>
+
+              {aiPopulatedNotice && (
+                <div className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-bold">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{aiPopulatedNotice}</span>
+                </div>
+              )}
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
               Product Full Name *
@@ -328,6 +389,15 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           </div>
         </form>
       </div>
+
+      <PackageScannerModal
+        isOpen={isAiScannerOpen}
+        onClose={() => setIsAiScannerOpen(false)}
+        onApplyParsedProduct={(parsed) => {
+          applyAiParsedData(parsed);
+          setIsAiScannerOpen(false);
+        }}
+      />
     </div>
   );
 };

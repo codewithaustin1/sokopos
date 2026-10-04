@@ -45,6 +45,7 @@ import { usePos } from '../context/PosContext';
 import { UserRole, Location, Cashier, RetailTheme } from '../types';
 import { RETAIL_THEMES, RetailThemeConfig } from '../data/retailThemes';
 import { ResetStoreModal } from './ResetStoreModal';
+import { TaxManagementPanel } from './TaxManagementPanel';
 
 export const BusinessProfileSettingsModal: React.FC = () => {
   const {
@@ -84,7 +85,7 @@ export const BusinessProfileSettingsModal: React.FC = () => {
     canResetStore,
   } = usePos();
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'branches' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset'>(
+  const [activeTab, setActiveTab] = useState<'profile' | 'branches' | 'tax' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset'>(
     businessSettingsDefaultTab || 'profile'
   );
 
@@ -454,6 +455,22 @@ export const BusinessProfileSettingsModal: React.FC = () => {
             <span>Branches</span>
             <span className="ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-700 font-bold">
               {locations.length}
+            </span>
+          </button>
+
+          <button
+            id="tab-tax-btn"
+            onClick={() => setActiveTab('tax')}
+            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
+              activeTab === 'tax'
+                ? 'border-blue-600 text-blue-600 bg-white'
+                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
+            }`}
+          >
+            <Receipt className="w-4 h-4 text-emerald-600" />
+            <span>Taxes & VAT/GST</span>
+            <span className="ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
+              {currentBusiness?.taxSettings?.rules?.filter((r) => r.isActive).length ?? 3} Rates
             </span>
           </button>
 
@@ -1021,6 +1038,11 @@ export const BusinessProfileSettingsModal: React.FC = () => {
               </div>
             </div>
           )}
+
+          {/* ========================================================= */}
+          {/* TAB: TAXES & VAT/GST DYNAMIC ENGINE */}
+          {/* ========================================================= */}
+          {activeTab === 'tax' && <TaxManagementPanel />}
 
           {/* ========================================================= */}
           {/* TAB 3: ACCOUNTS & ROLE-BASED DASHBOARD (RBAC) */}

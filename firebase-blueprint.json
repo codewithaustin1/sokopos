@@ -198,6 +198,30 @@
         "updatedBy": { "type": "string" }
       },
       "required": ["updatedAt"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Tenant customer profile with loyalty points, store credit balance and contact details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "businessId": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" },
+        "notes": { "type": "string" },
+        "loyaltyPoints": { "type": "number" },
+        "storeCreditBalance": { "type": "number" },
+        "creditLimit": { "type": "number" },
+        "isCreditAllowed": { "type": "boolean" },
+        "totalSpent": { "type": "number" },
+        "visitCount": { "type": "number" },
+        "firstVisitAt": { "type": "string" },
+        "lastVisitAt": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "businessId", "name", "phone"]
     }
   },
   "firestore": {
@@ -208,6 +232,10 @@
     "/businesses/{businessId}": {
       "schema": "Business",
       "description": "Retail tenant records"
+    },
+    "/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Tenant customer profiles and credit directories scoped by businessId"
     },
     "/products/{productId}": {
       "schema": "Product",

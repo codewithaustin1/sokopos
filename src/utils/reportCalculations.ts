@@ -1,4 +1,4 @@
-import { Transaction, Product, Location, Cashier, SuperAdminAuditEntry } from '../types';
+import { Transaction, Product, Location, Cashier, SuperAdminAuditEntry, ShiftSession } from '../types';
 import { DateRange } from '../types/reporting';
 import { isTimestampInRange } from './dateRangeUtils';
 
@@ -455,6 +455,8 @@ export interface ShiftTillReportData {
   openingFloat: number;
   cashSalesTendered: number;
   cashRefundsGiven: number;
+  drawerExpensesTotal: number;
+  cashDropsTotal: number;
   expectedCashInDrawer: number;
   actualCountedCash: number;
   variance: number;
@@ -468,20 +470,48 @@ export interface ShiftTillReportData {
     transactionCount: number;
     totalHandled: number;
   }>;
+  recentShifts: ShiftSession[];
 }
 
 export function calculateShiftTillReport(
   transactions: Transaction[],
   cashiers: Cashier[],
   range: DateRange,
-  locationId?: string
+  locationId?: string,
+  shifts?: ShiftSession[]
 ): ShiftTillReportData {
   const filtered = transactions.filter((tx) => {
     if (locationId && locationId !== 'all' && tx.locationId !== locationId) return false;
     return isTimestampInRange(tx.timestamp, range);
   });
 
-  const openingFloat = 5000; // standard cash drawer float
+  const filteredShifts = (shifts || []).filter((s) => {
+    if (locationId && locationId !== 'all' && s.locationId !== locationId) return false;
+    return isTimestampInRange(s.openedAt, range);
+  });
+
+  let openingFloat = 0;
+  let drawerExpensesTotal = 0;
+  let cashDropsTotal = 0;
+  let actualCountedCash = 0;
+  let variance = 0;
+
+  if (filteredShifts.length > 0) {
+    filteredShifts.forEach((s) => {
+      openingFloat += s.openingFloat || 0;
+      drawerExpensesTotal += s.expenses.reduce((acc, e) => acc + e.amount, 0);
+      cashDropsTotal += s.cashDrops.reduce((acc, d) => acc + d.amount, 0);
+      if (s.closingCountedCash !== undefined) {
+        actualCountedCash += s.closingCountedCash;
+      }
+      if (s.cashVariance !== undefined) {
+        variance += s.cashVariance;
+      }
+    });
+  } else {
+    openingFloat = 5000;
+  }
+
   let cashSalesTendered = 0;
   let cashRefundsGiven = 0;
   let mpesaVolume = 0;
@@ -501,6 +531,11 @@ export function calculateShiftTillReport(
   filtered.forEach((tx) => {
     if (tx.paymentMethod === 'cash') {
       cashSalesTendered += tx.total;
+    } else if (tx.paymentMethod === 'split') {
+      const cashPart = tx.paymentDetails?.cashTendered || 0;
+      cashSalesTendered += cashPart;
+      const nonCashPart = Math.max(0, tx.total - cashPart);
+      mpesaVolume += nonCashPart;
     } else if (tx.paymentMethod === 'mpesa') {
       mpesaVolume += tx.total;
     } else if (tx.paymentMethod === 'card') {
@@ -524,9 +559,11 @@ export function calculateShiftTillReport(
     cashierMap[cid].total += tx.total;
   });
 
-  const expectedCashInDrawer = openingFloat + cashSalesTendered - cashRefundsGiven;
-  const actualCountedCash = expectedCashInDrawer; // Zero discrepancy default
-  const variance = actualCountedCash - expectedCashInDrawer;
+  const expectedCashInDrawer = openingFloat + cashSalesTendered - cashRefundsGiven - drawerExpensesTotal - cashDropsTotal;
+  if (filteredShifts.length === 0) {
+    actualCountedCash = expectedCashInDrawer;
+    variance = 0;
+  }
 
   const cashierShifts = Object.values(cashierMap)
     .filter((c) => c.count > 0)
@@ -542,6 +579,8 @@ export function calculateShiftTillReport(
     openingFloat,
     cashSalesTendered,
     cashRefundsGiven,
+    drawerExpensesTotal,
+    cashDropsTotal,
     expectedCashInDrawer,
     actualCountedCash,
     variance,
@@ -550,6 +589,7 @@ export function calculateShiftTillReport(
     totalRevenue: cashSalesTendered + mpesaVolume + cardVolume,
     totalTransactionsCount: filtered.length,
     cashierShifts,
+    recentShifts: filteredShifts,
   };
 }
 

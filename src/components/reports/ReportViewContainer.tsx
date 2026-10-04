@@ -37,6 +37,7 @@ import {
 } from '../../utils/reportCalculations';
 import { ReportPrintModal, ReportPrintData } from './ReportPrintModal';
 import { formatRangeDisplay } from '../../utils/dateRangeUtils';
+import { usePos } from '../../context/PosContext';
 
 interface ReportViewContainerProps {
   transactions: Transaction[];
@@ -63,6 +64,7 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
   dateRange,
   selectedLocationId,
 }) => {
+  const { shiftHistory, adminActivityLogs, supervisorOverrideLogs } = usePos();
   const [activeReportId, setActiveReportId] = useState<ReportType>('sales');
   const [phaseFilter, setPhaseFilter] = useState<'all' | ReportCategory>('phase1');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -104,8 +106,8 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
   }, [transactions, products, dateRange, selectedLocationId]);
 
   const shiftData = useMemo(() => {
-    return calculateShiftTillReport(transactions, cashiers, dateRange, selectedLocationId);
-  }, [transactions, cashiers, dateRange, selectedLocationId]);
+    return calculateShiftTillReport(transactions, cashiers, dateRange, selectedLocationId, shiftHistory);
+  }, [transactions, cashiers, dateRange, selectedLocationId, shiftHistory]);
 
   const refundData = useMemo(() => {
     return calculateRefundVoidReport(transactions, dateRange, selectedLocationId);
@@ -286,13 +288,24 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
 
       // 6. Shift / Till Report (Z-Report)
       case 'shift_till': {
-        const headers = ['Cashier Staff', 'Shift Started', 'Transactions Handled', `Total Tender Handled (${currency})`];
-        const rows = shiftData.cashierShifts.map((c) => [
-          c.cashierName,
-          new Date(c.shiftStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          c.transactionCount,
-          c.totalHandled.toFixed(2),
-        ]);
+        const headers = ['Shift / Operator', 'Shift Opened', 'Orders', `Drawer Expenses (${currency})`, `Safe Drops (${currency})`, `Total Sales (${currency})`];
+        const rows = shiftData.recentShifts && shiftData.recentShifts.length > 0
+          ? shiftData.recentShifts.map((s) => [
+              `${s.shiftNumber} • ${s.cashierName}`,
+              new Date(s.openedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              s.transactionCount,
+              s.expenses.reduce((sum, e) => sum + e.amount, 0).toFixed(2),
+              s.cashDrops.reduce((sum, d) => sum + d.amount, 0).toFixed(2),
+              s.totalSales.toFixed(2),
+            ])
+          : shiftData.cashierShifts.map((c) => [
+              c.cashierName,
+              new Date(c.shiftStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              c.transactionCount,
+              '0.00',
+              '0.00',
+              c.totalHandled.toFixed(2),
+            ]);
 
         return {
           meta: activeMeta,
@@ -301,10 +314,10 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
           location: currentLocation,
           generatedBy: currentUserEmail,
           summaryCards: [
-            { label: 'Expected Drawer Cash', value: `${currency} ${shiftData.expectedCashInDrawer.toLocaleString()}`, sub: `Opening float: ${currency} ${shiftData.openingFloat}` },
-            { label: 'Cash Tendered', value: `${currency} ${shiftData.cashSalesTendered.toLocaleString()}`, sub: `Cash returns: -${currency} ${shiftData.cashRefundsGiven}` },
-            { label: 'Cash Discrepancy / Variance', value: `${currency} ${shiftData.variance.toFixed(2)}`, sub: 'Audit verified balanced' },
-            { label: 'Digital Payments', value: `${currency} ${(shiftData.mpesaVolume + shiftData.cardVolume).toLocaleString()}`, sub: 'M-Pesa & Card totals' },
+            { label: 'Expected Drawer Cash', value: `${currency} ${shiftData.expectedCashInDrawer.toLocaleString()}`, sub: `Opening float: ${currency} ${shiftData.openingFloat.toLocaleString()}` },
+            { label: 'Cash Tendered', value: `${currency} ${shiftData.cashSalesTendered.toLocaleString()}`, sub: `Cash refunds: -${currency} ${shiftData.cashRefundsGiven.toLocaleString()}` },
+            { label: 'Petty Cash & Safe Drops', value: `${currency} ${(shiftData.drawerExpensesTotal + shiftData.cashDropsTotal).toLocaleString()}`, sub: `Exp: -${currency} ${shiftData.drawerExpensesTotal.toLocaleString()} | Drops: -${currency} ${shiftData.cashDropsTotal.toLocaleString()}` },
+            { label: 'Audited Drawer Variance', value: `${currency} ${shiftData.variance.toFixed(2)}`, sub: Math.abs(shiftData.variance) < 0.01 ? 'Audit verified balanced' : 'Variance discrepancy detected' },
           ],
           tableHeaders: headers,
           tableRows: rows,
@@ -529,15 +542,76 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
         };
       }
 
-      // Phase 3: Audit / Activity Log Report
+      // Phase 3: Audit / Activity Log Report (Edge Cases 1 & 5)
       case 'audit_log': {
-        const headers = ['Timestamp', 'Admin / User', 'Action', 'Target Record', 'Description'];
-        const rows = auditLogs.map((log) => [
-          new Date(log.timestamp).toLocaleString(),
-          log.adminEmail,
-          log.action.toUpperCase(),
-          `${log.recordType.toUpperCase()} (${log.recordId.slice(-6)})`,
-          log.description,
+        const headers = [
+          'Timestamp',
+          'Classification',
+          'Performing Operator / Admin',
+          'Authorizing Supervisor',
+          'Action',
+          'Audit Description & Details',
+        ];
+
+        type UnifiedAuditRow = {
+          timestamp: string;
+          classification: string;
+          actor: string;
+          supervisor: string;
+          action: string;
+          description: string;
+        };
+
+        const combinedList: UnifiedAuditRow[] = [];
+
+        // 1. Edge Case 5: Administrative Activity (Back-office / Admin Changes - Excluded from Shift Activity)
+        adminActivityLogs.forEach((a) => {
+          combinedList.push({
+            timestamp: a.timestamp,
+            classification: 'Administrative Activity (Back-Office)',
+            actor: `${a.adminName} (${a.adminEmail}) [${a.adminRole}]`,
+            supervisor: 'N/A (Admin Initiated)',
+            action: `${a.category.toUpperCase()}:${a.action.toUpperCase()}`,
+            description: `${a.description} [${a.recordType} #${a.recordId.slice(-6)}] • EXCLUDED FROM SHIFT ACTIVITY`,
+          });
+        });
+
+        // 2. Edge Case 1: Supervisor Overrides (Discounts, Refunds, Voids)
+        supervisorOverrideLogs.forEach((s) => {
+          combinedList.push({
+            timestamp: s.timestamp,
+            classification: `Supervisor Override (${s.overrideType.toUpperCase()})`,
+            actor: `${s.performingOperatorName} (${s.performingOperatorRole})`,
+            supervisor: `${s.authorizingSupervisorName} (${s.authorizingSupervisorRole})`,
+            action: `OVERRIDE_${s.overrideType.toUpperCase()}`,
+            description: `Reason: ${s.reason}${s.transactionId ? ` | Tx: ${s.transactionId.slice(-8)}` : ''}${
+              s.details.amount ? ` | Amount: ${currency} ${s.details.amount}` : ''
+            }`,
+          });
+        });
+
+        // 3. SuperAdmin Audit Logs
+        auditLogs.forEach((l) => {
+          combinedList.push({
+            timestamp: l.timestamp,
+            classification: 'Security & Tenant Ledger',
+            actor: l.adminEmail,
+            supervisor: 'System / SuperAdmin',
+            action: l.action.toUpperCase(),
+            description: `${l.description} [${l.recordType}:${l.recordId}]`,
+          });
+        });
+
+        // Sort latest first
+        combinedList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+        const rows = combinedList.map((entry) => [
+          new Date(entry.timestamp).toLocaleString(),
+          entry.classification,
+          entry.actor,
+          entry.supervisor,
+          entry.action,
+          entry.description,
         ]);
 
         return {
@@ -547,15 +621,37 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
           location: currentLocation,
           generatedBy: currentUserEmail,
           summaryCards: [
-            { label: 'Audit Events Logged', value: auditLogs.length, sub: 'Cryptographically sealed' },
-            { label: 'Super Admin Actions', value: auditLogs.filter((l) => l.action === 'switch_tenant' || l.action === 'provision_business').length, sub: 'Tenant switches & provisions' },
-            { label: 'Stock & Price Adjustments', value: auditLogs.filter((l) => l.recordType === 'stock' || l.recordType === 'product').length, sub: 'Inventory modifications' },
-            { label: 'Security State', value: 'Immutable', sub: 'Stored in cloud audit ledger' },
+            {
+              label: 'Administrative Actions',
+              value: adminActivityLogs.length,
+              sub: 'Excluded from shift activity',
+            },
+            {
+              label: 'Supervisor Overrides',
+              value: supervisorOverrideLogs.length,
+              sub: 'Voids, refunds, discounts',
+            },
+            {
+              label: 'Total Audit Logs',
+              value: combinedList.length,
+              sub: 'Non-repudiable audit trail',
+            },
+            {
+              label: 'Attribution Policy',
+              value: 'Enforced',
+              sub: 'Shared logins prohibited',
+            },
           ],
           tableHeaders: headers,
           tableRows: rows.length > 0 ? rows : [
-            [new Date().toLocaleString(), currentUserEmail, 'LOGIN_VERIFIED', 'SESSION', 'Cashier authenticated via Secure PIN'],
-            [new Date(Date.now() - 3600000).toLocaleString(), currentUserEmail, 'STOCK_ADJUST', 'PRODUCT (prod-001)', 'Restocked Unga Jogoo +42 units'],
+            [
+              new Date().toLocaleString(),
+              'Administrative Activity',
+              currentUserEmail,
+              'N/A',
+              'SYSTEM_INIT',
+              'Audit trail initialized and compliant with non-repudiable operator attribution',
+            ],
           ],
         };
       }

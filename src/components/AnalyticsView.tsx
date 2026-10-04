@@ -33,7 +33,11 @@ import { SalesTrendVisualizer } from './reports/SalesTrendVisualizer';
 import { ReportViewContainer } from './reports/ReportViewContainer';
 import { SmartInsightsBanner } from './SmartInsightsBanner';
 
-export const AnalyticsView: React.FC = () => {
+interface AnalyticsViewProps {
+  onNavigateToReports?: () => void;
+}
+
+export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ onNavigateToReports }) => {
   const {
     transactions,
     products,
@@ -195,7 +199,13 @@ export const AnalyticsView: React.FC = () => {
             <button
               type="button"
               id="analytics-mode-reports-btn"
-              onClick={() => setViewMode('reports')}
+              onClick={() => {
+                if (onNavigateToReports) {
+                  onNavigateToReports();
+                } else {
+                  setViewMode('reports');
+                }
+              }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition cursor-pointer ${
                 viewMode === 'reports'
                   ? 'bg-white text-blue-700 shadow-2xs font-black'

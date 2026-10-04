@@ -13,10 +13,23 @@ import {
   Banknote,
   Tag,
   Percent,
+  Lock,
+  Clock,
+  ShieldAlert,
+  User,
+  UserCheck,
+  Star,
+  X,
+  ShoppingCart,
+  ChevronRight,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { CartItem } from '../types';
 import { ItemDiscountModal } from './ItemDiscountModal';
+import { VoidModal } from './VoidModal';
+import { CustomerSelectModal } from './CustomerSelectModal';
+import { CartLineItem } from './CartLineItem';
+import { Haptics } from '../utils/haptics';
 import {
   getItemDiscountedUnitPrice,
   getItemLineTotal,
@@ -37,6 +50,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
     products,
     categories,
     currentLocation,
+    currentUser,
     cart,
     addToCart,
     updateCartQuantity,
@@ -44,11 +58,17 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
     clearCart,
     cartSubtotal,
     cartTax,
+    cartTaxBreakdown,
     cartDiscount,
     cartTotal,
+    currentBusiness,
     handleBarcodeScanned,
     openReturnsModal,
     settleExactCash,
+    activeShift,
+    openShiftManagement,
+    selectedCustomer,
+    setSelectedCustomer,
   } = usePos();
 
   const [selectedCategory, setSelectedCategory] = useState<string>('All Items');
@@ -56,6 +76,121 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
   const [mobileActiveView, setMobileActiveView] = useState<'catalog' | 'cart'>('catalog');
   const [selectedDiscountItem, setSelectedDiscountItem] = useState<CartItem | null>(null);
   const [isDiscountModalOpen, setIsDiscountModalOpen] = useState<boolean>(false);
+  const [isCustomerSelectOpen, setIsCustomerSelectOpen] = useState<boolean>(false);
+
+  // Void Management Modal State (Edge Case 1)
+  const [voidModalState, setVoidModalState] = useState<{
+    isOpen: boolean;
+    voidType: 'line_item' | 'cart_void';
+    item?: CartItem | null;
+    itemsToVoid: CartItem[];
+  }>({
+    isOpen: false,
+    voidType: 'line_item',
+    item: null,
+    itemsToVoid: [],
+  });
+
+  const handleOpenCartVoid = () => {
+    if (cart.length === 0) return;
+    setVoidModalState({
+      isOpen: true,
+      voidType: 'cart_void',
+      item: null,
+      itemsToVoid: cart,
+    });
+  };
+
+  const handleOpenLineItemVoid = (targetItem: CartItem) => {
+    setVoidModalState({
+      isOpen: true,
+      voidType: 'line_item',
+      item: targetItem,
+      itemsToVoid: [targetItem],
+    });
+  };
+
+  // Strict Rule: The sales interface remains completely inaccessible until a shift session is active
+  if (!activeShift || activeShift.status !== 'open') {
+    return (
+      <div
+        id="register-session-locked-view"
+        className="flex-1 h-full w-full flex items-center justify-center p-4 sm:p-6 md:p-8 bg-slate-100 overflow-y-auto"
+      >
+        <div className="max-w-lg w-full bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          {/* Top Inaccessible Banner */}
+          <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-amber-950 p-6 text-white text-center relative overflow-hidden">
+            <div className="absolute -right-6 -bottom-6 opacity-10">
+              <Clock className="w-36 h-36" />
+            </div>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[11px] font-black uppercase tracking-wider mb-3">
+              <Lock className="w-3.5 h-3.5 text-amber-400" />
+              <span>Sales Interface Inaccessible</span>
+            </div>
+            <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
+              Open Session Required to Trade
+            </h2>
+            <p className="text-slate-300 text-xs mt-1.5 max-w-sm mx-auto leading-relaxed">
+              Trading operations are locked. Barcode scanning, cart items, and payment tendering are strictly disabled until a cash drawer shift session is opened.
+            </p>
+          </div>
+
+          {/* Details & Status Grid */}
+          <div className="p-6 space-y-4">
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80">
+                <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Terminal Location</div>
+                <div className="font-bold text-xs text-slate-800 mt-0.5 truncate">{currentLocation.name}</div>
+                <div className="text-[11px] text-slate-500 truncate">{currentLocation.terminalName || 'Main Counter'}</div>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80">
+                <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Logged Operator</div>
+                <div className="font-bold text-xs text-slate-800 mt-0.5 truncate">{currentUser?.name || 'Cashier'}</div>
+                <div className="text-[11px] text-slate-500 capitalize">{currentUser?.role?.replace('_', ' ') || 'Staff'}</div>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200">
+                <div className="text-[10px] font-black uppercase tracking-wider text-amber-700">Till Status</div>
+                <div className="font-bold text-xs text-amber-900 mt-0.5 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-amber-500" />
+                  Closed & Inactive
+                </div>
+                <div className="text-[11px] text-amber-800">No active trading shift</div>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-blue-50 border border-blue-200">
+                <div className="text-[10px] font-black uppercase tracking-wider text-blue-700">Fiscal Policy</div>
+                <div className="font-bold text-xs text-blue-900 mt-0.5">Strict Fiscal Control</div>
+                <div className="text-[11px] text-blue-800">Float declaration required</div>
+              </div>
+            </div>
+
+            <div className="bg-amber-50/60 p-3.5 rounded-2xl border border-amber-200 text-xs text-amber-900 flex items-start gap-2.5">
+              <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="leading-relaxed text-[11px]">
+                <span className="font-bold text-amber-950">Fiscal & Audit Rule: </span>
+                To guarantee balanced till accounting and drawer security, transactions cannot be initiated or completed without a declared shift float.
+              </div>
+            </div>
+
+            {/* Action CTA Button */}
+            <div className="pt-2">
+              <button
+                id="unlock-sales-interface-btn"
+                type="button"
+                onClick={openShiftManagement}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black py-3.5 px-5 rounded-2xl transition flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-600/20 cursor-pointer text-sm"
+              >
+                <Clock className="w-4 h-4" />
+                <span>Open Shift Session & Unlock Register</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const totalCartCount = (cart || []).reduce((acc, item) => acc + item.quantity, 0);
 
@@ -333,6 +468,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             </div>
             <p className="text-[10px] text-slate-400 mt-0.5">
               {currentLocation.terminalName}
+              <span className="text-blue-600 font-semibold md:hidden ml-1">• Swipe left to void</span>
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -354,13 +490,93 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             </button>
             {cart.length > 0 && (
               <button
-                onClick={clearCart}
+                onClick={handleOpenCartVoid}
                 className="text-xs text-red-600 font-bold hover:bg-red-50 px-2.5 py-1 rounded-lg transition cursor-pointer"
+                title="Cancel sale and record audited cart void"
               >
-                Clear
+                Clear (Void)
               </button>
             )}
           </div>
+        </div>
+
+        {/* Customer Assignment Quick Bar */}
+        <div className="px-3 sm:px-4 py-2 bg-slate-50 border-b border-slate-200 shrink-0">
+          {!selectedCustomer ? (
+            <button
+              type="button"
+              onClick={() => setIsCustomerSelectOpen(true)}
+              className="w-full flex items-center justify-between px-3 py-2 bg-white hover:bg-slate-100/80 border border-dashed border-slate-300 hover:border-blue-400 rounded-xl text-xs font-bold text-slate-600 hover:text-blue-700 transition cursor-pointer group shadow-2xs"
+              title="Assign sale to customer account for loyalty & store credit"
+            >
+              <span className="flex items-center gap-2 truncate">
+                <User className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 shrink-0" />
+                <span className="truncate">Walk-in Customer (Unassigned)</span>
+              </span>
+              <span className="text-[10px] text-blue-600 bg-blue-50 group-hover:bg-blue-100 px-2 py-0.5 rounded-md font-bold shrink-0">
+                + Assign
+              </span>
+            </button>
+          ) : (
+            <div className="bg-white border border-blue-200 rounded-xl p-2.5 flex items-center justify-between gap-2 shadow-2xs">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-blue-600 text-white font-black text-xs flex items-center justify-center shrink-0">
+                  {selectedCustomer.name.slice(0, 2).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-black text-slate-900 truncate">
+                      {selectedCustomer.name}
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400 truncate">
+                      {selectedCustomer.phone}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] mt-0.5">
+                    <span className="text-amber-700 font-bold flex items-center gap-0.5">
+                      <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500" />
+                      {selectedCustomer.loyaltyPoints || 0} pts
+                    </span>
+                    <span className="text-slate-300">•</span>
+                    <span
+                      className={`font-bold font-mono ${
+                        (selectedCustomer.storeCreditBalance || 0) < 0
+                          ? 'text-red-600'
+                          : (selectedCustomer.storeCreditBalance || 0) > 0
+                          ? 'text-emerald-600'
+                          : 'text-slate-500'
+                      }`}
+                    >
+                      {(selectedCustomer.storeCreditBalance || 0) < 0
+                        ? `Tab: -${currentLocation.currency} ${Math.abs(selectedCustomer.storeCreditBalance).toFixed(0)}`
+                        : (selectedCustomer.storeCreditBalance || 0) > 0
+                        ? `Credit: +${currentLocation.currency} ${selectedCustomer.storeCreditBalance.toFixed(0)}`
+                        : 'Tab: Clear'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsCustomerSelectOpen(true)}
+                  className="px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                  title="Change customer"
+                >
+                  Change
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedCustomer(null)}
+                  className="p-1 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition cursor-pointer"
+                  title="Remove customer assignment (Walk-in)"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Cart Item List */}
@@ -381,108 +597,19 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               </button>
             </div>
           ) : (
-            cart.map((item) => {
-              const lineTotal = getItemLineTotal(item);
-              const discountBadge = formatDiscountBadge(item, currentLocation.currency);
-
-              return (
-                <div key={item.productId} className="py-2.5 sm:py-3 flex items-center justify-between gap-2 group">
-                  <div
-                    onClick={() => {
-                      setSelectedDiscountItem(item);
-                      setIsDiscountModalOpen(true);
-                    }}
-                    className="flex-1 min-w-0 pr-1 cursor-pointer group/item select-none"
-                    title="Tap to apply flat or percentage discount"
-                  >
-                    <h4 className="text-xs font-bold text-slate-800 truncate group-hover/item:text-blue-600 transition-colors">
-                      {item.productName}
-                    </h4>
-                    <div className="flex items-center flex-wrap gap-1.5 mt-0.5">
-                      <span className="text-[11px] text-slate-400 font-mono">
-                        {currentLocation.currency} {item.unitPrice.toFixed(2)}
-                      </span>
-                      {discountBadge ? (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedDiscountItem(item);
-                            setIsDiscountModalOpen(true);
-                          }}
-                          className="inline-flex items-center gap-1 text-[10px] bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-black px-1.5 py-0.5 rounded shadow-2xs transition cursor-pointer"
-                          title="Click to edit or remove discount"
-                        >
-                          <Tag className="w-2.5 h-2.5" />
-                          <span>{discountBadge}</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedDiscountItem(item);
-                            setIsDiscountModalOpen(true);
-                          }}
-                          className="opacity-70 group-hover/item:opacity-100 text-[10px] text-blue-600 hover:text-blue-800 hover:bg-blue-50 font-bold px-1.5 py-0.5 rounded transition flex items-center gap-0.5 cursor-pointer"
-                          title="Quick tap to apply discount"
-                        >
-                          <Tag className="w-2.5 h-2.5" />
-                          <span>+ Discount</span>
-                        </button>
-                      )}
-                      {item.discountReason && (
-                        <span className="text-[9px] text-slate-400 italic">
-                          ({item.discountReason})
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Quantity Stepper with touch-friendly targets */}
-                  <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-                    <div className="flex items-center border border-slate-200 rounded-lg bg-slate-50 overflow-hidden">
-                      <button
-                        onClick={() => updateCartQuantity(item.productId, item.quantity - 1)}
-                        className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-200 font-bold transition cursor-pointer"
-                        title="Reduce"
-                      >
-                        <Minus className="w-3.5 h-3.5" />
-                      </button>
-                      <span className="w-7 text-center text-xs font-black text-slate-800">
-                        {item.quantity}
-                      </span>
-                      <button
-                        onClick={() => updateCartQuantity(item.productId, item.quantity + 1)}
-                        className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-200 font-bold transition cursor-pointer"
-                        title="Increase"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <div className="text-right min-w-[65px] sm:min-w-[75px]">
-                      <div className="text-xs font-black text-slate-800 font-mono">
-                        {currentLocation.currency} {lineTotal.toFixed(2)}
-                      </div>
-                      {discountBadge && (
-                        <div className="text-[9px] text-emerald-600 font-bold line-through opacity-70 font-mono">
-                          {currentLocation.currency} {(item.unitPrice * item.quantity).toFixed(2)}
-                        </div>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={() => removeFromCart(item.productId)}
-                      className="text-slate-300 hover:text-red-600 transition p-1.5 cursor-pointer"
-                      title="Remove Item"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })
+            cart.map((item) => (
+              <CartLineItem
+                key={item.productId}
+                item={item}
+                currency={currentLocation.currency}
+                onUpdateQuantity={updateCartQuantity}
+                onOpenDiscountModal={(it) => {
+                  setSelectedDiscountItem(it);
+                  setIsDiscountModalOpen(true);
+                }}
+                onOpenLineItemVoid={handleOpenLineItemVoid}
+              />
+            ))
           )}
         </div>
 
@@ -505,9 +632,19 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               {currentLocation.currency} {cartSubtotal.toFixed(2)}
             </span>
           </div>
-          <div className="flex justify-between text-xs text-slate-500">
-            <span>VAT / Tax (16% inclusive)</span>
-            <span className="font-semibold text-slate-700">
+          <div className="flex justify-between items-center text-xs text-slate-500">
+            <span className="flex items-center gap-1.5">
+              <span>{currentBusiness?.taxSettings?.taxLabel || 'VAT'}</span>
+              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                {currentBusiness?.taxSettings?.pricingType === 'exclusive' ? 'Exclusive' : 'Inclusive'}
+              </span>
+              {cartTaxBreakdown && cartTaxBreakdown.length > 1 && (
+                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200" title="Multiple dynamic VAT/GST rates applied">
+                  {cartTaxBreakdown.length} Rates
+                </span>
+              )}
+            </span>
+            <span className="font-semibold text-slate-700 font-mono">
               {currentLocation.currency} {cartTax.toFixed(2)}
             </span>
           </div>
@@ -610,6 +747,84 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         }}
         item={selectedDiscountItem}
       />
+
+      {/* Audited Void Management Modal (Edge Case 1) */}
+      <VoidModal
+        isOpen={voidModalState.isOpen}
+        voidType={voidModalState.voidType}
+        item={voidModalState.item}
+        itemsToVoid={voidModalState.itemsToVoid}
+        onClose={() =>
+          setVoidModalState((prev) => ({ ...prev, isOpen: false, item: null, itemsToVoid: [] }))
+        }
+        onConfirmVoid={() => {
+          if (voidModalState.voidType === 'line_item' && voidModalState.item) {
+            removeFromCart(voidModalState.item.productId);
+          } else if (voidModalState.voidType === 'cart_void') {
+            clearCart();
+          }
+        }}
+      />
+
+      {/* Customer Quick Selector Modal */}
+      <CustomerSelectModal
+        isOpen={isCustomerSelectOpen}
+        onClose={() => setIsCustomerSelectOpen(false)}
+        onSelectCustomer={(c) => setSelectedCustomer(c)}
+      />
+
+      {/* Mobile Sticky Floating Cart Action Pill (Thumb-Zone Checkout) */}
+      {cart.length > 0 && mobileActiveView === 'catalog' && (
+        <aside
+          id="mobile-sticky-cart-pill"
+          aria-label="Active order quick checkout bar"
+          className="md:hidden fixed bottom-16 inset-x-3 sm:inset-x-4 z-40 animate-in slide-in-from-bottom-5 duration-200 safe-bottom"
+        >
+          <div className="bg-slate-900/95 backdrop-blur-md text-white rounded-2xl p-2.5 pl-3.5 flex items-center justify-between shadow-[0_12px_32px_rgba(0,0,0,0.4)] border border-slate-700/80">
+            {/* Tapping summary switches view to Cart */}
+            <button
+              type="button"
+              onClick={() => {
+                Haptics.light();
+                setMobileActiveView('cart');
+              }}
+              className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer active:opacity-85 py-0.5"
+              title="Inspect Active Cart"
+            >
+              <div className="w-9 h-9 rounded-xl bg-blue-600/30 text-blue-400 flex items-center justify-center font-black shrink-0 border border-blue-500/40">
+                <ShoppingCart className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-black text-white flex items-center gap-1.5 truncate">
+                  <span>🛒 {totalCartCount} Item{totalCartCount !== 1 ? 's' : ''}</span>
+                  <span className="text-slate-400">•</span>
+                  <span className="text-emerald-400 font-mono">
+                    {currentLocation.currency} {cartTotal.toFixed(2)}
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-400 truncate flex items-center gap-0.5">
+                  <span>Tap to view order</span>
+                  <ChevronRight className="w-3 h-3 text-slate-500 inline" />
+                </div>
+              </div>
+            </button>
+
+            {/* Direct Pay / View Action Trigger */}
+            <button
+              type="button"
+              onClick={() => {
+                Haptics.light();
+                onProceedToPayment();
+              }}
+              className="bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-black text-xs px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 shadow-md active:scale-95 transition cursor-pointer shrink-0 ml-2"
+              title="Pay / Proceed to Checkout (Single-Thumb Shortcut)"
+            >
+              <span>Pay / View</span>
+              <span className="font-mono text-xs opacity-90">↵</span>
+            </button>
+          </div>
+        </aside>
+      )}
     </div>
   );
 };

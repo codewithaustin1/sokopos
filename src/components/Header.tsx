@@ -21,6 +21,8 @@ import {
   Palette,
   Printer,
   Image as ImageIcon,
+  Clock,
+  Receipt,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { ScannerStatusBadge } from './ScannerStatusBadge';
@@ -29,14 +31,12 @@ interface HeaderProps {
   currentTab?: 'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff';
   setCurrentTab?: (tab: 'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff') => void;
   openBarcodeScanner: () => void;
-  openAuthModal: () => void;
   openSuperAdminModal: (tab?: 'tenants' | 'audit' | 'provision' | 'branding') => void;
   openSignOutModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   openBarcodeScanner,
-  openAuthModal,
   openSuperAdminModal,
   openSignOutModal,
 }) => {
@@ -53,12 +53,15 @@ export const Header: React.FC<HeaderProps> = ({
     pendingOfflineCount,
     currentUser,
     currentBusiness,
+    activeShift,
+    openShiftManagement,
     isSuperAdmin,
     logout,
     openBusinessSettings,
     isDarkMode,
     toggleDarkMode,
     autoPrintReceipt,
+    showToast,
   } = usePos();
 
   const [isLocationMenuOpen, setIsLocationMenuOpen] = useState(false);
@@ -171,12 +174,40 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Quick Optical Scanner Trigger */}
         <button
           id="header-barcode-scanner-btn"
-          onClick={openBarcodeScanner}
+          onClick={() => {
+            if (!activeShift || activeShift.status !== 'open') {
+              showToast(
+                'Scan Blocked: An active shift session is required before scanning items. Please open a shift first.',
+                'error'
+              );
+              openShiftManagement();
+              return;
+            }
+            openBarcodeScanner();
+          }}
           className="flex items-center justify-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 p-2 sm:px-3 sm:py-2 rounded-lg text-xs font-bold border border-blue-200 transition cursor-pointer min-w-[36px] min-h-[36px]"
           title="Open Barcode Scanner (F2)"
         >
           <Scan className="w-4 h-4 text-blue-600 shrink-0" />
           <span className="hidden sm:inline">Scan</span>
+        </button>
+
+        {/* Quick Shift & Till Button */}
+        <button
+          id="header-shift-management-btn"
+          onClick={openShiftManagement}
+          className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-bold border transition cursor-pointer min-h-[36px] ${
+            activeShift
+              ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100'
+              : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+          }`}
+          title="Cash Drawer & Shift Session Status"
+        >
+          <Clock className={`w-3.5 h-3.5 ${activeShift ? 'text-emerald-600' : 'text-slate-400'} shrink-0`} />
+          <span className="hidden md:inline">
+            {activeShift ? `Shift #${activeShift.shiftNumber}` : 'Open Shift'}
+          </span>
+          {activeShift && <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />}
         </button>
 
         {/* Quick Dim Retail Dark Theme Toggle */}
@@ -246,7 +277,7 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="text-xs font-bold text-slate-800 leading-tight flex items-center justify-end gap-1">
                 <span>{currentUser?.name || 'Authorized User'}</span>
                 {isSuperAdmin && (
-                  <span className="bg-amber-100 text-amber-900 text-[9px] font-black px-1.5 py-0.2 rounded">
+                  <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[9px] font-black px-1.5 py-0.2 rounded">
                     SUPER-ADMIN
                   </span>
                 )}
@@ -257,7 +288,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
             <div
               className={`w-7 h-7 sm:w-8 sm:h-8 ${
-                isSuperAdmin ? 'bg-amber-500 text-slate-950 font-black' : 'bg-blue-600 text-white font-bold'
+                isSuperAdmin ? 'bg-slate-900 text-white font-black' : 'bg-blue-600 text-white font-bold'
               } rounded-full flex items-center justify-center text-xs shadow-xs shrink-0`}
             >
               {currentUser?.initials || 'U'}
@@ -309,6 +340,24 @@ export const Header: React.FC<HeaderProps> = ({
                   </span>
                 </button>
 
+                {/* Direct Tax Management Entry */}
+                <button
+                  id="user-menu-tax-settings-btn"
+                  onClick={() => {
+                    setIsUserMenuOpen(false);
+                    openBusinessSettings('tax');
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-bold text-emerald-800 bg-emerald-50/80 hover:bg-emerald-100 transition cursor-pointer border border-emerald-100 mb-1"
+                >
+                  <div className="flex items-center gap-2">
+                    <Receipt className="w-4 h-4 text-emerald-600" />
+                    <span>Taxes & VAT/GST Rates</span>
+                  </div>
+                  <span className="text-[10px] bg-emerald-600 text-white font-extrabold px-1.5 py-0.5 rounded uppercase">
+                    Tax
+                  </span>
+                </button>
+
                 <div className="space-y-0.5">
                   {/* Super-admin console */}
                   {isSuperAdmin && (
@@ -318,9 +367,9 @@ export const Header: React.FC<HeaderProps> = ({
                           setIsUserMenuOpen(false);
                           openSuperAdminModal('tenants');
                         }}
-                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 transition cursor-pointer"
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 transition cursor-pointer"
                       >
-                        <Shield className="w-4 h-4 text-amber-600" />
+                        <Shield className="w-4 h-4 text-blue-600" />
                         <span>Super-Admin Console & Audit</span>
                       </button>
 
@@ -405,19 +454,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <span>Lock Register (Enter PIN)</span>
                   </button>
 
-                  {/* Switch Account */}
-                  <button
-                    onClick={() => {
-                      setIsUserMenuOpen(false);
-                      openAuthModal();
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer"
-                  >
-                    <User className="w-4 h-4 text-slate-500" />
-                    <span>Switch User / Google Account</span>
-                  </button>
-
-                  {/* Sign out */}
+                  {/* Sign out of POS */}
                   <button
                     onClick={() => {
                       setIsUserMenuOpen(false);
@@ -427,10 +464,17 @@ export const Header: React.FC<HeaderProps> = ({
                         logout();
                       }
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left font-bold text-red-600 hover:bg-red-50 transition cursor-pointer"
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-bold text-red-600 hover:bg-red-50 transition cursor-pointer"
                   >
-                    <LogOut className="w-4 h-4 text-red-500" />
-                    <span>Sign Out of POS</span>
+                    <div className="flex items-center gap-2">
+                      <LogOut className="w-4 h-4 text-red-500" />
+                      <span>Sign Out of POS</span>
+                    </div>
+                    {activeShift && (
+                      <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700">
+                        Shift Open
+                      </span>
+                    )}
                   </button>
                 </div>
               </div>

@@ -32,6 +32,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     locations,
     showToast,
     loginBgGraphic,
+    isRealGoogleAccount,
   } = usePos();
 
   const [activeTab, setActiveTab] = useState<'google' | 'terminal' | 'register'>('google');
@@ -156,6 +157,10 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     e.preventDefault();
     if (!newStoreName.trim() || !newOwnerEmail.trim()) {
       showToast('Store name and Google owner email are required', 'error');
+      return;
+    }
+    if (!isRealGoogleAccount(newOwnerEmail.trim())) {
+      showToast('A verified Google Account email (e.g. name@gmail.com) is required to register as store owner.', 'error');
       return;
     }
     setIsRegisteringStore(true);

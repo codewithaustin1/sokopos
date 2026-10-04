@@ -42,6 +42,7 @@ export const StaffManagementView: React.FC = () => {
   const [code, setCode] = useState('');
   const [assignedLocationId, setAssignedLocationId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const openAddModal = () => {
     setName('');
@@ -51,6 +52,7 @@ export const StaffManagementView: React.FC = () => {
     setCode(`#${Math.floor(1000 + Math.random() * 9000)}`);
     setAssignedLocationId(locations[0]?.id || '');
     setEditingUser(null);
+    setFormError(null);
     setIsAddModalOpen(true);
   };
 
@@ -62,13 +64,35 @@ export const StaffManagementView: React.FC = () => {
     setPin(user.pin.startsWith('$2') ? '' : user.pin);
     setCode(user.code);
     setAssignedLocationId(user.assignedLocationId || locations[0]?.id || '');
+    setFormError(null);
     setIsAddModalOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     if (!name.trim()) return;
     if (!editingUser && !pin.trim()) return;
+
+    // Edge Case 3: Shared logins are prohibited, as they render attribution meaningless
+    const cleanUsername = (username.trim() || name.toLowerCase().replace(/\s+/g, '.')).toLowerCase();
+    const GENERIC_PROHIBITED = ['cashier', 'shared', 'pos', 'terminal', 'till', 'store', 'user', 'staff', 'counter', 'operator', 'guest', 'general'];
+    if (GENERIC_PROHIBITED.includes(cleanUsername) || GENERIC_PROHIBITED.includes(name.trim().toLowerCase())) {
+      setFormError(
+        `Shared logins are prohibited: Generic identity "${cleanUsername}" is forbidden. Attribution requires real operator names and individual accounts.`
+      );
+      return;
+    }
+
+    const existingUserWithSameUsername = systemUsers.find(
+      (u) => (!editingUser || u.id !== editingUser.id) && u.username?.toLowerCase() === cleanUsername
+    );
+    if (existingUserWithSameUsername) {
+      setFormError(
+        `Username "${cleanUsername}" is already assigned to ${existingUserWithSameUsername.name}. Each operator must have an individual unique account.`
+      );
+      return;
+    }
 
     const initials = name
       .split(' ')
@@ -164,7 +188,7 @@ export const StaffManagementView: React.FC = () => {
 
       {/* Main Content */}
       <div className="p-3.5 sm:p-6 space-y-4 sm:space-y-6 pb-20 md:pb-8">
-        {/* Info Banner */}
+        {/* Multi-Tenancy Info Banner */}
         <div className="bg-white rounded-2xl border border-slate-200 p-3.5 sm:p-4 shadow-2xs flex items-start gap-3">
           <div className="p-2 bg-blue-50 text-blue-600 rounded-xl shrink-0">
             <Shield className="w-5 h-5" />
@@ -176,6 +200,21 @@ export const StaffManagementView: React.FC = () => {
             <p>
               Users created here can only log in and view data belonging to{' '}
               <strong className="text-slate-800">{currentBusiness.name}</strong>. They are strictly prohibited from querying or accessing inventory, sales, or reports from other business accounts.
+            </p>
+          </div>
+        </div>
+
+        {/* Operator Attribution Policy: Shared Logins Strictly Prohibited (Edge Case 3) */}
+        <div className="bg-amber-50 rounded-2xl border border-amber-200 p-3.5 sm:p-4 shadow-2xs flex items-start gap-3">
+          <div className="p-2 bg-amber-100 text-amber-700 rounded-xl shrink-0">
+            <Lock className="w-5 h-5" />
+          </div>
+          <div className="text-xs text-amber-800 space-y-1">
+            <span className="font-bold text-amber-900 block">
+              Attribution Integrity Guardrail: Shared Logins Strictly Prohibited
+            </span>
+            <p>
+              Attribution follows the authenticated account. Generic accounts or shared credentials (e.g. sharing terminal PINs or using generic "cashier" logins) render attribution meaningless and are forbidden. Every operator must authenticate with their own distinct account.
             </p>
           </div>
         </div>
@@ -362,6 +401,13 @@ export const StaffManagementView: React.FC = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-3.5 text-xs">
+              {formError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-xl flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <span className="leading-snug">{formError}</span>
+                </div>
+              )}
+
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Full Name *</label>
                 <input

@@ -81,9 +81,12 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
     loginBgGraphicName,
     setLoginBgGraphic,
     removeLoginBgGraphic,
+    performSystemCleanup,
+    isRealGoogleAccount,
   } = usePos();
 
   const [activeTab, setActiveTab] = useState<'tenants' | 'audit' | 'provision' | 'branding'>(defaultTab);
+  const [isCleaningUp, setIsCleaningUp] = useState(false);
 
   useEffect(() => {
     if (isOpen && defaultTab) {
@@ -299,13 +302,31 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                     Each tenant is strictly isolated with independent product catalogs, locations, sales, and system users.
                   </p>
                 </div>
-                <button
-                  onClick={() => setActiveTab('provision')}
-                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <PlusCircle className="w-3.5 h-3.5" />
-                  <span>Provision New Tenant</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      setIsCleaningUp(true);
+                      try {
+                        await performSystemCleanup();
+                      } finally {
+                        setIsCleaningUp(false);
+                      }
+                    }}
+                    disabled={isCleaningUp}
+                    className="bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    title="Remove all business owner accounts that lack a real Google account"
+                  >
+                    {isCleaningUp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                    <span>{isCleaningUp ? 'Cleaning System...' : 'Run System Cleanup'}</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('provision')}
+                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5" />
+                    <span>Provision New Tenant</span>
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -352,7 +373,18 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                       <div className="mt-4 pt-3 border-t border-slate-100 space-y-1.5 text-xs text-slate-600">
                         <div className="flex items-center justify-between">
                           <span className="text-slate-400">Google Account Owner:</span>
-                          <span className="font-bold text-slate-800">{biz.ownerEmail}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-slate-800">{biz.ownerEmail}</span>
+                            {isRealGoogleAccount(biz.ownerEmail) ? (
+                              <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-200">
+                                <Check className="w-2.5 h-2.5" /> Google Verified
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-red-700 bg-red-50 px-1.5 py-0.5 rounded-full border border-red-200">
+                                ⚠️ No Google Account
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-slate-400">Owner Name:</span>

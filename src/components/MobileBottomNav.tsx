@@ -22,12 +22,14 @@ import {
   Sun,
   Palette,
   Printer,
+  Clock,
+  FileText,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 
 interface MobileBottomNavProps {
-  currentTab: 'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff';
-  setCurrentTab: (tab: 'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff') => void;
+  currentTab: 'register' | 'inventory' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers';
+  setCurrentTab: (tab: 'register' | 'inventory' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers') => void;
   openBarcodeScanner: () => void;
   onRequestSignOut: () => void;
 }
@@ -48,6 +50,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     locations,
     currentLocation,
     setCurrentLocationId,
+    activeShift,
     openBusinessSettings,
     setIsPinLocked,
     isSuperAdmin,
@@ -63,7 +66,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   const totalCartItems = cart.reduce((acc, item) => acc + item.quantity, 0);
   const isOwnerOrAdmin = currentUser.role === 'business_owner' || isSuperAdmin;
 
-  const handleNavClick = (tab: 'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff') => {
+  const handleNavClick = (tab: 'register' | 'inventory' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers') => {
     setCurrentTab(tab);
     setIsMenuOpen(false);
   };
@@ -163,6 +166,79 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1">
                 Store Management
               </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  handleNavClick('shifts');
+                }}
+                className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs transition cursor-pointer border border-slate-200/80"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Clock className="w-4 h-4 text-emerald-600" />
+                  <div className="text-left">
+                    <div>Shifts & Till Management</div>
+                    <div className="text-[10px] font-normal text-slate-500">
+                      {activeShift ? `Shift #${activeShift.shiftNumber} (Active)` : 'No active shift declared'}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {activeShift && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  )}
+                  <ChevronRight className="w-4 h-4 text-slate-400" />
+                </div>
+              </button>
+
+              {/* Operations & Financial Reports */}
+              <button
+                type="button"
+                id="mobile-drawer-reports-btn"
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  handleNavClick('reports');
+                }}
+                className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs transition cursor-pointer border border-slate-200/80"
+              >
+                <div className="flex items-center gap-2.5">
+                  <FileText className="w-4 h-4 text-blue-600" />
+                  <div className="text-left">
+                    <div>Operations & Financial Reports</div>
+                    <div className="text-[10px] font-normal text-slate-500">
+                      15 exportable compliance & ledger reports
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                    15
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-slate-400" />
+                </div>
+              </button>
+
+              {/* Customers Directory Tab */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  handleNavClick('customers');
+                }}
+                className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs transition cursor-pointer border border-slate-200/80"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Users className="w-4 h-4 text-indigo-600" />
+                  <div className="text-left">
+                    <div>Customers & Credit Directory</div>
+                    <div className="text-[10px] font-normal text-slate-500">
+                      Store credit / Daftari, accounts & loyalty points
+                    </div>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              </button>
 
               {isOwnerOrAdmin && (
                 <button
@@ -331,11 +407,15 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         >
           <div className="relative">
             <ShoppingCart className={`w-5 h-5 ${currentTab === 'register' ? 'stroke-[2.5]' : 'stroke-2'}`} />
-            {totalCartItems > 0 && (
+            {!activeShift ? (
+              <span className="absolute -top-1.5 -right-2 bg-amber-500 text-white text-[8px] font-black rounded-full h-3.5 px-1 flex items-center justify-center shadow-xs" title="Till Closed">
+                <Lock className="w-2 h-2" />
+              </span>
+            ) : totalCartItems > 0 ? (
               <span className="absolute -top-1.5 -right-2.5 bg-blue-600 text-white text-[10px] font-black rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center shadow-xs animate-scale-in">
                 {totalCartItems}
               </span>
-            )}
+            ) : null}
           </div>
           <span className="text-[10px] tracking-tight mt-0.5">Sell</span>
         </button>

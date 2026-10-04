@@ -225,6 +225,35 @@ export const ReceiptModal: React.FC = () => {
                 {activeReceipt.paymentDetails.cardLast4 && ` (*${activeReceipt.paymentDetails.cardLast4})`}
               </span>
             </div>
+
+            {/* Customer Account Details if assigned */}
+            {activeReceipt.customerName && (
+              <div className="pt-1.5 mt-1 border-t border-slate-100 space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Customer:</span>
+                  <span className="font-bold text-slate-900">{activeReceipt.customerName}</span>
+                </div>
+                {activeReceipt.customerPhone && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Phone:</span>
+                    <span className="font-mono text-slate-700">{activeReceipt.customerPhone}</span>
+                  </div>
+                )}
+                {activeReceipt.loyaltyPointsEarned !== undefined && activeReceipt.loyaltyPointsEarned > 0 && (
+                  <div className="flex justify-between text-amber-800 font-bold">
+                    <span>Loyalty Points:</span>
+                    <span>+{activeReceipt.loyaltyPointsEarned} pts earned</span>
+                  </div>
+                )}
+                {activeReceipt.paymentMethod === 'store_credit' && activeReceipt.newStoreCreditBalance !== undefined && (
+                  <div className="flex justify-between text-indigo-800 font-bold">
+                    <span>Tab Balance:</span>
+                    <span>{currentLocation.currency} {activeReceipt.newStoreCreditBalance.toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {activeReceipt.syncedToCloud && (
               <div className="flex justify-between items-center text-[10px] text-blue-600 font-semibold pt-0.5">
                 <span>Cloud Status:</span>
@@ -272,11 +301,28 @@ export const ReceiptModal: React.FC = () => {
               </span>
             </div>
             <div className="flex justify-between text-slate-600">
-              <span>VAT / Tax (16%):</span>
-              <span>
+              <span>{activeReceipt.taxLabel || currentBusiness?.taxSettings?.taxLabel || 'VAT'} ({activeReceipt.pricingType === 'exclusive' ? 'Exclusive' : 'Inclusive'}):</span>
+              <span className="font-semibold font-mono">
                 {currentLocation.currency} {activeReceipt.taxAmount.toFixed(2)}
               </span>
             </div>
+            {activeReceipt.taxBreakdown && activeReceipt.taxBreakdown.length > 0 && (
+              <div className="py-2 border-t border-b border-dashed border-slate-200 text-left space-y-1 my-1">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Fiscal Tax Breakdown:
+                </div>
+                {activeReceipt.taxBreakdown.map((tb) => (
+                  <div key={`${tb.code}-${tb.rate}`} className="flex justify-between text-[10px] text-slate-600">
+                    <span>
+                      <strong className="font-mono text-slate-800">[{tb.code}]</strong> {tb.name} ({tb.ratePercent}%):
+                    </span>
+                    <span className="font-mono">
+                      {currentLocation.currency} {tb.taxAmount.toFixed(2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
             {activeReceipt.rawTotal !== undefined && activeReceipt.roundingAmount !== undefined && activeReceipt.roundingAmount !== 0 && (
               <>
                 <div className="flex justify-between text-slate-600 text-[11px]">
