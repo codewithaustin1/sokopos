@@ -122,7 +122,7 @@ export const TaxManagementPanel: React.FC = () => {
 
     setIsEditingRule(false);
     setRuleToEdit(null);
-    soundFx.playBeep(700, 0.08);
+    soundFx?.playBeep?.(700, 0.08);
     showToast(`Tax rule "${newRule.name}" saved!`, 'success');
   };
 
@@ -248,7 +248,7 @@ export const TaxManagementPanel: React.FC = () => {
       });
       showToast('Applied 10% Flat GST Template', 'success');
     }
-    soundFx.playSuccess();
+    soundFx?.playSuccess?.();
   };
 
   const handleSaveTaxSettings = async () => {
@@ -274,7 +274,7 @@ export const TaxManagementPanel: React.FC = () => {
         afterValue: updatedTaxSettings,
       });
 
-      soundFx.playSuccess();
+      soundFx?.playSuccess?.();
       showToast('Tax configuration and dynamic rules updated successfully!', 'success');
     } catch (err: any) {
       console.error('Save tax settings error:', err);

@@ -383,6 +383,9 @@ interface PosContextType {
   // Toast
   toastMessage: { text: string; type: 'success' | 'error' | 'info' } | null;
   showToast: (text: string, type?: 'success' | 'error' | 'info') => void;
+
+  // Audio Sound FX
+  soundFx: typeof soundFx;
 }
 
 const PosContext = createContext<PosContextType | undefined>(undefined);
@@ -585,6 +588,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
           if (matchedBiz) {
             ensureTenantDefaults(matchedBiz);
+            saveBusinessToFirestore(matchedBiz).catch((e) => console.warn('Sync matched biz:', e));
           }
 
           const targetBizId = isSuperAdminEmail
@@ -5741,6 +5745,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         toastMessage,
         showToast,
+        soundFx,
       }}
     >
       {children}

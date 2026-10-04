@@ -129,7 +129,7 @@ export const CustomerFacingMpesaQrModal: React.FC<CustomerFacingMpesaQrModalProp
 
   const handleConfirmCustomerPaid = () => {
     setIsSimulatingConfirmation(true);
-    soundFx.playBeep(640, 0.08);
+    soundFx?.playBeep?.(640, 0.08);
 
     setTimeout(() => {
       const sampleMpesaCode = `RK${Math.floor(1000 + Math.random() * 9000)}${String.fromCharCode(

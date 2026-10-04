@@ -128,11 +128,8 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               <span>Sales Interface Inaccessible</span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
-              Open Session Required to Trade
+              Open Session to Trade
             </h2>
-            <p className="text-slate-300 text-xs mt-1.5 max-w-sm mx-auto leading-relaxed">
-              Trading operations are locked. Barcode scanning, cart items, and payment tendering are strictly disabled until a cash drawer shift session is opened.
-            </p>
           </div>
 
           {/* Details & Status Grid */}

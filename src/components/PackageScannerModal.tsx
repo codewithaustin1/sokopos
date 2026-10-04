@@ -108,7 +108,7 @@ export const PackageScannerModal: React.FC<PackageScannerModalProps> = ({
       setTimeout(() => {
         setParsedResult(preset.data);
         setIsAnalyzing(false);
-        soundFx.playSuccess();
+        soundFx?.playSuccess?.();
         showToast(`Extracted ${preset.title}!`, 'success');
       }, 600);
     }, 600);
@@ -122,7 +122,7 @@ export const PackageScannerModal: React.FC<PackageScannerModalProps> = ({
       setAnalysisStatus('Reading packaging labels, barcode symbols, and product claims...');
       const result = await parseProductPackageWithAi(base64, mimeType);
       setParsedResult(result);
-      soundFx.playSuccess();
+      soundFx?.playSuccess?.();
       showToast(`Parsed package: ${result.productName}`, 'success');
     } catch (err: any) {
       console.error('Package AI parse error:', err);
@@ -136,7 +136,7 @@ export const PackageScannerModal: React.FC<PackageScannerModalProps> = ({
   const handleConfirmAndFill = () => {
     if (!parsedResult) return;
     onApplyParsedProduct(parsedResult);
-    soundFx.playBeep();
+    soundFx?.playBeep?.();
     onClose();
   };
 

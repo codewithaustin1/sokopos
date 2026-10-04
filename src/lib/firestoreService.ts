@@ -107,7 +107,7 @@ export async function updateBusinessInFirestore(
   if (!auth.currentUser) return;
   const path = `businesses/${businessId}`;
   try {
-    await updateDoc(doc(db, 'businesses', businessId), updates);
+    await setDoc(doc(db, 'businesses', businessId), updates, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -261,7 +261,7 @@ export async function updateProductInFirestore(
   if (!auth.currentUser) return;
   const path = `products/${productId}`;
   try {
-    await updateDoc(doc(db, 'products', productId), updates);
+    await setDoc(doc(db, 'products', productId), updates, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -329,7 +329,7 @@ export async function updateCategoryInFirestore(
   if (!auth.currentUser) return;
   const path = `categories/${categoryId}`;
   try {
-    await updateDoc(doc(db, 'categories', categoryId), updates);
+    await setDoc(doc(db, 'categories', categoryId), updates, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -397,7 +397,7 @@ export async function updateLocationInFirestore(
   if (!auth.currentUser) return;
   const path = `locations/${locationId}`;
   try {
-    await updateDoc(doc(db, 'locations', locationId), updates);
+    await setDoc(doc(db, 'locations', locationId), updates, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -465,7 +465,7 @@ export async function updateCashierInFirestore(
   if (!auth.currentUser) return;
   const path = `cashiers/${cashierId}`;
   try {
-    await updateDoc(doc(db, 'cashiers', cashierId), updates);
+    await setDoc(doc(db, 'cashiers', cashierId), updates, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -533,7 +533,7 @@ export async function updateTransactionInFirestore(
   if (!auth.currentUser) return;
   const path = `transactions/${txId}`;
   try {
-    await updateDoc(doc(db, 'transactions', txId), partialTx);
+    await setDoc(doc(db, 'transactions', txId), partialTx, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -697,10 +697,14 @@ export async function updateCustomerInFirestore(customerId: string, updates: Par
   if (!auth.currentUser) return;
   const path = `customers/${customerId}`;
   try {
-    await updateDoc(doc(db, 'customers', customerId), {
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    });
+    await setDoc(
+      doc(db, 'customers', customerId),
+      {
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }

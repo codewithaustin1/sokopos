@@ -17,6 +17,7 @@ import {
   Check,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
+import { soundFx as directSoundFx } from '../utils/audio';
 import { ParsedSupplierInvoice, ParsedInvoiceLineItem } from '../types/aiVision';
 import { SAMPLE_INVOICE_PRESETS, SampleInvoicePreset } from '../data/sampleAiVisionData';
 import { parseSupplierInvoiceWithAi } from '../lib/aiVisionService';
@@ -41,6 +42,7 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
     logAdminActivity,
     soundFx,
   } = usePos();
+  const audio = soundFx || directSoundFx;
 
   const [activeTab, setActiveTab] = useState<'upload' | 'camera' | 'samples'>('samples');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -158,7 +160,7 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
             lineItems: matchedLineItems,
           });
           setIsAnalyzing(false);
-          soundFx.playSuccess();
+          audio?.playSuccess?.();
           showToast(`Invoice from ${preset.supplier} successfully digitized!`, 'success');
         }, 600);
       }, 700);
@@ -174,7 +176,7 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
       const parsed = await parseSupplierInvoiceWithAi(base64, mimeType, products);
       setAnalysisStep('Matching line items to existing store SKUs & COGS valuation...');
       setParsedInvoice(parsed);
-      soundFx.playSuccess();
+      audio?.playSuccess?.();
       showToast(`Extracted ${parsed.lineItems.length} line items from ${parsed.supplierName}!`, 'success');
     } catch (err: any) {
       console.error('Invoice AI error:', err);
@@ -288,7 +290,7 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
         },
       });
 
-      soundFx.playSuccess();
+      audio?.playSuccess?.();
       showToast(
         `Successfully onboarded invoice! ${updatedCount} products updated & ${newCount} new SKUs created at ${receivingLoc.name}.`,
         'success'

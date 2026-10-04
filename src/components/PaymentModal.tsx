@@ -187,7 +187,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
     if (isProcessing) return;
     if (hasZeroStock) return;
     if (!activeShift || activeShift.status !== 'open') {
-      soundFx.playError();
+      soundFx?.playError?.();
       showToast(
         'Payment Prohibited: No active shift session is open. Please open a shift session before tendering transactions.',
         'error'
