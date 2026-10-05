@@ -38,6 +38,8 @@ import {
 import { ReportPrintModal, ReportPrintData } from './ReportPrintModal';
 import { formatRangeDisplay } from '../../utils/dateRangeUtils';
 import { usePos } from '../../context/PosContext';
+import { printReportDocument } from '../../utils/reportPrinter';
+import { soundFx as directSoundFx } from '../../utils/audio';
 
 interface ReportViewContainerProps {
   transactions: Transaction[];
@@ -64,17 +66,61 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
   dateRange,
   selectedLocationId,
 }) => {
-  const { shiftHistory, adminActivityLogs, supervisorOverrideLogs } = usePos();
+  const { shiftHistory, adminActivityLogs, supervisorOverrideLogs, soundFx, showToast } = usePos();
+  const audio = soundFx || directSoundFx;
   const [activeReportId, setActiveReportId] = useState<ReportType>('sales');
   const [phaseFilter, setPhaseFilter] = useState<'all' | ReportCategory>('phase1');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
 
+  const activeBusinessObj: Business = useMemo(() => {
+    if (currentBusiness) return currentBusiness;
+    return {
+      id: 'biz-default',
+      name: 'SokoPoS Retail Store',
+      code: 'SOKOPOS',
+      ownerEmail: currentUserEmail || 'admin@sokopos.co.ke',
+      ownerName: 'Super Administrator',
+      createdAt: new Date().toISOString(),
+      plan: 'enterprise',
+      status: 'active',
+      currency: 'KES',
+      taxNumber: 'P051234567Z',
+    };
+  }, [currentBusiness, currentUserEmail]);
+
+  const activeLocationObj: Location = useMemo(() => {
+    if (selectedLocationId === 'all') {
+      return {
+        id: 'all',
+        businessId: activeBusinessObj.id,
+        name: 'All Locations (Consolidated Enterprise)',
+        city: 'All Branches',
+        address: 'All Branches & Terminals',
+        currency: activeBusinessObj.currency || 'KES',
+        taxId: activeBusinessObj.taxNumber || '',
+      };
+    }
+    const matched = locations.find((l) => l.id === selectedLocationId);
+    if (matched) return matched;
+    if (currentLocation) return currentLocation;
+    if (locations[0]) return locations[0];
+    return {
+      id: 'default-loc',
+      businessId: activeBusinessObj.id,
+      name: 'Main Store Location',
+      city: 'Nairobi',
+      address: 'Headquarters Terminal',
+      currency: activeBusinessObj.currency || 'KES',
+      taxId: activeBusinessObj.taxNumber || '',
+    };
+  }, [selectedLocationId, locations, currentLocation, activeBusinessObj]);
+
   const activeMeta = useMemo(() => {
     return REPORT_REGISTRY.find((r) => r.id === activeReportId) || REPORT_REGISTRY[0];
   }, [activeReportId]);
 
-  const currency = currentBusiness.currency || 'KES';
+  const currency = activeBusinessObj.currency || 'KES';
 
   // Filtered reports for navigation list
   const filteredReportsList = useMemo(() => {
@@ -143,9 +189,9 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
         return {
           meta: activeMeta,
           dateRange,
-          business: currentBusiness,
-          location: currentLocation,
-          generatedBy: currentUserEmail,
+          business: activeBusinessObj,
+          location: activeLocationObj,
+          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
           summaryCards: [
             { label: 'Gross Sales', value: `${currency} ${salesData.grossSales.toLocaleString()}`, sub: `${salesData.orderCount} total orders` },
             { label: 'Total Refunds', value: `${currency} ${salesData.totalRefunded.toLocaleString()}`, sub: 'Returned receipts' },
@@ -180,9 +226,9 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
         return {
           meta: activeMeta,
           dateRange,
-          business: currentBusiness,
-          location: currentLocation,
-          generatedBy: currentUserEmail,
+          business: activeBusinessObj,
+          location: activeLocationObj,
+          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
           summaryCards: [
             { label: 'Total Catalog SKUs', value: stockData.totalSkus, sub: `${stockData.totalUnits.toLocaleString()} units on hand` },
             { label: 'Valuation (Cost)', value: `${currency} ${stockData.totalValuationCost.toLocaleString()}`, sub: 'Acquisition inventory value' },
@@ -210,9 +256,9 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
         return {
           meta: activeMeta,
           dateRange,
-          business: currentBusiness,
-          location: currentLocation,
-          generatedBy: currentUserEmail,
+          business: activeBusinessObj,
+          location: activeLocationObj,
+          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
           summaryCards: [
             { label: 'Gross Volume', value: `${currency} ${paymentData.totalGrossVolume.toLocaleString()}`, sub: `${paymentData.totalTransactions} transactions` },
             { label: 'M-Pesa Share', value: `${paymentData.methods.find((m) => m.method === 'mpesa')?.percentageOfVolume.toFixed(1) || 0}%`, sub: 'Direct mobile money' },
@@ -237,9 +283,9 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
         return {
           meta: activeMeta,
           dateRange,
-          business: currentBusiness,
-          location: currentLocation,
-          generatedBy: currentUserEmail,
+          business: activeBusinessObj,
+          location: activeLocationObj,
+          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
           summaryCards: [
             { label: 'Total VAT Collected', value: `${currency} ${taxData.totalVatCollected.toLocaleString()}`, sub: `Effective: ${taxData.effectiveTaxRate.toFixed(1)}%` },
             { label: 'Taxable Sales (16%)', value: `${currency} ${taxData.totalTaxableSales.toLocaleString()}`, sub: 'Standard VAT bracket' },
@@ -272,9 +318,9 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
         return {
           meta: activeMeta,
           dateRange,
-          business: currentBusiness,
-          location: currentLocation,
-          generatedBy: currentUserEmail,
+          business: activeBusinessObj,
+          location: activeLocationObj,
+          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
           summaryCards: [
             { label: 'Total Gross Profit', value: `${currency} ${profitData.totalGrossProfit.toLocaleString()}`, sub: 'Revenue minus COGS' },
             { label: 'Overall Gross Margin', value: `${profitData.overallGrossMargin.toFixed(1)}%`, sub: 'Weighted average margin' },
@@ -310,9 +356,9 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
         return {
           meta: activeMeta,
           dateRange,
-          business: currentBusiness,
-          location: currentLocation,
-          generatedBy: currentUserEmail,
+          business: activeBusinessObj,
+          location: activeLocationObj,
+          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
           summaryCards: [
             { label: 'Expected Drawer Cash', value: `${currency} ${shiftData.expectedCashInDrawer.toLocaleString()}`, sub: `Opening float: ${currency} ${shiftData.openingFloat.toLocaleString()}` },
             { label: 'Cash Tendered', value: `${currency} ${shiftData.cashSalesTendered.toLocaleString()}`, sub: `Cash refunds: -${currency} ${shiftData.cashRefundsGiven.toLocaleString()}` },
@@ -349,9 +395,9 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
         return {
           meta: activeMeta,
           dateRange,
-          business: currentBusiness,
-          location: currentLocation,
-          generatedBy: currentUserEmail,
+          business: activeBusinessObj,
+          location: activeLocationObj,
+          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
           summaryCards: [
             { label: 'Total Refunded', value: `${currency} ${refundData.totalRefundAmount.toLocaleString()}`, sub: `${refundData.totalRefundTransactions} refunded orders` },
             { label: 'Return Rate', value: `${refundData.refundRatePercent.toFixed(1)}%`, sub: '% of gross sales revenue' },
@@ -377,9 +423,9 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
         return {
           meta: activeMeta,
           dateRange,
-          business: currentBusiness,
-          location: currentLocation,
-          generatedBy: currentUserEmail,
+          business: activeBusinessObj,
+          location: activeLocationObj,
+          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
           summaryCards: [
             { label: 'Active Repeat Customers', value: 128, sub: 'Tracked via M-Pesa & receipts' },
             { label: 'Repeat Purchase Rate', value: '64.2%', sub: '2+ store visits in 30 days' },
@@ -413,9 +459,9 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
         return {
           meta: activeMeta,
           dateRange,
-          business: currentBusiness,
-          location: currentLocation,
-          generatedBy: currentUserEmail,
+          business: activeBusinessObj,
+          location: activeLocationObj,
+          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
           summaryCards: [
             { label: 'Active Cashiers', value: cashiers.length, sub: 'Staff on duty' },
             { label: 'Top Producer', value: cashiers[0]?.name || 'Staff', sub: `${currency} 64,800 throughput` },
@@ -440,9 +486,9 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
         return {
           meta: activeMeta,
           dateRange,
-          business: currentBusiness,
-          location: currentLocation,
-          generatedBy: currentUserEmail,
+          business: activeBusinessObj,
+          location: activeLocationObj,
+          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
           summaryCards: [
             { label: 'Total Markdowns Given', value: `${currency} 8,920`, sub: 'Discounts applied across sales' },
             { label: 'Impact on Margin', value: '-2.4%', sub: 'Gross profit variance' },
@@ -471,9 +517,9 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
         return {
           meta: activeMeta,
           dateRange,
-          business: currentBusiness,
-          location: currentLocation,
-          generatedBy: currentUserEmail,
+          business: activeBusinessObj,
+          location: activeLocationObj,
+          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
           summaryCards: [
             { label: 'SKUs Below Reorder', value: lowItems.length, sub: 'Immediate stock-out risk' },
             { label: 'Estimated Out-of-Stock', value: '< 48 Hours', sub: 'Fast moving staple items' },
@@ -501,9 +547,9 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
         return {
           meta: activeMeta,
           dateRange,
-          business: currentBusiness,
-          location: currentLocation,
-          generatedBy: currentUserEmail,
+          business: activeBusinessObj,
+          location: activeLocationObj,
+          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
           summaryCards: [
             { label: 'Top Grosser', value: profitData.productMargins[0]?.name || 'Flour 2kg', sub: `${currency} ${profitData.productMargins[0]?.revenue.toLocaleString()} revenue` },
             { label: 'Top Unit Volume', value: 'Indomie Noodles', sub: '120 units sold' },
@@ -528,9 +574,9 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
         return {
           meta: activeMeta,
           dateRange,
-          business: currentBusiness,
-          location: currentLocation,
-          generatedBy: currentUserEmail,
+          business: activeBusinessObj,
+          location: activeLocationObj,
+          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
           summaryCards: [
             { label: 'Total POs Received', value: 31, sub: 'Replenishment shipments' },
             { label: 'Total Procurement Spend', value: `${currency} 340,900`, sub: 'Wholesale COGS intake' },
@@ -617,9 +663,9 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
         return {
           meta: activeMeta,
           dateRange,
-          business: currentBusiness,
-          location: currentLocation,
-          generatedBy: currentUserEmail,
+          business: activeBusinessObj,
+          location: activeLocationObj,
+          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
           summaryCards: [
             {
               label: 'Administrative Actions',
@@ -670,9 +716,9 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
         return {
           meta: activeMeta,
           dateRange,
-          business: currentBusiness,
-          location: currentLocation,
-          generatedBy: currentUserEmail,
+          business: activeBusinessObj,
+          location: activeLocationObj,
+          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
           summaryCards: [
             { label: 'Revenue Growth', value: '+13.6%', sub: 'Vs prior equivalent period' },
             { label: 'Transaction Growth', value: '+11.1%', sub: 'Increased register footfall' },
@@ -688,9 +734,9 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
         return {
           meta: activeMeta,
           dateRange,
-          business: currentBusiness,
-          location: currentLocation,
-          generatedBy: currentUserEmail,
+          business: activeBusinessObj,
+          location: activeLocationObj,
+          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
           summaryCards: [],
           tableHeaders: [],
           tableRows: [],
@@ -700,8 +746,8 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
     activeReportId,
     activeMeta,
     dateRange,
-    currentBusiness,
-    currentLocation,
+    activeBusinessObj,
+    activeLocationObj,
     currentUserEmail,
     currency,
     salesData,
@@ -718,7 +764,7 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
   ]);
 
   const handleInstantCsv = () => {
-    const filename = `${currentBusiness.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${activeMeta.id}_${Date.now()}`;
+    const filename = `${activeBusinessObj.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${activeMeta.id}_${Date.now()}`;
     exportToCsv(filename, reportPayload.tableHeaders, reportPayload.tableRows);
   };
 
@@ -827,8 +873,8 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
             </p>
           </div>
 
-          {/* Action Buttons: Instant CSV & A4 Print / PDF Preview */}
-          <div className="flex items-center gap-2 self-start lg:self-auto">
+          {/* Action Buttons: Instant CSV, Direct Quick Print & A4 Print / PDF Preview */}
+          <div className="flex items-center gap-2 self-start lg:self-auto flex-wrap">
             <button
               type="button"
               id="report-instant-csv-btn"
@@ -842,10 +888,28 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
 
             <button
               type="button"
+              id="report-direct-quick-print-btn"
+              onClick={() => {
+                audio?.playSuccess?.();
+                showToast(`Sending ${reportPayload.meta.title} directly to printer...`, 'info');
+                printReportDocument(reportPayload);
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
+              title="Quick Print directly to connected printer or Save as PDF"
+            >
+              <Printer className="w-3.5 h-3.5 text-blue-400" />
+              <span>Quick Print</span>
+            </button>
+
+            <button
+              type="button"
               id="report-open-print-btn"
-              onClick={() => setIsPrintModalOpen(true)}
-              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
-              title="Preview A4 document and print or export PDF"
+              onClick={() => {
+                audio?.playBeep?.();
+                setIsPrintModalOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+              title="Preview A4 document, format pagination, and print or export PDF"
             >
               <Printer className="w-4 h-4" />
               <span>Print / PDF (A4)</span>

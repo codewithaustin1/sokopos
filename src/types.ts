@@ -54,6 +54,10 @@ export interface PlatformSettings {
   id?: string;
   loginBgGraphic?: string | null;
   loginBgGraphicName?: string;
+  platformLogo?: string | null;
+  platformLogoName?: string;
+  platformFavicon?: string | null;
+  platformFaviconName?: string;
   updatedAt?: string;
   updatedBy?: string;
 }

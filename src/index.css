@@ -290,47 +290,146 @@ html.dark .bg-black\/60 {
   color: inherit;
 }
 
-/* Print Stylesheet for POS Thermal Receipt Printing & A4 Report Documents */
+/* =========================================================================
+   PRINT STYLESHEET FOR POS THERMAL RECEIPTS & OFFICIAL A4 REPORTS
+   ========================================================================= */
 @media print {
-  body * {
-    visibility: hidden;
+  /* Set exact color adjustments so contrast, backgrounds, and lines render crisply */
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
-  #receipt-display-modal,
-  #receipt-display-modal *,
-  #report-printable-document,
-  #report-printable-document * {
-    visibility: visible;
-  }
-  #receipt-display-modal {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    margin: 0;
-    padding: 0;
-    background: transparent !important;
-  }
-  #receipt-display-modal button {
+
+  /* Hide screen chrome, navigation menus, and non-printable floating elements */
+  #main-pos-header,
+  #sidebar-nav,
+  #mobile-bottom-nav,
+  .no-print,
+  button,
+  #payment-checkout-modal,
+  #business-profile-settings-modal-backdrop,
+  #reset-store-modal-backdrop {
     display: none !important;
   }
+
+  /* -------------------------------------------------------------
+     A4 REPORT PRINTING UNBOXING
+     Eliminates fixed positioning, scrollbars, and overflow clipping
+     to guarantee 100% pagination with zero blank/white pages.
+     ------------------------------------------------------------- */
+  body:has(#report-printable-document) > *:not(:has(#report-printable-document)) {
+    display: none !important;
+  }
+
+  #report-print-modal-backdrop {
+    position: static !important;
+    display: block !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    width: 100% !important;
+  }
+
+  #report-print-modal-container {
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+
   #report-printable-document {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    margin: 0;
-    padding: 10mm 15mm;
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
     background: #ffffff !important;
     color: #0f172a !important;
     border: none !important;
     box-shadow: none !important;
+    page-break-inside: auto !important;
   }
+
+  #report-printable-document table {
+    page-break-inside: auto !important;
+  }
+
+  #report-printable-document thead {
+    display: table-header-group !important;
+  }
+
+  #report-printable-document tr {
+    page-break-inside: avoid !important;
+    page-break-after: auto !important;
+  }
+
+  /* -------------------------------------------------------------
+     POS THERMAL RECEIPT PRINTING UNBOXING
+     ------------------------------------------------------------- */
+  #receipt-display-modal,
+  #refund-receipt-display-modal {
+    position: static !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  #receipt-display-modal > div,
+  #refund-receipt-display-modal > div {
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    box-shadow: none !important;
+    border: none !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  #receipt-printable-canvas {
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 8px 12px !important;
+    margin: 0 auto !important;
+    width: 100% !important;
+    max-width: 80mm !important;
+    page-break-inside: avoid !important;
+  }
+
+  #receipt-printable-canvas * {
+    color: #000000 !important;
+    border-color: #000000 !important;
+    text-shadow: none !important;
+  }
+
   @page {
     size: A4 portrait;
-    margin: 10mm;
-  }
-  tr {
-    page-break-inside: avoid;
+    margin: 10mm 12mm;
   }
 }
 
@@ -479,86 +578,6 @@ html.dark .skeleton-shimmer::after {
     rgba(255, 255, 255, 0) 75%,
     transparent 100%
   );
-}
-
-/* =========================================================================
-   COMMERCIAL THERMAL RECEIPT PRINTING SYSTEM
-   Optimized for 80mm & 58mm POS thermal slips and standard A4 printing
-   ========================================================================= */
-
-@media print {
-  @page {
-    margin: 0;
-    size: auto;
-  }
-
-  html, body {
-    background: #ffffff !important;
-    color: #000000 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
-
-  /* Hide interactive application chrome, navigation, headers, and action buttons */
-  #main-pos-header,
-  #sidebar-nav,
-  #mobile-bottom-nav,
-  .no-print,
-  button,
-  #payment-checkout-modal,
-  #business-profile-settings-modal-backdrop,
-  #reset-store-modal-backdrop {
-    display: none !important;
-  }
-
-  /* Unbox receipt modal for print stream */
-  #receipt-display-modal,
-  #refund-receipt-display-modal {
-    position: static !important;
-    background: transparent !important;
-    padding: 0 !important;
-    margin: 0 auto !important;
-    width: 100% !important;
-    height: auto !important;
-    max-height: none !important;
-    overflow: visible !important;
-    box-shadow: none !important;
-    border: none !important;
-  }
-
-  #receipt-display-modal > div,
-  #refund-receipt-display-modal > div {
-    background: transparent !important;
-    padding: 0 !important;
-    margin: 0 auto !important;
-    box-shadow: none !important;
-    border: none !important;
-    max-width: 100% !important;
-    max-height: none !important;
-    overflow: visible !important;
-  }
-
-  #receipt-printable-canvas {
-    background: #ffffff !important;
-    color: #000000 !important;
-    box-shadow: none !important;
-    border: none !important;
-    border-radius: 0 !important;
-    padding: 8px 12px !important;
-    margin: 0 auto !important;
-    width: 100% !important;
-    max-width: 80mm !important;
-    page-break-inside: avoid !important;
-  }
-
-  /* Ensure text remains crisp black and contrast is sharp */
-  #receipt-printable-canvas * {
-    color: #000000 !important;
-    border-color: #000000 !important;
-    text-shadow: none !important;
-  }
 }
 
 /* Custom clean scrollbar styling for modals and compact viewports */

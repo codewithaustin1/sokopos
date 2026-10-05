@@ -185,11 +185,19 @@ interface PosContextType {
   confirmDestructiveAction: () => void;
   cancelDestructiveAction: () => void;
 
-  // Platform & Super Admin Custom Branding (Full-Bleed Login Graphic)
+  // Platform & Super Admin Custom Branding (Logo, Favicon & Background Graphic)
   loginBgGraphic: string | null;
   loginBgGraphicName: string | null;
   setLoginBgGraphic: (graphic: string | null, name?: string) => Promise<void>;
   removeLoginBgGraphic: () => Promise<void>;
+  platformLogo: string | null;
+  platformLogoName: string | null;
+  setPlatformLogo: (logo: string | null, name?: string) => Promise<void>;
+  removePlatformLogo: () => Promise<void>;
+  platformFavicon: string | null;
+  platformFaviconName: string | null;
+  setPlatformFavicon: (favicon: string | null, name?: string) => Promise<void>;
+  removePlatformFavicon: () => Promise<void>;
 
   // Locations (Scoped to Current Business)
   locations: Location[];
@@ -414,6 +422,10 @@ const STORAGE_KEYS = {
   SALES_BACKUPS: 'sokopos_sales_backups_v2',
   LOGIN_BG_GRAPHIC: 'sokopos_login_bg_graphic_v1',
   LOGIN_BG_NAME: 'sokopos_login_bg_name_v1',
+  PLATFORM_LOGO: 'sokopos_platform_logo_v1',
+  PLATFORM_LOGO_NAME: 'sokopos_platform_logo_name_v1',
+  PLATFORM_FAVICON: 'sokopos_platform_favicon_v1',
+  PLATFORM_FAVICON_NAME: 'sokopos_platform_favicon_name_v1',
   RETAIL_THEME: 'sokopos_retail_theme_v2',
   CUSTOMERS: 'sokopos_customers_v1',
   getTenantAutoPrintKey: (bizId: string) => `sokopos_auto_print_receipt_${bizId || 'default'}_v2`,
@@ -929,13 +941,44 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setPendingDestructiveAction(null);
   }, []);
 
-  // Platform & Super Admin Custom Branding (Login Screen Background Graphic)
+  // Platform & Super Admin Custom Branding (Login Screen Background Graphic, Logo, Favicon)
   const [loginBgGraphic, setLoginBgGraphicState] = useState<string | null>(() => {
     return localStorage.getItem(STORAGE_KEYS.LOGIN_BG_GRAPHIC) || null;
   });
   const [loginBgGraphicName, setLoginBgGraphicName] = useState<string | null>(() => {
     return localStorage.getItem(STORAGE_KEYS.LOGIN_BG_NAME) || null;
   });
+
+  const [platformLogo, setPlatformLogoState] = useState<string | null>(() => {
+    return localStorage.getItem(STORAGE_KEYS.PLATFORM_LOGO) || null;
+  });
+  const [platformLogoName, setPlatformLogoName] = useState<string | null>(() => {
+    return localStorage.getItem(STORAGE_KEYS.PLATFORM_LOGO_NAME) || null;
+  });
+
+  const [platformFavicon, setPlatformFaviconState] = useState<string | null>(() => {
+    return localStorage.getItem(STORAGE_KEYS.PLATFORM_FAVICON) || null;
+  });
+  const [platformFaviconName, setPlatformFaviconName] = useState<string | null>(() => {
+    return localStorage.getItem(STORAGE_KEYS.PLATFORM_FAVICON_NAME) || null;
+  });
+
+  // Automatically update the document favicon in HTML head
+  useEffect(() => {
+    let link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      document.head.appendChild(link);
+    }
+    if (platformFavicon) {
+      link.href = platformFavicon;
+    } else {
+      // Default SokoPoS favicon: rounded blue badge with crisp bold 'S'
+      link.href =
+        'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="%232563eb"/><text x="16" y="23" font-size="20" font-family="sans-serif" font-weight="900" fill="white" text-anchor="middle">S</text></svg>';
+    }
+  }, [platformFavicon]);
 
   // Automatically load and sync global platform settings from Firestore on boot
   useEffect(() => {
@@ -957,6 +1000,40 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             localStorage.setItem(STORAGE_KEYS.LOGIN_BG_NAME, settings.loginBgGraphicName);
           } else {
             localStorage.removeItem(STORAGE_KEYS.LOGIN_BG_NAME);
+          }
+        }
+
+        if (settings.platformLogo !== undefined) {
+          setPlatformLogoState(settings.platformLogo);
+          if (settings.platformLogo) {
+            localStorage.setItem(STORAGE_KEYS.PLATFORM_LOGO, settings.platformLogo);
+          } else {
+            localStorage.removeItem(STORAGE_KEYS.PLATFORM_LOGO);
+          }
+        }
+        if (settings.platformLogoName !== undefined) {
+          setPlatformLogoName(settings.platformLogoName || null);
+          if (settings.platformLogoName) {
+            localStorage.setItem(STORAGE_KEYS.PLATFORM_LOGO_NAME, settings.platformLogoName);
+          } else {
+            localStorage.removeItem(STORAGE_KEYS.PLATFORM_LOGO_NAME);
+          }
+        }
+
+        if (settings.platformFavicon !== undefined) {
+          setPlatformFaviconState(settings.platformFavicon);
+          if (settings.platformFavicon) {
+            localStorage.setItem(STORAGE_KEYS.PLATFORM_FAVICON, settings.platformFavicon);
+          } else {
+            localStorage.removeItem(STORAGE_KEYS.PLATFORM_FAVICON);
+          }
+        }
+        if (settings.platformFaviconName !== undefined) {
+          setPlatformFaviconName(settings.platformFaviconName || null);
+          if (settings.platformFaviconName) {
+            localStorage.setItem(STORAGE_KEYS.PLATFORM_FAVICON_NAME, settings.platformFaviconName);
+          } else {
+            localStorage.removeItem(STORAGE_KEYS.PLATFORM_FAVICON_NAME);
           }
         }
       })
@@ -1019,6 +1096,112 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const removeLoginBgGraphic = useCallback(async () => {
     await setLoginBgGraphic(null);
   }, [setLoginBgGraphic]);
+
+  const setPlatformLogo = useCallback(
+    async (logo: string | null, name?: string) => {
+      const prev = platformLogo;
+      setPlatformLogoState(logo);
+      setPlatformLogoName(name || null);
+
+      if (logo) {
+        localStorage.setItem(STORAGE_KEYS.PLATFORM_LOGO, logo);
+        if (name) localStorage.setItem(STORAGE_KEYS.PLATFORM_LOGO_NAME, name);
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.PLATFORM_LOGO);
+        localStorage.removeItem(STORAGE_KEYS.PLATFORM_LOGO_NAME);
+      }
+
+      // Persist to Firestore platform_settings collection
+      try {
+        await savePlatformSettingsToFirestore({
+          platformLogo: logo,
+          platformLogoName: name || '',
+          updatedAt: new Date().toISOString(),
+          updatedBy: currentUser?.email || (isSuperAdmin ? SUPER_ADMIN_EMAIL : 'super_admin'),
+        });
+      } catch (err) {
+        console.warn('Failed to persist platform logo to Firestore:', err);
+      }
+
+      // Record Super Admin Audit Trail
+      logSuperAdminAction(
+        'platform',
+        'business',
+        'platform-branding-logo',
+        'update',
+        logo
+          ? `Configured custom platform logo (${name || 'custom logo'})`
+          : 'Removed custom platform logo; reverted to default SokoPoS typography setup',
+        { platformLogo: prev ? 'custom-logo' : null },
+        { platformLogo: logo ? 'custom-logo' : null, name }
+      );
+
+      showToast(
+        logo
+          ? 'Platform brand logo applied successfully across POS and headers'
+          : 'Platform logo removed. Reverted to default SokoPoS brand setup.',
+        'success'
+      );
+    },
+    [currentUser?.email, isSuperAdmin, logSuperAdminAction, platformLogo, showToast]
+  );
+
+  const removePlatformLogo = useCallback(async () => {
+    await setPlatformLogo(null);
+  }, [setPlatformLogo]);
+
+  const setPlatformFavicon = useCallback(
+    async (favicon: string | null, name?: string) => {
+      const prev = platformFavicon;
+      setPlatformFaviconState(favicon);
+      setPlatformFaviconName(name || null);
+
+      if (favicon) {
+        localStorage.setItem(STORAGE_KEYS.PLATFORM_FAVICON, favicon);
+        if (name) localStorage.setItem(STORAGE_KEYS.PLATFORM_FAVICON_NAME, name);
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.PLATFORM_FAVICON);
+        localStorage.removeItem(STORAGE_KEYS.PLATFORM_FAVICON_NAME);
+      }
+
+      // Persist to Firestore platform_settings collection
+      try {
+        await savePlatformSettingsToFirestore({
+          platformFavicon: favicon,
+          platformFaviconName: name || '',
+          updatedAt: new Date().toISOString(),
+          updatedBy: currentUser?.email || (isSuperAdmin ? SUPER_ADMIN_EMAIL : 'super_admin'),
+        });
+      } catch (err) {
+        console.warn('Failed to persist platform favicon to Firestore:', err);
+      }
+
+      // Record Super Admin Audit Trail
+      logSuperAdminAction(
+        'platform',
+        'business',
+        'platform-branding-favicon',
+        'update',
+        favicon
+          ? `Configured custom platform favicon (${name || 'custom favicon'})`
+          : 'Removed custom platform favicon; reverted to default SokoPoS favicon setup',
+        { platformFavicon: prev ? 'custom-favicon' : null },
+        { platformFavicon: favicon ? 'custom-favicon' : null, name }
+      );
+
+      showToast(
+        favicon
+          ? 'Platform favicon applied successfully to browser tab'
+          : 'Platform favicon removed. Reverted to default SokoPoS icon setup.',
+        'success'
+      );
+    },
+    [currentUser?.email, isSuperAdmin, logSuperAdminAction, platformFavicon, showToast]
+  );
+
+  const removePlatformFavicon = useCallback(async () => {
+    await setPlatformFavicon(null);
+  }, [setPlatformFavicon]);
 
   // 7. Multi-Tenant Locations Store
   const [allLocations, setAllLocations] = useState<Location[]>(() => {
@@ -1580,24 +1763,39 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // 9. Multi-Tenant Products Store
   const [allProducts, setAllProducts] = useState<Product[]>(() => {
+    const deduplicateProducts = (items: Product[]): Product[] => {
+      const seen = new Set<string>();
+      return items.map((p, idx) => {
+        if (!p || !p.id) return p;
+        if (seen.has(p.id)) {
+          const uniqueId = `${p.id}-dup${idx}-${Math.random().toString(36).substring(2, 6)}`;
+          seen.add(uniqueId);
+          return { ...p, id: uniqueId };
+        }
+        seen.add(p.id);
+        return p;
+      });
+    };
+
     const saved = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
+          const deduped = deduplicateProducts(parsed);
           // Check if biz-upfront exists in parsed products, otherwise merge
-          const hasUpfront = parsed.some((p: Product) => p.businessId === 'biz-upfront');
+          const hasUpfront = deduped.some((p: Product) => p.businessId === 'biz-upfront');
           if (!hasUpfront) {
             const upfrontInitials = INITIAL_PRODUCTS.filter((p) => p.businessId === 'biz-upfront');
-            return [...parsed, ...upfrontInitials];
+            return deduplicateProducts([...deduped, ...upfrontInitials]);
           }
-          return parsed;
+          return deduped;
         }
       } catch {
         // fallback
       }
     }
-    return INITIAL_PRODUCTS;
+    return deduplicateProducts(INITIAL_PRODUCTS);
   });
 
   useEffect(() => {
@@ -1608,8 +1806,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Products returned are ONLY those belonging to the active business tenant.
   // Where product category is lacking, assign category to "All".
   const products = useMemo(() => {
+    const seen = new Set<string>();
     return allProducts
       .filter((p) => p.businessId === activeBusinessId)
+      .filter((p) => {
+        if (!p || !p.id) return false;
+        if (seen.has(p.id)) return false;
+        seen.add(p.id);
+        return true;
+      })
       .map((p) => ({
         ...p,
         category: !p.category || !p.category.trim() ? 'All' : p.category.trim(),
@@ -1902,17 +2107,18 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [currentUser, firebaseUser, fetchFreshInventoryFromServer]);
 
-  const addProduct = (product: Omit<Product, 'id' | 'businessId'>) => {
+  const addProduct = (product: Omit<Product, 'id' | 'businessId'> & { id?: string }) => {
     const finalCategory = (!product.category || !product.category.trim()) ? 'All' : product.category.trim();
+    const uniqueId = product.id || `prod-${Date.now()}-${Math.random().toString(36).substring(2, 8)}-${Math.floor(1000 + Math.random() * 9000)}`;
     const newProduct: Product = {
       ...product,
       category: finalCategory,
-      id: `prod-${Date.now()}`,
+      id: uniqueId,
       businessId: activeBusinessId,
       isPendingCloudSync: !isOnline || !auth.currentUser,
     };
 
-    setAllProducts((prev) => [newProduct, ...prev]);
+    setAllProducts((prev) => [newProduct, ...prev.filter((p) => p.id !== newProduct.id)]);
     if (isOnline && auth.currentUser) {
       saveProductToFirestore(newProduct)
         .then(() => {
@@ -5645,6 +5851,16 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setLoginBgGraphic,
         removeLoginBgGraphic,
 
+        platformLogo,
+        platformLogoName,
+        setPlatformLogo,
+        removePlatformLogo,
+
+        platformFavicon,
+        platformFaviconName,
+        setPlatformFavicon,
+        removePlatformFavicon,
+
         locations,
         currentLocation,
         setCurrentLocationId,
@@ -5746,6 +5962,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         toastMessage,
         showToast,
         soundFx,
+
+        adminActivityLogs,
+        logAdminActivity,
       }}
     >
       {children}

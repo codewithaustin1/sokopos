@@ -33,6 +33,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     showToast,
     loginBgGraphic,
     isRealGoogleAccount,
+    platformLogo,
   } = usePos();
 
   const [activeTab, setActiveTab] = useState<'google' | 'terminal' | 'register'>('google');
@@ -190,20 +191,36 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         className="min-h-full w-full bg-slate-950 flex flex-col justify-between text-slate-100 font-sans selection:bg-blue-600 selection:text-white"
       >
         <header className="px-6 py-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/50 backdrop-blur-md shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-black text-white shadow-md shadow-blue-500/20">
-              S
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-black text-sm tracking-tight text-white">SokoPoS</span>
-                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
+          {platformLogo ? (
+            <div className="flex items-center gap-3">
+              <img
+                src={platformLogo}
+                alt="Platform Logo"
+                className="h-8 max-h-9 max-w-[150px] object-contain drop-shadow-sm"
+              />
+              <div>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
                   PRO RETAIL
                 </span>
+                <div className="text-[11px] text-slate-400">Smart Retail & Business Management</div>
               </div>
-              <div className="text-[11px] text-slate-400">Smart Retail & Business Management</div>
             </div>
-          </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-black text-white shadow-md shadow-blue-500/20">
+                S
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-black text-sm tracking-tight text-white">SokoPoS</span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                    PRO RETAIL
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-400">Smart Retail & Business Management</div>
+              </div>
+            </div>
+          )}
         </header>
 
         <main className="flex-1 flex items-center justify-center p-4 sm:p-6 my-auto py-8">
@@ -287,20 +304,36 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             : 'border-slate-800/80 bg-slate-900/50 backdrop-blur-md'
         }`}
       >
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-black text-white shadow-md shadow-blue-500/20">
-            S
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-black text-sm tracking-tight text-white">SokoPoS</span>
-              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
+        {platformLogo ? (
+          <div className="flex items-center gap-3">
+            <img
+              src={platformLogo}
+              alt="Platform Logo"
+              className="h-8 max-h-9 max-w-[160px] object-contain drop-shadow-sm"
+            />
+            <div>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
                 PRO RETAIL
               </span>
+              <div className="text-[11px] text-slate-400">Smart Retail & Business Management</div>
             </div>
-            <div className="text-[11px] text-slate-400">Smart Retail & Business Management</div>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-black text-white shadow-md shadow-blue-500/20">
+              S
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-black text-sm tracking-tight text-white">SokoPoS</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                  PRO RETAIL
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-400">Smart Retail & Business Management</div>
+            </div>
+          </div>
+        )}
 
         <div className="hidden sm:flex items-center gap-3 text-xs font-medium text-slate-400">
           <div className="flex items-center gap-2 bg-slate-800/60 px-3 py-1.5 rounded-full border border-slate-700/60">

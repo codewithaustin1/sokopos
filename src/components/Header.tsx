@@ -62,6 +62,7 @@ export const Header: React.FC<HeaderProps> = ({
     toggleDarkMode,
     autoPrintReceipt,
     showToast,
+    platformLogo,
   } = usePos();
 
   const [isLocationMenuOpen, setIsLocationMenuOpen] = useState(false);
@@ -71,19 +72,32 @@ export const Header: React.FC<HeaderProps> = ({
     <header id="main-pos-header" className="bg-white border-b border-slate-200 h-14 sm:h-16 px-3 sm:px-4 md:px-6 flex items-center justify-between shrink-0 shadow-xs z-30 relative">
       {/* Brand & Business / Location Selector */}
       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-        <div className="shrink-0">
-          <div className="flex items-center gap-1">
-            <span className="text-lg sm:text-xl font-black text-blue-600 tracking-tight leading-none">
-              SokoPoS
-            </span>
-            <span className="bg-amber-400 text-slate-900 text-[9px] sm:text-[10px] font-black px-1.5 py-0.5 rounded">
+        {platformLogo ? (
+          <div className="shrink-0 flex items-center gap-1.5 sm:gap-2">
+            <img
+              src={platformLogo}
+              alt="Platform Logo"
+              className="h-7 sm:h-8 max-w-[120px] sm:max-w-[170px] object-contain"
+            />
+            <span className="bg-amber-400 text-slate-900 text-[9px] sm:text-[10px] font-black px-1.5 py-0.5 rounded shrink-0">
               PRO
             </span>
           </div>
-          <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate max-w-[90px] sm:max-w-[140px]">
-            {currentBusiness?.name || 'Sokoplus Horizon'}
-          </span>
-        </div>
+        ) : (
+          <div className="shrink-0">
+            <div className="flex items-center gap-1">
+              <span className="text-lg sm:text-xl font-black text-blue-600 tracking-tight leading-none">
+                SokoPoS
+              </span>
+              <span className="bg-amber-400 text-slate-900 text-[9px] sm:text-[10px] font-black px-1.5 py-0.5 rounded">
+                PRO
+              </span>
+            </div>
+            <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate max-w-[90px] sm:max-w-[140px]">
+              {currentBusiness?.name || 'Sokoplus Horizon'}
+            </span>
+          </div>
+        )}
 
         {/* Multi-Location Switcher Dropdown (scoped to current business) */}
         <div className="relative min-w-0">

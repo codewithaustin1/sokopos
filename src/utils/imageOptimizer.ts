@@ -4,10 +4,16 @@
  * while staying well within localStorage and Firestore document size quotas.
  */
 
-export async function processAndOptimizeImage(file: File, maxWidth = 1920, maxHeight = 1080, quality = 0.84): Promise<string> {
+export async function processAndOptimizeImage(
+  file: File,
+  maxWidth = 1920,
+  maxHeight = 1080,
+  quality = 0.84,
+  outputFormat: 'auto' | 'image/png' | 'image/jpeg' | 'image/webp' = 'auto'
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    // If SVG, read as direct data URL
-    if (file.type === 'image/svg+xml') {
+    // If SVG or ICO, read as direct data URL
+    if (file.type === 'image/svg+xml' || file.type === 'image/x-icon' || file.name.endsWith('.ico') || file.name.endsWith('.svg')) {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result as string);
       reader.onerror = (err) => reject(err);
@@ -44,8 +50,13 @@ export async function processAndOptimizeImage(file: File, maxWidth = 1920, maxHe
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Convert to web-standard optimized JPEG data URL
-        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        // Determine output MIME type
+        const isPng =
+          outputFormat === 'image/png' ||
+          (outputFormat === 'auto' && (file.type === 'image/png' || file.name.toLowerCase().endsWith('.png')));
+        
+        const mimeType = isPng ? 'image/png' : outputFormat === 'image/webp' ? 'image/webp' : 'image/jpeg';
+        const dataUrl = canvas.toDataURL(mimeType, quality);
         resolve(dataUrl);
       };
 

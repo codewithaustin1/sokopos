@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Printer,
   Download,
@@ -8,11 +8,15 @@ import {
   Calendar,
   Building2,
   CheckCircle2,
+  Sparkles,
 } from 'lucide-react';
 import { Business, Location } from '../../types';
 import { DateRange, ReportMeta } from '../../types/reporting';
 import { formatRangeDisplay } from '../../utils/dateRangeUtils';
 import { exportToCsv } from '../../utils/reportCalculations';
+import { printReportDocument, downloadReportPdf } from '../../utils/reportPrinter';
+import { usePos } from '../../context/PosContext';
+import { soundFx as directSoundFx } from '../../utils/audio';
 
 export interface ReportPrintData {
   meta: ReportMeta;
@@ -39,6 +43,11 @@ export const ReportPrintModal: React.FC<ReportPrintModalProps> = ({
   onClose,
   data,
 }) => {
+  const { soundFx, showToast } = usePos();
+  const audio = soundFx || directSoundFx;
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -52,42 +61,83 @@ export const ReportPrintModal: React.FC<ReportPrintModalProps> = ({
   if (!isOpen || !data) return null;
 
   const handlePrint = () => {
-    window.print();
+    setIsPrinting(true);
+    audio?.playSuccess?.();
+    showToast(`Sending ${data.meta.title} to printer...`, 'info');
+
+    try {
+      printReportDocument(data);
+    } catch (err) {
+      console.warn('printReportDocument fallback to window.print():', err);
+      window.print();
+    } finally {
+      setTimeout(() => setIsPrinting(false), 1200);
+    }
+  };
+
+  const handleDownloadPdf = () => {
+    setIsDownloadingPdf(true);
+    audio?.playSuccess?.();
+    showToast(`Generating official PDF for ${data.meta.title}...`, 'info');
+
+    try {
+      downloadReportPdf(data);
+      showToast(`PDF downloaded successfully!`, 'success');
+    } catch (err) {
+      console.error('PDF generation error:', err);
+      showToast('Could not generate PDF. Please use Print / Save as PDF.', 'error');
+    } finally {
+      setTimeout(() => setIsDownloadingPdf(false), 1000);
+    }
   };
 
   const handleExportCsv = () => {
-    const filename = `${data.business.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${data.meta.id}_${Date.now()}`;
+    audio?.playSuccess?.();
+    const safeName = (data.business?.name || 'sokopos').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    const filename = `${safeName}_${data.meta.id}_${Date.now()}`;
     const headers = data.csvHeaders || data.tableHeaders;
     const rows = data.csvRows || data.tableRows;
     exportToCsv(filename, headers, rows);
+    showToast(`Exported ${data.meta.title} CSV`, 'success');
   };
 
   const currentDate = new Date().toLocaleString();
+  const businessName = data.business?.name || 'SokoPoS Retail';
+  const branchName = data.location?.name || 'Main Location';
+  const branchCity = data.location?.city || 'Nairobi';
+  const taxId = data.business?.taxNumber || data.location?.taxId || '';
+  const currency = data.business?.currency || 'KES';
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 print:p-0 print:bg-transparent print:static">
+    <div
+      id="report-print-modal-backdrop"
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 print:p-0 print:bg-transparent print:static select-text"
+    >
       {/* Modal Container */}
-      <div className="bg-white w-full max-w-5xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] print:max-h-none print:shadow-none print:border-none print:rounded-none">
+      <div
+        id="report-print-modal-container"
+        className="bg-white w-full max-w-5xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] print:max-h-none print:shadow-none print:border-none print:rounded-none"
+      >
         {/* Modal Action Bar (Hidden in Print) */}
-        <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between gap-4 shrink-0 print:hidden">
+        <div className="px-5 py-4 bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0 print:hidden">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white">
+            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white shrink-0 shadow-xs">
               <FileText className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold">{data.meta.title} — Official A4 Print & Export</h3>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-bold text-white tracking-tight">{data.meta.title} — Official A4 Print & Export</h3>
                 <span className="text-[10px] bg-blue-500/20 text-blue-300 font-bold px-2 py-0.5 rounded-full border border-blue-400/30">
                   {data.meta.phaseLabel}
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Formatted for standard A4 portrait pages with page breaks and audit headers
+                Multi-page A4 layout • Strict table pagination • Audit compliance seal
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
             <button
               type="button"
               id="report-print-modal-csv-btn"
@@ -96,18 +146,31 @@ export const ReportPrintModal: React.FC<ReportPrintModalProps> = ({
               title="Download RFC 4180 CSV spreadsheet"
             >
               <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-              <span className="hidden sm:inline">Export CSV</span>
+              <span>CSV</span>
+            </button>
+
+            <button
+              type="button"
+              id="report-print-modal-download-pdf-btn"
+              onClick={handleDownloadPdf}
+              disabled={isDownloadingPdf}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 text-xs font-bold transition cursor-pointer disabled:opacity-50"
+              title="Download official vector PDF document"
+            >
+              <Download className="w-4 h-4 text-rose-400" />
+              <span>{isDownloadingPdf ? 'Generating...' : 'PDF'}</span>
             </button>
 
             <button
               type="button"
               id="report-print-modal-print-btn"
               onClick={handlePrint}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-xs cursor-pointer"
-              title="Print document or Save as PDF"
+              disabled={isPrinting}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-bold transition shadow-md cursor-pointer disabled:opacity-50"
+              title="Print document or Save as PDF with zero blank pages"
             >
-              <Printer className="w-4 h-4" />
-              <span>Print / Save PDF</span>
+              <Printer className="w-4 h-4 text-white" />
+              <span>{isPrinting ? 'Printing...' : 'Print / Save PDF (A4)'}</span>
             </button>
 
             <button
@@ -122,23 +185,23 @@ export const ReportPrintModal: React.FC<ReportPrintModalProps> = ({
         </div>
 
         {/* Scrollable Printable A4 Document Container */}
-        <div className="flex-1 overflow-y-auto p-6 sm:p-10 bg-slate-50 print:bg-white print:p-0">
+        <div className="flex-1 overflow-y-auto p-6 sm:p-10 bg-slate-100/70 print:bg-white print:p-0">
           <div
             id="report-printable-document"
-            className="bg-white max-w-4xl mx-auto p-8 sm:p-12 rounded-xl border border-slate-200 shadow-sm print:shadow-none print:border-none print:p-0 print:m-0 print:max-w-none keep-white text-slate-900"
+            className="bg-white max-w-4xl mx-auto p-8 sm:p-12 rounded-xl border border-slate-200 shadow-md print:shadow-none print:border-none print:p-0 print:m-0 print:max-w-none keep-white text-slate-900"
           >
             {/* A4 Header */}
-            <div className="border-b-2 border-slate-900 pb-6 mb-6">
+            <div className="border-b-2 border-slate-900 pb-5 mb-5">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
                   <div className="text-2xl font-black text-slate-900 tracking-tight uppercase">
-                    {data.business.name}
+                    {businessName}
                   </div>
                   <div className="text-xs font-semibold text-slate-600 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span>Branch: <strong>{data.location.name}</strong></span>
-                    <span>City: <strong>{data.location.city}</strong></span>
-                    {data.business.taxNumber && (
-                      <span>Tax / PIN ID: <strong>{data.business.taxNumber}</strong></span>
+                    <span>Branch: <strong>{branchName}</strong></span>
+                    <span>City: <strong>{branchCity}</strong></span>
+                    {taxId && (
+                      <span>Tax / PIN ID: <strong>{taxId}</strong></span>
                     )}
                   </div>
                 </div>
@@ -165,11 +228,11 @@ export const ReportPrintModal: React.FC<ReportPrintModalProps> = ({
                 </div>
                 <div>
                   <span className="text-slate-400 block uppercase text-[9px] font-bold">Auditor / User</span>
-                  <span className="font-medium">{data.generatedBy}</span>
+                  <span className="font-medium">{data.generatedBy || 'Authorized Auditor'}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block uppercase text-[9px] font-bold">Currency</span>
-                  <span className="font-black font-mono text-blue-700">{data.business.currency}</span>
+                  <span className="font-black font-mono text-blue-700">{currency}</span>
                 </div>
               </div>
             </div>
@@ -279,3 +342,4 @@ export const ReportPrintModal: React.FC<ReportPrintModalProps> = ({
     </div>
   );
 };
+

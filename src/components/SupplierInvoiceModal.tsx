@@ -15,6 +15,11 @@ import {
   HelpCircle,
   Eye,
   Check,
+  PackageCheck,
+  Boxes,
+  Barcode,
+  Layers,
+  ArrowUpRight,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { soundFx as directSoundFx } from '../utils/audio';
@@ -25,6 +30,28 @@ import { parseSupplierInvoiceWithAi } from '../lib/aiVisionService';
 interface SupplierInvoiceModalProps {
   isOpen: boolean;
   onClose: () => void;
+}
+
+export interface OnboardFeedbackSummary {
+  supplierName: string;
+  invoiceNumber: string;
+  receivingLocationName: string;
+  newCount: number;
+  updatedCount: number;
+  totalItems: number;
+  totalQuantity: number;
+  totalCost: number;
+  completedAt: string;
+  items: Array<{
+    name: string;
+    sku?: string;
+    barcode?: string;
+    quantity: number;
+    unitCost: number;
+    sellingPrice: number;
+    isNew: boolean;
+    category: string;
+  }>;
 }
 
 export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
@@ -53,6 +80,7 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
   const [targetLocationId, setTargetLocationId] = useState<string>(currentLocation?.id || locations[0]?.id || '');
   const [isApplying, setIsApplying] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
+  const [completionFeedback, setCompletionFeedback] = useState<OnboardFeedbackSummary | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -88,6 +116,24 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
       videoRef.current.srcObject = null;
     }
     setCameraActive(false);
+  };
+
+  const handleModalClose = () => {
+    handleStopCamera();
+    setCompletionFeedback(null);
+    setParsedInvoice(null);
+    setSelectedFile(null);
+    setImagePreview(null);
+    onClose();
+  };
+
+  const handleResetForAnotherInvoice = () => {
+    handleStopCamera();
+    setCompletionFeedback(null);
+    setParsedInvoice(null);
+    setSelectedFile(null);
+    setImagePreview(null);
+    setActiveTab('samples');
   };
 
   const handleCaptureFromCamera = () => {
@@ -228,23 +274,44 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
     setIsApplying(true);
 
     try {
-      const receivingLoc = locations.find((l) => l.id === targetLocationId) || currentLocation;
+      const receivingLoc =
+        locations.find((l) => l.id === targetLocationId) ||
+        currentLocation || { id: targetLocationId, name: 'Main Store Location' };
       let updatedCount = 0;
       let newCount = 0;
+      let totalUnits = 0;
+      const stagedSummaryItems: Array<{
+        name: string;
+        sku?: string;
+        barcode?: string;
+        quantity: number;
+        unitCost: number;
+        sellingPrice: number;
+        isNew: boolean;
+        category: string;
+      }> = [];
 
-      for (const item of parsedInvoice.lineItems) {
+      for (let idx = 0; idx < parsedInvoice.lineItems.length; idx++) {
+        const item = parsedInvoice.lineItems[idx];
+        totalUnits += item.stagedQuantity;
         if (item.selectedProductId === 'new' || item.isNewProduct) {
-          // Create new product
+          // Create new product with guaranteed unique ID
           const defaultStocks: Record<string, number> = {};
           locations.forEach((loc) => {
             defaultStocks[loc.id] = loc.id === targetLocationId ? item.stagedQuantity : 0;
           });
 
+          const uniqueProdId = `prod-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`;
+          const genSku = `SKU-${Math.floor(1000 + Math.random() * 9000)}`;
+          const genBarcode = item.barcode || `616${Math.floor(100000000 + Math.random() * 900000000)}`;
+          const categoryName = item.selectedCategory || 'Flour & Grains';
+
           addProduct({
+            id: uniqueProdId,
             name: item.extractedItemName,
-            sku: `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
-            barcode: item.barcode || `616${Math.floor(100000000 + Math.random() * 900000000)}`,
-            category: item.selectedCategory || 'Flour & Grains',
+            sku: genSku,
+            barcode: genBarcode,
+            category: categoryName,
             buyingPrice: item.stagedUnitCost,
             sellingPrice: item.stagedSellingPrice,
             unit: 'piece',
@@ -253,6 +320,16 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
             stockByLocation: defaultStocks,
           });
           newCount++;
+          stagedSummaryItems.push({
+            name: item.extractedItemName,
+            sku: genSku,
+            barcode: genBarcode,
+            quantity: item.stagedQuantity,
+            unitCost: item.stagedUnitCost,
+            sellingPrice: item.stagedSellingPrice,
+            isNew: true,
+            category: categoryName,
+          });
         } else {
           // Update existing product
           const existing = products.find((p) => p.id === item.selectedProductId);
@@ -270,32 +347,57 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
               stockByLocation: newStockMap,
             });
             updatedCount++;
+            stagedSummaryItems.push({
+              name: existing.name,
+              sku: existing.sku,
+              barcode: existing.barcode,
+              quantity: item.stagedQuantity,
+              unitCost: item.stagedUnitCost,
+              sellingPrice: item.stagedSellingPrice,
+              isNew: false,
+              category: existing.category,
+            });
           }
         }
       }
 
-      logAdminActivity({
-        category: 'inventory',
-        action: 'adjust_stock',
-        description: `Digitized Supplier Invoice #${parsedInvoice.invoiceNumber} from "${parsedInvoice.supplierName}": Staged stock for ${updatedCount} existing products and created ${newCount} new SKUs at ${receivingLoc.name}`,
-        recordType: 'location',
-        recordId: targetLocationId,
-        beforeValue: null,
-        afterValue: {
-          supplier: parsedInvoice.supplierName,
-          invoiceNumber: parsedInvoice.invoiceNumber,
-          totalInvoiced: parsedInvoice.totalInvoiced,
-          updatedCount,
-          newCount,
-        },
+      if (typeof logAdminActivity === 'function') {
+        logAdminActivity({
+          category: 'inventory',
+          action: 'adjust_stock',
+          description: `Digitized Supplier Invoice #${parsedInvoice.invoiceNumber} from "${parsedInvoice.supplierName}": Staged stock for ${updatedCount} existing products and created ${newCount} new SKUs at ${receivingLoc.name}`,
+          recordType: 'location',
+          recordId: targetLocationId,
+          beforeValue: null,
+          afterValue: {
+            supplier: parsedInvoice.supplierName,
+            invoiceNumber: parsedInvoice.invoiceNumber,
+            totalInvoiced: parsedInvoice.totalInvoiced,
+            updatedCount,
+            newCount,
+          },
+        });
+      }
+
+      // Populate interactive feedback mechanism with full receipt summary
+      setCompletionFeedback({
+        supplierName: parsedInvoice.supplierName,
+        invoiceNumber: parsedInvoice.invoiceNumber,
+        receivingLocationName: receivingLoc.name,
+        newCount,
+        updatedCount,
+        totalItems: parsedInvoice.lineItems.length,
+        totalQuantity: totalUnits,
+        totalCost: totalStagedCost,
+        completedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        items: stagedSummaryItems,
       });
 
       audio?.playSuccess?.();
       showToast(
-        `Successfully onboarded invoice! ${updatedCount} products updated & ${newCount} new SKUs created at ${receivingLoc.name}.`,
+        `🎉 Successfully onboarded invoice #${parsedInvoice.invoiceNumber}! ${newCount} new SKUs created & ${updatedCount} products replenished at ${receivingLoc.name}.`,
         'success'
       );
-      onClose();
     } catch (err: any) {
       console.error('Error applying staged stock:', err);
       showToast(err.message || 'Failed to stage stock', 'error');
@@ -336,10 +438,7 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={() => {
-              handleStopCamera();
-              onClose();
-            }}
+            onClick={handleModalClose}
             className="p-2 text-white/70 hover:text-white rounded-full hover:bg-white/10 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -348,7 +447,249 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
 
         {/* Modal Body */}
         <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
-          {!parsedInvoice ? (
+          {completionFeedback ? (
+            /* Dedicated Feedback & Confirmation Screen */
+            <div id="ai-invoice-feedback-screen" className="space-y-6 animate-fade-in">
+              {/* Hero Banner */}
+              <div className="bg-gradient-to-br from-emerald-950 via-teal-950 to-slate-900 border border-emerald-500/30 rounded-3xl p-6 sm:p-7 text-white shadow-xl relative overflow-hidden">
+                <div className="absolute -top-12 -right-12 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+                <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
+                  <div className="flex items-start gap-4">
+                    <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-300 shadow-inner shrink-0">
+                      <CheckCircle2 className="w-8 h-8 text-emerald-400 animate-pulse" />
+                    </div>
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/30 text-emerald-300 border border-emerald-400/40">
+                          AI Ingestion Succeeded
+                        </span>
+                        <span className="text-[11px] font-mono text-emerald-300/80">
+                          Invoice #{completionFeedback.invoiceNumber}
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          • {completionFeedback.completedAt}
+                        </span>
+                      </div>
+                      <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                        Products Added to Inventory
+                      </h3>
+                      <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                        Extracted items from <span className="text-white font-bold">{completionFeedback.supplierName}</span> have been committed to the product catalog and stock levels replenished at <span className="text-emerald-300 font-bold">{completionFeedback.receivingLocationName}</span>.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto border-t sm:border-t-0 sm:border-l border-emerald-500/20 pt-3 sm:pt-0 sm:pl-6 shrink-0">
+                    <span className="text-[11px] uppercase font-bold text-emerald-300/70 tracking-wider">
+                      Total Invoiced Value
+                    </span>
+                    <span className="text-xl sm:text-2xl font-black font-mono text-emerald-300">
+                      {currency} {completionFeedback.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4 KPI Metrics */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-2xl p-4 shadow-2xs">
+                  <div className="flex items-center justify-between text-emerald-700 mb-1">
+                    <span className="text-[11px] font-black uppercase tracking-wider">New Catalog SKUs</span>
+                    <Plus className="w-4 h-4 text-emerald-600" />
+                  </div>
+                  <div className="text-2xl font-black text-emerald-950 font-mono">
+                    {completionFeedback.newCount}
+                  </div>
+                  <div className="text-[11px] text-emerald-800/80 mt-0.5">
+                    Newly indexed in database
+                  </div>
+                </div>
+
+                <div className="bg-blue-50/70 border border-blue-200/80 rounded-2xl p-4 shadow-2xs">
+                  <div className="flex items-center justify-between text-blue-700 mb-1">
+                    <span className="text-[11px] font-black uppercase tracking-wider">Restocked SKUs</span>
+                    <RefreshCw className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <div className="text-2xl font-black text-blue-950 font-mono">
+                    {completionFeedback.updatedCount}
+                  </div>
+                  <div className="text-[11px] text-blue-800/80 mt-0.5">
+                    Existing stock incremented
+                  </div>
+                </div>
+
+                <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4 shadow-2xs">
+                  <div className="flex items-center justify-between text-amber-700 mb-1">
+                    <span className="text-[11px] font-black uppercase tracking-wider">Total Units Added</span>
+                    <Boxes className="w-4 h-4 text-amber-600" />
+                  </div>
+                  <div className="text-2xl font-black text-amber-950 font-mono">
+                    +{completionFeedback.totalQuantity}
+                  </div>
+                  <div className="text-[11px] text-amber-800/80 mt-0.5">
+                    At {completionFeedback.receivingLocationName}
+                  </div>
+                </div>
+
+                <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-2xl p-4 shadow-2xs">
+                  <div className="flex items-center justify-between text-indigo-700 mb-1">
+                    <span className="text-[11px] font-black uppercase tracking-wider">Line Items</span>
+                    <PackageCheck className="w-4 h-4 text-indigo-600" />
+                  </div>
+                  <div className="text-2xl font-black text-indigo-950 font-mono">
+                    {completionFeedback.totalItems}
+                  </div>
+                  <div className="text-[11px] text-indigo-800/80 mt-0.5">
+                    100% processed from invoice
+                  </div>
+                </div>
+              </div>
+
+              {/* Realtime Alert & Scanner Notice */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-start gap-3 shadow-2xs">
+                <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 mt-0.5">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                    Instant POS Register & Barcode Availability
+                  </h4>
+                  <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
+                    All extracted products below are active immediately across POS checkout counters, mobile barcode scanners, and inventory reports. Cost of goods sold (COGS) and profit margins have been synchronized.
+                  </p>
+                </div>
+              </div>
+
+              {/* Itemized Table of Added Products */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                    <span>Products Added To Inventory</span>
+                    <span className="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-bold">
+                      {completionFeedback.items.length} items
+                    </span>
+                  </h4>
+                  <span className="text-xs text-slate-500">
+                    Stock Destination: <strong className="text-slate-800">{completionFeedback.receivingLocationName}</strong>
+                  </span>
+                </div>
+
+                <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-600 border-b border-slate-200">
+                        <tr>
+                          <th className="py-3 px-4">Product Name & Identifiers</th>
+                          <th className="py-3 px-3 text-center">Status</th>
+                          <th className="py-3 px-3">Category</th>
+                          <th className="py-3 px-3 text-center">Qty Added</th>
+                          <th className="py-3 px-3 text-right">Unit Cost ({currency})</th>
+                          <th className="py-3 px-3 text-right">Retail Price ({currency})</th>
+                          <th className="py-3 px-3 text-center">Margin %</th>
+                          <th className="py-3 px-4 text-right">Subtotal ({currency})</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {completionFeedback.items.map((item, idx) => {
+                          const marginPercent =
+                            item.sellingPrice > 0
+                              ? ((item.sellingPrice - item.unitCost) / item.sellingPrice) * 100
+                              : 0;
+
+                          return (
+                            <tr key={idx} className="hover:bg-slate-50/70 transition">
+                              <td className="py-3 px-4">
+                                <div className="font-bold text-slate-900">
+                                  {item.name}
+                                </div>
+                                <div className="text-[10px] text-slate-400 font-mono flex items-center gap-2 mt-0.5">
+                                  {item.sku && <span>SKU: {item.sku}</span>}
+                                  {item.barcode && <span>• Barcode: {item.barcode}</span>}
+                                </div>
+                              </td>
+
+                              <td className="py-3 px-3 text-center">
+                                {item.isNew ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                    <Plus className="w-3 h-3" />
+                                    <span>New SKU</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                                    <RefreshCw className="w-3 h-3" />
+                                    <span>Restocked</span>
+                                  </span>
+                                )}
+                              </td>
+
+                              <td className="py-3 px-3 text-slate-600 font-medium">
+                                <span className="bg-slate-100 px-2 py-0.5 rounded-md text-[11px] text-slate-700">
+                                  {item.category}
+                                </span>
+                              </td>
+
+                              <td className="py-3 px-3 text-center">
+                                <span className="inline-block bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-lg font-black font-mono text-xs">
+                                  +{item.quantity} units
+                                </span>
+                              </td>
+
+                              <td className="py-3 px-3 text-right font-mono text-slate-700 font-semibold">
+                                {item.unitCost.toFixed(2)}
+                              </td>
+
+                              <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">
+                                {item.sellingPrice.toFixed(2)}
+                              </td>
+
+                              <td className="py-3 px-3 text-center font-mono">
+                                <span
+                                  className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+                                    marginPercent >= 20
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : marginPercent > 0
+                                      ? 'bg-amber-100 text-amber-800'
+                                      : 'bg-rose-100 text-rose-800'
+                                  }`}
+                                >
+                                  {marginPercent.toFixed(1)}%
+                                </span>
+                              </td>
+
+                              <td className="py-3 px-4 text-right font-mono font-black text-slate-900">
+                                {(item.quantity * item.unitCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={handleResetForAnotherInvoice}
+                  className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
+                >
+                  <FileText className="w-4 h-4 text-blue-600" />
+                  <span>Onboard Another Supplier Invoice</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleModalClose}
+                  className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Finish & View Updated Inventory</span>
+                </button>
+              </div>
+            </div>
+          ) : !parsedInvoice ? (
             /* Upload / Capture Stage */
             <div className="space-y-6">
               {/* Tab Selector */}
@@ -765,7 +1106,7 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    onClick={onClose}
+                    onClick={handleModalClose}
                     className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-600 hover:bg-slate-100 font-bold text-xs transition cursor-pointer"
                   >
                     Cancel
