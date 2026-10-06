@@ -395,8 +395,8 @@ export const Header: React.FC<HeaderProps> = ({
                         }}
                         className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-xs font-bold text-blue-900 bg-blue-50 hover:bg-blue-100 transition cursor-pointer"
                       >
-                        <ImageIcon className="w-3.5 h-3.5 text-blue-600" />
-                        <span>Login Screen Background Control</span>
+                        <Palette className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Platform Branding & Assets (Logo, Favicon)</span>
                       </button>
                     </div>
                   )}

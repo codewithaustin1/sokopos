@@ -823,7 +823,7 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
                 phaseFilter === 'all' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              All (15)
+              All
             </button>
           </div>
         </div>

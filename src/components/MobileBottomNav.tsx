@@ -407,15 +407,11 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         >
           <div className="relative">
             <ShoppingCart className={`w-5 h-5 ${currentTab === 'register' ? 'stroke-[2.5]' : 'stroke-2'}`} />
-            {!activeShift ? (
-              <span className="absolute -top-1.5 -right-2 bg-amber-500 text-white text-[8px] font-black rounded-full h-3.5 px-1 flex items-center justify-center shadow-xs" title="Till Closed">
-                <Lock className="w-2 h-2" />
-              </span>
-            ) : totalCartItems > 0 ? (
+            {totalCartItems > 0 && (
               <span className="absolute -top-1.5 -right-2.5 bg-blue-600 text-white text-[10px] font-black rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center shadow-xs animate-scale-in">
                 {totalCartItems}
               </span>
-            ) : null}
+            )}
           </div>
           <span className="text-[10px] tracking-tight mt-0.5">Sell</span>
         </button>

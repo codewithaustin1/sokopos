@@ -2010,19 +2010,19 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                         </div>
 
                         {/* Simulated Centered Login Card */}
-                        <div className="relative z-10 flex items-center justify-center p-3 my-auto">
-                          <div className="w-52 rounded-xl p-3 border shadow-2xl text-center bg-slate-900/90 border-slate-700/60 backdrop-blur-xl">
-                            <div className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30 mb-1.5">
-                              <Lock className="w-3.5 h-3.5" />
+                        <div className="relative z-10 flex items-center justify-center p-2 my-auto">
+                          <div className="w-44 rounded-xl p-2.5 border shadow-2xl text-center bg-slate-900/90 border-slate-700/60 backdrop-blur-xl">
+                            <div className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30 mb-1">
+                              <Lock className="w-3 h-3" />
                             </div>
-                            <div className="text-[11px] font-black text-white leading-tight">
+                            <div className="text-[10px] font-black text-white leading-tight">
                               Log In to POS Terminal
                             </div>
-                            <div className="text-[8px] text-slate-400 mb-2">
-                              Smart Retail & Business Management
+                            <div className="text-[7.5px] text-slate-400 mb-1.5">
+                              Smart Retail Management
                             </div>
 
-                            <div className="w-full py-1.5 px-2 rounded-lg bg-blue-600 text-white font-bold text-[9px] flex items-center justify-center gap-1 shadow-xs">
+                            <div className="w-full py-1 px-2 rounded-md bg-blue-600 text-white font-bold text-[8.5px] flex items-center justify-center gap-1 shadow-xs">
                               <span>Continue with Google</span>
                             </div>
                           </div>

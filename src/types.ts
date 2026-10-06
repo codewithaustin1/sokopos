@@ -107,6 +107,14 @@ export interface TaxBreakdownEntry {
   }>;
 }
 
+export interface BusinessLoyaltySettings {
+  enabled: boolean;
+  spendPerPoint: number; // Cash sales amount required to earn 1 point (e.g. 100 in cash sales = 1 point)
+  pointsPerCurrencyUnit: number; // Points equal to 1 shilling / currency unit (e.g. 10 points = 1 shilling)
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 export interface Business {
   id: string;
   name: string;
@@ -121,6 +129,7 @@ export interface Business {
   hardwareSettings?: BusinessHardwareSettings;
   retailTheme?: RetailTheme;
   taxSettings?: BusinessTaxSettings;
+  loyaltySettings?: BusinessLoyaltySettings;
 }
 
 export interface AuthUser {
@@ -269,6 +278,8 @@ export interface Transaction {
   customerPhone?: string;
   loyaltyPointsEarned?: number;
   loyaltyPointsRedeemed?: number;
+  customerPreviousPoints?: number;
+  customerCurrentPoints?: number;
   storeCreditUsed?: number;
   newStoreCreditBalance?: number;
   authorizingSupervisorId?: string; // Distinct audit field if override occurred

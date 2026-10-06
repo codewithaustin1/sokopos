@@ -26,6 +26,7 @@ import {
   AdminActivityEntry,
   AdminActivityCategory,
   BusinessTaxSettings,
+  BusinessLoyaltySettings,
   TaxRule,
   Customer,
   CustomerCreditLedgerEntry,
@@ -48,6 +49,7 @@ import {
   INITIAL_TRANSACTIONS,
   INITIAL_SHIFTS,
   INITIAL_CUSTOMERS,
+  DEFAULT_LOYALTY_SETTINGS,
   SUPER_ADMIN_EMAIL,
 } from '../data/initialData';
 import { soundFx } from '../utils/audio';
@@ -136,9 +138,13 @@ interface PosContextType {
   // Business Profile Settings & Branch Management
   isBusinessSettingsOpen: boolean;
   setIsBusinessSettingsOpen: (open: boolean) => void;
-  businessSettingsDefaultTab: 'profile' | 'branches' | 'tax' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset';
-  openBusinessSettings: (initialTab?: 'profile' | 'branches' | 'tax' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset') => void;
+  businessSettingsDefaultTab: 'profile' | 'branches' | 'tax' | 'loyalty' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset';
+  openBusinessSettings: (initialTab?: 'profile' | 'branches' | 'tax' | 'loyalty' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset') => void;
   updateActiveUserCredentials: (newPin?: string, newUsername?: string) => Promise<boolean>;
+
+  // Loyalty Program Settings
+  loyaltySettings: BusinessLoyaltySettings;
+  updateLoyaltySettings: (settings: Partial<BusinessLoyaltySettings>) => Promise<void>;
 
   // Hardware & Printing User Preferences
   autoPrintReceipt: boolean;
@@ -748,6 +754,25 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       INITIAL_BUSINESSES[0]
     );
   }, [businesses, activeBusinessId]);
+
+  // Tenant Loyalty Points Configuration (Controlled by Store Owner)
+  const loyaltySettings: BusinessLoyaltySettings = useMemo(() => {
+    return {
+      ...DEFAULT_LOYALTY_SETTINGS,
+      ...(currentBusiness?.loyaltySettings || {}),
+    };
+  }, [currentBusiness?.loyaltySettings]);
+
+  const updateLoyaltySettings = async (settings: Partial<BusinessLoyaltySettings>): Promise<void> => {
+    if (!currentBusiness) return;
+    const nextLoyalty: BusinessLoyaltySettings = {
+      ...loyaltySettings,
+      ...settings,
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentUser?.email || currentUser?.name,
+    };
+    updateBusinessProfile({ loyaltySettings: nextLoyalty });
+  };
 
   const setActiveBusinessId = (bizId: string) => {
     if (!isSuperAdmin && currentUser && currentUser.businessId !== bizId) {
@@ -2586,6 +2611,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return false;
     }
 
+    const rate = loyaltySettings.pointsPerCurrencyUnit > 0 ? loyaltySettings.pointsPerCurrencyUnit : 10;
+    const cashValue = (pointsToRedeem / rate).toFixed(2);
+
     const updatedCust: Customer = {
       ...cust,
       loyaltyPoints: (cust.loyaltyPoints || 0) - pointsToRedeem,
@@ -2602,7 +2630,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     soundFx.playSuccess();
-    showToast(`Redeemed ${pointsToRedeem} points for ${cust.name}`, 'success');
+    showToast(`Redeemed ${pointsToRedeem} points for ${cust.name} (${currentLocation.currency} ${cashValue} value)`, 'success');
     return true;
   };
 
@@ -3508,10 +3536,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       newStoreCreditBalance = Number(((customer.storeCreditBalance || 0) - guardrail.payableAmount).toFixed(2));
     }
 
-    if (customer) {
-      // 1 loyalty point per 100 spent
-      loyaltyPointsEarned = Math.floor(guardrail.payableAmount / 100);
+    const previousPoints = customer ? (customer.loyaltyPoints || 0) : undefined;
+    if (customer && loyaltySettings.enabled) {
+      const spendPerPt = loyaltySettings.spendPerPoint > 0 ? loyaltySettings.spendPerPoint : 100;
+      loyaltyPointsEarned = Math.floor(guardrail.payableAmount / spendPerPt);
     }
+    const currentPoints = customer && previousPoints !== undefined
+      ? Math.max(0, previousPoints + loyaltyPointsEarned - loyaltyPointsRedeemed)
+      : undefined;
 
     const mappedItems: CartItem[] = cart.map((item) => {
       const prod = allProducts.find((p) => p.id === item.productId);
@@ -3542,6 +3574,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       customerPhone: customer?.phone,
       loyaltyPointsEarned: customer ? loyaltyPointsEarned : undefined,
       loyaltyPointsRedeemed: customer && loyaltyPointsRedeemed > 0 ? loyaltyPointsRedeemed : undefined,
+      customerPreviousPoints: previousPoints,
+      customerCurrentPoints: currentPoints,
       storeCreditUsed: storeCreditUsed > 0 ? storeCreditUsed : undefined,
       newStoreCreditBalance,
       authorizingSupervisorId,
@@ -3638,7 +3672,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         totalSpent: Number((customer.totalSpent + guardrail.payableAmount).toFixed(2)),
         visitCount: customer.visitCount + 1,
         lastVisitAt: new Date().toISOString(),
-        loyaltyPoints: Math.max(0, (customer.loyaltyPoints || 0) + loyaltyPointsEarned - loyaltyPointsRedeemed),
+        loyaltyPoints: currentPoints !== undefined ? currentPoints : Math.max(0, (customer.loyaltyPoints || 0) + loyaltyPointsEarned - loyaltyPointsRedeemed),
         storeCreditBalance: newStoreCreditBalance ?? customer.storeCreditBalance,
         ledger: updatedLedger,
         updatedAt: new Date().toISOString(),
@@ -5527,7 +5561,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Business Profile Settings & Credential Management
   const [isBusinessSettingsOpen, setIsBusinessSettingsOpen] = useState<boolean>(false);
-  const [businessSettingsDefaultTab, setBusinessSettingsDefaultTab] = useState<'profile' | 'branches' | 'tax' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset'>('profile');
+  const [businessSettingsDefaultTab, setBusinessSettingsDefaultTab] = useState<'profile' | 'branches' | 'tax' | 'loyalty' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset'>('profile');
 
   // Hardware & Auto-Print Preferences (Browser Print Dialog on Checkout) - Scoped Strictly per Tenant
   const [autoPrintReceipt, setAutoPrintReceiptState] = useState<boolean>(() => {
@@ -5686,7 +5720,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
   };
 
-  const openBusinessSettings = (initialTab: 'profile' | 'branches' | 'tax' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset' = 'profile') => {
+  const openBusinessSettings = (initialTab: 'profile' | 'branches' | 'tax' | 'loyalty' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset' = 'profile') => {
     setBusinessSettingsDefaultTab(initialTab);
     setIsBusinessSettingsOpen(true);
   };
@@ -5819,6 +5853,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         businessSettingsDefaultTab,
         openBusinessSettings,
         updateActiveUserCredentials,
+
+        loyaltySettings,
+        updateLoyaltySettings,
 
         isDarkMode,
         setIsDarkMode,

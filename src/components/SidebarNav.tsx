@@ -58,9 +58,9 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       tab: 'register' as const,
       label: 'Sell',
       icon: ShoppingCart,
-      badge: !activeShift ? 'Till Closed' : cartItemCount > 0 ? `${cartItemCount}` : null,
-      badgeColor: !activeShift ? 'bg-amber-500 text-white text-[9px]' : 'bg-blue-500 text-white',
-      activeBadgeColor: !activeShift ? 'bg-amber-400 text-slate-950 font-black text-[9px]' : 'bg-white text-blue-600',
+      badge: cartItemCount > 0 ? `${cartItemCount}` : null,
+      badgeColor: 'bg-blue-500 text-white',
+      activeBadgeColor: 'bg-white text-blue-600',
     },
     {
       id: 'customers',
@@ -85,9 +85,9 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       tab: 'shifts' as const,
       label: 'Shifts & Till',
       icon: Clock,
-      badge: activeShift ? 'Active' : 'Declare',
-      badgeColor: activeShift ? 'bg-emerald-500 text-white' : 'bg-amber-500 text-white',
-      activeBadgeColor: activeShift ? 'bg-white text-emerald-600 font-black' : 'bg-white text-amber-600 font-black',
+      badge: null,
+      badgeColor: '',
+      activeBadgeColor: '',
     },
     {
       id: 'analytics',
@@ -103,9 +103,9 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       tab: 'reports' as const,
       label: 'Reports',
       icon: FileText,
-      badge: '15',
-      badgeColor: 'bg-blue-100 text-blue-700 text-[10px]',
-      activeBadgeColor: 'bg-white text-blue-600 font-black text-[10px]',
+      badge: null,
+      badgeColor: '',
+      activeBadgeColor: '',
     },
     {
       id: 'cloud-sync',
@@ -163,7 +163,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
                   {!isCollapsed && (
                     <span className="flex-1 text-left truncate">{item.label}</span>
                   )}
-                  {item.badge && (
+                  {!isCollapsed && item.badge && (
                     <span
                       className={`text-[10px] font-black px-1.5 py-0.2 rounded-full leading-none shrink-0 ${
                         isActive ? item.activeBadgeColor : item.badgeColor

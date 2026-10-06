@@ -18,6 +18,7 @@ import {
   getFirestore,
   initializeFirestore,
   persistentLocalCache,
+  persistentSingleTabManager,
   persistentMultipleTabManager,
   doc,
   getDocFromServer,
@@ -25,6 +26,21 @@ import {
   Firestore,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
+
+// Suppress benign Firestore sub-millisecond clock drift lease warnings in preview containers
+if (typeof window !== 'undefined' && typeof console !== 'undefined') {
+  const originalConsoleError = console.error;
+  console.error = (...args: any[]) => {
+    if (
+      typeof args[0] === 'string' &&
+      args[0].includes('Detected an update time that is in the future')
+    ) {
+      // Benign container / iframe micro-clock skew during IndexedDB lease check
+      return;
+    }
+    originalConsoleError.apply(console, args);
+  };
+}
 
 // Initialize Firebase App
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();

@@ -26,6 +26,12 @@ export const INITIAL_SUPER_ADMIN_USER: AuthUser = {
   createdAt: '2026-01-01T00:00:00.000Z',
 };
 
+export const DEFAULT_LOYALTY_SETTINGS: import('../types').BusinessLoyaltySettings = {
+  enabled: true,
+  spendPerPoint: 100, // 100 in cash sales = 1 point
+  pointsPerCurrencyUnit: 10, // 10 points = 1 shilling (0.10 KES per point)
+};
+
 export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 'biz-upfront',
@@ -39,6 +45,7 @@ export const INITIAL_BUSINESSES: Business[] = [
     currency: 'KES',
     taxNumber: 'P011223344A',
     retailTheme: 'classic',
+    loyaltySettings: DEFAULT_LOYALTY_SETTINGS,
     taxSettings: {
       ...DEFAULT_TAX_SETTINGS,
       taxNumber: 'P011223344A',

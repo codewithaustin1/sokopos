@@ -51,7 +51,7 @@ export const ReportsView: React.FC = () => {
                   Operations & Financial Reports
                 </h1>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 uppercase tracking-wider">
-                  15 On-Demand Reports
+                  On-Demand Reports
                 </span>
               </div>
               <p className="text-[11px] text-slate-500">
