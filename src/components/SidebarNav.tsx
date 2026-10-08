@@ -67,9 +67,9 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       tab: 'customers' as const,
       label: 'Customers',
       icon: Users,
-      badge: (customers?.length || 0) > 0 ? `${customers.length}` : null,
-      badgeColor: 'bg-indigo-100 text-indigo-700 text-[10px]',
-      activeBadgeColor: 'bg-white text-indigo-600 font-black text-[10px]',
+      badge: null,
+      badgeColor: '',
+      activeBadgeColor: '',
     },
     {
       id: 'inventory',

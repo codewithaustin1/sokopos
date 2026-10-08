@@ -185,9 +185,6 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {activeShift && (
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  )}
                   <ChevronRight className="w-4 h-4 text-slate-400" />
                 </div>
               </button>
@@ -207,14 +204,11 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
                   <div className="text-left">
                     <div>Operations & Financial Reports</div>
                     <div className="text-[10px] font-normal text-slate-500">
-                      15 exportable compliance & ledger reports
+                      Exportable compliance & ledger reports
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
-                    15
-                  </span>
                   <ChevronRight className="w-4 h-4 text-slate-400" />
                 </div>
               </button>

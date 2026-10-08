@@ -2011,19 +2011,28 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
 
                         {/* Simulated Centered Login Card */}
                         <div className="relative z-10 flex items-center justify-center p-2 my-auto">
-                          <div className="w-44 rounded-xl p-2.5 border shadow-2xl text-center bg-slate-900/90 border-slate-700/60 backdrop-blur-xl">
-                            <div className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30 mb-1">
-                              <Lock className="w-3 h-3" />
+                          <div className="w-44 rounded-xl border shadow-2xl overflow-hidden text-center bg-[#18202c] border-slate-700/60">
+                            {/* Top area */}
+                            <div className="p-2 space-y-1.5">
+                              {/* Pill tabs */}
+                              <div className="grid grid-cols-2 gap-0.5 bg-[#0e131c] p-0.5 rounded-lg border border-slate-800 text-[7px] font-bold">
+                                <span className="bg-[#343e4f] text-white rounded py-0.5">Login</span>
+                                <span className="text-slate-400 py-0.5">PIN Pad</span>
+                              </div>
+                              <div className="text-[9px] font-black text-white leading-tight py-0.5">
+                                Log In to POS Terminal
+                              </div>
+                              <div className="w-full py-1 px-1.5 rounded-lg bg-[#1d8af3] text-white font-bold text-[8px] flex items-center justify-center gap-1 shadow-xs">
+                                <span className="w-2.5 h-2.5 rounded bg-white text-[6px] font-black text-blue-600 flex items-center justify-center">G</span>
+                                <span>Continue with Google</span>
+                              </div>
                             </div>
-                            <div className="text-[10px] font-black text-white leading-tight">
-                              Log In to POS Terminal
-                            </div>
-                            <div className="text-[7.5px] text-slate-400 mb-1.5">
-                              Smart Retail Management
-                            </div>
-
-                            <div className="w-full py-1 px-2 rounded-md bg-blue-600 text-white font-bold text-[8.5px] flex items-center justify-center gap-1 shadow-xs">
-                              <span>Continue with Google</span>
+                            {/* Bottom area */}
+                            <div className="bg-[#283243] p-1.5 border-t border-slate-700/60 space-y-1">
+                              <div className="text-[6.5px] text-slate-300">Need to register a new location?</div>
+                              <div className="w-full py-0.5 px-1.5 rounded-md bg-white text-slate-900 font-bold text-[7px] flex items-center justify-center gap-1 shadow-2xs">
+                                <span>Set Up a New Store</span>
+                              </div>
                             </div>
                           </div>
                         </div>

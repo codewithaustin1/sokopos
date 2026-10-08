@@ -44,6 +44,7 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
     setSelectedCustomer,
     selectedCustomer,
     showToast,
+    openBusinessSettings,
   } = usePos();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -250,6 +251,17 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              id="customer-view-loyalty-settings-btn"
+              onClick={() => openBusinessSettings('loyalty')}
+              className="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-xs rounded-xl border border-amber-200 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              title="Configure Loyalty Points Earning & Redemption Values"
+            >
+              <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-600" />
+              <span className="hidden sm:inline">Loyalty Rules</span>
+            </button>
+
             <button
               type="button"
               onClick={handleExportCsv}

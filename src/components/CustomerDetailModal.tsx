@@ -55,6 +55,7 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
     deleteCustomer,
     isSuperAdmin,
     currentUser,
+    loyaltySettings,
   } = usePos();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'ledger'>('overview');
@@ -295,7 +296,11 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
                     {customer.loyaltyPoints || 0} pts
                   </div>
                   <div className="text-[10px] text-amber-700 mt-0.5">
-                    Value: {currentLocation.currency} {(customer.loyaltyPoints || 0).toFixed(2)}
+                    Value: {currentLocation.currency}{' '}
+                    {(
+                      (customer.loyaltyPoints || 0) /
+                      (loyaltySettings.pointsPerCurrencyUnit > 0 ? loyaltySettings.pointsPerCurrencyUnit : 10)
+                    ).toFixed(2)}
                   </div>
                 </div>
 
@@ -417,7 +422,7 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
                     </h3>
                   </div>
                   <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
-                    1 Point = {currentLocation.currency} 1.00 Discount
+                    {loyaltySettings.pointsPerCurrencyUnit > 0 ? loyaltySettings.pointsPerCurrencyUnit : 10} Points = {currentLocation.currency} 1.00 Value
                   </span>
                 </div>
 
@@ -427,7 +432,7 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
                       Available Points: <strong className="text-slate-900 font-black">{customer.loyaltyPoints || 0} pts</strong>
                     </div>
                     <p className="text-[10px] text-slate-500 mt-0.5">
-                      Earns 1 point per {currentLocation.currency} 100 spent automatically on checkout.
+                      Earns 1 point per {currentLocation.currency} {loyaltySettings.spendPerPoint > 0 ? loyaltySettings.spendPerPoint : 100} spent automatically on checkout.
                     </p>
                   </div>
 

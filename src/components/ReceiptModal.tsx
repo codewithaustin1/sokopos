@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Printer, MessageSquare, ArrowRight, Check, Share2, RotateCcw, AlertTriangle, CheckCircle2, Download } from 'lucide-react';
+import { Printer, MessageSquare, ArrowRight, Check, Share2, RotateCcw, AlertTriangle, CheckCircle2, Download, Star } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { getItemDiscountedUnitPrice, formatDiscountBadge } from '../utils/discountUtils';
 import { ReceiptShareModal } from './ReceiptShareModal';
@@ -226,9 +226,9 @@ export const ReceiptModal: React.FC = () => {
               </span>
             </div>
 
-            {/* Customer Account Details if assigned */}
+            {/* Customer Account Details & Loyalty Balance if assigned */}
             {activeReceipt.customerName && (
-              <div className="pt-1.5 mt-1 border-t border-slate-100 space-y-1">
+              <div className="pt-2 mt-1.5 border-t border-slate-200/80 space-y-1.5">
                 <div className="flex justify-between">
                   <span className="text-slate-500">Customer:</span>
                   <span className="font-bold text-slate-900">{activeReceipt.customerName}</span>
@@ -239,16 +239,59 @@ export const ReceiptModal: React.FC = () => {
                     <span className="font-mono text-slate-700">{activeReceipt.customerPhone}</span>
                   </div>
                 )}
-                {activeReceipt.loyaltyPointsEarned !== undefined && activeReceipt.loyaltyPointsEarned > 0 && (
-                  <div className="flex justify-between text-amber-800 font-bold">
-                    <span>Loyalty Points:</span>
-                    <span>+{activeReceipt.loyaltyPointsEarned} pts earned</span>
+
+                {/* Loyalty Rewards Ledger for Existing Customer */}
+                {(activeReceipt.customerPreviousPoints !== undefined ||
+                  activeReceipt.customerCurrentPoints !== undefined ||
+                  (activeReceipt.loyaltyPointsEarned !== undefined && activeReceipt.loyaltyPointsEarned > 0)) && (
+                  <div className="mt-1.5 p-2.5 rounded-xl bg-amber-50/80 border border-amber-200/80 space-y-1 text-left">
+                    <div className="text-[10px] font-black uppercase tracking-wider text-amber-900 flex items-center justify-between pb-1 border-b border-amber-200/60">
+                      <span className="flex items-center gap-1">
+                        <Star className="w-3 h-3 fill-amber-500 text-amber-600 shrink-0" />
+                        Loyalty Points Balance
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between text-[11px] text-slate-700">
+                      <span>Previous Points Balance:</span>
+                      <span className="font-mono font-bold text-slate-900">
+                        {activeReceipt.customerPreviousPoints ?? 0} pts
+                      </span>
+                    </div>
+
+                    {activeReceipt.loyaltyPointsEarned !== undefined && activeReceipt.loyaltyPointsEarned > 0 && (
+                      <div className="flex justify-between text-[11px] text-emerald-800 font-semibold">
+                        <span>+ Points Earned This Sale:</span>
+                        <span className="font-mono font-bold">
+                          +{activeReceipt.loyaltyPointsEarned} pts
+                        </span>
+                      </div>
+                    )}
+
+                    {activeReceipt.loyaltyPointsRedeemed !== undefined && activeReceipt.loyaltyPointsRedeemed > 0 && (
+                      <div className="flex justify-between text-[11px] text-rose-700 font-semibold">
+                        <span>- Points Redeemed:</span>
+                        <span className="font-mono font-bold">
+                          -{activeReceipt.loyaltyPointsRedeemed} pts
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between text-[11px] text-amber-950 font-black pt-1 border-t border-amber-200/80">
+                      <span>Current Points Balance:</span>
+                      <span className="font-mono text-xs font-black text-amber-900">
+                        {activeReceipt.customerCurrentPoints !== undefined
+                          ? activeReceipt.customerCurrentPoints
+                          : ((activeReceipt.customerPreviousPoints ?? 0) + (activeReceipt.loyaltyPointsEarned || 0) - (activeReceipt.loyaltyPointsRedeemed || 0))} pts
+                      </span>
+                    </div>
                   </div>
                 )}
+
                 {activeReceipt.paymentMethod === 'store_credit' && activeReceipt.newStoreCreditBalance !== undefined && (
-                  <div className="flex justify-between text-indigo-800 font-bold">
-                    <span>Tab Balance:</span>
-                    <span>{currentLocation.currency} {activeReceipt.newStoreCreditBalance.toFixed(2)}</span>
+                  <div className="flex justify-between text-indigo-800 font-bold pt-0.5">
+                    <span>Store Credit Tab Balance:</span>
+                    <span className="font-mono">{currentLocation.currency} {activeReceipt.newStoreCreditBalance.toFixed(2)}</span>
                   </div>
                 )}
               </div>

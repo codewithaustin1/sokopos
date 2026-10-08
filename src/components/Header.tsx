@@ -221,7 +221,6 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="hidden md:inline">
             {activeShift ? `Shift #${activeShift.shiftNumber}` : 'Open Shift'}
           </span>
-          {activeShift && <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />}
         </button>
 
         {/* Quick Dim Retail Dark Theme Toggle */}

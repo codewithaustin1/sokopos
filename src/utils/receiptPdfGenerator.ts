@@ -102,6 +102,32 @@ export function generateReceiptPdf({
       (transaction.paymentDetails.cardLast4 ? ` (*${transaction.paymentDetails.cardLast4})` : '');
     printRow('Payment:', paymentLabel, 7.5, true);
 
+    if (transaction.customerName) {
+      printRow('Customer:', transaction.customerName, 7.5, true);
+      if (transaction.customerPhone) {
+        printRow('Phone:', transaction.customerPhone, 7.5, false);
+      }
+      if (
+        transaction.customerPreviousPoints !== undefined ||
+        transaction.customerCurrentPoints !== undefined ||
+        (transaction.loyaltyPointsEarned !== undefined && transaction.loyaltyPointsEarned > 0)
+      ) {
+        const prevPts = transaction.customerPreviousPoints ?? 0;
+        const curPts =
+          transaction.customerCurrentPoints !== undefined
+            ? transaction.customerCurrentPoints
+            : prevPts + (transaction.loyaltyPointsEarned || 0) - (transaction.loyaltyPointsRedeemed || 0);
+        printRow('Previous Points:', `${prevPts} pts`, 7.5, false);
+        if (transaction.loyaltyPointsEarned && transaction.loyaltyPointsEarned > 0) {
+          printRow('Points Earned:', `+${transaction.loyaltyPointsEarned} pts`, 7.5, false);
+        }
+        if (transaction.loyaltyPointsRedeemed && transaction.loyaltyPointsRedeemed > 0) {
+          printRow('Points Redeemed:', `-${transaction.loyaltyPointsRedeemed} pts`, 7.5, false);
+        }
+        printRow('Current Points:', `${curPts} pts`, 7.5, true);
+      }
+    }
+
     printDashedLine();
 
     // 3. Itemized list

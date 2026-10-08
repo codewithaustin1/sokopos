@@ -25,6 +25,32 @@ export function formatTransactionReceiptText(
     }${
       transaction.paymentDetails.cardLast4 ? ` (*${transaction.paymentDetails.cardLast4})` : ''
     }`,
+    ...(transaction.customerName
+      ? [
+          `Customer: ${transaction.customerName}`,
+          ...(transaction.customerPhone ? [`Phone: ${transaction.customerPhone}`] : []),
+          ...(transaction.customerPreviousPoints !== undefined ||
+          transaction.customerCurrentPoints !== undefined ||
+          (transaction.loyaltyPointsEarned !== undefined && transaction.loyaltyPointsEarned > 0)
+            ? [
+                `Previous Points: ${transaction.customerPreviousPoints ?? 0} pts`,
+                ...(transaction.loyaltyPointsEarned && transaction.loyaltyPointsEarned > 0
+                  ? [`Points Earned: +${transaction.loyaltyPointsEarned} pts`]
+                  : []),
+                ...(transaction.loyaltyPointsRedeemed && transaction.loyaltyPointsRedeemed > 0
+                  ? [`Points Redeemed: -${transaction.loyaltyPointsRedeemed} pts`]
+                  : []),
+                `Current Points: ${
+                  transaction.customerCurrentPoints !== undefined
+                    ? transaction.customerCurrentPoints
+                    : (transaction.customerPreviousPoints ?? 0) +
+                      (transaction.loyaltyPointsEarned || 0) -
+                      (transaction.loyaltyPointsRedeemed || 0)
+                } pts`,
+              ]
+            : []),
+        ]
+      : []),
     '----------------------------------------',
     'ITEMS:',
   ];
