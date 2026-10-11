@@ -21,6 +21,7 @@ import {
   Location,
   Cashier,
   Customer,
+  Supplier,
   Transaction,
   SyncLogEvent,
   StockTransfer,
@@ -121,6 +122,107 @@ export async function deleteBusinessFromFirestore(businessId: string): Promise<v
   } catch (error) {
     console.warn(`Failed to delete business ${businessId} from Firestore:`, error);
   }
+}
+
+/**
+ * Enforces business uniqueness at both the Google account email and Tenant ID levels.
+ * When conflicting businesses share the same email or tenant ID,
+ * the business last logged into (most recent lastLoginAt, or fallback createdAt)
+ * is prioritized. All other conflicting businesses are returned in conflictsToDelete.
+ */
+export function resolveBusinessUniquenessConflicts(businesses: Business[]): {
+  uniqueBusinesses: Business[];
+  conflictsToDelete: Business[];
+} {
+  if (!Array.isArray(businesses) || businesses.length === 0) {
+    return { uniqueBusinesses: [], conflictsToDelete: [] };
+  }
+
+  // Calculate login priority score (most recent lastLoginAt wins; fallback to createdAt)
+  const getSortScore = (b: Business): number => {
+    const loginScore = b.lastLoginAt ? new Date(b.lastLoginAt).getTime() : 0;
+    const createdScore = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return Math.max(loginScore, createdScore);
+  };
+
+  const conflictsToDelete: Business[] = [];
+  const keptByEmail = new Map<string, Business>();
+
+  // 1. Enforce Email Uniqueness: No two businesses may share the same Google account email
+  for (const biz of businesses) {
+    if (!biz || !biz.ownerEmail) continue;
+    const normalizedEmail = biz.ownerEmail.trim().toLowerCase();
+
+    const existing = keptByEmail.get(normalizedEmail);
+    if (!existing) {
+      keptByEmail.set(normalizedEmail, biz);
+    } else {
+      // Conflict on Google Account email!
+      const existingScore = getSortScore(existing);
+      const currentScore = getSortScore(biz);
+
+      if (currentScore > existingScore) {
+        // Current business was logged into more recently: keep current, delete existing
+        keptByEmail.set(normalizedEmail, biz);
+        conflictsToDelete.push(existing);
+      } else {
+        // Existing business was logged into more recently: keep existing, delete current
+        conflictsToDelete.push(biz);
+      }
+    }
+  }
+
+  // 2. Enforce Tenant ID Uniqueness: No two businesses may share the same tenant ID
+  const keptById = new Map<string, Business>();
+  for (const biz of Array.from(keptByEmail.values())) {
+    const bizId = (biz.id || '').trim();
+    if (!bizId) continue;
+
+    const existing = keptById.get(bizId);
+    if (!existing) {
+      keptById.set(bizId, biz);
+    } else {
+      // Conflict on tenant ID
+      const existingScore = getSortScore(existing);
+      const currentScore = getSortScore(biz);
+
+      if (currentScore > existingScore) {
+        keptById.set(bizId, biz);
+        conflictsToDelete.push(existing);
+      } else {
+        conflictsToDelete.push(biz);
+      }
+    }
+  }
+
+  return {
+    uniqueBusinesses: Array.from(keptById.values()),
+    conflictsToDelete,
+  };
+}
+
+/**
+ * Permanently deletes conflicting businesses and purges their tenant data at the Firestore level.
+ */
+export async function deleteBusinessConflictsFromFirestore(
+  conflicts: Business[]
+): Promise<number> {
+  if (!auth.currentUser || !conflicts || conflicts.length === 0) return 0;
+
+  let deletedCount = 0;
+  for (const conflict of conflicts) {
+    try {
+      console.log(
+        `[Firestore Uniqueness] Purging conflicting business "${conflict.name}" (ID: ${conflict.id}, Email: ${conflict.ownerEmail}) from Firestore...`
+      );
+      await deleteDoc(doc(db, 'businesses', conflict.id));
+      await purgeTenantAllDataFromFirestore(conflict.id);
+      deletedCount++;
+    } catch (err) {
+      console.warn(`[Firestore Uniqueness] Error deleting conflict ${conflict.id} from Firestore:`, err);
+    }
+  }
+  return deletedCount;
 }
 
 export async function purgeTenantAllDataFromFirestore(businessId: string): Promise<{
@@ -755,3 +857,80 @@ export async function getTenantCustomersFromFirestore(businessId: string): Promi
     return [];
   }
 }
+
+// -------------------------------------------------------------
+// Suppliers Management (Tenant Scoped)
+// -------------------------------------------------------------
+export async function saveSupplierToFirestore(supplier: Supplier): Promise<void> {
+  if (!auth.currentUser) return;
+  const path = `suppliers/${supplier.id}`;
+  try {
+    await setDoc(doc(db, 'suppliers', supplier.id), supplier);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function updateSupplierInFirestore(supplierId: string, updates: Partial<Supplier>): Promise<void> {
+  if (!auth.currentUser) return;
+  const path = `suppliers/${supplierId}`;
+  try {
+    await setDoc(
+      doc(db, 'suppliers', supplierId),
+      {
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function deleteSupplierFromFirestore(supplierId: string): Promise<void> {
+  if (!auth.currentUser) return;
+  const path = `suppliers/${supplierId}`;
+  try {
+    await deleteDoc(doc(db, 'suppliers', supplierId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export function subscribeToTenantSuppliers(
+  businessId: string,
+  onUpdate: (suppliers: Supplier[]) => void
+): Unsubscribe {
+  if (!auth.currentUser) {
+    return () => {};
+  }
+  const q = query(collection(db, 'suppliers'), where('businessId', '==', businessId));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const suppliers: Supplier[] = [];
+      snapshot.forEach((d) => suppliers.push(d.data() as Supplier));
+      onUpdate(suppliers);
+    },
+    (error) => {
+      console.warn('Firestore supplier real-time subscription error:', error);
+    }
+  );
+}
+
+export async function getTenantSuppliersFromFirestore(businessId: string): Promise<Supplier[]> {
+  if (!auth.currentUser) return [];
+  const path = 'suppliers';
+  try {
+    const q = query(collection(db, 'suppliers'), where('businessId', '==', businessId));
+    const snap = await getDocs(q);
+    const suppliers: Supplier[] = [];
+    snap.forEach((d) => suppliers.push(d.data() as Supplier));
+    return suppliers;
+  } catch (error) {
+    console.warn('Failed to get tenant suppliers from Firestore:', error);
+    return [];
+  }
+}
+

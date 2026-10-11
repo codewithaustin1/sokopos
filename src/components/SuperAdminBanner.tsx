@@ -43,7 +43,7 @@ export const SuperAdminBanner: React.FC<SuperAdminBannerProps> = ({
           >
             {businesses.map((biz) => (
               <option key={biz.id} value={biz.id} className="text-slate-900 bg-white">
-                {biz.name} ({biz.code})
+                {biz.name} ({biz.code}){biz.status === 'suspended' ? ' [SUSPENDED]' : ''}
               </option>
             ))}
           </select>

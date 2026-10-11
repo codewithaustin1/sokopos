@@ -24,21 +24,41 @@ import {
   getDocFromServer,
   getDoc,
   Firestore,
+  setLogLevel,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
+
+// Silence internal Firestore logger warnings in preview / iframe environments
+try {
+  setLogLevel('silent');
+} catch {
+  // Ignored if unsupported
+}
 
 // Suppress benign Firestore sub-millisecond clock drift lease warnings in preview containers
 if (typeof window !== 'undefined' && typeof console !== 'undefined') {
   const originalConsoleError = console.error;
+  const originalConsoleWarn = console.warn;
+  const isBenignClockSkew = (...args: any[]) => {
+    return args.some((arg) => {
+      const str = typeof arg === 'string' ? arg : (arg?.message || String(arg) || '');
+      return str.includes('Detected an update time that is in the future');
+    });
+  };
+
   console.error = (...args: any[]) => {
-    if (
-      typeof args[0] === 'string' &&
-      args[0].includes('Detected an update time that is in the future')
-    ) {
+    if (isBenignClockSkew(...args)) {
       // Benign container / iframe micro-clock skew during IndexedDB lease check
       return;
     }
     originalConsoleError.apply(console, args);
+  };
+
+  console.warn = (...args: any[]) => {
+    if (isBenignClockSkew(...args)) {
+      return;
+    }
+    originalConsoleWarn.apply(console, args);
   };
 }
 

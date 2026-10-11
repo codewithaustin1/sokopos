@@ -19,10 +19,14 @@ import {
   Wallet,
   User,
   Star,
+  GitFork,
+  Plus,
+  Trash2,
+  Split,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import QRCode from 'qrcode';
-import { PaymentMethod } from '../types';
+import { PaymentMethod, SplitPaymentTender } from '../types';
 import { usePos } from '../context/PosContext';
 import { calculatePaymentGuardrails, roundCashHalfUp } from '../utils/cashRounding';
 import { CustomerFacingMpesaQrModal } from './CustomerFacingMpesaQrModal';
@@ -58,6 +62,55 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>(initialMethod || 'cash');
   const [isCustomerSelectOpen, setIsCustomerSelectOpen] = useState(false);
 
+  // Split payment state
+  interface SplitRowState {
+    id: string;
+    method: 'cash' | 'mpesa' | 'card' | 'store_credit';
+    amount: string;
+    cashTendered?: string;
+    mpesaCode?: string;
+    cardLast4?: string;
+    cardNetwork?: string;
+    notes?: string;
+  }
+
+  const [splitRows, setSplitRows] = useState<SplitRowState[]>([
+    {
+      id: 'split-1',
+      method: 'cash',
+      amount: '',
+      cashTendered: '',
+    },
+    {
+      id: 'split-2',
+      method: 'mpesa',
+      amount: '',
+      mpesaCode: '',
+    },
+  ]);
+
+  const initializeSplitRows = useCallback((total: number) => {
+    const half = Math.floor(total / 2);
+    const rest = Number((total - half).toFixed(2));
+    const randomCode = `QX${Math.floor(1000 + Math.random() * 9000)}${String.fromCharCode(
+      65 + Math.floor(Math.random() * 26)
+    )}${Math.floor(10 + Math.random() * 90)}`;
+    setSplitRows([
+      {
+        id: 'split-1',
+        method: 'cash',
+        amount: half.toString(),
+        cashTendered: half.toString(),
+      },
+      {
+        id: 'split-2',
+        method: 'mpesa',
+        amount: rest.toString(),
+        mpesaCode: randomCode,
+      },
+    ]);
+  }, []);
+
   // Guardrail computation for current selection and cash
   const currentGuardrail = useMemo(
     () => calculatePaymentGuardrails(cartTotal, selectedMethod),
@@ -68,18 +121,78 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
   // Cash state initialized to cash payable
   const [cashTendered, setCashTendered] = useState<string>(roundCashHalfUp(cartTotal).toString());
 
+  // Split totals & balance calculations
+  const splitAllocatedTotal = useMemo(() => {
+    return Number(
+      splitRows
+        .reduce((sum, row) => {
+          const val = parseFloat(row.amount);
+          return sum + (isNaN(val) ? 0 : val);
+        }, 0)
+        .toFixed(2)
+    );
+  }, [splitRows]);
+
+  const splitRemaining = useMemo(() => {
+    return Number((cartTotal - splitAllocatedTotal).toFixed(2));
+  }, [cartTotal, splitAllocatedTotal]);
+
+  const isSplitBalanced = useMemo(() => {
+    return Math.abs(splitRemaining) < 0.01 && splitAllocatedTotal > 0;
+  }, [splitRemaining, splitAllocatedTotal]);
+
+  const splitCashRow = useMemo(() => {
+    return splitRows.find((r) => r.method === 'cash');
+  }, [splitRows]);
+
+  const splitCashAmount = splitCashRow ? parseFloat(splitCashRow.amount) || 0 : 0;
+  const splitCashTendered = splitCashRow
+    ? parseFloat(splitCashRow.cashTendered || splitCashRow.amount) || splitCashAmount
+    : 0;
+  const splitCashChange = Math.max(0, splitCashTendered - splitCashAmount);
+
+  const isSplitValid = useMemo(() => {
+    if (selectedMethod !== 'split') return true;
+    if (!isSplitBalanced) return false;
+    const activeRows = splitRows.filter((r) => (parseFloat(r.amount) || 0) > 0);
+    if (activeRows.length < 2) return false;
+
+    for (const row of splitRows) {
+      const amt = parseFloat(row.amount);
+      if (isNaN(amt) || amt <= 0) return false;
+      if (row.method === 'cash') {
+        const tendered = parseFloat(row.cashTendered || row.amount);
+        if (isNaN(tendered) || tendered < amt) return false;
+      }
+      if (row.method === 'store_credit') {
+        if (!selectedCustomer || !selectedCustomer.isCreditAllowed) return false;
+        const potentialDebt = Math.max(0, -((selectedCustomer.storeCreditBalance || 0) - amt));
+        if (potentialDebt > (selectedCustomer.creditLimit || 0)) return false;
+      }
+    }
+    return true;
+  }, [selectedMethod, isSplitBalanced, splitRows, selectedCustomer]);
+
   // Synchronize initialMethod and default cash tendered when modal is opened
   useEffect(() => {
     if (isOpen) {
       setSelectedMethod(initialMethod || 'cash');
       setCashTendered(cashPayable.toString());
+      if (initialMethod === 'split') {
+        initializeSplitRows(cartTotal);
+      }
     }
-  }, [isOpen, initialMethod, cartTotal, cashPayable]);
+  }, [isOpen, initialMethod, cartTotal, cashPayable, initializeSplitRows]);
 
   const handleSelectMethod = (method: PaymentMethod) => {
     setSelectedMethod(method);
     if (method === 'cash') {
       setCashTendered(cashPayable.toString());
+    } else if (method === 'split') {
+      const sum = splitRows.reduce((acc, r) => acc + (parseFloat(r.amount) || 0), 0);
+      if (Math.abs(sum - cartTotal) > 0.01) {
+        initializeSplitRows(cartTotal);
+      }
     }
   };
 
@@ -196,11 +309,33 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
     }
     if (selectedMethod === 'cash' && tenderedAmount < currentGuardrail.payableAmount) return;
 
+    if (selectedMethod === 'split') {
+      if (!isSplitValid) {
+        soundFx?.playError?.();
+        if (!isSplitBalanced) {
+          if (splitRemaining > 0) {
+            showToast(
+              `Split Payment Incomplete: Please allocate remaining ${currentLocation.currency} ${splitRemaining.toFixed(2)}.`,
+              'error'
+            );
+          } else {
+            showToast(
+              `Split Payment Over-allocated: Total exceeds transaction amount by ${currentLocation.currency} ${Math.abs(splitRemaining).toFixed(2)}.`,
+              'error'
+            );
+          }
+        } else {
+          showToast('Please check split tender amounts and cash tendered.', 'error');
+        }
+        return;
+      }
+    }
+
     setIsProcessing(true);
 
     await new Promise((res) => setTimeout(res, 400));
 
-    let details = {};
+    let details: any = {};
 
     if (selectedMethod === 'mpesa') {
       const generatedCode = `QX${Math.floor(1000 + Math.random() * 9000)}${String.fromCharCode(
@@ -230,6 +365,70 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
       details = {
         storeCreditUsed: currentGuardrail.payableAmount,
         notes: `Charged to ${selectedCustomer?.name || 'Customer'}'s store credit tab`,
+        roundingDifference: 0,
+      };
+    } else if (selectedMethod === 'split') {
+      const activeRows = splitRows.filter((r) => (parseFloat(r.amount) || 0) > 0);
+      const cashRow = activeRows.find((r) => r.method === 'cash');
+      const mpesaRow = activeRows.find((r) => r.method === 'mpesa');
+      const cardRow = activeRows.find((r) => r.method === 'card');
+      const creditRow = activeRows.find((r) => r.method === 'store_credit');
+
+      const cAmt = cashRow ? parseFloat(cashRow.amount) || 0 : 0;
+      const cTendered = cashRow ? parseFloat(cashRow.cashTendered || cashRow.amount) || cAmt : 0;
+      const cChange = Math.max(0, cTendered - cAmt);
+
+      const generatedMpesaCode =
+        mpesaRow?.mpesaCode ||
+        `QX${Math.floor(1000 + Math.random() * 9000)}${String.fromCharCode(
+          65 + Math.floor(Math.random() * 26)
+        )}${Math.floor(10 + Math.random() * 90)}`;
+
+      const splitBreakdown: SplitPaymentTender[] = activeRows.map((r) => {
+        const amt = parseFloat(r.amount) || 0;
+        if (r.method === 'cash') {
+          return {
+            id: r.id,
+            method: 'cash',
+            amount: amt,
+            cashTendered: cTendered,
+            cashChange: Number(cChange.toFixed(2)),
+          };
+        }
+        if (r.method === 'mpesa') {
+          return {
+            id: r.id,
+            method: 'mpesa',
+            amount: amt,
+            mpesaCode: r.mpesaCode || generatedMpesaCode,
+            mpesaPhone: `+254 ${mpesaPhone}`,
+          };
+        }
+        if (r.method === 'card') {
+          return {
+            id: r.id,
+            method: 'card',
+            amount: amt,
+            cardLast4: r.cardLast4 || cardLast4,
+            cardNetwork: r.cardNetwork || cardNetwork,
+          };
+        }
+        return {
+          id: r.id,
+          method: 'store_credit',
+          amount: amt,
+          notes: `Split charged to ${selectedCustomer?.name || 'Customer'}'s store credit tab`,
+        };
+      });
+
+      details = {
+        splitBreakdown,
+        cashTendered: cashRow ? cTendered : undefined,
+        cashChange: cashRow ? Number(cChange.toFixed(2)) : undefined,
+        mpesaCode: mpesaRow ? (mpesaRow.mpesaCode || generatedMpesaCode) : undefined,
+        cardLast4: cardRow?.cardLast4 || (cardRow ? cardLast4 : undefined),
+        cardNetwork: cardRow?.cardNetwork || (cardRow ? cardNetwork : undefined),
+        storeCreditUsed: creditRow ? parseFloat(creditRow.amount) || 0 : undefined,
         roundingDifference: 0,
       };
     }
@@ -270,9 +469,14 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
     activeShift,
     showToast,
     soundFx,
+    isSplitValid,
+    isSplitBalanced,
+    splitRemaining,
+    splitRows,
+    currentLocation.currency,
   ]);
 
-  // Modal keyboard shortcuts: Esc to close, F1 Cash, F2 M-Pesa, F3 Card, Enter to Complete
+  // Modal keyboard shortcuts: Esc to close, F1 Cash, F2 M-Pesa, F3 Card, F4 Store Credit, F5 Split, Enter to Complete
   useEffect(() => {
     if (!isOpen) return;
 
@@ -302,6 +506,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
         handleSelectMethod('store_credit');
         return;
       }
+      if (e.key === 'F5') {
+        e.preventDefault();
+        handleSelectMethod('split');
+        return;
+      }
       if (e.key === 'Enter') {
         const isCreditLimitExceeded =
           selectedMethod === 'store_credit' &&
@@ -314,8 +523,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
           !hasZeroStock &&
           !!activeShift &&
           activeShift.status === 'open' &&
-          !(selectedMethod === 'cash' && tenderedAmount < currentGuardrail.payableAmount) &&
-          !(selectedMethod === 'store_credit' && (!selectedCustomer || !selectedCustomer.isCreditAllowed || isCreditLimitExceeded));
+          (selectedMethod === 'split'
+            ? isSplitValid
+            : !(selectedMethod === 'cash' && tenderedAmount < currentGuardrail.payableAmount) &&
+              !(selectedMethod === 'store_credit' && (!selectedCustomer || !selectedCustomer.isCreditAllowed || isCreditLimitExceeded)));
         if (canComplete) {
           e.preventDefault();
           handleCompletePayment();
@@ -325,7 +536,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose, isProcessing, hasZeroStock, selectedMethod, tenderedAmount, currentGuardrail.payableAmount, handleCompletePayment, cashPayable, selectedCustomer]);
+  }, [isOpen, onClose, isProcessing, hasZeroStock, selectedMethod, tenderedAmount, currentGuardrail.payableAmount, handleCompletePayment, cashPayable, selectedCustomer, isSplitValid]);
 
   if (!isOpen) return null;
 
@@ -458,7 +669,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
             </h3>
 
             {/* Method Tabs */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
               {/* M-PESA (F2) */}
               <button
                 type="button"
@@ -541,12 +752,40 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                 <span className="text-[9px] text-slate-400">Exact Charge</span>
               </button>
 
+              {/* Split Tender (F5) */}
+              <button
+                type="button"
+                onClick={() => handleSelectMethod('split')}
+                title="Select Split Payment (Shortcut: F5)"
+                className={`p-3 rounded-xl border-2 flex flex-col items-center justify-center gap-1.5 transition text-left cursor-pointer relative ${
+                  selectedMethod === 'split'
+                    ? 'border-amber-500 bg-amber-50/70 text-amber-900 shadow-xs'
+                    : 'border-slate-200 hover:border-slate-300 text-slate-700 bg-white'
+                }`}
+              >
+                <div className="absolute top-2 right-2 flex items-center gap-1">
+                  {selectedMethod === 'split' && (
+                    <span className="w-2 h-2 rounded-full bg-amber-500" />
+                  )}
+                  <kbd className="text-[9px] font-mono px-1 py-0.2 rounded bg-slate-100 border border-slate-300 text-slate-500 font-bold">
+                    F5
+                  </kbd>
+                </div>
+                <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 font-black flex items-center justify-center text-xs">
+                  <GitFork className="w-4 h-4 text-amber-600 rotate-90" />
+                </div>
+                <span className="font-bold text-xs truncate">Split Tender</span>
+                <span className="text-[9px] text-amber-700 font-bold truncate">
+                  Multi-Method
+                </span>
+              </button>
+
               {/* Store Credit (F4) */}
               <button
                 type="button"
                 onClick={() => handleSelectMethod('store_credit')}
                 title="Select Store Credit / Daftari Tab (Shortcut: F4)"
-                className={`p-3 rounded-xl border-2 flex flex-col items-center justify-center gap-1.5 transition text-left cursor-pointer relative ${
+                className={`p-3 rounded-xl border-2 flex flex-col items-center justify-center gap-1.5 transition text-left cursor-pointer relative col-span-2 sm:col-span-1 ${
                   selectedMethod === 'store_credit'
                     ? 'border-indigo-500 bg-indigo-50/60 text-indigo-900 shadow-xs'
                     : 'border-slate-200 hover:border-slate-300 text-slate-700 bg-white'
@@ -1076,6 +1315,454 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                   )}
                 </div>
               )}
+
+              {/* Split Tender Panel */}
+              {selectedMethod === 'split' && (
+                <div className="space-y-3.5">
+                  {/* Allocation Status & Progress Header */}
+                  <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-2xs space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                          <GitFork className="w-4 h-4 rotate-90" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-xs text-slate-800">Split Payment Allocation</h4>
+                          <p className="text-[10px] text-slate-500">
+                            Total Due:{' '}
+                            <strong className="text-slate-700 font-mono">
+                              {currentLocation.currency} {cartTotal.toFixed(2)}
+                            </strong>
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Live Balance Status Badge */}
+                      <div>
+                        {isSplitBalanced ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>100% Balanced ({currentLocation.currency} {splitAllocatedTotal.toFixed(2)})</span>
+                          </span>
+                        ) : splitRemaining > 0 ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-amber-100 text-amber-900 border border-amber-300">
+                            <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Remaining: {currentLocation.currency} {splitRemaining.toFixed(2)}</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-red-100 text-red-900 border border-red-300">
+                            <AlertCircle className="w-3.5 h-3.5 text-red-600" />
+                            <span>Over by {currentLocation.currency} {Math.abs(splitRemaining).toFixed(2)}</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Segmented Visual Progress Bar */}
+                    <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden flex border border-slate-200">
+                      {splitRows.map((row) => {
+                        const amt = parseFloat(row.amount) || 0;
+                        const pct = cartTotal > 0 ? Math.min(100, Math.max(0, (amt / cartTotal) * 100)) : 0;
+                        if (pct <= 0) return null;
+                        const colorClass =
+                          row.method === 'cash'
+                            ? 'bg-blue-500'
+                            : row.method === 'mpesa'
+                            ? 'bg-emerald-500'
+                            : row.method === 'card'
+                            ? 'bg-purple-500'
+                            : 'bg-indigo-500';
+                        return (
+                          <div
+                            key={row.id}
+                            style={{ width: `${pct}%` }}
+                            className={`${colorClass} h-full transition-all duration-200`}
+                            title={`${row.method.toUpperCase()}: ${pct.toFixed(1)}%`}
+                          />
+                        );
+                      })}
+                    </div>
+
+                    {/* Quick Split Presets Bar */}
+                    <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1.5 border-t border-slate-100 text-[11px]">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Presets:</span>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const half = Math.floor(cartTotal / 2);
+                            const rest = Number((cartTotal - half).toFixed(2));
+                            setSplitRows([
+                              { id: 'split-1', method: 'cash', amount: half.toString(), cashTendered: half.toString() },
+                              { id: 'split-2', method: 'mpesa', amount: rest.toString(), mpesaCode: `QX${Math.floor(1000 + Math.random() * 9000)}K` },
+                            ]);
+                          }}
+                          className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] transition cursor-pointer"
+                        >
+                          50/50 Cash &amp; M-Pesa
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const half = Math.floor(cartTotal / 2);
+                            const rest = Number((cartTotal - half).toFixed(2));
+                            setSplitRows([
+                              { id: 'split-1', method: 'cash', amount: half.toString(), cashTendered: half.toString() },
+                              { id: 'split-2', method: 'card', amount: rest.toString(), cardLast4: '4192', cardNetwork: 'Visa' },
+                            ]);
+                          }}
+                          className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] transition cursor-pointer"
+                        >
+                          50/50 Cash &amp; Card
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const n = splitRows.length;
+                            if (n === 0) return;
+                            const perRow = Math.floor(cartTotal / n);
+                            setSplitRows((prev) =>
+                              prev.map((r, i) => {
+                                const amt = i === n - 1 ? Number((cartTotal - perRow * (n - 1)).toFixed(2)) : perRow;
+                                return {
+                                  ...r,
+                                  amount: amt.toString(),
+                                  cashTendered: r.method === 'cash' ? amt.toString() : r.cashTendered,
+                                };
+                              })
+                            );
+                          }}
+                          className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] transition cursor-pointer"
+                        >
+                          Equal Split
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSplitRows((prev) =>
+                              prev.map((r) => ({
+                                ...r,
+                                amount: '',
+                                cashTendered: '',
+                              }))
+                            );
+                          }}
+                          className="px-2 py-0.5 rounded bg-slate-100 hover:bg-red-50 text-slate-500 hover:text-red-700 font-medium text-[10px] transition cursor-pointer"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Tender Rows List */}
+                  <div className="space-y-2.5 max-h-[36vh] overflow-y-auto pr-1">
+                    {splitRows.map((row, index) => {
+                      const rowAmount = parseFloat(row.amount) || 0;
+                      return (
+                        <div
+                          key={row.id}
+                          className={`p-3 rounded-xl border bg-white transition space-y-2 ${
+                            row.method === 'cash'
+                              ? 'border-blue-200 shadow-2xs'
+                              : row.method === 'mpesa'
+                              ? 'border-emerald-200 shadow-2xs'
+                              : row.method === 'card'
+                              ? 'border-purple-200 shadow-2xs'
+                              : 'border-indigo-200 shadow-2xs'
+                          }`}
+                        >
+                          {/* Row Header: Method selector and delete */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black text-slate-400 font-mono w-4">
+                                #{index + 1}
+                              </span>
+                              <select
+                                value={row.method}
+                                onChange={(e) => {
+                                  const newMethod = e.target.value as any;
+                                  setSplitRows((prev) =>
+                                    prev.map((r) =>
+                                      r.id === row.id
+                                        ? {
+                                            ...r,
+                                            method: newMethod,
+                                            mpesaCode:
+                                              newMethod === 'mpesa'
+                                                ? r.mpesaCode ||
+                                                  `QX${Math.floor(1000 + Math.random() * 9000)}K`
+                                                : undefined,
+                                            cardLast4: newMethod === 'card' ? r.cardLast4 || '4192' : undefined,
+                                            cardNetwork: newMethod === 'card' ? r.cardNetwork || 'Visa' : undefined,
+                                          }
+                                        : r
+                                    )
+                                  );
+                                }}
+                                className="bg-slate-50 border border-slate-300 font-bold text-slate-800 rounded-lg px-2 py-1 text-xs focus:outline-hidden"
+                              >
+                                <option value="cash">Cash Register</option>
+                                <option value="mpesa">M-Pesa STK / Till</option>
+                                <option value="card">Card Terminal</option>
+                                <option value="store_credit">Store Credit / Tab</option>
+                              </select>
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              {/* Fill Remaining button */}
+                              {splitRemaining > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const cur = parseFloat(row.amount) || 0;
+                                    const next = Number((cur + splitRemaining).toFixed(2));
+                                    setSplitRows((prev) =>
+                                      prev.map((r) =>
+                                        r.id === row.id
+                                          ? {
+                                              ...r,
+                                              amount: next.toString(),
+                                              cashTendered: r.method === 'cash' ? next.toString() : r.cashTendered,
+                                            }
+                                          : r
+                                      )
+                                    );
+                                  }}
+                                  className="text-[10px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded px-2 py-0.5 transition cursor-pointer"
+                                  title="Fill remaining unallocated balance into this tender"
+                                >
+                                  + Remainder ({currentLocation.currency} {splitRemaining.toFixed(2)})
+                                </button>
+                              )}
+
+                              {splitRows.length > 2 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSplitRows((prev) => prev.filter((r) => r.id !== row.id));
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 transition cursor-pointer"
+                                  title="Remove tender line"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Amount input row */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-start">
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                Portion Amount ({currentLocation.currency})
+                              </label>
+                              <div className="relative">
+                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 font-mono">
+                                  {currentLocation.currency}
+                                </span>
+                                <input
+                                  type="number"
+                                  step="any"
+                                  min="0"
+                                  value={row.amount}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setSplitRows((prev) =>
+                                      prev.map((r) =>
+                                        r.id === row.id
+                                          ? {
+                                              ...r,
+                                              amount: val,
+                                              cashTendered: r.method === 'cash' ? val : r.cashTendered,
+                                            }
+                                          : r
+                                      )
+                                    );
+                                  }}
+                                  placeholder="0.00"
+                                  className="w-full bg-slate-50 border border-slate-300 font-mono font-black text-slate-900 rounded-lg pl-12 pr-3 py-1.5 text-sm focus:outline-hidden focus:bg-white focus:border-amber-500"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Method-specific tender fields */}
+                            <div>
+                              {row.method === 'cash' && (
+                                <div>
+                                  <div className="flex justify-between items-center mb-1">
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                      Cash Given (Tendered)
+                                    </label>
+                                    {parseFloat(row.cashTendered || row.amount) > rowAmount && (
+                                      <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded font-mono">
+                                        Change: {currentLocation.currency}{' '}
+                                        {(parseFloat(row.cashTendered || '0') - rowAmount).toFixed(2)}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    min={rowAmount}
+                                    value={row.cashTendered ?? row.amount}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setSplitRows((prev) =>
+                                        prev.map((r) => (r.id === row.id ? { ...r, cashTendered: val } : r))
+                                      );
+                                    }}
+                                    placeholder={row.amount || '0'}
+                                    className="w-full bg-slate-50 border border-slate-300 font-mono font-bold text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:bg-white"
+                                  />
+                                </div>
+                              )}
+
+                              {row.method === 'mpesa' && (
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                    M-Pesa Reference Code
+                                  </label>
+                                  <div className="flex gap-1.5">
+                                    <input
+                                      type="text"
+                                      value={row.mpesaCode || ''}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setSplitRows((prev) =>
+                                          prev.map((r) => (r.id === row.id ? { ...r, mpesaCode: val } : r))
+                                        );
+                                      }}
+                                      placeholder="e.g. QX9102K8"
+                                      className="flex-1 bg-slate-50 border border-slate-300 font-mono font-bold text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:bg-white"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const code = `QX${Math.floor(1000 + Math.random() * 9000)}${String.fromCharCode(
+                                          65 + Math.floor(Math.random() * 26)
+                                        )}${Math.floor(10 + Math.random() * 90)}`;
+                                        setSplitRows((prev) =>
+                                          prev.map((r) => (r.id === row.id ? { ...r, mpesaCode: code } : r))
+                                        );
+                                      }}
+                                      className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-[10px] font-bold transition cursor-pointer"
+                                      title="Generate reference code"
+                                    >
+                                      Auto-Gen
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
+                              {row.method === 'card' && (
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                      Network
+                                    </label>
+                                    <select
+                                      value={row.cardNetwork || 'Visa'}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setSplitRows((prev) =>
+                                          prev.map((r) => (r.id === row.id ? { ...r, cardNetwork: val } : r))
+                                        );
+                                      }}
+                                      className="w-full bg-slate-50 border border-slate-300 font-semibold text-slate-800 rounded-lg px-2 py-1.5 text-xs focus:outline-hidden"
+                                    >
+                                      <option value="Visa">Visa</option>
+                                      <option value="Mastercard">Mastercard</option>
+                                      <option value="Amex">Amex</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                      Last 4
+                                    </label>
+                                    <input
+                                      type="text"
+                                      maxLength={4}
+                                      value={row.cardLast4 || '4192'}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setSplitRows((prev) =>
+                                          prev.map((r) => (r.id === row.id ? { ...r, cardLast4: val } : r))
+                                        );
+                                      }}
+                                      placeholder="4192"
+                                      className="w-full bg-slate-50 border border-slate-300 font-mono font-bold text-slate-800 rounded-lg px-2 py-1.5 text-xs focus:outline-hidden"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                              {row.method === 'store_credit' && (
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                    Customer Tab
+                                  </label>
+                                  {!selectedCustomer ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setIsCustomerSelectOpen(true)}
+                                      className="w-full px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
+                                    >
+                                      <User className="w-3 h-3" />
+                                      <span>+ Assign Customer</span>
+                                    </button>
+                                  ) : (
+                                    <div className="text-[11px] font-mono text-slate-700 bg-indigo-50/60 p-1.5 rounded-lg border border-indigo-100 flex justify-between">
+                                      <span className="truncate">{selectedCustomer.name}:</span>
+                                      <span className="font-bold text-indigo-800">
+                                        Limit {currentLocation.currency} {(selectedCustomer.creditLimit || 0).toFixed(0)}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Add Tender Button */}
+                  {splitRows.length < 4 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const usedMethods = new Set(splitRows.map((r) => r.method));
+                        const allMethods: ('cash' | 'mpesa' | 'card' | 'store_credit')[] = [
+                          'cash',
+                          'mpesa',
+                          'card',
+                          'store_credit',
+                        ];
+                        const nextMethod = allMethods.find((m) => !usedMethods.has(m)) || 'cash';
+                        const rem = Math.max(0, splitRemaining);
+                        setSplitRows((prev) => [
+                          ...prev,
+                          {
+                            id: `split-${Date.now()}`,
+                            method: nextMethod,
+                            amount: rem > 0 ? rem.toString() : '',
+                            cashTendered: nextMethod === 'cash' && rem > 0 ? rem.toString() : undefined,
+                            mpesaCode: nextMethod === 'mpesa' ? `QX${Math.floor(1000 + Math.random() * 9000)}K` : undefined,
+                            cardLast4: nextMethod === 'card' ? '4192' : undefined,
+                            cardNetwork: nextMethod === 'card' ? 'Visa' : undefined,
+                          },
+                        ]);
+                      }}
+                      className="w-full py-2 border-2 border-dashed border-slate-300 hover:border-amber-400 bg-slate-50 hover:bg-amber-50/50 rounded-xl text-xs font-bold text-slate-600 hover:text-amber-900 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Add Another Payment Method ({splitRows.length}/4)</span>
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1196,6 +1883,42 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                       </span>
                     </div>
                   )}
+
+                  {/* Split Allocation breakdown in Order Summary */}
+                  {selectedMethod === 'split' && (
+                    <div className="pt-2 border-t border-slate-200 space-y-1.5 bg-amber-50/60 p-2.5 rounded-xl border border-amber-200/70">
+                      <div className="flex justify-between items-center text-[10px] font-bold text-amber-900 border-b border-amber-200/80 pb-1">
+                        <span className="flex items-center gap-1">
+                          <GitFork className="w-3 h-3 text-amber-700 rotate-90" />
+                          <span>Split Breakdown</span>
+                        </span>
+                        <span className={isSplitBalanced ? 'text-emerald-700 font-bold' : 'text-amber-800 font-bold'}>
+                          {isSplitBalanced ? 'Balanced' : `${splitAllocatedTotal.toFixed(2)} / ${cartTotal.toFixed(2)}`}
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        {splitRows.map((r) => {
+                          const amt = parseFloat(r.amount) || 0;
+                          return (
+                            <div key={r.id} className="flex justify-between text-[11px] text-slate-700">
+                              <span className="capitalize font-medium text-slate-600">
+                                {r.method === 'mpesa' ? 'M-Pesa' : r.method === 'store_credit' ? 'Store Credit' : r.method}:
+                              </span>
+                              <span className="font-mono font-bold">
+                                {currentLocation.currency} {amt.toFixed(2)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {splitCashChange > 0 && (
+                        <div className="flex justify-between text-[11px] text-blue-700 font-bold pt-1 border-t border-amber-200/80">
+                          <span>Cash Change:</span>
+                          <span className="font-mono">{currentLocation.currency} {splitCashChange.toFixed(2)}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1258,6 +1981,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                   !activeShift ||
                   activeShift.status !== 'open' ||
                   (selectedMethod === 'cash' && tenderedAmount < currentGuardrail.payableAmount) ||
+                  (selectedMethod === 'split' && !isSplitValid) ||
                   (selectedMethod === 'store_credit' &&
                     (!selectedCustomer ||
                       !selectedCustomer.isCreditAllowed ||
@@ -1281,11 +2005,20 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                     <Lock className="w-4 h-4" />
                     <span>Tendering Blocked (No Active Shift)</span>
                   </>
+                ) : selectedMethod === 'split' && !isSplitBalanced ? (
+                  <>
+                    <AlertCircle className="w-4 h-4" />
+                    <span>
+                      {splitRemaining > 0
+                        ? `Allocate Remaining ${currentLocation.currency} ${splitRemaining.toFixed(2)}`
+                        : `Over-allocated by ${currentLocation.currency} ${Math.abs(splitRemaining).toFixed(2)}`}
+                    </span>
+                  </>
                 ) : (
                   <>
                     <CheckCircle className="w-4 h-4" />
                     <span>
-                      Complete Sale ({currentLocation.currency} {currentGuardrail.payableAmount.toFixed(2)})
+                      {selectedMethod === 'split' ? 'Complete Split Sale' : 'Complete Sale'} ({currentLocation.currency} {currentGuardrail.payableAmount.toFixed(2)})
                     </span>
                     <kbd className="hidden sm:inline-block text-[10px] bg-emerald-800/60 border border-emerald-400/40 text-emerald-100 px-1.5 py-0.5 rounded font-mono font-bold ml-1.5">
                       Enter ↵
@@ -1305,6 +2038,18 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
               ) : selectedMethod === 'cash' && tenderedAmount < currentGuardrail.payableAmount ? (
                 <p className="text-[10px] text-red-600 font-bold text-center mt-1.5">
                   Tendered amount must be at least {currentLocation.currency} {currentGuardrail.payableAmount.toFixed(2)}
+                </p>
+              ) : selectedMethod === 'split' && !isSplitBalanced && splitRemaining > 0 ? (
+                <p className="text-[10px] text-amber-700 font-bold text-center mt-1.5">
+                  Total split tenders must equal {currentLocation.currency} {cartTotal.toFixed(2)}. Unallocated balance: {currentLocation.currency} {splitRemaining.toFixed(2)}.
+                </p>
+              ) : selectedMethod === 'split' && !isSplitBalanced && splitRemaining < 0 ? (
+                <p className="text-[10px] text-red-600 font-bold text-center mt-1.5">
+                  Total split tenders exceed transaction amount by {currentLocation.currency} {Math.abs(splitRemaining).toFixed(2)}.
+                </p>
+              ) : selectedMethod === 'split' && isSplitBalanced && !isSplitValid ? (
+                <p className="text-[10px] text-red-600 font-bold text-center mt-1.5">
+                  Please verify tender amounts (each portion must be &gt; 0, and cash tendered must cover cash portion).
                 </p>
               ) : selectedMethod === 'store_credit' && !selectedCustomer ? (
                 <p className="text-[10px] text-indigo-700 font-bold text-center mt-1.5">

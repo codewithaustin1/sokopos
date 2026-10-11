@@ -41,13 +41,19 @@ import {
   Leaf,
   Wrench,
   Star,
+  Tag,
+  CreditCard,
+  ArrowRight,
+  Zap,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
-import { UserRole, Location, Cashier, RetailTheme } from '../types';
+import { UserRole, Location, Cashier, RetailTheme, PricingTier, BusinessPlanTier } from '../types';
 import { RETAIL_THEMES, RetailThemeConfig } from '../data/retailThemes';
 import { ResetStoreModal } from './ResetStoreModal';
 import { TaxManagementPanel } from './TaxManagementPanel';
 import { LoyaltySettingsPanel } from './LoyaltySettingsPanel';
+import { PricingSlider } from './pricing/PricingSlider';
+import { PackageTierId } from '../types/pricing';
 
 export const BusinessProfileSettingsModal: React.FC = () => {
   const {
@@ -85,13 +91,22 @@ export const BusinessProfileSettingsModal: React.FC = () => {
     storeSalesBackups,
     downloadSalesBackup,
     canResetStore,
+    pricingTiers,
+    updateBusinessPlan,
+    soundFx,
   } = usePos();
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'branches' | 'tax' | 'loyalty' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset'>(
+  const [activeTab, setActiveTab] = useState<'profile' | 'branches' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset'>(
     businessSettingsDefaultTab || 'profile'
   );
 
   const [isResetStoreModalOpen, setIsResetStoreModalOpen] = useState(false);
+
+  // Pricing Tab State
+  const [pricingBillingCycle, setPricingBillingCycle] = useState<'monthly' | 'annual'>('monthly');
+  const [sliderTierId, setSliderTierId] = useState<PackageTierId>('business');
+  const [confirmingPricingTier, setConfirmingPricingTier] = useState<PricingTier | null>(null);
+  const [isSwitchingPlan, setIsSwitchingPlan] = useState(false);
 
   React.useEffect(() => {
     if (businessSettingsDefaultTab) {
@@ -489,6 +504,22 @@ export const BusinessProfileSettingsModal: React.FC = () => {
             <span>Loyalty Points</span>
             <span className="ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 font-bold border border-amber-200">
               {currentBusiness?.loyaltySettings?.pointsPerCurrencyUnit || 10} pts = 1/-
+            </span>
+          </button>
+
+          <button
+            id="tab-pricing-btn"
+            onClick={() => setActiveTab('pricing')}
+            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
+              activeTab === 'pricing'
+                ? 'border-purple-600 text-purple-600 bg-white'
+                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
+            }`}
+          >
+            <Tag className="w-4 h-4 text-purple-600" />
+            <span>POS Packages & Pricing</span>
+            <span className="ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full bg-purple-100 text-purple-800 font-extrabold border border-purple-200 uppercase">
+              {currentBusiness?.plan === 'professional' ? 'BUSINESS' : (currentBusiness?.plan?.toUpperCase() || 'BUSINESS')}
             </span>
           </button>
 
@@ -1066,6 +1097,558 @@ export const BusinessProfileSettingsModal: React.FC = () => {
           {/* TAB: LOYALTY POINTS & REWARDS VALUATION RULES */}
           {/* ========================================================= */}
           {activeTab === 'loyalty' && <LoyaltySettingsPanel />}
+
+          {/* ========================================================= */}
+          {/* TAB: POS PACKAGES & PRICING ARCHITECTURE (STARTER / BUSINESS / PREMIUM) */}
+          {/* ========================================================= */}
+          {activeTab === 'pricing' && (() => {
+            const currentPlanNormalized = (() => {
+              const p = (currentBusiness?.plan || 'business').toLowerCase();
+              if (p === 'starter') return 'starter';
+              if (p === 'business' || p === 'professional') return 'business';
+              if (p === 'premium' || p === 'enterprise') return 'premium';
+              return 'business';
+            })();
+
+            const currentTier = pricingTiers.find((t) => t.id === currentPlanNormalized) || pricingTiers[1] || pricingTiers[0];
+
+            return (
+              <div className="space-y-6">
+                {/* Active Plan Hero Overview Banner */}
+                <div className="bg-linear-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-2xl p-6 text-white shadow-md border border-indigo-900/40 relative overflow-hidden">
+                  <div className="absolute right-0 top-0 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
+
+                  <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          Active Store Subscription
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/10 text-slate-300">
+                          Tenant: {currentBusiness?.name} ({currentBusiness?.code})
+                        </span>
+                      </div>
+                      <h3 className="text-xl font-black text-white flex items-center gap-2">
+                        <span>Current Plan: {currentTier.name} POS Package</span>
+                        <span className="text-xs font-bold text-indigo-300 bg-indigo-900/60 px-2 py-0.5 rounded-md border border-indigo-700/50">
+                          {currentTier.alias} Tier
+                        </span>
+                      </h3>
+                      <p className="text-xs text-slate-300 mt-1 max-w-xl">
+                        {currentTier.tagline}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                      <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/10 text-center sm:text-right">
+                        <div className="text-[11px] text-slate-300 font-medium">Standard Billing Rate</div>
+                        <div className="text-lg font-black text-white">
+                          {currentTier.currency} {currentTier.monthlyPrice.toLocaleString()}{' '}
+                          <span className="text-xs font-normal text-slate-400">/ month</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Resource Usage Meters */}
+                  <div className="mt-5 pt-4 border-t border-white/10 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="bg-white/5 rounded-xl p-3 border border-white/5">
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-slate-400 font-medium">Store Branches:</span>
+                        <span className="font-extrabold text-white">
+                          {locations.length} / {currentTier.maxBranches === -1 ? 'Unlimited' : currentTier.maxBranches}
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="bg-indigo-400 h-1.5 rounded-full transition-all"
+                          style={{
+                            width:
+                              currentTier.maxBranches === -1
+                                ? '25%'
+                                : `${Math.min(100, (locations.length / currentTier.maxBranches) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="bg-white/5 rounded-xl p-3 border border-white/5">
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-slate-400 font-medium">Staff Accounts:</span>
+                        <span className="font-extrabold text-white">
+                          {systemUsers.length} / {currentTier.maxStaffUsers === -1 ? 'Unlimited' : currentTier.maxStaffUsers}
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="bg-purple-400 h-1.5 rounded-full transition-all"
+                          style={{
+                            width:
+                              currentTier.maxStaffUsers === -1
+                                ? '25%'
+                                : `${Math.min(100, (systemUsers.length / currentTier.maxStaffUsers) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="bg-white/5 rounded-xl p-3 border border-white/5 flex items-center justify-between">
+                      <div>
+                        <div className="text-[11px] text-slate-400">Support Level</div>
+                        <div className="text-xs font-bold text-white truncate">{currentTier.supportLevel}</div>
+                      </div>
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-xs shadow-emerald-400" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Billing Cycle Selector Toggle */}
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900">Choose Your Subscription Billing Cycle</h4>
+                    <p className="text-xs text-slate-500">
+                      Flexible monthly retail plans or save up to 17% with annual prepayment.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setPricingBillingCycle('monthly')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        pricingBillingCycle === 'monthly'
+                          ? 'bg-white text-slate-900 shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Monthly Billing
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPricingBillingCycle('annual')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        pricingBillingCycle === 'annual'
+                          ? 'bg-purple-600 text-white shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <span>Annual Billing</span>
+                      <span className="text-[9px] font-black bg-amber-400 text-slate-950 px-1.5 py-0.2 rounded-full uppercase">
+                        Save ~17%
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Interactive POS Package & Store Capacity Slider */}
+                <PricingSlider
+                  tiers={pricingTiers}
+                  selectedTierId={sliderTierId}
+                  onSelectTier={(tId) => setSliderTierId(tId)}
+                  billingCycle={pricingBillingCycle}
+                  onBillingCycleChange={setPricingBillingCycle}
+                  onUpgradeClick={(tier) => setConfirmingPricingTier(tier)}
+                  currentPlanTierId={currentPlanNormalized}
+                  isSuperAdminView={false}
+                />
+
+                {/* 3 Package Architecture Cards Side-by-Side */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  {pricingTiers.map((tier) => {
+                    const isCurrentPlan = currentPlanNormalized === tier.id;
+                    const isSelectedInSlider = sliderTierId === tier.id;
+                    const price = pricingBillingCycle === 'annual' ? tier.annualPrice : tier.monthlyPrice;
+                    const billingPeriodLabel = pricingBillingCycle === 'annual' ? '/ year' : '/ month';
+                    const monthlyEquivalent = pricingBillingCycle === 'annual' ? Math.round(tier.annualPrice / 12) : tier.monthlyPrice;
+
+                    return (
+                      <div
+                        key={tier.id}
+                        onClick={() => setSliderTierId(tier.id as PackageTierId)}
+                        className={`rounded-2xl border transition-all flex flex-col justify-between relative bg-white cursor-pointer ${
+                          isSelectedInSlider
+                            ? 'border-purple-500 shadow-xl ring-2 ring-purple-500/40 transform scale-[1.01]'
+                            : tier.isPopular
+                            ? 'border-purple-300 shadow-md ring-1 ring-purple-400/20'
+                            : isCurrentPlan
+                            ? 'border-indigo-400 shadow-sm'
+                            : 'border-slate-200 hover:border-slate-300 shadow-2xs'
+                        }`}
+                      >
+                        {/* Top Badge Banner */}
+                        {tier.badge && (
+                          <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                            <span
+                              className={`text-[10px] font-black uppercase tracking-wider px-3 py-0.5 rounded-full shadow-xs ${
+                                isSelectedInSlider
+                                  ? 'bg-purple-600 text-white font-black ring-2 ring-purple-300'
+                                  : tier.isPopular
+                                  ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 font-black ring-2 ring-amber-300'
+                                  : 'bg-slate-900 text-white'
+                              }`}
+                            >
+                              ⭐ {tier.badge}
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="p-6">
+                          {/* Header info */}
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-1.5">
+                              <h4 className="text-base font-black text-slate-900">{tier.name}</h4>
+                              <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                                {tier.alias}
+                              </span>
+                            </div>
+                            {isCurrentPlan && (
+                              <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                Current Plan
+                              </span>
+                            )}
+                          </div>
+
+                          <p className="text-xs text-slate-500 min-h-[32px] mt-1">{tier.tagline}</p>
+
+                          {/* Price Tag */}
+                          <div className="mt-4 pt-4 border-t border-slate-100">
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="text-2xl font-black text-slate-900">
+                                {tier.currency} {price.toLocaleString()}
+                              </span>
+                              <span className="text-xs font-semibold text-slate-500">{billingPeriodLabel}</span>
+                            </div>
+                            {pricingBillingCycle === 'annual' && (
+                              <div className="text-[11px] text-emerald-600 font-bold mt-0.5">
+                                Equivalent to {tier.currency} {monthlyEquivalent.toLocaleString()} / mo (2 months free!)
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Resource Limits Pills */}
+                          <div className="mt-3 flex flex-wrap gap-1.5 text-[11px]">
+                            <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-semibold border border-slate-200">
+                              🏬 {tier.maxBranches === -1 ? 'Unlimited Branches' : `${tier.maxBranches} Branch Location${tier.maxBranches > 1 ? 's' : ''}`}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-semibold border border-slate-200">
+                              👥 {tier.maxStaffUsers === -1 ? 'Unlimited Staff' : `Up to ${tier.maxStaffUsers} Staff Logins`}
+                            </span>
+                          </div>
+
+                          {/* Feature Entitlements Bullet Points */}
+                          <div className="mt-5 space-y-2.5 pt-4 border-t border-slate-100">
+                            <div className="text-[11px] font-black uppercase tracking-wider text-slate-400">
+                              Included Capabilities:
+                            </div>
+                            {tier.features.map((feature, fIdx) => (
+                              <div key={fIdx} className="flex items-start gap-2 text-xs">
+                                <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5">
+                                  <Check className="w-3 h-3 stroke-[3]" />
+                                </span>
+                                <span className="text-slate-700 leading-snug">{feature}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Plan Action CTA Button */}
+                        <div className="p-6 pt-0">
+                          {isCurrentPlan ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="w-full py-2.5 rounded-xl text-xs font-bold bg-slate-100 text-slate-400 cursor-not-allowed flex items-center justify-center gap-1.5"
+                            >
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                              <span>Active Current Plan</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmingPricingTier(tier)}
+                              className={`w-full py-2.5 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs ${
+                                tier.isPopular
+                                  ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                                  : 'bg-slate-900 hover:bg-slate-800 text-white'
+                              }`}
+                            >
+                              <span>{tier.name === 'PREMIUM' ? 'Upgrade to Premium' : `Switch to ${tier.name}`}</span>
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Kenyan M-Pesa & Payment Settlement Instructions */}
+                <div className="bg-emerald-50/80 rounded-2xl p-5 border border-emerald-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-sm shadow-xs">
+                        KES
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black text-emerald-950">
+                          Lipa na M-Pesa Subscription Payment Guide
+                        </h4>
+                        <p className="text-xs text-emerald-800">
+                          Automatic store reconciliation: Enter your unique Store Code as Account Number.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-emerald-900 bg-white px-3 py-1 rounded-lg border border-emerald-300">
+                        Instant Automated Activation
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                    <div className="bg-white p-3 rounded-xl border border-emerald-200">
+                      <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider block">
+                        Option 1: Paybill
+                      </span>
+                      <div className="mt-1 font-mono font-bold text-slate-800 text-sm">Business No: 522522</div>
+                      <div className="text-slate-600 text-[11px] mt-0.5">
+                        Account No:{' '}
+                        <strong className="text-slate-900 font-mono">{currentBusiness?.code || 'STORE'}</strong>
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-3 rounded-xl border border-emerald-200">
+                      <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider block">
+                        Option 2: Buy Goods Till
+                      </span>
+                      <div className="mt-1 font-mono font-bold text-slate-800 text-sm">Till No: 987654</div>
+                      <div className="text-slate-600 text-[11px] mt-0.5">Recipient: Upfront Retail Solutions</div>
+                    </div>
+
+                    <div className="bg-white p-3 rounded-xl border border-emerald-200 flex flex-col justify-between">
+                      <div>
+                        <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider block">
+                          Subscription Hotline
+                        </span>
+                        <div className="mt-1 font-bold text-slate-800 text-xs">+254 700 000 000</div>
+                      </div>
+                      <div className="text-[10px] text-slate-500">24/7 WhatsApp & Billing Support</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Plan Upgrade Confirmation Modal Dialog */}
+                {confirmingPricingTier && (
+                  <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold">
+                          <Tag className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="text-base font-black text-slate-900">
+                            Switch to {confirmingPricingTier.name} ({confirmingPricingTier.alias}) Package?
+                          </h4>
+                          <p className="text-xs text-slate-500">
+                            Confirm plan change for store <strong>{currentBusiness?.name}</strong>.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 text-xs space-y-2 mb-4">
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Selected Package:</span>
+                          <span className="font-bold text-slate-800">
+                            {confirmingPricingTier.name} ({confirmingPricingTier.alias})
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Subscription Fee:</span>
+                          <span className="font-bold text-slate-900">
+                            {confirmingPricingTier.currency}{' '}
+                            {(pricingBillingCycle === 'annual'
+                              ? confirmingPricingTier.annualPrice
+                              : confirmingPricingTier.monthlyPrice
+                            ).toLocaleString()}{' '}
+                            {pricingBillingCycle === 'annual' ? '/ year' : '/ month'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Max Locations:</span>
+                          <span className="font-bold text-slate-800">
+                            {confirmingPricingTier.maxBranches === -1
+                              ? 'Unlimited Branches'
+                              : `${confirmingPricingTier.maxBranches} Store Branches`}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Max Staff Accounts:</span>
+                          <span className="font-bold text-slate-800">
+                            {confirmingPricingTier.maxStaffUsers === -1
+                              ? 'Unlimited Staff'
+                              : `${confirmingPricingTier.maxStaffUsers} Staff Logins`}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2.5">
+                        <button
+                          type="button"
+                          disabled={isSwitchingPlan}
+                          onClick={() => setConfirmingPricingTier(null)}
+                          className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSwitchingPlan}
+                          onClick={async () => {
+                            if (!currentBusiness) return;
+                            setIsSwitchingPlan(true);
+                            try {
+                              await updateBusinessPlan(currentBusiness.id, confirmingPricingTier.id as any);
+                              setConfirmingPricingTier(null);
+                            } catch (err) {
+                              showToast('Failed to switch plan', 'error');
+                            } finally {
+                              setIsSwitchingPlan(false);
+                            }
+                          }}
+                          className="px-5 py-2 rounded-xl text-xs font-black bg-purple-600 hover:bg-purple-700 text-white transition cursor-pointer shadow-xs disabled:opacity-50"
+                        >
+                          {isSwitchingPlan ? 'Updating Store Plan...' : `Confirm & Activate ${confirmingPricingTier.name}`}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Detailed Feature Comparison Matrix Table */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+                  <div className="px-5 py-4 bg-slate-50 border-b border-slate-200">
+                    <h4 className="text-sm font-black text-slate-900">
+                      POS Packages Detailed Feature Comparison Matrix
+                    </h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Side-by-side feature capability breakdown across Starter, Business, and Premium tiers.
+                    </p>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-100/70 text-slate-700 font-extrabold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                        <tr>
+                          <th className="px-5 py-3">Feature Capability</th>
+                          <th className="px-5 py-3 text-center">
+                            STARTER (KES 399)
+                            <div className="text-[9px] text-slate-400 font-semibold normal-case">Basic</div>
+                          </th>
+                          <th className="px-5 py-3 text-center bg-purple-50/60 text-purple-900">
+                            BUSINESS (KES 899)
+                            <div className="text-[9px] text-purple-600 font-bold normal-case">Best Value</div>
+                          </th>
+                          <th className="px-5 py-3 text-center">
+                            PREMIUM (KES 1,499)
+                            <div className="text-[9px] text-slate-400 font-semibold normal-case">Enterprise</div>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                        <tr>
+                          <td className="px-5 py-3 font-bold text-slate-900">Store Branch Locations</td>
+                          <td className="px-5 py-3 text-center">1 Store Location</td>
+                          <td className="px-5 py-3 text-center bg-purple-50/30 font-bold text-purple-900">
+                            Up to 3 Branches
+                          </td>
+                          <td className="px-5 py-3 text-center font-bold text-emerald-700">Unlimited Branches</td>
+                        </tr>
+                        <tr>
+                          <td className="px-5 py-3 font-bold text-slate-900">Staff / Cashier Accounts</td>
+                          <td className="px-5 py-3 text-center">2 Cashier Logins</td>
+                          <td className="px-5 py-3 text-center bg-purple-50/30 font-bold text-purple-900">
+                            Up to 10 Logins
+                          </td>
+                          <td className="px-5 py-3 text-center font-bold text-emerald-700">Unlimited Accounts</td>
+                        </tr>
+                        <tr>
+                          <td className="px-5 py-3 font-bold text-slate-900">Barcode Scanning & Fast Checkout</td>
+                          <td className="px-5 py-3 text-center text-emerald-600">✓ Included</td>
+                          <td className="px-5 py-3 text-center bg-purple-50/30 text-emerald-600 font-bold">✓ Included</td>
+                          <td className="px-5 py-3 text-center text-emerald-600 font-bold">✓ Included</td>
+                        </tr>
+                        <tr>
+                          <td className="px-5 py-3 font-bold text-slate-900">Thermal Receipt Printing (58/80mm)</td>
+                          <td className="px-5 py-3 text-center text-emerald-600">✓ Included</td>
+                          <td className="px-5 py-3 text-center bg-purple-50/30 text-emerald-600 font-bold">✓ Included</td>
+                          <td className="px-5 py-3 text-center text-emerald-600 font-bold">✓ Included</td>
+                        </tr>
+                        <tr>
+                          <td className="px-5 py-3 font-bold text-slate-900">Offline Register Resiliency</td>
+                          <td className="px-5 py-3 text-center text-emerald-600">✓ Auto-sync</td>
+                          <td className="px-5 py-3 text-center bg-purple-50/30 text-emerald-600 font-bold">✓ Auto-sync</td>
+                          <td className="px-5 py-3 text-center text-emerald-600 font-bold">✓ Auto-sync</td>
+                        </tr>
+                        <tr>
+                          <td className="px-5 py-3 font-bold text-slate-900">Multi-Branch Stock Transfers</td>
+                          <td className="px-5 py-3 text-center text-slate-400">—</td>
+                          <td className="px-5 py-3 text-center bg-purple-50/30 text-emerald-600 font-bold">✓ Included</td>
+                          <td className="px-5 py-3 text-center text-emerald-600 font-bold">✓ Included</td>
+                        </tr>
+                        <tr>
+                          <td className="px-5 py-3 font-bold text-slate-900">Customer Loyalty & Credit Tabs</td>
+                          <td className="px-5 py-3 text-center text-slate-400">—</td>
+                          <td className="px-5 py-3 text-center bg-purple-50/30 text-emerald-600 font-bold">✓ Included</td>
+                          <td className="px-5 py-3 text-center text-emerald-600 font-bold">✓ Included</td>
+                        </tr>
+                        <tr>
+                          <td className="px-5 py-3 font-bold text-slate-900">15+ Advanced Financial Reports</td>
+                          <td className="px-5 py-3 text-center text-slate-400">Shift Till Only</td>
+                          <td className="px-5 py-3 text-center bg-purple-50/30 text-emerald-600 font-bold">✓ Full Suite + CSV</td>
+                          <td className="px-5 py-3 text-center text-emerald-600 font-bold">✓ Full Suite + CSV</td>
+                        </tr>
+                        <tr>
+                          <td className="px-5 py-3 font-bold text-slate-900">Automated Tax / VAT KRA Rules</td>
+                          <td className="px-5 py-3 text-center text-slate-400">—</td>
+                          <td className="px-5 py-3 text-center bg-purple-50/30 text-emerald-600 font-bold">✓ Included</td>
+                          <td className="px-5 py-3 text-center text-emerald-600 font-bold">✓ Included</td>
+                        </tr>
+                        <tr>
+                          <td className="px-5 py-3 font-bold text-slate-900">Custom Role-Based Access (RBAC)</td>
+                          <td className="px-5 py-3 text-center text-slate-400">—</td>
+                          <td className="px-5 py-3 text-center bg-purple-50/30 text-slate-600">Standard Roles</td>
+                          <td className="px-5 py-3 text-center text-emerald-600 font-bold">✓ Granular RBAC</td>
+                        </tr>
+                        <tr>
+                          <td className="px-5 py-3 font-bold text-slate-900">Multi-Warehouse Batch & Expiry</td>
+                          <td className="px-5 py-3 text-center text-slate-400">—</td>
+                          <td className="px-5 py-3 text-center bg-purple-50/30 text-slate-400">—</td>
+                          <td className="px-5 py-3 text-center text-emerald-600 font-bold">✓ Included</td>
+                        </tr>
+                        <tr>
+                          <td className="px-5 py-3 font-bold text-slate-900">White-label Branding & Logo Upload</td>
+                          <td className="px-5 py-3 text-center text-slate-400">—</td>
+                          <td className="px-5 py-3 text-center bg-purple-50/30 text-slate-400">—</td>
+                          <td className="px-5 py-3 text-center text-emerald-600 font-bold">✓ Included</td>
+                        </tr>
+                        <tr>
+                          <td className="px-5 py-3 font-bold text-slate-900">Customer Support Tier</td>
+                          <td className="px-5 py-3 text-center text-slate-600">Email & Community</td>
+                          <td className="px-5 py-3 text-center bg-purple-50/30 font-bold text-purple-900">
+                            Priority WhatsApp & Phone
+                          </td>
+                          <td className="px-5 py-3 text-center font-bold text-purple-900">
+                            Dedicated 24/7 Account Mgr
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* ========================================================= */}
           {/* TAB 3: ACCOUNTS & ROLE-BASED DASHBOARD (RBAC) */}

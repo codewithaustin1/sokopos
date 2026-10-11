@@ -23,22 +23,28 @@ import {
   Image as ImageIcon,
   Clock,
   Receipt,
+  CreditCard,
+  Tag,
+  Keyboard,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { ScannerStatusBadge } from './ScannerStatusBadge';
+import { isSuperAdminEmail } from '../data/initialData';
 
 interface HeaderProps {
   currentTab?: 'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff';
   setCurrentTab?: (tab: 'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff') => void;
   openBarcodeScanner: () => void;
-  openSuperAdminModal: (tab?: 'tenants' | 'audit' | 'provision' | 'branding') => void;
+  openSuperAdminModal: (tab?: 'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding') => void;
   openSignOutModal?: () => void;
+  openHelpModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   openBarcodeScanner,
   openSuperAdminModal,
   openSignOutModal,
+  openHelpModal,
 }) => {
   const {
     locations,
@@ -242,6 +248,21 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </button>
 
+        {/* Global POS Hotkeys & Shortcuts Guide Trigger (F10) */}
+        <button
+          id="header-hotkeys-help-btn"
+          type="button"
+          onClick={openHelpModal}
+          className="flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 p-2 sm:px-2.5 sm:py-2 rounded-lg text-xs font-bold border border-slate-200 transition cursor-pointer min-h-[36px]"
+          title="POS Hotkeys & Keyboard Shortcuts Guide (F10)"
+        >
+          <Keyboard className="w-4 h-4 text-slate-600 shrink-0" />
+          <span className="hidden xl:inline text-xs">Hotkeys</span>
+          <kbd className="hidden sm:inline-block text-[10px] font-mono font-bold bg-white text-slate-600 px-1.5 py-0.5 rounded border border-slate-200 shadow-2xs">
+            F10
+          </kbd>
+        </button>
+
         {/* Cloud Sync & Online/Offline Pill */}
         <div className="flex items-center bg-slate-100 rounded-lg p-0.5 sm:p-1 border border-slate-200">
           <button
@@ -371,6 +392,24 @@ export const Header: React.FC<HeaderProps> = ({
                   </span>
                 </button>
 
+                {/* Direct Pricing & Packages Entry for Business Owner */}
+                <button
+                  id="user-menu-pricing-plans-btn"
+                  onClick={() => {
+                    setIsUserMenuOpen(false);
+                    openBusinessSettings('pricing');
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-bold text-purple-800 bg-purple-50/80 hover:bg-purple-100 transition cursor-pointer border border-purple-100 mb-1"
+                >
+                  <div className="flex items-center gap-2">
+                    <Tag className="w-4 h-4 text-purple-600" />
+                    <span>POS Packages & Pricing</span>
+                  </div>
+                  <span className="text-[10px] bg-purple-600 text-white font-extrabold px-1.5 py-0.5 rounded uppercase">
+                    Plans
+                  </span>
+                </button>
+
                 <div className="space-y-0.5">
                   {/* Super-admin console */}
                   {isSuperAdmin && (
@@ -384,6 +423,32 @@ export const Header: React.FC<HeaderProps> = ({
                       >
                         <Shield className="w-4 h-4 text-blue-600" />
                         <span>Super-Admin Console & Audit</span>
+                      </button>
+
+                      {isSuperAdminEmail(currentUser?.email) && (
+                        <button
+                          id="user-menu-subscriptions-btn"
+                          onClick={() => {
+                            setIsUserMenuOpen(false);
+                            openSuperAdminModal('subscriptions');
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-xs font-bold text-emerald-900 bg-emerald-50 hover:bg-emerald-100 transition cursor-pointer"
+                        >
+                          <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Subscriptions & POS Access Control</span>
+                        </button>
+                      )}
+
+                      <button
+                        id="user-menu-pricing-tiers-btn"
+                        onClick={() => {
+                          setIsUserMenuOpen(false);
+                          openSuperAdminModal('pricing');
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-xs font-bold text-purple-900 bg-purple-50 hover:bg-purple-100 transition cursor-pointer"
+                      >
+                        <Tag className="w-3.5 h-3.5 text-purple-600" />
+                        <span>Pricing Tiers Configuration (Basic/Pro/Ent)</span>
                       </button>
 
                       <button
@@ -453,6 +518,25 @@ export const Header: React.FC<HeaderProps> = ({
                     >
                       {autoPrintReceipt ? 'Auto Print ON' : 'Manual'}
                     </span>
+                  </button>
+
+                  {/* Global POS Keyboard Shortcuts & Hotkeys Guide */}
+                  <button
+                    id="user-menu-hotkeys-btn"
+                    type="button"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      openHelpModal?.();
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Keyboard className="w-4 h-4 text-slate-500" />
+                      <span>Keyboard Shortcuts &amp; Hotkeys</span>
+                    </div>
+                    <kbd className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 shadow-2xs">
+                      F10
+                    </kbd>
                   </button>
 
                   {/* Register PIN Lock */}

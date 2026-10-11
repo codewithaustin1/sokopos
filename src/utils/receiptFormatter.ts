@@ -82,6 +82,20 @@ export function formatTransactionReceiptText(
     lines.push(`Change: ${currency} ${(transaction.paymentDetails.cashChange ?? 0).toFixed(2)}`);
   }
 
+  if (transaction.paymentMethod === 'split') {
+    lines.push('SPLIT TENDER BREAKDOWN:');
+    if (transaction.paymentDetails.splitBreakdown && transaction.paymentDetails.splitBreakdown.length > 0) {
+      transaction.paymentDetails.splitBreakdown.forEach((b) => {
+        const methodLabel = b.method === 'mpesa' ? 'M-Pesa' : b.method === 'store_credit' ? 'Store Credit' : b.method.toUpperCase();
+        const ref = b.mpesaCode ? ` (${b.mpesaCode})` : b.cardLast4 ? ` (*${b.cardLast4})` : '';
+        lines.push(` - ${methodLabel}${ref}: ${currency} ${b.amount.toFixed(2)}`);
+      });
+    }
+    if ((transaction.paymentDetails.cashChange ?? 0) > 0) {
+      lines.push(` - Cash Change Returned: ${currency} ${(transaction.paymentDetails.cashChange ?? 0).toFixed(2)}`);
+    }
+  }
+
   if (transaction.totalRefunded && transaction.totalRefunded > 0) {
     lines.push(`Refunded Amount: -${currency} ${transaction.totalRefunded.toFixed(2)}`);
   }

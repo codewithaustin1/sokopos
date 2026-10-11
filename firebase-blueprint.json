@@ -29,6 +29,7 @@
         "currency": { "type": "string" },
         "taxNumber": { "type": "string" },
         "createdAt": { "type": "string" },
+        "lastLoginAt": { "type": "string" },
         "retailTheme": { "type": "string", "enum": ["classic", "emerald", "amber", "burgundy", "industrial"] }
       },
       "required": ["id", "name", "ownerEmail", "currency"]
@@ -222,6 +223,35 @@
         "createdAt": { "type": "string" }
       },
       "required": ["id", "businessId", "name", "phone"]
+    },
+    "Supplier": {
+      "title": "Supplier",
+      "description": "Tenant vendor profile with contact details, KRA PIN, payment terms and linked inventory",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "businessId": { "type": "string" },
+        "name": { "type": "string" },
+        "contactPerson": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "category": { "type": "string" },
+        "address": { "type": "string" },
+        "city": { "type": "string" },
+        "kraPin": { "type": "string" },
+        "paymentTerms": { "type": "string" },
+        "bankName": { "type": "string" },
+        "bankAccount": { "type": "string" },
+        "mpesaPaybillOrTill": { "type": "string" },
+        "leadTimeDays": { "type": "number" },
+        "notes": { "type": "string" },
+        "status": { "type": "string" },
+        "totalInvoiced": { "type": "number" },
+        "ordersCount": { "type": "number" },
+        "lastDeliveryDate": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "businessId", "name", "phone", "paymentTerms", "status"]
     }
   },
   "firestore": {
@@ -236,6 +266,10 @@
     "/customers/{customerId}": {
       "schema": "Customer",
       "description": "Tenant customer profiles and credit directories scoped by businessId"
+    },
+    "/suppliers/{supplierId}": {
+      "schema": "Supplier",
+      "description": "Tenant vendor directory, terms and linked catalog oversight scoped by businessId"
     },
     "/products/{productId}": {
       "schema": "Product",

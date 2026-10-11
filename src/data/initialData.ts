@@ -8,12 +8,16 @@ import {
   Product,
   ShiftSession,
   SuperAdminAuditEntry,
+  Supplier,
   SyncLogEvent,
   Transaction,
 } from '../types';
 import { DEFAULT_TAX_SETTINGS } from '../utils/taxResolver';
 
 export const SUPER_ADMIN_EMAIL = 'upfrontretaile@gmail.com';
+
+export const isSuperAdminEmail = (email?: string | null): boolean =>
+  (email || '').trim().toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
 
 export const INITIAL_SUPER_ADMIN_USER: AuthUser = {
   id: 'usr-superadmin-01',
@@ -153,6 +157,99 @@ export const INITIAL_CATEGORIES: Category[] = [
   },
 ];
 
+export const INITIAL_SUPPLIERS: Supplier[] = [
+  {
+    id: 'supp-upfront-01',
+    businessId: 'biz-upfront',
+    name: 'Ungar Mills East Africa Ltd',
+    contactPerson: 'David Kilonzo',
+    phone: '+254 722 100 200',
+    email: 'orders@ungarmills.co.ke',
+    category: 'Flour & Grains',
+    address: 'Industrial Area, Commercial Street Gate 4',
+    city: 'Nairobi',
+    kraPin: 'P051122334K',
+    paymentTerms: 'net_14',
+    bankName: 'Equity Bank Kenya',
+    bankAccount: '0180293847291',
+    mpesaPaybillOrTill: '247247 (Acc: 0180293847291)',
+    leadTimeDays: 2,
+    status: 'active',
+    totalInvoiced: 142000,
+    ordersCount: 8,
+    lastDeliveryDate: '2026-10-01T09:30:00.000Z',
+    notes: 'Primary grain and flour distributor. Reliable weekly route delivery every Tuesday.',
+    createdAt: '2026-01-01T08:00:00.000Z',
+  },
+  {
+    id: 'supp-upfront-02',
+    businessId: 'biz-upfront',
+    name: 'Brookside Dairies Kenya Ltd',
+    contactPerson: 'Mercy Chebet',
+    phone: '+254 733 456 789',
+    email: 'mercy.chebet@brookside.co.ke',
+    category: 'Dairy & Bakery',
+    address: 'Thika Superhighway, Ruiru Logistics Hub',
+    city: 'Ruiru / Nairobi',
+    kraPin: 'P052233445M',
+    paymentTerms: 'cod',
+    mpesaPaybillOrTill: 'Till: 882019',
+    leadTimeDays: 1,
+    status: 'active',
+    totalInvoiced: 86400,
+    ordersCount: 12,
+    lastDeliveryDate: '2026-10-05T06:45:00.000Z',
+    notes: 'Daily early-morning fresh milk drops. Paid via cash/till on delivery (COD).',
+    createdAt: '2026-01-01T08:00:00.000Z',
+  },
+  {
+    id: 'supp-upfront-03',
+    businessId: 'biz-upfront',
+    name: 'Kabras Sugar Consolidated',
+    contactPerson: 'Hassan Noor',
+    phone: '+254 711 987 654',
+    email: 'accounts@kabrasdistribution.co.ke',
+    category: 'Pantry & Oil',
+    address: 'Enterprise Road, Godown 12',
+    city: 'Nairobi',
+    kraPin: 'P053344556N',
+    paymentTerms: 'net_30',
+    bankName: 'KCB Bank Kenya',
+    bankAccount: '1102938475',
+    mpesaPaybillOrTill: '522522 (Acc: 1102938475)',
+    leadTimeDays: 3,
+    status: 'active',
+    totalInvoiced: 64000,
+    ordersCount: 6,
+    lastDeliveryDate: '2026-09-25T11:15:00.000Z',
+    notes: 'Bulk sugar, pantry staples and molasses products.',
+    createdAt: '2026-01-05T08:00:00.000Z',
+  },
+  {
+    id: 'supp-upfront-04',
+    businessId: 'biz-upfront',
+    name: 'Kapa Oil Refineries',
+    contactPerson: 'Grace Wanjiru',
+    phone: '+254 720 556 778',
+    email: 'orders@kapa-oil.com',
+    category: 'Pantry & Oil',
+    address: 'Mombasa Road, Athi River Hub',
+    city: 'Machakos / Nairobi',
+    kraPin: 'P054455667P',
+    paymentTerms: 'net_14',
+    bankName: 'Absa Bank Kenya',
+    bankAccount: '0309988776',
+    mpesaPaybillOrTill: '303030 (Acc: KAPA99)',
+    leadTimeDays: 3,
+    status: 'active',
+    totalInvoiced: 48500,
+    ordersCount: 5,
+    lastDeliveryDate: '2026-09-28T14:20:00.000Z',
+    notes: 'Cooking fats, premium oils, soaps, and detergent supplies.',
+    createdAt: '2026-01-10T08:00:00.000Z',
+  },
+];
+
 export const INITIAL_PRODUCTS: Product[] = [
   // Products for Upfront Retail Solutions
   {
@@ -171,6 +268,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     },
     reorderPoint: 20,
     description: 'Premium fortified all-purpose baker wheat flour',
+    supplierId: 'supp-upfront-01',
+    supplierName: 'Ungar Mills East Africa Ltd',
   },
   {
     id: 'prod-upfront-002',
@@ -188,6 +287,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     },
     reorderPoint: 25,
     description: 'Fresh homogenized pasteurized cow milk',
+    supplierId: 'supp-upfront-02',
+    supplierName: 'Brookside Dairies Kenya Ltd',
   },
   {
     id: 'prod-upfront-003',
@@ -222,6 +323,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     },
     reorderPoint: 20,
     description: 'Rich seasoning food enhancer with savory beef flavor',
+    supplierId: 'supp-upfront-04',
+    supplierName: 'Kapa Oil Refineries',
   },
   {
     id: 'prod-upfront-005',
@@ -239,6 +342,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     },
     reorderPoint: 30,
     description: 'Fine crystal naturally sweet granulated sugar',
+    supplierId: 'supp-upfront-03',
+    supplierName: 'Kabras Sugar Consolidated',
   },
   {
     id: 'prod-upfront-006',
@@ -256,6 +361,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     },
     reorderPoint: 15,
     description: 'Fast acting stain-removal laundry detergent powder',
+    supplierId: 'supp-upfront-04',
+    supplierName: 'Kapa Oil Refineries',
   },
   {
     id: 'prod-upfront-007',

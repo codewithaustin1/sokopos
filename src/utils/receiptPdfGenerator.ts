@@ -176,6 +176,22 @@ export function generateReceiptPdf({
       printRow('Change Returned:', `${currency} ${(transaction.paymentDetails.cashChange ?? 0).toFixed(2)}`, 7.5, true);
     }
 
+    // Split Tender Breakdown
+    if (transaction.paymentMethod === 'split') {
+      y += 1;
+      printRow('SPLIT BREAKDOWN:', '', 7.5, true);
+      if (transaction.paymentDetails.splitBreakdown && transaction.paymentDetails.splitBreakdown.length > 0) {
+        transaction.paymentDetails.splitBreakdown.forEach((b) => {
+          const methodLabel = b.method === 'mpesa' ? 'M-Pesa' : b.method === 'store_credit' ? 'Store Credit' : b.method.toUpperCase();
+          const ref = b.mpesaCode ? ` (${b.mpesaCode})` : b.cardLast4 ? ` (*${b.cardLast4})` : '';
+          printRow(` - ${methodLabel}${ref}:`, `${currency} ${b.amount.toFixed(2)}`, 7, false);
+        });
+      }
+      if ((transaction.paymentDetails.cashChange ?? 0) > 0) {
+        printRow(' - Cash Change Returned:', `${currency} ${(transaction.paymentDetails.cashChange ?? 0).toFixed(2)}`, 7, false);
+      }
+    }
+
     // Refund adjustments if any
     if (transaction.totalRefunded && transaction.totalRefunded > 0) {
       y += 1;

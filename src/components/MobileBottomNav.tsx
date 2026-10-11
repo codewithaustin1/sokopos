@@ -24,14 +24,17 @@ import {
   Printer,
   Clock,
   FileText,
+  Truck,
+  Keyboard,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 
 interface MobileBottomNavProps {
-  currentTab: 'register' | 'inventory' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers';
-  setCurrentTab: (tab: 'register' | 'inventory' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers') => void;
+  currentTab: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers';
+  setCurrentTab: (tab: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers') => void;
   openBarcodeScanner: () => void;
   onRequestSignOut: () => void;
+  openHelpModal?: () => void;
 }
 
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
@@ -39,6 +42,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   setCurrentTab,
   openBarcodeScanner,
   onRequestSignOut,
+  openHelpModal,
 }) => {
   const {
     cart,
@@ -66,7 +70,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   const totalCartItems = cart.reduce((acc, item) => acc + item.quantity, 0);
   const isOwnerOrAdmin = currentUser.role === 'business_owner' || isSuperAdmin;
 
-  const handleNavClick = (tab: 'register' | 'inventory' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers') => {
+  const handleNavClick = (tab: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers') => {
     setCurrentTab(tab);
     setIsMenuOpen(false);
   };
@@ -234,6 +238,27 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
                 <ChevronRight className="w-4 h-4 text-slate-400" />
               </button>
 
+              {/* Suppliers & Vendors Tab */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  handleNavClick('suppliers');
+                }}
+                className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs transition cursor-pointer border border-slate-200/80"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Truck className="w-4 h-4 text-blue-600" />
+                  <div className="text-left">
+                    <div>Suppliers & Vendors</div>
+                    <div className="text-[10px] font-normal text-slate-500">
+                      Vendor directories, payment terms & supply chain oversight
+                    </div>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              </button>
+
               {isOwnerOrAdmin && (
                 <button
                   type="button"
@@ -322,6 +347,26 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
                     }`}
                   >
                     {autoPrintReceipt ? 'Auto Print ON' : 'Manual'}
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-slate-400" />
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  openHelpModal?.();
+                }}
+                className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs transition cursor-pointer border border-slate-200/80"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Keyboard className="w-4 h-4 text-blue-600" />
+                  <span>POS Hotkeys &amp; Keyboard Guide</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">
+                    F10
                   </span>
                   <ChevronRight className="w-4 h-4 text-slate-400" />
                 </div>

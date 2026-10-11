@@ -27,15 +27,27 @@ import {
   Globe,
   LayoutTemplate,
   Crop,
+  CreditCard,
+  ToggleLeft,
+  ToggleRight,
+  AlertTriangle,
+  DollarSign,
+  TrendingUp,
+  Tag,
+  Sliders,
+  Zap,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
-import { Business } from '../types';
+import { Business, PricingTier } from '../types';
 import { processAndOptimizeImage } from '../utils/imageOptimizer';
+import { SUPER_ADMIN_EMAIL, isSuperAdminEmail } from '../data/initialData';
+import { PricingSlider } from './pricing/PricingSlider';
+import { PackageTierId } from '../types/pricing';
 
 interface SuperAdminDashboardModalProps {
   isOpen: boolean;
   onClose: () => void;
-  defaultTab?: 'tenants' | 'audit' | 'provision' | 'branding';
+  defaultTab?: 'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding';
 }
 
 const BRANDING_PRESETS = [
@@ -157,17 +169,42 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
     removePlatformFavicon,
     performSystemCleanup,
     isRealGoogleAccount,
+    updateBusinessStatus,
+    soundFx,
+    showToast,
+    pricingTiers,
+    updatePricingTier,
+    resetPricingTiersToDefault,
   } = usePos();
 
-  const [activeTab, setActiveTab] = useState<'tenants' | 'audit' | 'provision' | 'branding'>(defaultTab);
+  const isSuperAdminUser = isSuperAdminEmail(currentUser?.email);
+
+  const [activeTab, setActiveTab] = useState<'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding'>(
+    defaultTab === 'subscriptions' && !isSuperAdminUser ? 'tenants' : (defaultTab || 'tenants')
+  );
   const [brandingSubTab, setBrandingSubTab] = useState<'logo' | 'favicon' | 'login-bg'>('logo');
   const [isCleaningUp, setIsCleaningUp] = useState(false);
 
+  // Pricing Tiers Architecture Config State
+  const [selectedPricingTierId, setSelectedPricingTierId] = useState<string>('business');
+  const [newFeatureText, setNewFeatureText] = useState<{ [tierId: string]: string }>({});
+  const [isResettingPricing, setIsResettingPricing] = useState(false);
+
+  // Subscriptions Tab State
+  const [subSearchQuery, setSubSearchQuery] = useState('');
+  const [subStatusFilter, setSubStatusFilter] = useState<'all' | 'active' | 'suspended'>('all');
+  const [subPlanFilter, setSubPlanFilter] = useState<'all' | 'starter' | 'professional' | 'enterprise'>('all');
+  const [togglingBizId, setTogglingBizId] = useState<string | null>(null);
+
   useEffect(() => {
     if (isOpen && defaultTab) {
-      setActiveTab(defaultTab);
+      if (defaultTab === 'subscriptions' && !isSuperAdminUser) {
+        setActiveTab('tenants');
+      } else {
+        setActiveTab(defaultTab);
+      }
     }
-  }, [isOpen, defaultTab]);
+  }, [isOpen, defaultTab, isSuperAdminUser]);
 
   // Platform Brand Logo upload state
   const logoFileInputRef = useRef<HTMLInputElement>(null);
@@ -437,10 +474,10 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
         </div>
 
         {/* Tab Navigation */}
-        <div className="bg-slate-100 border-b border-slate-200 px-6 flex items-center gap-4 text-xs font-bold shrink-0">
+        <div className="bg-slate-100 border-b border-slate-200 px-6 flex items-center gap-4 text-xs font-bold shrink-0 overflow-x-auto">
           <button
             onClick={() => setActiveTab('tenants')}
-            className={`py-3 flex items-center gap-1.5 border-b-2 transition ${
+            className={`py-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap cursor-pointer ${
               activeTab === 'tenants'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -450,9 +487,40 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
             <span>Business Tenants ({businesses.length})</span>
           </button>
 
+          {isSuperAdminUser && (
+            <button
+              id="superadmin-tab-subscriptions-btn"
+              onClick={() => setActiveTab('subscriptions')}
+              className={`py-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap cursor-pointer ${
+                activeTab === 'subscriptions'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <CreditCard className="w-4 h-4" />
+              <span>Subscriptions & Access ({businesses.length})</span>
+              {businesses.some((b) => b.status === 'suspended') && (
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Suspended / Inactive Subscriptions Exist" />
+              )}
+            </button>
+          )}
+
+          <button
+            id="superadmin-tab-pricing-btn"
+            onClick={() => setActiveTab('pricing')}
+            className={`py-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap cursor-pointer ${
+              activeTab === 'pricing'
+                ? 'border-purple-600 text-purple-600'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Tag className="w-4 h-4 text-purple-600" />
+            <span>Pricing Tiers ({pricingTiers.length})</span>
+          </button>
+
           <button
             onClick={() => setActiveTab('audit')}
-            className={`py-3 flex items-center gap-1.5 border-b-2 transition ${
+            className={`py-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap cursor-pointer ${
               activeTab === 'audit'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -604,6 +672,894 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* TAB: POS SUBSCRIPTIONS & ACCESS CONTROL (Restricted to upfrontretaile@gmail.com only) */}
+          {activeTab === 'subscriptions' && (
+            isSuperAdminUser ? (
+              <div className="space-y-6">
+              {/* Header Title & Subtitle */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-black text-slate-800">
+                      POS Subscriptions & Terminal Access Management
+                    </h3>
+                    <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+                      Manual Controls
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Monitor subscriber billing tiers and manually toggle POS terminal access ON or OFF for missed payments or administrative holds.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setActiveTab('provision')}
+                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5" />
+                    <span>Add New Subscriber</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Subscription Overview KPI Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-500">Total Subscribed</span>
+                    <Building2 className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <div className="text-xl font-black text-slate-900 mt-1">
+                    {businesses.length}
+                  </div>
+                  <span className="text-[10px] text-slate-400">Registered POS tenants</span>
+                </div>
+
+                <div className="bg-white border border-emerald-200 rounded-xl p-3.5 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-emerald-700">Access Active</span>
+                    <span className="flex h-2.5 w-2.5 relative">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                    </span>
+                  </div>
+                  <div className="text-xl font-black text-emerald-700 mt-1">
+                    {businesses.filter((b) => b.status === 'active').length}
+                  </div>
+                  <span className="text-[10px] text-emerald-600 font-semibold">Terminals Trading Online</span>
+                </div>
+
+                <div className="bg-white border border-rose-200 rounded-xl p-3.5 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-rose-700">Access Suspended</span>
+                    <AlertTriangle className="w-4 h-4 text-rose-600" />
+                  </div>
+                  <div className="text-xl font-black text-rose-700 mt-1">
+                    {businesses.filter((b) => b.status === 'suspended').length}
+                  </div>
+                  <span className="text-[10px] text-rose-600 font-semibold">Missed Payment / Holds</span>
+                </div>
+
+                <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-500">Est. MRR (KES)</span>
+                    <TrendingUp className="w-4 h-4 text-emerald-600" />
+                  </div>
+                  <div className="text-xl font-black text-slate-900 mt-1">
+                    KES{' '}
+                    {businesses
+                      .reduce((sum, b) => {
+                        const fee = b.plan === 'enterprise' ? 12000 : b.plan === 'professional' ? 5500 : 2500;
+                        return sum + fee;
+                      }, 0)
+                      .toLocaleString()}
+                  </div>
+                  <span className="text-[10px] text-slate-400">Monthly Recurring Revenue</span>
+                </div>
+              </div>
+
+              {/* Search & Filter Toolbar */}
+              <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 shadow-2xs">
+                {/* Search Input */}
+                <div className="relative flex-1">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-400" />
+                  <input
+                    type="text"
+                    value={subSearchQuery}
+                    onChange={(e) => setSubSearchQuery(e.target.value)}
+                    placeholder="Search by business name, code, owner email, or PIN..."
+                    className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-white w-full font-medium"
+                  />
+                </div>
+
+                {/* Status and Plan Filters */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg text-xs font-semibold">
+                    <button
+                      onClick={() => setSubStatusFilter('all')}
+                      className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                        subStatusFilter === 'all'
+                          ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      All ({businesses.length})
+                    </button>
+                    <button
+                      onClick={() => setSubStatusFilter('active')}
+                      className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                        subStatusFilter === 'active'
+                          ? 'bg-white text-emerald-700 shadow-2xs font-bold'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Active ({businesses.filter((b) => b.status === 'active').length})
+                    </button>
+                    <button
+                      onClick={() => setSubStatusFilter('suspended')}
+                      className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                        subStatusFilter === 'suspended'
+                          ? 'bg-white text-rose-700 shadow-2xs font-bold'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Suspended ({businesses.filter((b) => b.status === 'suspended').length})
+                    </button>
+                  </div>
+
+                  <select
+                    value={subPlanFilter}
+                    onChange={(e) => setSubPlanFilter(e.target.value as any)}
+                    className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-500 cursor-pointer"
+                  >
+                    <option value="all">All Plan Tiers</option>
+                    <option value="starter">Starter (KES 2,500/mo)</option>
+                    <option value="professional">Professional (KES 5,500/mo)</option>
+                    <option value="enterprise">Enterprise (KES 12,000/mo)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Subscribed Businesses List */}
+              <div className="space-y-3">
+                {businesses
+                  .filter((biz) => {
+                    const q = subSearchQuery.trim().toLowerCase();
+                    const matchQuery =
+                      !q ||
+                      biz.name.toLowerCase().includes(q) ||
+                      biz.code.toLowerCase().includes(q) ||
+                      biz.ownerEmail.toLowerCase().includes(q) ||
+                      biz.ownerName.toLowerCase().includes(q) ||
+                      biz.taxNumber.toLowerCase().includes(q);
+
+                    const matchStatus =
+                      subStatusFilter === 'all' ||
+                      (subStatusFilter === 'active' && biz.status === 'active') ||
+                      (subStatusFilter === 'suspended' && biz.status === 'suspended');
+
+                    const matchPlan = subPlanFilter === 'all' || biz.plan === subPlanFilter;
+
+                    return matchQuery && matchStatus && matchPlan;
+                  })
+                  .map((biz) => {
+                    const isBizActive = biz.status === 'active';
+                    const planFee =
+                      biz.plan === 'enterprise'
+                        ? 'KES 12,000 / month'
+                        : biz.plan === 'professional'
+                        ? 'KES 5,500 / month'
+                        : 'KES 2,500 / month';
+
+                    return (
+                      <div
+                        key={biz.id}
+                        className={`bg-white rounded-2xl p-5 border transition shadow-2xs ${
+                          isBizActive
+                            ? 'border-slate-200 hover:border-slate-300'
+                            : 'border-rose-300 bg-rose-50/20 ring-1 ring-rose-200'
+                        }`}
+                      >
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                          {/* Business Info & Plan */}
+                          <div className="space-y-1.5">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                                {biz.code}
+                              </span>
+                              <span
+                                className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                  biz.plan === 'enterprise'
+                                    ? 'bg-purple-100 text-purple-800'
+                                    : biz.plan === 'professional'
+                                    ? 'bg-blue-100 text-blue-800'
+                                    : 'bg-slate-100 text-slate-800'
+                                }`}
+                              >
+                                {biz.plan} Plan
+                              </span>
+                              <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
+                                {planFee}
+                              </span>
+
+                              {isBizActive ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                                  <CheckCircle2 className="w-3.5 h-3.5" /> POS Access Enabled
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
+                                  <AlertTriangle className="w-3.5 h-3.5" /> POS Access Suspended
+                                </span>
+                              )}
+                            </div>
+
+                            <h4 className="font-black text-base text-slate-900">{biz.name}</h4>
+
+                            <div className="flex flex-wrap items-center gap-y-1 gap-x-4 text-xs text-slate-500">
+                              <div className="flex items-center gap-1">
+                                <span className="text-slate-400">Owner:</span>
+                                <span className="font-semibold text-slate-700">{biz.ownerName}</span>
+                                <span className="text-slate-400 font-mono">({biz.ownerEmail})</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-slate-400">PIN:</span>
+                                <span className="font-mono font-medium text-slate-600">{biz.taxNumber}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-slate-400">Subscribed:</span>
+                                <span>{new Date(biz.createdAt).toLocaleDateString()}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Access Control Toggle & Action Buttons */}
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 shrink-0">
+                            {/* THE INTERACTIVE TOGGLE */}
+                            <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 flex items-center gap-3">
+                              <div className="text-right">
+                                <div className="text-xs font-black text-slate-800">
+                                  {isBizActive ? 'POS Access: ON' : 'POS Access: OFF'}
+                                </div>
+                                <div className="text-[10px] text-slate-400">
+                                  {isBizActive ? 'Terminals authorized' : 'Access blocked'}
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={isBizActive}
+                                aria-label={`Toggle POS access for ${biz.name}`}
+                                disabled={togglingBizId === biz.id}
+                                onClick={async () => {
+                                  const newStatus = isBizActive ? 'suspended' : 'active';
+                                  setTogglingBizId(biz.id);
+                                  try {
+                                    await updateBusinessStatus(biz.id, newStatus);
+                                  } finally {
+                                    setTogglingBizId(null);
+                                  }
+                                }}
+                                className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 ${
+                                  isBizActive ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-slate-300 hover:bg-slate-400'
+                                }`}
+                              >
+                                <span
+                                  className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                                    isBizActive ? 'translate-x-6' : 'translate-x-0'
+                                  }`}
+                                />
+                              </button>
+                            </div>
+
+                            {/* Tenant Scope switch shortcut */}
+                            <button
+                              onClick={() => {
+                                setActiveBusinessId(biz.id);
+                                onClose();
+                              }}
+                              className="text-xs font-bold text-slate-700 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl transition cursor-pointer whitespace-nowrap"
+                            >
+                              Switch to Store
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Bottom Status Explanation Banner */}
+                        <div
+                          className={`mt-3 pt-2.5 border-t text-[11px] flex items-center justify-between ${
+                            isBizActive
+                              ? 'border-slate-100 text-slate-500'
+                              : 'border-rose-200 text-rose-800 bg-rose-50/60 -mx-5 -mb-5 px-5 py-2.5 rounded-b-2xl font-medium'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            {isBizActive ? (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <span>
+                                  Subscription current. All branch terminals, registers, inventory, and staff logins are enabled.
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                                <span>
+                                  Subscription access suspended manually. Cashiers and store owners receive a "Subscription Inactive" barrier upon opening POS.
+                                </span>
+                              </>
+                            )}
+                          </div>
+
+                          <button
+                            onClick={() => {
+                              setAuditFilter(biz.code);
+                              setActiveTab('audit');
+                            }}
+                            className="text-slate-500 hover:text-blue-600 underline cursor-pointer shrink-0 ml-2 font-semibold"
+                          >
+                            View Audit Log
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                {businesses.filter((biz) => {
+                  const q = subSearchQuery.trim().toLowerCase();
+                  const matchQuery =
+                    !q ||
+                    biz.name.toLowerCase().includes(q) ||
+                    biz.code.toLowerCase().includes(q) ||
+                    biz.ownerEmail.toLowerCase().includes(q) ||
+                    biz.ownerName.toLowerCase().includes(q) ||
+                    biz.taxNumber.toLowerCase().includes(q);
+
+                  const matchStatus =
+                    subStatusFilter === 'all' ||
+                    (subStatusFilter === 'active' && biz.status === 'active') ||
+                    (subStatusFilter === 'suspended' && biz.status === 'suspended');
+
+                  const matchPlan = subPlanFilter === 'all' || biz.plan === subPlanFilter;
+
+                  return matchQuery && matchStatus && matchPlan;
+                }).length === 0 && (
+                  <div className="text-center py-12 bg-white rounded-2xl border border-slate-200">
+                    <CreditCard className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                    <h4 className="text-sm font-bold text-slate-700">No matching subscriptions</h4>
+                    <p className="text-xs text-slate-400 mt-1">
+                      No business accounts match the current filter or search criteria.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+            ) : (
+              <div className="p-8 text-center bg-white rounded-2xl border border-slate-200">
+                <Lock className="w-12 h-12 text-rose-500 mx-auto mb-3" />
+                <h3 className="text-base font-black text-slate-900">Restricted Access Panel</h3>
+                <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                  The Subscriptions panel is restricted exclusively to the platform super administrator (<strong>{SUPER_ADMIN_EMAIL}</strong>). All other accounts are strictly blocked from viewing or managing subscriptions.
+                </p>
+                <button
+                  onClick={() => setActiveTab('tenants')}
+                  className="mt-4 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  Return to Business Tenants
+                </button>
+              </div>
+            )
+          )}
+
+          {/* TAB: PRICING TIERS CONFIGURATION (Basic, Pro, Enterprise POS Packages) */}
+          {activeTab === 'pricing' && (
+            <div className="space-y-6">
+              {/* Header Title & Subtitle */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-purple-100 text-purple-700">
+                      <Tag className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-slate-900">
+                        POS Packages & Pricing Tiers Architecture
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Define live subscription price points, billing cycles, store limits, and feature sets for <strong>Starter (Basic)</strong>, <strong>Business (Pro)</strong>, and <strong>Premium (Enterprise)</strong> POS packages.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('Reset all package pricing and feature sets to the canonical architecture: STARTER (KES 399/mo), BUSINESS (KES 899/mo - Best Value), PREMIUM (KES 1,499/mo)?')) {
+                        resetPricingTiersToDefault();
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 transition cursor-pointer shadow-2xs"
+                    title="Restore default packages"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Reset to Proposed Packages</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Architecture KPI Overview Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {pricingTiers.map((tier) => {
+                  const subscriberCount = businesses.filter((b) => {
+                    if (tier.id === 'starter') return b.plan === 'starter';
+                    if (tier.id === 'business') return b.plan === 'business' || b.plan === 'professional';
+                    if (tier.id === 'premium') return b.plan === 'premium' || b.plan === 'enterprise';
+                    return b.plan === tier.id;
+                  }).length;
+
+                  return (
+                    <div
+                      key={tier.id}
+                      onClick={() => setSelectedPricingTierId(tier.id)}
+                      className={`p-4 rounded-2xl border transition-all cursor-pointer relative ${
+                        selectedPricingTierId === tier.id
+                          ? 'bg-purple-50/60 border-purple-300 ring-2 ring-purple-500/20 shadow-xs'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      {tier.badge && (
+                        <span className={`absolute top-3 right-3 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                          tier.isPopular
+                            ? 'bg-amber-500 text-slate-950 shadow-xs'
+                            : 'bg-slate-100 text-slate-700 border border-slate-200'
+                        }`}>
+                          {tier.badge}
+                        </span>
+                      )}
+                      <div className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <span>{tier.name}</span>
+                        <span className="text-slate-300">•</span>
+                        <span className="text-purple-600 font-bold">{tier.alias}</span>
+                      </div>
+                      <div className="mt-1 flex items-baseline gap-1">
+                        <span className="text-xl font-black text-slate-900">
+                          {tier.currency} {tier.monthlyPrice.toLocaleString()}
+                        </span>
+                        <span className="text-xs text-slate-500">/ mo</span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-1">
+                        Annual: {tier.currency} {tier.annualPrice.toLocaleString()} / yr
+                      </div>
+                      <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                        <span className="text-slate-500 font-medium">Active Tenants:</span>
+                        <span className="font-extrabold text-slate-800 bg-slate-100 px-2 py-0.5 rounded-md">
+                          {subscriberCount} stores
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Portfolio Summary Card */}
+                <div className="p-4 rounded-2xl border border-slate-200 bg-linear-to-br from-slate-900 to-slate-950 text-white flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
+                        Monthly Recurring Revenue
+                      </span>
+                      <TrendingUp className="w-4 h-4 text-emerald-400" />
+                    </div>
+                    <div className="mt-2 text-xl font-black text-white">
+                      KES{' '}
+                      {businesses
+                        .reduce((acc, b) => {
+                          if (b.status === 'suspended') return acc;
+                          if (b.plan === 'starter') return acc + 399;
+                          if (b.plan === 'business' || b.plan === 'professional') return acc + 899;
+                          if (b.plan === 'premium' || b.plan === 'enterprise') return acc + 1499;
+                          return acc + 399;
+                        }, 0)
+                        .toLocaleString()}
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      From {businesses.filter((b) => b.status === 'active').length} active paying stores
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-slate-800 text-[10px] text-slate-400 flex items-center justify-between">
+                    <span>Packages: 3 Core Tiers</span>
+                    <span className="text-emerald-400 font-bold">100% Isolated</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Live Interactive Package & Scale Slider (Preview for Super Admin) */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-500 px-1">
+                  <span>Live Merchant Slider Simulation:</span>
+                  <span className="text-purple-600">Drag or click to test & switch package editor</span>
+                </div>
+                <PricingSlider
+                  tiers={pricingTiers}
+                  selectedTierId={selectedPricingTierId as PackageTierId}
+                  onSelectTier={(tId) => setSelectedPricingTierId(tId)}
+                  billingCycle="monthly"
+                  isSuperAdminView={true}
+                />
+              </div>
+
+              {/* Package Selector Pills */}
+              <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+                <span className="text-xs font-bold text-slate-500 mr-1">Configure Package:</span>
+                {pricingTiers.map((tier) => {
+                  const isSelected = selectedPricingTierId === tier.id;
+                  return (
+                    <button
+                      key={tier.id}
+                      onClick={() => setSelectedPricingTierId(tier.id)}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                        isSelected
+                          ? 'bg-purple-600 text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      <span>{tier.name}</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                        isSelected ? 'bg-purple-700 text-purple-100' : 'bg-slate-200 text-slate-600'
+                      }`}>
+                        {tier.alias}
+                      </span>
+                      {tier.isPopular && (
+                        <span className={`text-[9px] font-black px-1.5 py-0.2 rounded uppercase ${
+                          isSelected ? 'bg-amber-400 text-slate-950' : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          Best Value
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Selected Tier Editor Form */}
+              {(() => {
+                const currentTier = pricingTiers.find((t) => t.id === selectedPricingTierId) || pricingTiers[0];
+                if (!currentTier) return null;
+
+                const annualSavingsPercent = Math.round(
+                  ((currentTier.monthlyPrice * 12 - currentTier.annualPrice) / (currentTier.monthlyPrice * 12)) * 100
+                );
+
+                return (
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+                    {/* Tier Editor Header */}
+                    <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center font-black text-sm shadow-xs">
+                          {currentTier.name.substring(0, 2)}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-black text-slate-900">{currentTier.name} POS Package</h4>
+                            <span className="text-xs font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-md">
+                              Alias: {currentTier.alias} Tier
+                            </span>
+                            {currentTier.badge && (
+                              <span className="text-xs font-black bg-amber-500 text-slate-950 px-2 py-0.5 rounded-md">
+                                {currentTier.badge}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">{currentTier.tagline}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <label className="flex items-center gap-2 text-xs font-bold text-slate-700 bg-white px-3 py-1.5 rounded-xl border border-slate-200 cursor-pointer shadow-2xs">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(currentTier.isPopular)}
+                            onChange={(e) => {
+                              updatePricingTier(currentTier.id, {
+                                isPopular: e.target.checked,
+                                badge: e.target.checked ? 'Best Value' : (currentTier.badge === 'Best Value' ? '' : currentTier.badge),
+                              });
+                            }}
+                            className="rounded text-purple-600 focus:ring-purple-500 cursor-pointer"
+                          />
+                          <span>Highlight as "Best Value"</span>
+                        </label>
+
+                        <label className="flex items-center gap-2 text-xs font-bold text-slate-700 bg-white px-3 py-1.5 rounded-xl border border-slate-200 cursor-pointer shadow-2xs">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(currentTier.isActive)}
+                            onChange={(e) => updatePricingTier(currentTier.id, { isActive: e.target.checked })}
+                            className="rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                          />
+                          <span>{currentTier.isActive ? 'Active for Tenants' : 'Archived'}</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="p-6 space-y-6">
+                      {/* Price Points & Billing Rates */}
+                      <div>
+                        <h5 className="text-xs font-black uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
+                          <DollarSign className="w-3.5 h-3.5 text-purple-600" />
+                          <span>Subscription Price Points & Billing</span>
+                        </h5>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Monthly Fee ({currentTier.currency})
+                            </label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">
+                                {currentTier.currency}
+                              </span>
+                              <input
+                                type="number"
+                                min="0"
+                                value={currentTier.monthlyPrice}
+                                onChange={(e) => {
+                                  const val = Number(e.target.value) || 0;
+                                  updatePricingTier(currentTier.id, { monthlyPrice: val });
+                                }}
+                                className="w-full pl-12 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500"
+                              />
+                            </div>
+                            <span className="text-[10px] text-slate-400 mt-1 block">Billed monthly per tenant</span>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Annual Fee ({currentTier.currency})
+                            </label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">
+                                {currentTier.currency}
+                              </span>
+                              <input
+                                type="number"
+                                min="0"
+                                value={currentTier.annualPrice}
+                                onChange={(e) => {
+                                  const val = Number(e.target.value) || 0;
+                                  updatePricingTier(currentTier.id, { annualPrice: val });
+                                }}
+                                className="w-full pl-12 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500"
+                              />
+                            </div>
+                            <span className="text-[10px] text-emerald-600 font-bold mt-1 block">
+                              Saves {annualSavingsPercent > 0 ? `${annualSavingsPercent}%` : '0%'} compared to monthly
+                            </span>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Badge / Ribbon Tag
+                            </label>
+                            <input
+                              type="text"
+                              value={currentTier.badge || ''}
+                              placeholder="e.g. Best Value, Starter, Flagship"
+                              onChange={(e) => updatePricingTier(currentTier.id, { badge: e.target.value })}
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500"
+                            />
+                            <span className="text-[10px] text-slate-400 mt-1 block">Appears as pill on pricing card</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Package Identity & Limits */}
+                      <div className="pt-4 border-t border-slate-100">
+                        <h5 className="text-xs font-black uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
+                          <Sliders className="w-3.5 h-3.5 text-purple-600" />
+                          <span>Tenant Architecture & Resource Limits</span>
+                        </h5>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Max Branch Locations (-1 for Unlimited)
+                            </label>
+                            <input
+                              type="number"
+                              min="-1"
+                              value={currentTier.maxBranches}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                updatePricingTier(currentTier.id, { maxBranches: isNaN(val) ? 1 : val });
+                              }}
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500"
+                            />
+                            <span className="text-[10px] text-slate-400 mt-1 block">
+                              {currentTier.maxBranches === -1 ? 'Unlimited branches allowed' : `Max ${currentTier.maxBranches} store branches`}
+                            </span>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Max Staff / Cashier Logins (-1 for Unlimited)
+                            </label>
+                            <input
+                              type="number"
+                              min="-1"
+                              value={currentTier.maxStaffUsers}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                updatePricingTier(currentTier.id, { maxStaffUsers: isNaN(val) ? 2 : val });
+                              }}
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500"
+                            />
+                            <span className="text-[10px] text-slate-400 mt-1 block">
+                              {currentTier.maxStaffUsers === -1 ? 'Unlimited staff accounts' : `Max ${currentTier.maxStaffUsers} staff user logins`}
+                            </span>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Support Level
+                            </label>
+                            <input
+                              type="text"
+                              value={currentTier.supportLevel}
+                              onChange={(e) => updatePricingTier(currentTier.id, { supportLevel: e.target.value })}
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500"
+                            />
+                            <span className="text-[10px] text-slate-400 mt-1 block">Displayed in feature comparison</span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Tagline / Marketing Subtitle
+                            </label>
+                            <input
+                              type="text"
+                              value={currentTier.tagline}
+                              onChange={(e) => updatePricingTier(currentTier.id, { tagline: e.target.value })}
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Package Alias Tag
+                            </label>
+                            <input
+                              type="text"
+                              value={currentTier.alias}
+                              onChange={(e) => updatePricingTier(currentTier.id, { alias: e.target.value })}
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500"
+                            />
+                            <span className="text-[10px] text-slate-400 mt-1 block">e.g. Basic, Pro, or Enterprise</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Feature Entitlements Checklist */}
+                      <div className="pt-4 border-t border-slate-100">
+                        <div className="flex items-center justify-between mb-3">
+                          <h5 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />
+                            <span>Feature Entitlements Checklist ({currentTier.features.length})</span>
+                          </h5>
+                          <span className="text-[11px] text-slate-400">
+                            Features visible to store owners in their pricing dashboard
+                          </span>
+                        </div>
+
+                        {/* Existing Features List */}
+                        <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                          {currentTier.features.map((feature, idx) => (
+                            <div
+                              key={idx}
+                              className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-slate-300 text-xs transition"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                                  <Check className="w-3 h-3 stroke-[3]" />
+                                </span>
+                                <span className="font-semibold text-slate-800">{feature}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = currentTier.features.filter((_, i) => i !== idx);
+                                  updatePricingTier(currentTier.id, { features: updated });
+                                }}
+                                className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition cursor-pointer"
+                                title="Remove feature"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Add New Feature Row */}
+                        <div className="mt-3 flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="Enter a new capability to include in this package..."
+                            value={newFeatureText[currentTier.id] || ''}
+                            onChange={(e) =>
+                              setNewFeatureText((prev) => ({ ...prev, [currentTier.id]: e.target.value }))
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const text = (newFeatureText[currentTier.id] || '').trim();
+                                if (text) {
+                                  updatePricingTier(currentTier.id, {
+                                    features: [...currentTier.features, text],
+                                  });
+                                  setNewFeatureText((prev) => ({ ...prev, [currentTier.id]: '' }));
+                                }
+                              }
+                            }}
+                            className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const text = (newFeatureText[currentTier.id] || '').trim();
+                              if (text) {
+                                updatePricingTier(currentTier.id, {
+                                  features: [...currentTier.features, text],
+                                });
+                                setNewFeatureText((prev) => ({ ...prev, [currentTier.id]: '' }));
+                              }
+                            }}
+                            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition cursor-pointer shrink-0 shadow-2xs"
+                          >
+                            + Add Feature
+                          </button>
+                        </div>
+
+                        {/* Preset Quick Suggestions */}
+                        <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px]">
+                          <span className="text-slate-400 font-medium">Quick suggestions:</span>
+                          {[
+                            '15+ Advanced Reports with CSV export',
+                            'Optical barcode scanning & fast SKU lookup',
+                            'Multi-branch stock transfers & sync',
+                            'Customer loyalty points & credit ledgers',
+                            'Automated VAT / KRA tax rate calculation',
+                            'M-Pesa STK Push direct integration',
+                            'White-label receipt branding & logo',
+                            'Batch expiry alerts & serial numbers',
+                          ].map((suggestion, sIdx) => {
+                            const alreadyAdded = currentTier.features.includes(suggestion);
+                            if (alreadyAdded) return null;
+                            return (
+                              <button
+                                key={sIdx}
+                                type="button"
+                                onClick={() => {
+                                  updatePricingTier(currentTier.id, {
+                                    features: [...currentTier.features, suggestion],
+                                  });
+                                }}
+                                className="px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-purple-50 hover:text-purple-700 border border-slate-200 text-slate-600 text-[10px] font-semibold transition cursor-pointer"
+                              >
+                                + {suggestion}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 

@@ -18,12 +18,13 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   productToEdit,
   initialAiProduct,
 }) => {
-  const { categories, locations, addProduct, updateProduct, deleteProduct, currentLocation } = usePos();
+  const { categories, locations, suppliers, addProduct, updateProduct, deleteProduct, currentLocation } = usePos();
 
   const [name, setName] = useState('');
   const [sku, setSku] = useState('');
   const [barcode, setBarcode] = useState('');
   const [category, setCategory] = useState('Flour & Grains');
+  const [supplierId, setSupplierId] = useState('');
   const [buyingPrice, setBuyingPrice] = useState('100');
   const [sellingPrice, setSellingPrice] = useState('130');
   const [unit, setUnit] = useState('packet');
@@ -39,6 +40,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       setSku(productToEdit.sku);
       setBarcode(productToEdit.barcode);
       setCategory(productToEdit.category || 'All');
+      setSupplierId(productToEdit.supplierId || '');
       setBuyingPrice(productToEdit.buyingPrice.toString());
       setSellingPrice(productToEdit.sellingPrice.toString());
       setUnit(productToEdit.unit);
@@ -56,6 +58,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       setBarcode(`616${Math.floor(100000000 + Math.random() * 900000000)}`);
       const defaultCat = categories.find((c) => c !== 'All') || categories[0] || 'All';
       setCategory(defaultCat);
+      setSupplierId('');
       setBuyingPrice('120');
       setSellingPrice('150');
       setUnit('packet');
@@ -99,6 +102,8 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     const sPrice = parseFloat(sellingPrice) || 0;
     const reorder = parseInt(reorderPoint, 10) || 10;
     const finalCat = category?.trim() || 'All';
+    const chosenSupplier = suppliers.find((s) => s.id === supplierId);
+    const suppName = chosenSupplier ? chosenSupplier.name : undefined;
 
     if (productToEdit) {
       updateProduct(productToEdit.id, {
@@ -111,6 +116,8 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         unit,
         reorderPoint: reorder,
         description,
+        supplierId: supplierId || undefined,
+        supplierName: suppName,
         stockByLocation: initialStocks,
       });
     } else {
@@ -125,6 +132,8 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         taxRate: 0.16,
         reorderPoint: reorder,
         description,
+        supplierId: supplierId || undefined,
+        supplierName: suppName,
         stockByLocation: initialStocks,
       });
     }
@@ -265,6 +274,30 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold"
               />
             </div>
+          </div>
+
+          {/* Linked Supplier / Supply Chain Association */}
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-xs font-bold text-slate-700">
+                Primary Supplier / Vendor
+              </label>
+              <span className="text-[10px] text-slate-400">
+                Supply chain tracking & replenishment
+              </span>
+            </div>
+            <select
+              value={supplierId}
+              onChange={(e) => setSupplierId(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold text-slate-800"
+            >
+              <option value="">-- No Supplier Assigned (Unlinked) --</option>
+              {suppliers.map((supp) => (
+                <option key={supp.id} value={supp.id}>
+                  {supp.name} ({supp.category || 'General'} • {supp.paymentTerms.toUpperCase()})
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Pricing & Margins */}

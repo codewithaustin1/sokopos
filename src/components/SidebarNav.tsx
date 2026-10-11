@@ -18,19 +18,26 @@ import {
   Palette,
   Clock,
   FileText,
+  Truck,
+  CreditCard,
+  Tag,
 } from 'lucide-react';
+import { AnalyticsIcon } from './icons/AnalyticsIcon';
 import { usePos } from '../context/PosContext';
+import { isSuperAdminEmail } from '../data/initialData';
 
 interface SidebarNavProps {
-  currentTab: 'register' | 'inventory' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers';
-  setCurrentTab: (tab: 'register' | 'inventory' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers') => void;
+  currentTab: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers';
+  setCurrentTab: (tab: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers') => void;
   openBarcodeScanner: () => void;
+  openSuperAdminModal?: (tab?: 'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding') => void;
 }
 
 export const SidebarNav: React.FC<SidebarNavProps> = ({
   currentTab,
   setCurrentTab,
   openBarcodeScanner,
+  openSuperAdminModal,
 }) => {
   const {
     cart,
@@ -39,6 +46,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
     currentUser,
     currentLocation,
     currentBusiness,
+    businesses,
     activeShift,
     isSuperAdmin,
     openBusinessSettings,
@@ -81,6 +89,15 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       activeBadgeColor: '',
     },
     {
+      id: 'suppliers',
+      tab: 'suppliers' as const,
+      label: 'Suppliers',
+      icon: Truck,
+      badge: null,
+      badgeColor: '',
+      activeBadgeColor: '',
+    },
+    {
       id: 'shifts',
       tab: 'shifts' as const,
       label: 'Shifts & Till',
@@ -93,7 +110,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       id: 'analytics',
       tab: 'analytics' as const,
       label: 'Analytics',
-      icon: BarChart3,
+      icon: AnalyticsIcon,
       badge: null,
       badgeColor: '',
       activeBadgeColor: '',
@@ -239,6 +256,54 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
                 <Building2 className="w-4 h-4 text-blue-600 shrink-0 group-hover:scale-105 transition-transform" />
                 {!isCollapsed && (
                   <span className="flex-1 text-left truncate">Business Settings</span>
+                )}
+              </button>
+
+              {/* Subscriptions Tab (Restricted strictly to upfrontretaile@gmail.com only) */}
+              {isSuperAdminEmail(currentUser?.email) && (
+                <button
+                  id="sidebar-nav-subscriptions"
+                  onClick={() => openSuperAdminModal?.('subscriptions')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition text-slate-600 hover:text-amber-700 hover:bg-amber-50/60 cursor-pointer group ${
+                    isCollapsed ? 'justify-center px-2' : ''
+                  }`}
+                  title="POS Subscriptions & Tenant Access Control (Super Admin Only)"
+                >
+                  <CreditCard className="w-4 h-4 text-amber-500 shrink-0 group-hover:scale-105 transition-transform" />
+                  {!isCollapsed && (
+                    <span className="flex-1 text-left truncate">Subscriptions</span>
+                  )}
+                  {!isCollapsed && (
+                    businesses.some((b) => b.status === 'suspended') ? (
+                      <span className="text-[10px] font-black px-1.5 py-0.2 rounded-full leading-none shrink-0 bg-rose-500 text-white">
+                        {businesses.filter((b) => b.status === 'suspended').length} Off
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full leading-none shrink-0 bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        All Active
+                      </span>
+                    )
+                  )}
+                </button>
+              )}
+
+              {/* POS Packages & Pricing Action (For Store Owners & Admins) */}
+              <button
+                id="sidebar-nav-pricing"
+                onClick={() => openBusinessSettings('pricing')}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition text-slate-600 hover:text-purple-700 hover:bg-purple-50/60 cursor-pointer group ${
+                  isCollapsed ? 'justify-center px-2' : ''
+                }`}
+                title="POS Packages Architecture & Subscription Pricing"
+              >
+                <Tag className="w-4 h-4 text-purple-600 shrink-0 group-hover:scale-105 transition-transform" />
+                {!isCollapsed && (
+                  <span className="flex-1 text-left truncate">POS Packages</span>
+                )}
+                {!isCollapsed && (
+                  <span className="text-[10px] font-extrabold px-1.5 py-0.2 rounded-full leading-none shrink-0 bg-purple-100 text-purple-800 border border-purple-200 uppercase">
+                    {currentBusiness?.plan === 'professional' ? 'BUSINESS' : (currentBusiness?.plan?.toUpperCase() || 'BUSINESS')}
+                  </span>
                 )}
               </button>
             </nav>

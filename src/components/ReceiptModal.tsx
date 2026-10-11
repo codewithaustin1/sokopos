@@ -220,7 +220,7 @@ export const ReceiptModal: React.FC = () => {
             <div className="flex justify-between items-center">
               <span className="text-slate-500">Payment:</span>
               <span className="font-bold text-emerald-700 uppercase">
-                {activeReceipt.paymentMethod}
+                {activeReceipt.paymentMethod === 'split' ? 'SPLIT TENDER' : activeReceipt.paymentMethod}
                 {activeReceipt.paymentDetails.mpesaCode && ` (${activeReceipt.paymentDetails.mpesaCode})`}
                 {activeReceipt.paymentDetails.cardLast4 && ` (*${activeReceipt.paymentDetails.cardLast4})`}
               </span>
@@ -416,6 +416,57 @@ export const ReceiptModal: React.FC = () => {
                   </div>
                 </div>
               )}
+
+            {activeReceipt.paymentMethod === 'split' && (
+              <div className="pt-2 text-[10px] text-slate-600 space-y-1 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                <div className="font-bold text-slate-800 uppercase tracking-wider text-[9px] border-b border-slate-200 pb-1 flex justify-between items-center">
+                  <span>Split Tender Breakdown</span>
+                  <span className="text-emerald-700 font-mono font-bold">
+                    {activeReceipt.paymentDetails.splitBreakdown?.length || 2} Methods
+                  </span>
+                </div>
+                {activeReceipt.paymentDetails.splitBreakdown && activeReceipt.paymentDetails.splitBreakdown.length > 0 ? (
+                  activeReceipt.paymentDetails.splitBreakdown.map((b, idx) => (
+                    <div key={b.id || idx} className="flex justify-between items-center py-0.5">
+                      <span className="font-medium text-slate-700 capitalize flex items-center gap-1">
+                        <span>{b.method === 'mpesa' ? 'M-Pesa' : b.method === 'store_credit' ? 'Store Credit' : b.method}</span>
+                        {b.mpesaCode && <span className="text-[9px] font-mono text-emerald-700">({b.mpesaCode})</span>}
+                        {b.cardLast4 && <span className="text-[9px] font-mono text-purple-700">(*{b.cardLast4})</span>}
+                      </span>
+                      <span className="font-mono font-bold text-slate-900">
+                        {currentLocation.currency} {b.amount.toFixed(2)}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <>
+                    {activeReceipt.paymentDetails.cashTendered !== undefined && (
+                      <div className="flex justify-between">
+                        <span>Cash Tender:</span>
+                        <span className="font-mono font-bold">
+                          {currentLocation.currency} {activeReceipt.paymentDetails.cashTendered.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span>Electronic / Other:</span>
+                      <span className="font-mono font-bold">
+                        {currentLocation.currency}{' '}
+                        {(activeReceipt.total - (activeReceipt.paymentDetails.cashTendered || 0)).toFixed(2)}
+                      </span>
+                    </div>
+                  </>
+                )}
+                {(activeReceipt.paymentDetails.cashChange ?? 0) > 0 && (
+                  <div className="flex justify-between text-blue-700 font-bold pt-1 border-t border-slate-200">
+                    <span>Cash Change Returned:</span>
+                    <span className="font-mono">
+                      {currentLocation.currency} {(activeReceipt.paymentDetails.cashChange ?? 0).toFixed(2)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Refund Reconciliation Record (if any) */}
             {hasRefunds && (

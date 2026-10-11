@@ -95,16 +95,34 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ onNavigateToReport
     (tx) => tx.status === 'refunded' || tx.status === 'partially_refunded'
   ).length;
 
-  const mpesaTxs = filteredTxs.filter((t) => t.paymentMethod === 'mpesa');
-  const mpesaSales = mpesaTxs.reduce((sum, tx) => sum + tx.total, 0);
+  let mpesaSales = 0;
+  let cashSales = 0;
+  let cardSales = 0;
+
+  filteredTxs.forEach((t) => {
+    if (t.paymentMethod === 'mpesa') {
+      mpesaSales += t.total;
+    } else if (t.paymentMethod === 'cash') {
+      cashSales += t.total;
+    } else if (t.paymentMethod === 'card') {
+      cardSales += t.total;
+    } else if (t.paymentMethod === 'split') {
+      if (t.paymentDetails?.splitBreakdown && t.paymentDetails.splitBreakdown.length > 0) {
+        t.paymentDetails.splitBreakdown.forEach((b) => {
+          if (b.method === 'mpesa') mpesaSales += b.amount;
+          else if (b.method === 'cash') cashSales += b.amount;
+          else if (b.method === 'card') cardSales += b.amount;
+        });
+      } else {
+        const cashPart = t.paymentDetails?.cashTendered || 0;
+        cashSales += cashPart;
+        mpesaSales += Math.max(0, t.total - cashPart);
+      }
+    }
+  });
+
   const mpesaPercentage = grossSales > 0 ? ((mpesaSales / grossSales) * 100).toFixed(1) : '0';
-
-  const cashTxs = filteredTxs.filter((t) => t.paymentMethod === 'cash');
-  const cashSales = cashTxs.reduce((sum, tx) => sum + tx.total, 0);
   const cashPercentage = grossSales > 0 ? ((cashSales / grossSales) * 100).toFixed(1) : '0';
-
-  const cardTxs = filteredTxs.filter((t) => t.paymentMethod === 'card');
-  const cardSales = cardTxs.reduce((sum, tx) => sum + tx.total, 0);
 
   // Payment Breakdown Donut Data
   const paymentBreakdownData = useMemo(() => [

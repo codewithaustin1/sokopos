@@ -532,10 +532,18 @@ export function calculateShiftTillReport(
     if (tx.paymentMethod === 'cash') {
       cashSalesTendered += tx.total;
     } else if (tx.paymentMethod === 'split') {
-      const cashPart = tx.paymentDetails?.cashTendered || 0;
-      cashSalesTendered += cashPart;
-      const nonCashPart = Math.max(0, tx.total - cashPart);
-      mpesaVolume += nonCashPart;
+      if (tx.paymentDetails?.splitBreakdown && tx.paymentDetails.splitBreakdown.length > 0) {
+        tx.paymentDetails.splitBreakdown.forEach((entry) => {
+          if (entry.method === 'cash') cashSalesTendered += entry.amount;
+          else if (entry.method === 'mpesa') mpesaVolume += entry.amount;
+          else if (entry.method === 'card') cardVolume += entry.amount;
+        });
+      } else {
+        const cashPart = tx.paymentDetails?.cashTendered || 0;
+        cashSalesTendered += cashPart;
+        const nonCashPart = Math.max(0, tx.total - cashPart);
+        mpesaVolume += nonCashPart;
+      }
     } else if (tx.paymentMethod === 'mpesa') {
       mpesaVolume += tx.total;
     } else if (tx.paymentMethod === 'card') {

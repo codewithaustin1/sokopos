@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Search,
   Scan,
@@ -29,6 +29,8 @@ import { ItemDiscountModal } from './ItemDiscountModal';
 import { VoidModal } from './VoidModal';
 import { CustomerSelectModal } from './CustomerSelectModal';
 import { CartLineItem } from './CartLineItem';
+import { ShiftSessionClosedCard } from './shift/ShiftSessionClosedCard';
+import { ShiftInitializationCard } from './shift/ShiftInitializationCard';
 import { Haptics } from '../utils/haptics';
 import {
   getItemDiscountedUnitPrice,
@@ -78,6 +80,8 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
   const [isDiscountModalOpen, setIsDiscountModalOpen] = useState<boolean>(false);
   const [isCustomerSelectOpen, setIsCustomerSelectOpen] = useState<boolean>(false);
 
+  const [isInitializingShift, setIsInitializingShift] = useState<boolean>(false);
+
   // Void Management Modal State (Edge Case 1)
   const [voidModalState, setVoidModalState] = useState<{
     isOpen: boolean;
@@ -90,6 +94,53 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
     item: null,
     itemsToVoid: [],
   });
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Global Ctrl+F / Cmd+F shortcut to focus product search while on the register tab
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+        e.preventDefault();
+        setMobileActiveView('catalog');
+        setTimeout(() => {
+          searchInputRef.current?.focus();
+          searchInputRef.current?.select();
+        }, 20);
+      }
+    };
+
+    const handleFocusSearchEvent = () => {
+      setMobileActiveView('catalog');
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }, 20);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('focus-register-search', handleFocusSearchEvent);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('focus-register-search', handleFocusSearchEvent);
+    };
+  }, []);
+
+  // Filtered products (Unconditional Hook at Top Level)
+  const filteredProducts = useMemo(() => {
+    return (products || []).filter((p) => {
+      const matchCategory =
+        selectedCategory === 'All Items' || p.category === selectedCategory;
+      const matchSearch =
+        !searchQuery.trim() ||
+        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.barcode.includes(searchQuery.trim());
+      return matchCategory && matchSearch;
+    });
+  }, [products, selectedCategory, searchQuery]);
+
+  const totalCartCount = (cart || []).reduce((acc, item) => acc + item.quantity, 0);
 
   const handleOpenCartVoid = () => {
     if (cart.length === 0) return;
@@ -109,108 +160,6 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
       itemsToVoid: [targetItem],
     });
   };
-
-  // Strict Rule: The sales interface remains completely inaccessible until a shift session is active
-  if (!activeShift || activeShift.status !== 'open') {
-    return (
-      <div
-        id="register-session-locked-view"
-        className="flex-1 h-full w-full flex items-center justify-center p-3 sm:p-4 md:p-6 bg-slate-100/90 overflow-y-auto"
-      >
-        <div className="max-w-md w-full bg-white rounded-2xl border border-slate-200/90 shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 my-auto">
-          {/* Top Inaccessible Banner - Compact and Sleek */}
-          <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-amber-950 px-4 py-3.5 sm:px-5 sm:py-4 text-white relative overflow-hidden flex items-center justify-between">
-            <div className="relative z-10 min-w-0 pr-2">
-              <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-black uppercase tracking-wider mb-1">
-                <Lock className="w-3 h-3 text-amber-400 shrink-0" />
-                <span>Sales Interface Locked</span>
-              </div>
-              <h2 className="text-base sm:text-lg font-black tracking-tight text-white leading-tight">
-                Open Session to Trade
-              </h2>
-              <p className="text-[11px] text-slate-300 mt-0.5 truncate">
-                Declare opening cash float to unlock checkout
-              </p>
-            </div>
-
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center text-amber-400 shrink-0 shadow-inner">
-              <Clock className="w-5 h-5 sm:w-6 sm:h-6" />
-            </div>
-          </div>
-
-          {/* Details & Status Grid - Space-efficient & clean */}
-          <div className="p-3.5 sm:p-4 space-y-2.5">
-            <div className="grid grid-cols-2 gap-2 text-left">
-              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">Terminal Location</div>
-                <div className="font-bold text-xs text-slate-800 mt-0.5 truncate">{currentLocation.name}</div>
-                <div className="text-[10px] text-slate-500 truncate">{currentLocation.terminalName || 'Terminal 01'}</div>
-              </div>
-
-              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">Logged Operator</div>
-                <div className="font-bold text-xs text-slate-800 mt-0.5 truncate">{currentUser?.name || 'Cashier'}</div>
-                <div className="text-[10px] text-slate-500 capitalize truncate">{currentUser?.role?.replace('_', ' ') || 'Staff'}</div>
-              </div>
-
-              <div className="p-2 sm:p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/80">
-                <div className="text-[9px] font-black uppercase tracking-wider text-amber-700">Till Status</div>
-                <div className="font-bold text-xs text-amber-900 mt-0.5 flex items-center gap-1.5 truncate">
-                  <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
-                  Closed & Inactive
-                </div>
-                <div className="text-[10px] text-amber-800 truncate">No active trading shift</div>
-              </div>
-
-              <div className="p-2 sm:p-2.5 rounded-xl bg-blue-50/70 border border-blue-200/80">
-                <div className="text-[9px] font-black uppercase tracking-wider text-blue-700">Fiscal Policy</div>
-                <div className="font-bold text-xs text-blue-900 mt-0.5 truncate">Strict Fiscal Control</div>
-                <div className="text-[10px] text-blue-800 truncate">Float declaration required</div>
-              </div>
-            </div>
-
-            {/* Compact Fiscal Rule Callout */}
-            <div className="bg-amber-50/70 p-2.5 rounded-xl border border-amber-200/80 text-[11px] text-amber-900 flex items-center gap-2">
-              <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
-              <div className="leading-snug text-[10px] sm:text-[11px]">
-                <span className="font-bold text-amber-950">Fiscal & Audit Rule: </span>
-                Transactions cannot be initiated or completed without a declared shift float.
-              </div>
-            </div>
-
-            {/* Action CTA Button */}
-            <div className="pt-1">
-              <button
-                id="unlock-sales-interface-btn"
-                type="button"
-                onClick={openShiftManagement}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black py-2.5 sm:py-3 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 cursor-pointer text-xs sm:text-sm"
-              >
-                <Clock className="w-4 h-4 shrink-0" />
-                <span>Open Shift Session & Unlock Register</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const totalCartCount = (cart || []).reduce((acc, item) => acc + item.quantity, 0);
-
-  // Filtered products
-  const filteredProducts = useMemo(() => {
-    return (products || []).filter((p) => {
-      const matchCategory =
-        selectedCategory === 'All Items' || p.category === selectedCategory;
-      const matchSearch =
-        !searchQuery.trim() ||
-        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.barcode.includes(searchQuery.trim());
-      return matchCategory && matchSearch;
-    });
-  }, [products, selectedCategory, searchQuery]);
 
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Escape') {
@@ -243,6 +192,46 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
       }
     }
   };
+
+  // Strict Rule: The sales interface remains completely inaccessible until a shift session is active
+  if (!activeShift || activeShift.status !== 'open') {
+    return (
+      <div
+        id="register-session-locked-view"
+        className="flex-1 h-full w-full flex items-center justify-center p-3 sm:p-4 md:p-6 bg-slate-100 overflow-y-auto"
+      >
+        <div className="my-auto w-full flex flex-col items-center justify-center">
+          {!isInitializingShift ? (
+            <ShiftSessionClosedCard
+              onOpenShiftClick={() => setIsInitializingShift(true)}
+            />
+          ) : (
+            <div className="w-full flex flex-col items-center animate-in fade-in zoom-in-95 duration-150">
+              <div className="max-w-lg w-full mb-3 flex items-center justify-between px-1">
+                <button
+                  type="button"
+                  onClick={() => setIsInitializingShift(false)}
+                  className="text-xs font-bold text-slate-600 hover:text-slate-900 flex items-center gap-1.5 bg-white hover:bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs transition cursor-pointer"
+                >
+                  ← Back to Closed Status
+                </button>
+                <button
+                  type="button"
+                  onClick={openShiftManagement}
+                  className="text-xs font-bold text-[#132c54] hover:underline cursor-pointer"
+                >
+                  Open in Shift &amp; Till Tab →
+                </button>
+              </div>
+              <ShiftInitializationCard
+                onSuccess={() => setIsInitializingShift(false)}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div id="register-pos-workspace" className="flex-1 flex flex-col md:flex-row overflow-hidden bg-slate-100 relative">
@@ -289,23 +278,34 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
       >
         {/* Search & Category Header */}
         <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3 items-stretch sm:items-center justify-between shrink-0">
-          {/* Quick Search with Barcode Enter support */}
+          {/* Quick Search with Barcode Enter support & Ctrl+F shortcut */}
           <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 sm:top-3" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 sm:top-3 pointer-events-none" />
             <input
+              id="register-search-input"
+              ref={searchInputRef}
               type="text"
               placeholder="Search product, SKU or scan barcode..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={handleSearchKeyDown}
-              className="w-full bg-white border border-slate-300 rounded-xl py-2 pl-9 pr-20 text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-600 shadow-2xs"
+              className="w-full bg-white border border-slate-300 rounded-xl py-2 pl-9 pr-28 text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 shadow-2xs transition"
             />
-            <button
-              onClick={openBarcodeScanner}
-              className="absolute right-1.5 top-1.5 bottom-1.5 px-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-[10px] font-bold flex items-center gap-1 border border-blue-200 cursor-pointer"
-            >
-              <Scan className="w-3 h-3" /> Scan (F2)
-            </button>
+            <div className="absolute right-1.5 top-1.5 bottom-1.5 flex items-center gap-1">
+              <span
+                className="hidden sm:inline-flex items-center text-[10px] font-mono font-bold text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-2xs pointer-events-none"
+                title="Keyboard shortcut: Ctrl+F"
+              >
+                Ctrl+F
+              </span>
+              <button
+                type="button"
+                onClick={openBarcodeScanner}
+                className="px-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-[10px] font-bold flex items-center gap-1 border border-blue-200 cursor-pointer h-full"
+              >
+                <Scan className="w-3 h-3" /> Scan (F2)
+              </button>
+            </div>
           </div>
 
           <div className="text-[11px] font-semibold text-slate-500 whitespace-nowrap hidden lg:block">

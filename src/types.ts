@@ -115,6 +115,8 @@ export interface BusinessLoyaltySettings {
   updatedBy?: string;
 }
 
+export type BusinessPlanTier = 'starter' | 'professional' | 'enterprise' | 'business' | 'premium';
+
 export interface Business {
   id: string;
   name: string;
@@ -122,7 +124,8 @@ export interface Business {
   ownerEmail: string; // Google Account email
   ownerName: string;
   createdAt: string;
-  plan: 'starter' | 'professional' | 'enterprise';
+  lastLoginAt?: string; // ISO timestamp of most recent login session
+  plan: BusinessPlanTier;
   status: 'active' | 'suspended';
   currency: string;
   taxNumber: string;
@@ -131,6 +134,8 @@ export interface Business {
   taxSettings?: BusinessTaxSettings;
   loyaltySettings?: BusinessLoyaltySettings;
 }
+
+export * from './types/pricing';
 
 export interface AuthUser {
   id: string;
@@ -183,6 +188,44 @@ export interface Category {
   isPendingCloudSync?: boolean;
 }
 
+export type SupplierPaymentTerms = 'cod' | 'net_7' | 'net_14' | 'net_30' | 'consignment' | 'prepaid';
+
+export interface SupplierOrderRecord {
+  id: string;
+  poNumber: string;
+  date: string;
+  amount: number;
+  status: 'received' | 'pending' | 'invoiced' | 'paid';
+  itemCount: number;
+  deliveryNoteRef?: string;
+}
+
+export interface Supplier {
+  id: string;
+  businessId: string;
+  name: string; // Company / Trade Name (e.g. Unga Mills East Africa Ltd)
+  contactPerson?: string; // Sales rep or account manager
+  phone: string; // Contact phone (+254 7XX...)
+  email?: string;
+  category?: string; // Primary trade category (e.g. "Flour & Grains")
+  address?: string; // Physical warehouse / street
+  city?: string;
+  kraPin?: string; // KRA PIN (e.g. P051234567X)
+  paymentTerms: SupplierPaymentTerms; // 'cod' | 'net_7' | 'net_14' | 'net_30' | 'consignment' | 'prepaid'
+  bankName?: string;
+  bankAccount?: string;
+  mpesaPaybillOrTill?: string;
+  leadTimeDays?: number; // Order fulfillment lead time in days
+  notes?: string;
+  status: 'active' | 'inactive';
+  totalInvoiced?: number; // Total purchases to date in KES
+  ordersCount?: number;
+  lastDeliveryDate?: string;
+  createdAt: string;
+  updatedAt?: string;
+  isPendingCloudSync?: boolean;
+}
+
 export interface Product {
   id: string;
   businessId: string;
@@ -197,6 +240,8 @@ export interface Product {
   stockByLocation: Record<string, number>; // locationId -> count
   reorderPoint: number;
   description?: string;
+  supplierId?: string; // Linked supplier reference
+  supplierName?: string; // Denormalized supplier company name
   isPendingCloudSync?: boolean;
 }
 
@@ -262,6 +307,20 @@ export interface RefundRecord {
   customerPhone?: string;
 }
 
+export interface SplitPaymentTender {
+  id: string;
+  method: 'cash' | 'mpesa' | 'card' | 'store_credit';
+  amount: number;
+  cashTendered?: number;
+  cashChange?: number;
+  mpesaCode?: string;
+  mpesaPhone?: string;
+  mpesaType?: 'buy_goods' | 'paybill';
+  cardLast4?: string;
+  cardNetwork?: string;
+  notes?: string;
+}
+
 export interface Transaction {
   id: string;
   businessId: string;
@@ -305,6 +364,8 @@ export interface Transaction {
     cardNetwork?: string;
     roundingDifference?: number;
     notes?: string;
+    storeCreditUsed?: number;
+    splitBreakdown?: SplitPaymentTender[];
   };
   status: 'completed' | 'refunded' | 'partially_refunded';
   refunds?: RefundRecord[];

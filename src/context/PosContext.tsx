@@ -30,6 +30,11 @@ import {
   TaxRule,
   Customer,
   CustomerCreditLedgerEntry,
+  SplitPaymentTender,
+  Supplier,
+  PricingTier,
+  BusinessPlanTier,
+  DEFAULT_PRICING_TIERS,
 } from '../types';
 import {
   resolveDynamicTaxRate,
@@ -49,6 +54,7 @@ import {
   INITIAL_TRANSACTIONS,
   INITIAL_SHIFTS,
   INITIAL_CUSTOMERS,
+  INITIAL_SUPPLIERS,
   DEFAULT_LOYALTY_SETTINGS,
   SUPER_ADMIN_EMAIL,
 } from '../data/initialData';
@@ -89,6 +95,8 @@ import {
   deleteBusinessFromFirestore,
   purgeTenantAllDataFromFirestore,
   getBusinessesFromFirestore,
+  resolveBusinessUniquenessConflicts,
+  deleteBusinessConflictsFromFirestore,
   saveUserProfileToFirestore,
   getFreshTenantProductsFromFirestore,
   subscribeToTenantProducts,
@@ -102,6 +110,10 @@ import {
   updateCustomerInFirestore,
   deleteCustomerFromFirestore,
   subscribeToTenantCustomers,
+  saveSupplierToFirestore,
+  updateSupplierInFirestore,
+  deleteSupplierFromFirestore,
+  subscribeToTenantSuppliers,
 } from '../lib/firestoreService';
 import {
   hashPinOnServer,
@@ -132,15 +144,22 @@ interface PosContextType {
   logout: () => boolean;
   provisionBusiness: (name: string, ownerEmail: string, ownerName: string, plan: 'starter' | 'professional' | 'enterprise') => Business;
   updateBusinessProfile: (updates: Partial<Business>) => void;
+  updateBusinessStatus: (businessId: string, status: 'active' | 'suspended') => Promise<void>;
   performSystemCleanup: () => Promise<{ removedCount: number; removedBusinesses: string[] }>;
   isRealGoogleAccount: (email?: string | null) => boolean;
 
   // Business Profile Settings & Branch Management
   isBusinessSettingsOpen: boolean;
   setIsBusinessSettingsOpen: (open: boolean) => void;
-  businessSettingsDefaultTab: 'profile' | 'branches' | 'tax' | 'loyalty' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset';
-  openBusinessSettings: (initialTab?: 'profile' | 'branches' | 'tax' | 'loyalty' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset') => void;
+  businessSettingsDefaultTab: 'profile' | 'branches' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset';
+  openBusinessSettings: (initialTab?: 'profile' | 'branches' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset') => void;
   updateActiveUserCredentials: (newPin?: string, newUsername?: string) => Promise<boolean>;
+
+  // Pricing Architecture & Package Tiers
+  pricingTiers: PricingTier[];
+  updatePricingTier: (tierId: string, updates: Partial<PricingTier>) => void;
+  resetPricingTiersToDefault: () => void;
+  updateBusinessPlan: (businessId: string, plan: BusinessPlanTier) => Promise<void>;
 
   // Loyalty Program Settings
   loyaltySettings: BusinessLoyaltySettings;
@@ -232,6 +251,16 @@ interface PosContextType {
   deleteProduct: (id: string) => void;
   adjustStock: (productId: string, locationId: string, newStock: number, reason: string) => void;
   transferStock: (productId: string, fromLocId: string, toLocId: string, quantity: number) => boolean;
+  linkProductToSupplier: (productId: string, supplierId: string | null) => Promise<void>;
+
+  // Supplier Management & Supply Chain Oversight
+  suppliers: Supplier[];
+  selectedSupplier: Supplier | null;
+  setSelectedSupplier: (supplier: Supplier | null) => void;
+  addSupplier: (supplier: Omit<Supplier, 'id' | 'businessId' | 'createdAt'>) => Promise<Supplier>;
+  updateSupplier: (id: string, updates: Partial<Supplier>) => Promise<void>;
+  deleteSupplier: (id: string) => Promise<boolean>;
+  getProductsForSupplier: (supplierId: string) => Product[];
 
   // Fresh Inventory from Firestore Server (Bypassing Local Cache)
   fetchFreshInventoryFromServer: (businessIdOverride?: string, showFeedback?: boolean) => Promise<Product[]>;
@@ -302,6 +331,7 @@ interface PosContextType {
       storeCreditUsed?: number;
       loyaltyPointsRedeemed?: number;
       notes?: string;
+      splitBreakdown?: SplitPaymentTender[];
     }
   ) => Transaction;
   settleExactCash: () => boolean;
@@ -434,10 +464,13 @@ const STORAGE_KEYS = {
   PLATFORM_FAVICON_NAME: 'sokopos_platform_favicon_name_v1',
   RETAIL_THEME: 'sokopos_retail_theme_v2',
   CUSTOMERS: 'sokopos_customers_v1',
+  SUPPLIERS: 'sokopos_suppliers_v1',
+  PRICING_TIERS: 'sokopos_pricing_tiers_v2',
   getTenantAutoPrintKey: (bizId: string) => `sokopos_auto_print_receipt_${bizId || 'default'}_v2`,
   getTenantReceiptFormatKey: (bizId: string) => `sokopos_receipt_format_${bizId || 'default'}_v2`,
   getTenantRetailThemeKey: (bizId: string) => `sokopos_retail_theme_${bizId || 'default'}_v2`,
   getTenantCustomersKey: (bizId: string) => `sokopos_customers_${bizId || 'default'}_v1`,
+  getTenantSuppliersKey: (bizId: string) => `sokopos_suppliers_${bizId || 'default'}_v1`,
 };
 
 export function isRealGoogleAccount(email?: string | null): boolean {
@@ -509,7 +542,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               b.id !== 'biz-quickmart'
           );
           if (cleaned.length > 0) {
-            return cleaned;
+            const { uniqueBusinesses } = resolveBusinessUniquenessConflicts(cleaned);
+            if (uniqueBusinesses.length > 0) {
+              return uniqueBusinesses;
+            }
           }
         }
       } catch {
@@ -554,6 +590,101 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [currentUser]);
 
+  // Enforce uniqueness of businesses at both Google email and tenant ID levels.
+  // Prioritizes the account last logged into while deleting any conflicts at Firestore level.
+  const prioritizeAccountAndPurgeConflicts = async (
+    userEmail: string,
+    displayName?: string
+  ): Promise<{ winner: Business; purgedCount: number }> => {
+    const normalizedEmail = userEmail.toLowerCase().trim();
+    const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
+    const now = new Date().toISOString();
+
+    // 1. Find all businesses associated with this email
+    const emailMatches = businesses.filter(
+      (b) => b.ownerEmail.toLowerCase() === normalizedEmail
+    );
+
+    let winner: Business;
+    let conflicts: Business[] = [];
+
+    if (emailMatches.length > 0) {
+      // Sort: prioritize the account last logged into (most recent lastLoginAt, fallback to createdAt)
+      const sorted = [...emailMatches].sort((a, b) => {
+        const aScore = Math.max(
+          a.lastLoginAt ? new Date(a.lastLoginAt).getTime() : 0,
+          a.createdAt ? new Date(a.createdAt).getTime() : 0
+        );
+        const bScore = Math.max(
+          b.lastLoginAt ? new Date(b.lastLoginAt).getTime() : 0,
+          b.createdAt ? new Date(b.createdAt).getTime() : 0
+        );
+        return bScore - aScore;
+      });
+
+      winner = { ...sorted[0], lastLoginAt: now };
+      conflicts = sorted.slice(1);
+    } else if (isSuperAdminEmail) {
+      const upfrontBiz = businesses.find((b) => b.id === 'biz-upfront') || INITIAL_BUSINESSES[0];
+      winner = { ...upfrontBiz, lastLoginAt: now };
+    } else {
+      // Self-provision stable business
+      const stableBizId = getStableBusinessIdForEmail(normalizedEmail);
+      const bizName = `${displayName || normalizedEmail.split('@')[0]}'s Store`;
+      winner = {
+        id: stableBizId,
+        name: bizName,
+        code: bizName.substring(0, 4).toUpperCase().replace(/\s+/g, ''),
+        ownerEmail: normalizedEmail,
+        ownerName: displayName || 'Business Owner',
+        createdAt: now,
+        lastLoginAt: now,
+        plan: 'professional',
+        status: 'active',
+        currency: 'KES',
+        taxNumber: `P0${Math.floor(100000000 + Math.random() * 900000000)}Z`,
+      };
+    }
+
+    // 2. Also check if any business conflicts on tenant ID (id)
+    const idConflicts = businesses.filter(
+      (b) => b.id === winner.id && b.ownerEmail.toLowerCase() !== normalizedEmail
+    );
+    if (idConflicts.length > 0) {
+      conflicts.push(...idConflicts);
+    }
+
+    // Deduplicate conflicts
+    const conflictMap = new Map<string, Business>();
+    conflicts.forEach((c) => {
+      if (c.id !== winner.id) conflictMap.set(c.id, c);
+    });
+    const uniqueConflicts = Array.from(conflictMap.values());
+    const conflictIds = new Set(uniqueConflicts.map((c) => c.id));
+
+    // 3. Update React state: preserve winner (with updated lastLoginAt), remove all conflicts
+    setBusinesses((prev) => {
+      const filtered = prev.filter(
+        (b) => !conflictIds.has(b.id) && b.ownerEmail.toLowerCase() !== normalizedEmail
+      );
+      return [...filtered, winner];
+    });
+
+    ensureTenantDefaults(winner);
+
+    // 4. Firestore level: save winner with latest lastLoginAt, delete all conflicts
+    if (auth.currentUser) {
+      saveBusinessToFirestore(winner).catch((e) => console.warn('Firestore sync winner note:', e));
+      if (uniqueConflicts.length > 0) {
+        deleteBusinessConflictsFromFirestore(uniqueConflicts).catch((e) =>
+          console.warn('Firestore delete conflicts note:', e)
+        );
+      }
+    }
+
+    return { winner, purgedCount: uniqueConflicts.length };
+  };
+
   // Firebase Real Connection Validation & Auth State Synchronizer
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser: FirebaseUser | null) => {
@@ -570,48 +701,16 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           const tokenResult = await fbUser.getIdTokenResult();
           const expirationTime = new Date(tokenResult.expirationTime).getTime();
 
-          const normalizedEmail = fbUser.email.toLowerCase();
+          const normalizedEmail = fbUser.email.toLowerCase().trim();
           const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
 
-          // Match business
-          let matchedBiz = businesses.find(
-            (b) => b.ownerEmail.toLowerCase() === normalizedEmail
+          // Prioritize account last logged into & delete conflicts at Firestore level
+          const { winner: matchedBiz } = await prioritizeAccountAndPurgeConflicts(
+            normalizedEmail,
+            fbUser.displayName || undefined
           );
 
-          if (!matchedBiz && isSuperAdminEmail) {
-            matchedBiz = businesses.find((b) => b.id === 'biz-upfront');
-          }
-
-          if (!matchedBiz && !isSuperAdminEmail) {
-            const stableBizId = getStableBusinessIdForEmail(normalizedEmail);
-            const bizName = `${fbUser.displayName || fbUser.email.split('@')[0]}'s Store`;
-            matchedBiz = {
-              id: stableBizId,
-              name: bizName,
-              code: bizName.substring(0, 4).toUpperCase().replace(/\s+/g, ''),
-              ownerEmail: normalizedEmail,
-              ownerName: fbUser.displayName || 'Business Owner',
-              createdAt: new Date().toISOString(),
-              plan: 'professional',
-              status: 'active',
-              currency: 'KES',
-              taxNumber: `P0${Math.floor(100000000 + Math.random() * 900000000)}Z`,
-            };
-            setBusinesses((prev) => {
-              if (prev.some((b) => b.id === stableBizId)) return prev;
-              return [...prev, matchedBiz!];
-            });
-            saveBusinessToFirestore(matchedBiz).catch((e) => console.warn('Sync new biz:', e));
-          }
-
-          if (matchedBiz) {
-            ensureTenantDefaults(matchedBiz);
-            saveBusinessToFirestore(matchedBiz).catch((e) => console.warn('Sync matched biz:', e));
-          }
-
-          const targetBizId = isSuperAdminEmail
-            ? 'biz-upfront'
-            : matchedBiz?.id || getStableBusinessIdForEmail(normalizedEmail);
+          const targetBizId = isSuperAdminEmail ? 'biz-upfront' : matchedBiz.id;
 
           const role: UserRole = isSuperAdminEmail
             ? 'super_admin'
@@ -2371,6 +2470,49 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return true;
   };
 
+  const linkProductToSupplier = async (productId: string, supplierId: string | null): Promise<void> => {
+    const targetProd = allProducts.find((p) => p.id === productId);
+    if (!targetProd) return;
+
+    let suppName: string | undefined = undefined;
+    if (supplierId) {
+      const supp = allSuppliers.find((s) => s.id === supplierId);
+      suppName = supp?.name;
+    }
+
+    const updatedProd: Product = {
+      ...targetProd,
+      supplierId: supplierId || undefined,
+      supplierName: suppName,
+      isPendingCloudSync: !isOnline || !auth.currentUser,
+    };
+
+    setAllProducts((prev) => prev.map((p) => (p.id === productId ? updatedProd : p)));
+
+    if (isOnline && auth.currentUser) {
+      updateProductInFirestore(productId, {
+        supplierId: supplierId || null,
+        supplierName: suppName || null,
+      } as any).catch((err) => console.warn('Firestore link product supplier error:', err));
+    }
+
+    logAdminActivity({
+      category: 'inventory',
+      action: 'link_supplier_item',
+      description: supplierId
+        ? `Linked inventory item "${targetProd.name}" to supplier "${suppName}"`
+        : `Unlinked supplier from inventory item "${targetProd.name}"`,
+      recordType: 'product',
+      recordId: productId,
+    });
+
+    soundFx.playSuccess();
+    showToast(
+      supplierId ? `Linked to ${suppName}` : `Unlinked from supplier`,
+      'success'
+    );
+  };
+
   // Online / Offline Network Connectivity State
   const [isOnline, setIsOnlineState] = useState<boolean>(() => {
     return typeof navigator !== 'undefined' ? navigator.onLine : true;
@@ -2632,6 +2774,184 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     soundFx.playSuccess();
     showToast(`Redeemed ${pointsToRedeem} points for ${cust.name} (${currentLocation.currency} ${cashValue} value)`, 'success');
     return true;
+  };
+
+  // 10.5 Multi-Tenant Suppliers Management Store
+  const [allSuppliers, setAllSuppliers] = useState<Supplier[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.SUPPLIERS);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const hasUpfront = parsed.some((s: Supplier) => s.businessId === 'biz-upfront');
+          if (!hasUpfront) {
+            const upfrontInitials = INITIAL_SUPPLIERS.filter((s) => s.businessId === 'biz-upfront');
+            return [...parsed, ...upfrontInitials];
+          }
+          return parsed;
+        }
+      } catch {
+        // fallback
+      }
+    }
+    return INITIAL_SUPPLIERS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(allSuppliers));
+  }, [allSuppliers]);
+
+  // Scoped to active business tenant
+  const suppliers = useMemo(() => {
+    return allSuppliers.filter((s) => s.businessId === activeBusinessId);
+  }, [allSuppliers, activeBusinessId]);
+
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
+
+  useEffect(() => {
+    setSelectedSupplier(null);
+  }, [activeBusinessId]);
+
+  // Real-time Firestore supplier synchronization
+  useEffect(() => {
+    if (!isOnline || !auth.currentUser) return;
+    const unsubscribe = subscribeToTenantSuppliers(activeBusinessId, (remoteSuppliers) => {
+      if (remoteSuppliers && remoteSuppliers.length > 0) {
+        setAllSuppliers((prev) => {
+          const others = prev.filter((s) => s.businessId !== activeBusinessId);
+          const map = new Map<string, Supplier>();
+          prev.filter((s) => s.businessId === activeBusinessId).forEach((s) => map.set(s.id, s));
+          remoteSuppliers.forEach((rs) => map.set(rs.id, rs));
+          return [...others, ...Array.from(map.values())];
+        });
+      }
+    });
+    return () => unsubscribe();
+  }, [activeBusinessId, isOnline]);
+
+  const addSupplier = async (
+    data: Omit<Supplier, 'id' | 'businessId' | 'createdAt'>
+  ): Promise<Supplier> => {
+    const trimmedName = data.name.trim();
+    const trimmedPhone = data.phone.trim();
+    if (!trimmedName || !trimmedPhone) {
+      throw new Error('Supplier company name and phone number are required');
+    }
+
+    const newSupp: Supplier = {
+      ...data,
+      name: trimmedName,
+      phone: trimmedPhone,
+      id: `supp-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
+      businessId: activeBusinessId,
+      status: data.status || 'active',
+      paymentTerms: data.paymentTerms || 'net_14',
+      totalInvoiced: data.totalInvoiced || 0,
+      ordersCount: data.ordersCount || 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    setAllSuppliers((prev) => [newSupp, ...prev]);
+
+    if (isOnline && auth.currentUser) {
+      saveSupplierToFirestore(newSupp).catch((err) => console.warn('Firestore supplier save:', err));
+    }
+
+    logAdminActivity({
+      category: 'inventory',
+      action: 'create_supplier',
+      description: `Added vendor profile: ${newSupp.name} (${newSupp.category || 'General Supplies'}, Terms: ${newSupp.paymentTerms})`,
+      recordType: 'supplier',
+      recordId: newSupp.id,
+      afterValue: newSupp,
+    });
+
+    soundFx.playSuccess();
+    showToast(`Supplier "${newSupp.name}" added successfully!`, 'success');
+    return newSupp;
+  };
+
+  const updateSupplier = async (id: string, updates: Partial<Supplier>): Promise<void> => {
+    const target = allSuppliers.find((s) => s.id === id);
+    if (!target) return;
+
+    const updatedSupp: Supplier = {
+      ...target,
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setAllSuppliers((prev) => prev.map((s) => (s.id === id ? updatedSupp : s)));
+
+    if (selectedSupplier?.id === id) {
+      setSelectedSupplier(updatedSupp);
+    }
+
+    // If name changed, synchronize supplierName on all linked products
+    if (updates.name && updates.name !== target.name) {
+      const newName = updates.name;
+      setAllProducts((prev) =>
+        prev.map((p) => (p.supplierId === id ? { ...p, supplierName: newName } : p))
+      );
+    }
+
+    if (isOnline && auth.currentUser) {
+      updateSupplierInFirestore(id, updates).catch((err) => console.warn('Firestore supplier update:', err));
+    }
+
+    logAdminActivity({
+      category: 'inventory',
+      action: 'update_supplier',
+      description: `Updated supplier profile: ${updatedSupp.name}`,
+      recordType: 'supplier',
+      recordId: id,
+      beforeValue: target,
+      afterValue: updatedSupp,
+    });
+
+    showToast(`Supplier "${updatedSupp.name}" updated`, 'success');
+  };
+
+  const deleteSupplier = async (id: string): Promise<boolean> => {
+    const target = allSuppliers.find((s) => s.id === id);
+    if (!target) return false;
+
+    // Check if products are linked
+    const linkedCount = allProducts.filter((p) => p.supplierId === id && p.businessId === activeBusinessId).length;
+
+    setAllSuppliers((prev) => prev.filter((s) => s.id !== id));
+
+    if (selectedSupplier?.id === id) {
+      setSelectedSupplier(null);
+    }
+
+    // Unlink products
+    if (linkedCount > 0) {
+      setAllProducts((prev) =>
+        prev.map((p) => (p.supplierId === id ? { ...p, supplierId: undefined, supplierName: undefined } : p))
+      );
+    }
+
+    if (isOnline && auth.currentUser) {
+      deleteSupplierFromFirestore(id).catch((err) => console.warn('Firestore supplier delete:', err));
+    }
+
+    logAdminActivity({
+      category: 'inventory',
+      action: 'delete_supplier',
+      description: `Deleted supplier profile: ${target.name} (${linkedCount} linked products unlinked)`,
+      recordType: 'supplier',
+      recordId: id,
+      beforeValue: target,
+    });
+
+    showToast(`Supplier "${target.name}" removed`, 'info');
+    return true;
+  };
+
+  const getProductsForSupplier = (supplierId: string): Product[] => {
+    return products.filter((p) => p.supplierId === supplierId);
   };
 
   // 11. Multi-Tenant Transactions Store
@@ -3457,6 +3777,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       storeCreditUsed?: number;
       loyaltyPointsRedeemed?: number;
       notes?: string;
+      splitBreakdown?: SplitPaymentTender[];
     }
   ): Transaction => {
     // Strict Guardrail: No transaction may be tendered or completed without an open shift session
@@ -3510,10 +3831,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     let loyaltyPointsEarned = 0;
     const loyaltyPointsRedeemed = details.loyaltyPointsRedeemed || 0;
     const isStoreCreditPayment = paymentMethod === 'store_credit';
-    let storeCreditUsed = isStoreCreditPayment ? guardrail.payableAmount : 0;
+    const splitStoreCreditAmount = paymentMethod === 'split'
+      ? (details.splitBreakdown?.find((b) => b.method === 'store_credit')?.amount || details.storeCreditUsed || 0)
+      : 0;
+    let storeCreditUsed = isStoreCreditPayment ? guardrail.payableAmount : splitStoreCreditAmount;
     let newStoreCreditBalance = customer ? customer.storeCreditBalance : undefined;
 
-    if (isStoreCreditPayment) {
+    if (storeCreditUsed > 0) {
       if (!customer) {
         soundFx.playError();
         showToast('Store Credit payment requires an assigned customer profile.', 'error');
@@ -3524,7 +3848,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         showToast(`Store credit is not authorized for ${customer.name}.`, 'error');
         throw new Error('Store credit not authorized for this customer.');
       }
-      const potentialDebt = Math.max(0, -((customer.storeCreditBalance || 0) - guardrail.payableAmount));
+      const potentialDebt = Math.max(0, -((customer.storeCreditBalance || 0) - storeCreditUsed));
       if (potentialDebt > (customer.creditLimit || 0)) {
         soundFx.playError();
         showToast(
@@ -3533,7 +3857,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         );
         throw new Error('Customer credit limit exceeded.');
       }
-      newStoreCreditBalance = Number(((customer.storeCreditBalance || 0) - guardrail.payableAmount).toFixed(2));
+      newStoreCreditBalance = Number(((customer.storeCreditBalance || 0) - storeCreditUsed).toFixed(2));
     }
 
     const previousPoints = customer ? (customer.loyaltyPoints || 0) : undefined;
@@ -3652,15 +3976,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // Update Customer Profile, Loyalty Points & Credit Ledger
     if (customer) {
       const updatedLedger = [...(customer.ledger || [])];
-      if (isStoreCreditPayment) {
+      if (storeCreditUsed > 0) {
         const ledgerEntry: CustomerCreditLedgerEntry = {
           id: `ledg-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
           timestamp: new Date().toISOString(),
           type: 'sale_credit',
-          amount: -guardrail.payableAmount,
-          balanceAfter: newStoreCreditBalance ?? ((customer.storeCreditBalance || 0) - guardrail.payableAmount),
+          amount: -storeCreditUsed,
+          balanceAfter: newStoreCreditBalance ?? ((customer.storeCreditBalance || 0) - storeCreditUsed),
           referenceId: receiptNum,
-          notes: `Sale #${receiptNum} charged to credit tab (${cart.length} item${cart.length > 1 ? 's' : ''})`,
+          notes: `Sale #${receiptNum} (${paymentMethod === 'split' ? 'Split payment (Store Credit tab)' : 'Charged to credit tab'}, ${cart.length} item${cart.length > 1 ? 's' : ''})`,
           recordedByCashierId: currentCashier?.id,
           recordedByCashierName: currentCashier?.name,
         };
@@ -4327,10 +4651,18 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (t.paymentMethod === 'cash') {
           cashSales += t.total;
         } else if (t.paymentMethod === 'split') {
-          const cashPortion = t.paymentDetails?.cashTendered || 0;
-          cashSales += cashPortion;
-          const nonCashPortion = Math.max(0, t.total - cashPortion);
-          mpesaSales += nonCashPortion;
+          if (t.paymentDetails?.splitBreakdown && t.paymentDetails.splitBreakdown.length > 0) {
+            t.paymentDetails.splitBreakdown.forEach((entry) => {
+              if (entry.method === 'cash') cashSales += entry.amount;
+              else if (entry.method === 'mpesa') mpesaSales += entry.amount;
+              else if (entry.method === 'card') cardSales += entry.amount;
+            });
+          } else {
+            const cashPortion = t.paymentDetails?.cashTendered || 0;
+            cashSales += cashPortion;
+            const nonCashPortion = Math.max(0, t.total - cashPortion);
+            mpesaSales += nonCashPortion;
+          }
         } else if (t.paymentMethod === 'mpesa') {
           mpesaSales += t.total;
         } else if (t.paymentMethod === 'card') {
@@ -4774,14 +5106,23 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 });
               }
 
+              // Enforce uniqueness of businesses at both email and tenant ID levels
+              // Prioritize the account last logged into while deleting any conflicts at Firestore level
               setBusinesses((prev) => {
-                const map = new Map<string, Business>();
-                prev
-                  .filter((b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart')
-                  .forEach((b) => map.set(b.id, b));
-                validRemote.forEach((b) => map.set(b.id, b));
-                const res = Array.from(map.values());
-                return res.length > 0 ? res : INITIAL_BUSINESSES;
+                const combined = [
+                  ...prev.filter((b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'),
+                  ...validRemote,
+                ];
+
+                const { uniqueBusinesses, conflictsToDelete } = resolveBusinessUniquenessConflicts(combined);
+
+                if (conflictsToDelete.length > 0 && auth.currentUser) {
+                  deleteBusinessConflictsFromFirestore(conflictsToDelete).catch((e) =>
+                    console.warn('Firestore purge conflicts on load:', e)
+                  );
+                }
+
+                return uniqueBusinesses.length > 0 ? uniqueBusinesses : INITIAL_BUSINESSES;
               });
             }
           })
@@ -5005,47 +5346,16 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const tokenResult = await firebaseUser.getIdTokenResult();
       const expirationTime = new Date(tokenResult.expirationTime).getTime();
 
-      const normalizedEmail = firebaseUser.email.toLowerCase();
+      const normalizedEmail = firebaseUser.email.toLowerCase().trim();
       const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
 
-      // Check tenant affiliation
-      let matchedBiz = businesses.find(
-        (b) => b.ownerEmail.toLowerCase() === normalizedEmail
+      // Enforce uniqueness: prioritize account last logged into & delete conflicts at Firestore level
+      const { winner: matchedBiz } = await prioritizeAccountAndPurgeConflicts(
+        normalizedEmail,
+        firebaseUser.displayName || undefined
       );
 
-      if (!matchedBiz && isSuperAdminEmail) {
-        matchedBiz = businesses.find((b) => b.id === 'biz-upfront');
-      }
-
-      if (!matchedBiz && !isSuperAdminEmail) {
-        const stableBizId = getStableBusinessIdForEmail(normalizedEmail);
-        const bizName = `${firebaseUser.displayName || firebaseUser.email.split('@')[0]}'s Store`;
-        matchedBiz = {
-          id: stableBizId,
-          name: bizName,
-          code: bizName.substring(0, 4).toUpperCase().replace(/\s+/g, ''),
-          ownerEmail: normalizedEmail,
-          ownerName: firebaseUser.displayName || 'Business Owner',
-          createdAt: new Date().toISOString(),
-          plan: 'professional',
-          status: 'active',
-          currency: 'KES',
-          taxNumber: `P0${Math.floor(100000000 + Math.random() * 900000000)}Z`,
-        };
-        setBusinesses((prev) => {
-          if (prev.some((b) => b.id === stableBizId)) return prev;
-          return [...prev, matchedBiz!];
-        });
-        saveBusinessToFirestore(matchedBiz).catch((e) => console.warn('Sync new biz:', e));
-      }
-
-      if (matchedBiz) {
-        ensureTenantDefaults(matchedBiz);
-      }
-
-      const targetBizId = isSuperAdminEmail
-        ? 'biz-upfront'
-        : matchedBiz?.id || getStableBusinessIdForEmail(normalizedEmail);
+      const targetBizId = isSuperAdminEmail ? 'biz-upfront' : matchedBiz.id;
 
       const role: UserRole = isSuperAdminEmail
         ? 'super_admin'
@@ -5113,43 +5423,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const normalizedEmail = userInfo.email.trim().toLowerCase();
       const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
 
-      let matchedBiz = businesses.find(
-        (b) => b.ownerEmail.toLowerCase() === normalizedEmail
+      // Enforce uniqueness: prioritize account last logged into & delete conflicts at Firestore level
+      const { winner: matchedBiz } = await prioritizeAccountAndPurgeConflicts(
+        normalizedEmail,
+        userInfo.name || undefined
       );
 
-      if (!matchedBiz && isSuperAdminEmail) {
-        matchedBiz = businesses.find((b) => b.id === 'biz-upfront');
-      }
-
-      if (!matchedBiz && !isSuperAdminEmail) {
-        const stableBizId = getStableBusinessIdForEmail(normalizedEmail);
-        const bizName = `${userInfo.name || userInfo.email?.split('@')[0] || 'Business'}'s Store`;
-        matchedBiz = {
-          id: stableBizId,
-          name: bizName,
-          code: bizName.substring(0, 4).toUpperCase().replace(/\s+/g, ''),
-          ownerEmail: normalizedEmail,
-          ownerName: userInfo.name || 'Business Owner',
-          createdAt: new Date().toISOString(),
-          plan: 'professional',
-          status: 'active',
-          currency: 'KES',
-          taxNumber: `P0${Math.floor(100000000 + Math.random() * 900000000)}Z`,
-        };
-        setBusinesses((prev) => {
-          if (prev.some((b) => b.id === stableBizId)) return prev;
-          return [...prev, matchedBiz!];
-        });
-        saveBusinessToFirestore(matchedBiz).catch((e) => console.warn('Sync new biz:', e));
-      }
-
-      if (matchedBiz) {
-        ensureTenantDefaults(matchedBiz);
-      }
-
-      const targetBizId = isSuperAdminEmail
-        ? 'biz-upfront'
-        : matchedBiz?.id || getStableBusinessIdForEmail(normalizedEmail);
+      const targetBizId = isSuperAdminEmail ? 'biz-upfront' : matchedBiz.id;
 
       const role: UserRole = isSuperAdminEmail
         ? 'super_admin'
@@ -5224,68 +5504,77 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return true;
     }
 
-    // Check 2: Does an existing business match this Google Owner email?
-    const existingBiz = businesses.find(
+    // Enforce uniqueness: prioritize account last logged into & delete conflicts at Firestore level
+    const now = new Date().toISOString();
+    const emailMatches = businesses.filter(
       (b) => b.ownerEmail.toLowerCase() === normalizedEmail
     );
 
-    if (existingBiz) {
-      ensureTenantDefaults(existingBiz);
-      const bizOwnerUser: AuthUser = {
-        id: `usr-${Date.now()}`,
-        email: existingBiz.ownerEmail,
-        name: name || existingBiz.ownerName,
-        initials: (name || existingBiz.ownerName).substring(0, 2).toUpperCase(),
-        authProvider: 'google',
-        role: 'business_owner',
-        businessId: existingBiz.id,
-        businessName: existingBiz.name,
-        createdAt: existingBiz.createdAt,
+    let matchedBiz: Business;
+    let conflicts: Business[] = [];
+
+    if (emailMatches.length > 0) {
+      const sorted = [...emailMatches].sort((a, b) => {
+        const aScore = Math.max(
+          a.lastLoginAt ? new Date(a.lastLoginAt).getTime() : 0,
+          a.createdAt ? new Date(a.createdAt).getTime() : 0
+        );
+        const bScore = Math.max(
+          b.lastLoginAt ? new Date(b.lastLoginAt).getTime() : 0,
+          b.createdAt ? new Date(b.createdAt).getTime() : 0
+        );
+        return bScore - aScore;
+      });
+      matchedBiz = { ...sorted[0], lastLoginAt: now };
+      conflicts = sorted.slice(1);
+    } else {
+      const newBizId = getStableBusinessIdForEmail(normalizedEmail);
+      const businessName = newBusinessName || `${name || 'Retail'}'s Store`;
+      matchedBiz = {
+        id: newBizId,
+        name: businessName,
+        code: businessName.substring(0, 4).toUpperCase().replace(/\s+/g, ''),
+        ownerEmail: normalizedEmail,
+        ownerName: name || 'Business Owner',
+        createdAt: now,
+        lastLoginAt: now,
+        plan: 'professional',
+        status: 'active',
+        currency: 'KES',
+        taxNumber: `P0${Math.floor(100000000 + Math.random() * 900000000)}Z`,
       };
-      setCurrentUser(bizOwnerUser);
-      setActiveBusinessIdState(existingBiz.id);
-      showToast(`Welcome back, ${bizOwnerUser.name}! Logged into ${existingBiz.name}`, 'success');
-      return true;
     }
 
-    // Check 3: Self-signup via Google Account
-    const newBizId = getStableBusinessIdForEmail(normalizedEmail);
-    const businessName = newBusinessName || `${name || 'Retail'}'s Store`;
-
-    const newBusiness: Business = {
-      id: newBizId,
-      name: businessName,
-      code: businessName.substring(0, 4).toUpperCase().replace(/\s+/g, ''),
-      ownerEmail: normalizedEmail,
-      ownerName: name || 'Business Owner',
-      createdAt: new Date().toISOString(),
-      plan: 'professional',
-      status: 'active',
-      currency: 'KES',
-      taxNumber: `P0${Math.floor(100000000 + Math.random() * 900000000)}Z`,
-    };
-
+    const conflictIds = new Set(conflicts.map((c) => c.id));
     setBusinesses((prev) => {
-      if (prev.some((b) => b.id === newBizId)) return prev;
-      return [...prev, newBusiness];
+      const filtered = prev.filter((b) => !conflictIds.has(b.id) && b.ownerEmail.toLowerCase() !== normalizedEmail);
+      return [...filtered, matchedBiz];
     });
-    ensureTenantDefaults(newBusiness);
 
-    const newUser: AuthUser = {
+    ensureTenantDefaults(matchedBiz);
+
+    if (auth.currentUser) {
+      saveBusinessToFirestore(matchedBiz).catch((e) => console.warn('Sync matched biz note:', e));
+      if (conflicts.length > 0) {
+        deleteBusinessConflictsFromFirestore(conflicts).catch((e) => console.warn('Purge conflicts note:', e));
+      }
+    }
+
+    const bizOwnerUser: AuthUser = {
       id: `usr-${Date.now()}`,
-      email: normalizedEmail,
-      name: name || 'Business Owner',
-      initials: (name || 'BO').substring(0, 2).toUpperCase(),
+      email: matchedBiz.ownerEmail,
+      name: name || matchedBiz.ownerName,
+      initials: (name || matchedBiz.ownerName).substring(0, 2).toUpperCase(),
       authProvider: 'google',
       role: 'business_owner',
-      businessId: newBizId,
-      businessName: businessName,
-      createdAt: new Date().toISOString(),
+      businessId: matchedBiz.id,
+      businessName: matchedBiz.name,
+      createdAt: matchedBiz.createdAt,
     };
 
-    setCurrentUser(newUser);
-    setActiveBusinessIdState(newBizId);
-    showToast(`New business "${businessName}" registered successfully!`, 'success');
+    setCurrentUser(bizOwnerUser);
+    setActiveBusinessIdState(matchedBiz.id);
+    showToast(`Welcome back, ${bizOwnerUser.name}! Logged into ${matchedBiz.name}`, 'success');
     return true;
   };
 
@@ -5390,7 +5679,24 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       throw new Error('Business owner must have an authentic Google Account (e.g. name@gmail.com).');
     }
 
+    // Enforce uniqueness at email level: No two businesses may share the same Google account email
+    const existingWithEmail = businesses.find(
+      (b) => b.ownerEmail.toLowerCase() === trimmedEmail
+    );
+    if (existingWithEmail) {
+      const errMsg = `Conflict Error: A business tenant ("${existingWithEmail.name}", ID: ${existingWithEmail.id}) is already registered with Google account ${trimmedEmail}. No two businesses may share the same Google account email.`;
+      showToast(errMsg, 'error');
+      throw new Error(errMsg);
+    }
+
     const newBizId = `biz-${Date.now().toString(36)}`;
+    // Enforce uniqueness at tenant ID level
+    if (businesses.some((b) => b.id === newBizId)) {
+      const errMsg = `Conflict Error: Tenant ID "${newBizId}" is already taken. Tenant IDs must be strictly unique.`;
+      showToast(errMsg, 'error');
+      throw new Error(errMsg);
+    }
+
     const newBusiness: Business = {
       id: newBizId,
       name,
@@ -5458,21 +5764,30 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return newBusiness;
   };
 
-  // System Cleanup: Purge all business owner accounts that lack a real Google account
+  // System Cleanup: Purge unverified accounts and enforce strict uniqueness across Google accounts and tenant IDs
   const performSystemCleanup = async (): Promise<{
     removedCount: number;
     removedBusinesses: string[];
   }> => {
     // 1. Identify businesses lacking a real Google account
-    const toRemove = businesses.filter(
+    const fakeToRemove = businesses.filter(
       (b) => !isRealGoogleAccount(b.ownerEmail) || b.id === 'biz-soko' || b.id === 'biz-quickmart'
     );
+
+    // 2. Enforce uniqueness on remaining businesses (email & tenant ID levels)
+    // Prioritizing the account last logged into
+    const verifiedCandidates = businesses.filter(
+      (b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'
+    );
+    const { uniqueBusinesses, conflictsToDelete } = resolveBusinessUniquenessConflicts(verifiedCandidates);
+
+    const toRemove = [...fakeToRemove, ...conflictsToDelete];
     const unverifiedIds = new Set<string>(toRemove.map((b) => b.id));
     unverifiedIds.add('biz-soko');
     unverifiedIds.add('biz-quickmart');
     const removedNames = toRemove.map((b) => `${b.name} (${b.ownerEmail})`);
 
-    const validBusinesses = businesses.filter((b) => !unverifiedIds.has(b.id));
+    const validBusinesses = uniqueBusinesses.filter((b) => !unverifiedIds.has(b.id));
     const nextBizs = validBusinesses.length > 0 ? validBusinesses : INITIAL_BUSINESSES;
 
     setBusinesses(nextBizs);
@@ -5561,7 +5876,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Business Profile Settings & Credential Management
   const [isBusinessSettingsOpen, setIsBusinessSettingsOpen] = useState<boolean>(false);
-  const [businessSettingsDefaultTab, setBusinessSettingsDefaultTab] = useState<'profile' | 'branches' | 'tax' | 'loyalty' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset'>('profile');
+  const [businessSettingsDefaultTab, setBusinessSettingsDefaultTab] = useState<'profile' | 'branches' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset'>('profile');
 
   // Hardware & Auto-Print Preferences (Browser Print Dialog on Checkout) - Scoped Strictly per Tenant
   const [autoPrintReceipt, setAutoPrintReceiptState] = useState<boolean>(() => {
@@ -5720,7 +6035,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
   };
 
-  const openBusinessSettings = (initialTab: 'profile' | 'branches' | 'tax' | 'loyalty' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset' = 'profile') => {
+  const openBusinessSettings = (initialTab: 'profile' | 'branches' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset' = 'profile') => {
     setBusinessSettingsDefaultTab(initialTab);
     setIsBusinessSettingsOpen(true);
   };
@@ -5755,6 +6070,134 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       );
     }
     showToast(`Business profile updated for ${updatedBiz.name}`, 'success');
+  };
+
+  const updateBusinessStatus = async (businessId: string, status: 'active' | 'suspended'): Promise<void> => {
+    const targetBiz = businesses.find((b) => b.id === businessId);
+    if (!targetBiz) return;
+
+    const oldStatus = targetBiz.status;
+    const updatedBiz: Business = { ...targetBiz, status };
+
+    setBusinesses((prev) =>
+      prev.map((b) => (b.id === businessId ? updatedBiz : b))
+    );
+
+    if (isOnline && auth.currentUser) {
+      updateBusinessInFirestore(businessId, { status }).catch((err) =>
+        console.warn('Firestore business status update:', err)
+      );
+    }
+
+    if (isSuperAdmin) {
+      logSuperAdminAction(
+        businessId,
+        'business',
+        businessId,
+        'update',
+        status === 'active'
+          ? `Super-admin activated POS access subscription for "${targetBiz.name}"`
+          : `Super-admin suspended POS access for "${targetBiz.name}" (manual subscription suspension)`,
+        { status: oldStatus },
+        { status }
+      );
+    }
+
+    logAdminActivity({
+      category: 'system',
+      action: status === 'active' ? 'activate_subscription' : 'suspend_subscription',
+      description: status === 'active'
+        ? `Activated POS access for business "${targetBiz.name}" (${targetBiz.code})`
+        : `Deactivated POS access for business "${targetBiz.name}" (${targetBiz.code})`,
+      recordType: 'business',
+      recordId: businessId,
+      beforeValue: { status: oldStatus },
+      afterValue: { status },
+    });
+
+    soundFx.playSuccess();
+    showToast(
+      status === 'active'
+        ? `POS access enabled for ${targetBiz.name}`
+        : `POS access suspended for ${targetBiz.name}`,
+      status === 'active' ? 'success' : 'warning'
+    );
+  };
+
+  // Pricing Architecture & Package Tiers Management
+  const [pricingTiers, setPricingTiers] = useState<PricingTier[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.PRICING_TIERS);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch {
+        // fallback
+      }
+    }
+    return DEFAULT_PRICING_TIERS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.PRICING_TIERS, JSON.stringify(pricingTiers));
+  }, [pricingTiers]);
+
+  const updatePricingTier = (tierId: string, updates: Partial<PricingTier>) => {
+    setPricingTiers((prev) =>
+      prev.map((t) => (t.id === tierId ? { ...t, ...updates } : t))
+    );
+    showToast(`Pricing tier updated successfully`, 'success');
+  };
+
+  const resetPricingTiersToDefault = () => {
+    setPricingTiers(DEFAULT_PRICING_TIERS);
+    localStorage.setItem(STORAGE_KEYS.PRICING_TIERS, JSON.stringify(DEFAULT_PRICING_TIERS));
+    showToast('Pricing tiers reset to default architecture', 'info');
+  };
+
+  const updateBusinessPlan = async (businessId: string, plan: BusinessPlanTier): Promise<void> => {
+    const targetBiz = businesses.find((b) => b.id === businessId);
+    if (!targetBiz) return;
+
+    const oldPlan = targetBiz.plan;
+    const updatedBiz: Business = { ...targetBiz, plan };
+
+    setBusinesses((prev) =>
+      prev.map((b) => (b.id === businessId ? updatedBiz : b))
+    );
+
+    if (isOnline && auth.currentUser) {
+      updateBusinessInFirestore(businessId, { plan }).catch((err) =>
+        console.warn('Firestore business plan update error:', err)
+      );
+    }
+
+    if (isSuperAdmin) {
+      logSuperAdminAction(
+        businessId,
+        'business',
+        businessId,
+        'update',
+        `Changed subscription tier for "${targetBiz.name}" from ${oldPlan} to ${plan}`,
+        { plan: oldPlan },
+        { plan }
+      );
+    }
+
+    logAdminActivity({
+      category: 'system',
+      action: 'change_plan',
+      description: `Updated plan from ${oldPlan?.toUpperCase()} to ${plan.toUpperCase()} for "${targetBiz.name}"`,
+      recordType: 'business',
+      recordId: businessId,
+      beforeValue: { plan: oldPlan },
+      afterValue: { plan },
+    });
+
+    soundFx.playSuccess();
+    showToast(`Subscription plan updated to ${plan.toUpperCase()} for ${targetBiz.name}`, 'success');
   };
 
   // Retail Domain Accent Palette System
@@ -5845,6 +6288,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         logout,
         provisionBusiness,
         updateBusinessProfile,
+        updateBusinessStatus,
         performSystemCleanup,
         isRealGoogleAccount,
 
@@ -5853,6 +6297,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         businessSettingsDefaultTab,
         openBusinessSettings,
         updateActiveUserCredentials,
+
+        pricingTiers,
+        updatePricingTier,
+        resetPricingTiersToDefault,
+        updateBusinessPlan,
 
         loyaltySettings,
         updateLoyaltySettings,
@@ -5922,6 +6371,16 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         deleteProduct,
         adjustStock,
         transferStock,
+        linkProductToSupplier,
+
+        // Supplier Management & Supply Chain Oversight
+        suppliers,
+        selectedSupplier,
+        setSelectedSupplier,
+        addSupplier,
+        updateSupplier,
+        deleteSupplier,
+        getProductsForSupplier,
 
         fetchFreshInventoryFromServer,
         isInventoryFreshFromServer,

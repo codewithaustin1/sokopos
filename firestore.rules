@@ -45,6 +45,14 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isBusinessMember(resource.data.businessId);
     }
 
+    // Suppliers collection (Tenant Row-Level Security)
+    match /suppliers/{supplierId} {
+      allow read: if isSignedIn() && isBusinessMember(resource.data.businessId);
+      allow create: if isSignedIn() && isBusinessMember(request.resource.data.businessId);
+      allow update: if isSignedIn() && isBusinessMember(resource.data.businessId);
+      allow delete: if isSignedIn() && isBusinessMember(resource.data.businessId);
+    }
+
     // Products collection (Tenant Row-Level Security)
     match /products/{productId} {
       allow read: if isSignedIn() && isBusinessMember(resource.data.businessId);

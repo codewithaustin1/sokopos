@@ -380,10 +380,11 @@ html.dark .bg-black\/60 {
   }
 
   /* -------------------------------------------------------------
-     POS THERMAL RECEIPT PRINTING UNBOXING
+     POS THERMAL RECEIPT & LABEL PRINTING UNBOXING
      ------------------------------------------------------------- */
   #receipt-display-modal,
-  #refund-receipt-display-modal {
+  #refund-receipt-display-modal,
+  #product-labels-modal {
     position: static !important;
     background: transparent !important;
     padding: 0 !important;
@@ -397,7 +398,8 @@ html.dark .bg-black\/60 {
   }
 
   #receipt-display-modal > div,
-  #refund-receipt-display-modal > div {
+  #refund-receipt-display-modal > div,
+  #product-labels-modal > div {
     background: transparent !important;
     padding: 0 !important;
     margin: 0 auto !important;
@@ -408,20 +410,31 @@ html.dark .bg-black\/60 {
     overflow: visible !important;
   }
 
-  #receipt-printable-canvas {
+  #receipt-printable-canvas,
+  #product-labels-printable-container {
     background: #ffffff !important;
     color: #000000 !important;
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
-    padding: 8px 12px !important;
+    padding: 4px 6px !important;
     margin: 0 auto !important;
     width: 100% !important;
-    max-width: 80mm !important;
-    page-break-inside: avoid !important;
+    page-break-inside: auto !important;
   }
 
-  #receipt-printable-canvas * {
+  .thermal-label-card {
+    box-shadow: none !important;
+    border: 1px dashed #cccccc !important;
+    margin-bottom: 4mm !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  #receipt-printable-canvas *,
+  #product-labels-printable-container * {
     color: #000000 !important;
     border-color: #000000 !important;
     text-shadow: none !important;

@@ -66,7 +66,7 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
   dateRange,
   selectedLocationId,
 }) => {
-  const { shiftHistory, adminActivityLogs, supervisorOverrideLogs, soundFx, showToast } = usePos();
+  const { shiftHistory, adminActivityLogs, supervisorOverrideLogs, suppliers, soundFx, showToast } = usePos();
   const audio = soundFx || directSoundFx;
   const [activeReportId, setActiveReportId] = useState<ReportType>('sales');
   const [phaseFilter, setPhaseFilter] = useState<'all' | ReportCategory>('phase1');
@@ -563,13 +563,19 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
 
       // Phase 3: Supplier / PO Report
       case 'supplier_po': {
-        const headers = ['Supplier Name', 'Category', 'Total POs Received', `Total Invoiced (${currency})`, 'Payment Terms', 'Fulfillment Rate'];
-        const rows = [
-          ['Ungar Mills East Africa Ltd', 'Flour & Grains', 8, (142000).toFixed(2), 'Net 14 Days', '98.5%'],
-          ['Brookside Dairies Kenya', 'Dairy & Bakery', 12, (86400).toFixed(2), 'Weekly COD', '100%'],
-          ['Kabras Sugar Consolidated', 'Pantry & Oil', 6, (64000).toFixed(2), 'Net 30 Days', '96.2%'],
-          ['Kapa Oil Refineries', 'Pantry & Oil', 5, (48500).toFixed(2), 'Net 14 Days', '95.0%'],
-        ];
+        const headers = ['Supplier Name', 'Category', 'Total POs Received', `Total Invoiced (${currency})`, 'Payment Terms', 'Lead Time'];
+        const activeSuppList = suppliers && suppliers.length > 0 ? suppliers : [];
+        const rows = activeSuppList.map((s) => [
+          s.name,
+          s.category || 'General Supplies',
+          s.ordersCount || 0,
+          (s.totalInvoiced || 0).toFixed(2),
+          s.paymentTerms.replace('_', ' ').toUpperCase(),
+          `${s.leadTimeDays || 2} Days`,
+        ]);
+
+        const totalProcurement = activeSuppList.reduce((sum, s) => sum + (s.totalInvoiced || 0), 0);
+        const totalShipments = activeSuppList.reduce((sum, s) => sum + (s.ordersCount || 0), 0);
 
         return {
           meta: activeMeta,
@@ -578,10 +584,10 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
           location: activeLocationObj,
           generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
           summaryCards: [
-            { label: 'Total POs Received', value: 31, sub: 'Replenishment shipments' },
-            { label: 'Total Procurement Spend', value: `${currency} 340,900`, sub: 'Wholesale COGS intake' },
-            { label: 'Avg Fulfillment Accuracy', value: '97.4%', sub: 'Vendor on-time in-full' },
-            { label: 'Active Suppliers', value: 4, sub: 'Direct distribution contracts' },
+            { label: 'Total POs Received', value: totalShipments, sub: 'Replenishment shipments' },
+            { label: 'Total Procurement Spend', value: `${currency} ${totalProcurement.toLocaleString()}`, sub: 'Wholesale COGS intake' },
+            { label: 'Active Suppliers', value: activeSuppList.filter((s) => s.status === 'active').length, sub: 'Direct distribution contracts' },
+            { label: 'Total Supplier Accounts', value: activeSuppList.length, sub: 'Registered trade accounts' },
           ],
           tableHeaders: headers,
           tableRows: rows,

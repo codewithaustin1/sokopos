@@ -29,6 +29,8 @@ import {
 import { usePos } from '../context/PosContext';
 import { ShiftSession, ShiftExpense, CashDrop, ExpenseCategory } from '../types';
 import { ShiftReconciliationSlipModal } from './ShiftReconciliationSlipModal';
+import { ShiftInitializationCard } from './shift/ShiftInitializationCard';
+import { ShiftSessionClosedCard } from './shift/ShiftSessionClosedCard';
 
 const DENOMINATIONS = [
   { value: 1000, label: '1,000 Notes', type: 'note' },
@@ -66,6 +68,7 @@ export const ShiftManagementView: React.FC = () => {
 
   // Sub-tabs: 'active' | 'history'
   const [activeTab, setActiveTab] = useState<'current' | 'history'>('current');
+  const [closedViewMode, setClosedViewMode] = useState<'init' | 'status'>('init');
 
   // Open Shift Form State
   const [openingFloatInput, setOpeningFloatInput] = useState<string>('5000');
@@ -136,10 +139,18 @@ export const ShiftManagementView: React.FC = () => {
       if (t.paymentMethod === 'cash') {
         cashSales += t.total;
       } else if (t.paymentMethod === 'split') {
-        const cashPortion = t.paymentDetails?.cashTendered || 0;
-        cashSales += cashPortion;
-        const nonCashPortion = Math.max(0, t.total - cashPortion);
-        mpesaSales += nonCashPortion;
+        if (t.paymentDetails?.splitBreakdown && t.paymentDetails.splitBreakdown.length > 0) {
+          t.paymentDetails.splitBreakdown.forEach((entry) => {
+            if (entry.method === 'cash') cashSales += entry.amount;
+            else if (entry.method === 'mpesa') mpesaSales += entry.amount;
+            else if (entry.method === 'card') cardSales += entry.amount;
+          });
+        } else {
+          const cashPortion = t.paymentDetails?.cashTendered || 0;
+          cashSales += cashPortion;
+          const nonCashPortion = Math.max(0, t.total - cashPortion);
+          mpesaSales += nonCashPortion;
+        }
       } else if (t.paymentMethod === 'mpesa') {
         mpesaSales += t.total;
       } else if (t.paymentMethod === 'card') {
@@ -504,145 +515,42 @@ export const ShiftManagementView: React.FC = () => {
             )}
 
             {!activeShift ? (
-              /* ================= NO ACTIVE SHIFT: OPEN SHIFT DECLARATION ================= */
-              <div className="max-w-xl mx-auto my-8 bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
-                <div className="p-6 sm:p-8 bg-linear-to-br from-blue-600 to-indigo-700 text-white text-center relative overflow-hidden">
-                  <div className="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center mx-auto mb-4 border border-white/20">
-                    <Unlock className="w-8 h-8 text-white" />
-                  </div>
-                  <h2 className="text-xl sm:text-2xl font-black tracking-tight">Open New Register Shift</h2>
-                  <p className="text-xs text-blue-100 max-w-sm mx-auto mt-1">
-                    Declare the physical opening float to initiate sales, track cash movements, and enable drawer reconciliation.
-                  </p>
-                  <div className="mt-4 inline-flex items-center gap-2 bg-black/20 backdrop-blur-xs px-3 py-1 rounded-full text-xs font-semibold">
-                    <Building2 className="w-3.5 h-3.5 text-blue-200" />
-                    <span>{currentLocation.name} ({currentLocation.terminalName})</span>
+              /* ================= NO ACTIVE SHIFT: TERMINAL INITIALIZATION (Image 2 Card) ================= */
+              <div className="max-w-xl mx-auto my-6 px-2 flex flex-col items-center">
+                <div className="w-full flex items-center justify-between mb-3 px-1 max-w-lg">
+                  <div className="inline-flex p-1 bg-slate-200/80 rounded-xl text-xs font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setClosedViewMode('init')}
+                      className={`px-3 py-1 rounded-lg transition cursor-pointer ${
+                        closedViewMode === 'init'
+                          ? 'bg-white text-slate-900 shadow-2xs font-black'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Terminal Open (Float)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setClosedViewMode('status')}
+                      className={`px-3 py-1 rounded-lg transition cursor-pointer ${
+                        closedViewMode === 'status'
+                          ? 'bg-white text-slate-900 shadow-2xs font-black'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Closed Session Status
+                    </button>
                   </div>
                 </div>
 
-                <form onSubmit={handleOpenShiftSubmit} className="p-6 sm:p-8 space-y-6">
-                  {/* Cashier Banner */}
-                  <div className="flex items-center justify-between p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-blue-600 text-white font-black flex items-center justify-center text-sm shadow-xs">
-                        {currentCashier.initials}
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold text-slate-800">{currentCashier.name}</div>
-                        <div className="text-[11px] text-slate-500">Operating Cashier • ID: {currentCashier.code}</div>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
-                      Terminal Ready
-                    </span>
-                  </div>
-
-                  {/* Float Declaration Input */}
-                  <div>
-                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1.5">
-                      Opening Cash Float Amount ({currency})
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 font-bold text-sm">
-                        {currency}
-                      </div>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        required
-                        value={openingFloatInput}
-                        onChange={(e) => setOpeningFloatInput(e.target.value)}
-                        placeholder="5000"
-                        className="w-full pl-14 pr-4 py-3 bg-white border-2 border-slate-300 rounded-2xl text-lg font-black text-slate-900 focus:outline-hidden focus:border-blue-600 focus:ring-4 focus:ring-blue-100 transition"
-                      />
-                    </div>
-
-                    {/* Quick Presets */}
-                    <div className="flex items-center gap-2 mt-2.5 flex-wrap">
-                      <span className="text-[11px] text-slate-400 font-semibold">Quick Floats:</span>
-                      {[2000, 3000, 5000, 10000, 20000].map((preset) => (
-                        <button
-                          key={preset}
-                          type="button"
-                          onClick={() => setOpeningFloatInput(String(preset))}
-                          className={`text-xs font-bold px-2.5 py-1 rounded-lg border transition cursor-pointer ${
-                            openingFloatInput === String(preset)
-                              ? 'bg-blue-50 border-blue-400 text-blue-700'
-                              : 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200'
-                          }`}
-                        >
-                          {currency} {preset.toLocaleString()}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Interactive Currency Denominations Toggle */}
-                  <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={() => setIsDenomDrawerOpen(!isDenomDrawerOpen)}
-                      className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 flex items-center justify-between text-xs font-bold text-slate-700 transition cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Calculator className="w-4 h-4 text-blue-600" />
-                        <span>Interactive Denomination Counter (Optional)</span>
-                      </div>
-                      <span className="text-blue-600 text-[11px]">
-                        {isDenomDrawerOpen ? 'Collapse ▲' : 'Expand Count ▼'}
-                      </span>
-                    </button>
-
-                    {isDenomDrawerOpen && (
-                      <div className="p-4 bg-white border-t border-slate-200 space-y-2.5">
-                        <p className="text-[11px] text-slate-500 mb-2">
-                          Count notes and coins individually. The total will automatically calculate into the opening float.
-                        </p>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                          {DENOMINATIONS.map((d) => (
-                            <div key={d.value} className="bg-slate-50 p-2 rounded-xl border border-slate-200">
-                              <div className="text-[10px] font-bold text-slate-500 mb-1">
-                                {d.label}
-                              </div>
-                              <input
-                                type="number"
-                                min="0"
-                                value={openDenoms[String(d.value)] || ''}
-                                onChange={(e) => handleOpenDenomChange(String(d.value), parseInt(e.target.value) || 0)}
-                                placeholder="0"
-                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded-lg text-xs font-black text-right"
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Opening Notes */}
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Opening Notes / Handover Reference (Optional)
-                    </label>
-                    <input
-                      type="text"
-                      value={openingNotes}
-                      onChange={(e) => setOpeningNotes(e.target.value)}
-                      placeholder="e.g. Standard morning float received from supervisor"
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-hidden focus:border-blue-600 transition"
-                    />
-                  </div>
-
-                  {/* Submit Action */}
-                  <button
-                    type="submit"
-                    className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-sm font-black tracking-tight shadow-md hover:shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
-                  >
-                    <Unlock className="w-4 h-4" />
-                    <span>Confirm & Open Shift ({currency} {parseFloat(openingFloatInput || '0').toLocaleString()})</span>
-                  </button>
-                </form>
+                {closedViewMode === 'init' ? (
+                  <ShiftInitializationCard />
+                ) : (
+                  <ShiftSessionClosedCard
+                    onOpenShiftClick={() => setClosedViewMode('init')}
+                  />
+                )}
               </div>
             ) : (
               /* ================= ACTIVE SHIFT DASHBOARD HUD ================= */
