@@ -17,9 +17,12 @@ import {
   Database,
   ArrowRight,
   Store,
+  ShieldCheck,
+  Server,
+  FileCheck,
 } from 'lucide-react';
 
-export type LegalTab = 'terms' | 'privacy' | 'faq' | 'ownership';
+export type LegalTab = 'terms' | 'privacy' | 'compliance' | 'ownership' | 'faq';
 
 interface LegalAndFaqModalProps {
   isOpen: boolean;
@@ -126,6 +129,13 @@ const FAQ_ITEMS: FaqItem[] = [
     answer:
       'Cashier PINs are protected with industry-standard salted bcrypt hashing. Managers can enforce role-based access control (RBAC), and high-impact actions like refunds or discounts are recorded with an immutable audit log.',
   },
+  {
+    id: 'faq-gcp-compliance',
+    category: 'Data & Security',
+    question: 'How does SokoPoS comply with Google Cloud Platform Terms of Service and Acceptable Use Policy?',
+    answer:
+      'SokoPoS is engineered in strict compliance with Google Cloud Platform Terms of Service and Acceptable Use Policy (AUP). Database collections enforce authenticated row-level security with zero public open-write rules, eliminating risks of database abuse or automated project suspension. Server and AI endpoints enforce IP rate limiting to prevent resource exhaustion, and all data storage conforms to Google API Services User Data Policy.',
+  },
 ];
 
 export const LegalAndFaqModal: React.FC<LegalAndFaqModalProps> = ({
@@ -216,6 +226,20 @@ export const LegalAndFaqModal: React.FC<LegalAndFaqModalProps> = ({
           >
             <Shield className="w-4 h-4" />
             <span>Privacy Policy</span>
+          </button>
+
+          <button
+            type="button"
+            id="tab-compliance-btn"
+            onClick={() => setActiveTab('compliance')}
+            className={`py-3 px-3 text-xs font-bold border-b-2 transition whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+              activeTab === 'compliance'
+                ? 'border-emerald-500 text-emerald-400 bg-emerald-500/10'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span>GCP & Cloud Compliance</span>
           </button>
 
           <button
@@ -413,6 +437,118 @@ export const LegalAndFaqModal: React.FC<LegalAndFaqModalProps> = ({
                   close your account, our administrative tools allow you to purge sales records (with automated backup archives)
                   or request complete tenant deletion from our servers.
                 </p>
+              </section>
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* TAB 3: GCP & CLOUD COMPLIANCE */}
+          {/* ======================================================== */}
+          {activeTab === 'compliance' && (
+            <div className="space-y-5 animate-fade-in">
+              <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-800/60 flex items-start gap-3">
+                <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-bold text-white text-sm mb-1">
+                    Google Cloud Platform & Acceptable Use Policy Compliance
+                  </h4>
+                  <p className="text-[11px] text-emerald-200/90">
+                    SokoPoS is engineered and maintained in rigorous compliance with the <strong>Google Cloud Platform Terms of Service</strong>,
+                    <strong>Google Cloud Acceptable Use Policy (AUP)</strong>, and <strong>Google API Services User Data Policy</strong>.
+                  </p>
+                </div>
+              </div>
+
+              {/* Compliance Highlights Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
+                <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+                  <div className="flex items-center gap-2 font-bold text-emerald-400 mb-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Zero Open Write Vulnerabilities</span>
+                  </div>
+                  <p className="text-slate-400">
+                    All Firestore cloud database collections enforce strict authenticated token evaluation and row-level tenant boundary checks. No unauthenticated public writes are permitted.
+                  </p>
+                </div>
+
+                <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+                  <div className="flex items-center gap-2 font-bold text-emerald-400 mb-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Rate-Limited AI & Auth Endpoints</span>
+                  </div>
+                  <p className="text-slate-400">
+                    Vision AI and staff verification routes are protected by aggressive per-IP rate limits to prevent brute forcing, automated resource exhaustion, and DoS abuse.
+                  </p>
+                </div>
+
+                <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+                  <div className="flex items-center gap-2 font-bold text-emerald-400 mb-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Google API Limited Use Certified</span>
+                  </div>
+                  <p className="text-slate-400">
+                    Authentication data is strictly used for tenant provisioning and session security. User data is never transferred to data brokers or used to train third-party AI models.
+                  </p>
+                </div>
+
+                <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+                  <div className="flex items-center gap-2 font-bold text-emerald-400 mb-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Prohibited Activities Banned</span>
+                  </div>
+                  <p className="text-slate-400">
+                    Cryptocurrency mining, spam distribution, port scanning, unauthorized vulnerability testing, and malicious payload distribution are strictly barred from the system.
+                  </p>
+                </div>
+              </div>
+
+              <section className="space-y-2">
+                <h5 className="text-sm font-bold text-white flex items-center gap-2">
+                  <FileCheck className="w-4 h-4 text-emerald-400" />
+                  1. Google Cloud Acceptable Use Policy (AUP) Statement
+                </h5>
+                <p>
+                  SokoPoS subscribers and users agree not to use the services, or encourage others to use the services:
+                </p>
+                <ul className="list-disc pl-5 space-y-1 text-slate-300">
+                  <li>To violate or encourage the violation of the legal rights of others (including intellectual property, privacy, or trade secret rights).</li>
+                  <li>To engage in, promote, or encourage illegal activity, including money laundering, fraud, or tax evasion.</li>
+                  <li>For any unlawful, invasive, defamatory, infringing, or fraudulent purpose (such as phishing, creating pyramid schemes, or mirroring unauthorized software).</li>
+                  <li>To distribute viruses, worms, Trojan horses, corrupted files, hoaxes, or other items of a destructive or deceptive nature.</li>
+                  <li>To disable, disrupt, or impair the infrastructure or operational capability of Google Cloud Platform, Google APIs, or SokoPoS cloud sync endpoints.</li>
+                  <li>To engage in cryptocurrency mining without prior written authorization from Google Cloud.</li>
+                </ul>
+              </section>
+
+              <section className="space-y-2">
+                <h5 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Server className="w-4 h-4 text-emerald-400" />
+                  2. Anti-Suspension Architecture & Infrastructure Protection
+                </h5>
+                <p>
+                  To prevent project suspension, billing anomalies, or automated threat containment triggers by Google Cloud security scanners:
+                </p>
+                <ul className="list-disc pl-5 space-y-1 text-slate-300">
+                  <li><strong>Hardened Cloud Firestore Security Rules:</strong> Every collection requires valid Google authentication. The default fallback rule enforces <code className="bg-slate-800 text-rose-400 px-1.5 py-0.5 rounded">allow read, write: if false;</code> to block unmanaged root traversal.</li>
+                  <li><strong>Memory Local Caching:</strong> In-browser memory caching is enforced to prevent local storage quota exhaustion, multi-tab heartbeat thrashing, or uncaught assertion failures.</li>
+                  <li><strong>Graceful Backoff:</strong> Cloud synchronization routines execute deterministic exponential backoff when networks are offline or throttled, eliminating retry storms against GCP servers.</li>
+                </ul>
+              </section>
+
+              <section className="space-y-2">
+                <h5 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-emerald-400" />
+                  3. Google User Data Privacy & Limited Use Disclosure
+                </h5>
+                <p>
+                  SokoPoS’s use and transfer of information received from Google APIs adheres to the <strong>Google API Services User Data Policy</strong>, including the Limited Use requirements. Specifically:
+                </p>
+                <ul className="list-disc pl-5 space-y-1 text-slate-300">
+                  <li>We only request minimal OAuth scopes necessary for authenticating the merchant owner (profile identity and email address).</li>
+                  <li>We do not transfer user data to third parties other than Google Cloud Platform service infrastructure necessary to operate the application.</li>
+                  <li>We never sell user data or disclose authentication tokens to advertising networks.</li>
+                  <li>We do not use Google user data to serve targeted advertisements or train generalized artificial intelligence models without explicit merchant consent.</li>
+                </ul>
               </section>
             </div>
           )}

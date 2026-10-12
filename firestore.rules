@@ -27,9 +27,11 @@ service cloud.firestore {
       return isSignedIn();
     }
 
-    // Test connection endpoint
+    // Test connection endpoint - Read-only ping to verify network connectivity
+    // Write access is strictly disabled to prevent abuse or denial-of-service storage exhaustion
     match /test/{docId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if false;
     }
 
     // Businesses collection
@@ -129,10 +131,10 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
     }
 
-    // Platform Settings & Login Branding (Public read for terminal login screen)
+    // Platform Settings & Login Branding (Public read for terminal login screen, super admin write only)
     match /platform_settings/{settingId} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow write: if isSuperAdmin();
     }
   }
 }

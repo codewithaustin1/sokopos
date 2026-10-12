@@ -43,6 +43,20 @@ async function startServer() {
     statusCode: 429,
   });
 
+  // Rate Limiting for Gemini AI Endpoints: 30 requests per minute per IP
+  // Prevents automated resource exhaustion, denial-of-service, and quota spikes in compliance with GCP Acceptable Use Policy
+  const aiEndpointLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 30, // 30 requests per minute
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      error: 'AI request limit reached. Please wait a moment before processing further documents.',
+      statusCode: 429,
+    },
+    statusCode: 429,
+  });
+
   // API health
   app.get('/api/health', (req, res) => {
     res.json({
@@ -157,7 +171,7 @@ async function startServer() {
   // -------------------------------------------------------------
   // Vision AI: Supplier Invoice Digitization
   // -------------------------------------------------------------
-  app.post('/api/ai/parse-invoice', async (req, res) => {
+  app.post('/api/ai/parse-invoice', aiEndpointLimiter, async (req, res) => {
     try {
       const { imageBase64, mimeType = 'image/jpeg', existingProducts = [] } = req.body;
 
@@ -331,7 +345,7 @@ Instructions:
   // -------------------------------------------------------------
   // Vision AI: Packaging Barcode & Label Parsing
   // -------------------------------------------------------------
-  app.post('/api/ai/parse-package', async (req, res) => {
+  app.post('/api/ai/parse-package', aiEndpointLimiter, async (req, res) => {
     try {
       const { imageBase64, mimeType = 'image/jpeg' } = req.body;
 

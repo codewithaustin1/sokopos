@@ -150,7 +150,12 @@ export function resolveBusinessUniquenessConflicts(businesses: Business[]): {
 
   // 1. Enforce Email Uniqueness: No two businesses may share the same Google account email
   for (const biz of businesses) {
-    if (!biz || !biz.ownerEmail) continue;
+    if (!biz || !biz.ownerEmail) {
+      if (biz && biz.id) {
+        conflictsToDelete.push(biz);
+      }
+      continue;
+    }
     const normalizedEmail = biz.ownerEmail.trim().toLowerCase();
 
     const existing = keptByEmail.get(normalizedEmail);
@@ -176,7 +181,10 @@ export function resolveBusinessUniquenessConflicts(businesses: Business[]): {
   const keptById = new Map<string, Business>();
   for (const biz of Array.from(keptByEmail.values())) {
     const bizId = (biz.id || '').trim();
-    if (!bizId) continue;
+    if (!bizId) {
+      conflictsToDelete.push(biz);
+      continue;
+    }
 
     const existing = keptById.get(bizId);
     if (!existing) {
@@ -195,9 +203,22 @@ export function resolveBusinessUniquenessConflicts(businesses: Business[]): {
     }
   }
 
+  // Deduplicate conflicts to delete
+  const uniqueConflictMap = new Map<string, Business>();
+  for (const c of conflictsToDelete) {
+    if (c && c.id) {
+      uniqueConflictMap.set(c.id, c);
+    }
+  }
+
+  const conflictIdSet = new Set(uniqueConflictMap.keys());
+  const finalUniqueBusinesses = Array.from(keptById.values()).filter(
+    (b) => !conflictIdSet.has(b.id)
+  );
+
   return {
-    uniqueBusinesses: Array.from(keptById.values()),
-    conflictsToDelete,
+    uniqueBusinesses: finalUniqueBusinesses,
+    conflictsToDelete: Array.from(uniqueConflictMap.values()),
   };
 }
 

@@ -600,9 +600,25 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
     const now = new Date().toISOString();
 
+    // Query both local businesses and remote Firestore businesses for any existing accounts
+    let candidateBusinesses = [...businesses];
+    if (auth.currentUser) {
+      try {
+        const remoteBizs = await getBusinessesFromFirestore();
+        if (Array.isArray(remoteBizs) && remoteBizs.length > 0) {
+          const map = new Map<string, Business>();
+          candidateBusinesses.forEach((b) => map.set(b.id, b));
+          remoteBizs.forEach((b) => map.set(b.id, b));
+          candidateBusinesses = Array.from(map.values());
+        }
+      } catch (err) {
+        console.warn('Could not fetch remote businesses for conflict check:', err);
+      }
+    }
+
     // 1. Find all businesses associated with this email
-    const emailMatches = businesses.filter(
-      (b) => b.ownerEmail.toLowerCase() === normalizedEmail
+    const emailMatches = candidateBusinesses.filter(
+      (b) => b.ownerEmail && b.ownerEmail.toLowerCase() === normalizedEmail
     );
 
     let winner: Business;
@@ -647,8 +663,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     // 2. Also check if any business conflicts on tenant ID (id)
-    const idConflicts = businesses.filter(
-      (b) => b.id === winner.id && b.ownerEmail.toLowerCase() !== normalizedEmail
+    const idConflicts = candidateBusinesses.filter(
+      (b) => b.id === winner.id && b.ownerEmail && b.ownerEmail.toLowerCase() !== normalizedEmail
     );
     if (idConflicts.length > 0) {
       conflicts.push(...idConflicts);
@@ -667,18 +683,26 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const filtered = prev.filter(
         (b) => !conflictIds.has(b.id) && b.ownerEmail.toLowerCase() !== normalizedEmail
       );
-      return [...filtered, winner];
+      const nextBizs = [...filtered, winner];
+      localStorage.setItem(STORAGE_KEYS.BUSINESSES, JSON.stringify(nextBizs));
+      return nextBizs;
     });
 
     ensureTenantDefaults(winner);
 
     // 4. Firestore level: save winner with latest lastLoginAt, delete all conflicts
     if (auth.currentUser) {
-      saveBusinessToFirestore(winner).catch((e) => console.warn('Firestore sync winner note:', e));
+      try {
+        await saveBusinessToFirestore(winner);
+      } catch (e) {
+        console.warn('Firestore sync winner note:', e);
+      }
       if (uniqueConflicts.length > 0) {
-        deleteBusinessConflictsFromFirestore(uniqueConflicts).catch((e) =>
-          console.warn('Firestore delete conflicts note:', e)
-        );
+        try {
+          await deleteBusinessConflictsFromFirestore(uniqueConflicts);
+        } catch (e) {
+          console.warn('Firestore delete conflicts note:', e);
+        }
       }
     }
 
@@ -5507,7 +5531,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // Enforce uniqueness: prioritize account last logged into & delete conflicts at Firestore level
     const now = new Date().toISOString();
     const emailMatches = businesses.filter(
-      (b) => b.ownerEmail.toLowerCase() === normalizedEmail
+      (b) => b.ownerEmail && b.ownerEmail.toLowerCase() === normalizedEmail
     );
 
     let matchedBiz: Business;
@@ -5525,7 +5549,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         );
         return bScore - aScore;
       });
-      matchedBiz = { ...sorted[0], lastLoginAt: now };
+      matchedBiz = {
+        ...sorted[0],
+        lastLoginAt: now,
+        ...(newBusinessName ? { name: newBusinessName } : {}),
+      };
       conflicts = sorted.slice(1);
     } else {
       const newBizId = getStableBusinessIdForEmail(normalizedEmail);
@@ -5545,18 +5573,38 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
     }
 
-    const conflictIds = new Set(conflicts.map((c) => c.id));
+    // Check for tenant ID conflicts across other emails
+    const idConflicts = businesses.filter(
+      (b) => b.id === matchedBiz.id && b.ownerEmail && b.ownerEmail.toLowerCase() !== normalizedEmail
+    );
+    if (idConflicts.length > 0) {
+      conflicts.push(...idConflicts);
+    }
+
+    const conflictMap = new Map<string, Business>();
+    conflicts.forEach((c) => {
+      if (c.id !== matchedBiz.id) conflictMap.set(c.id, c);
+    });
+    const uniqueConflicts = Array.from(conflictMap.values());
+    const conflictIds = new Set(uniqueConflicts.map((c) => c.id));
+
     setBusinesses((prev) => {
-      const filtered = prev.filter((b) => !conflictIds.has(b.id) && b.ownerEmail.toLowerCase() !== normalizedEmail);
-      return [...filtered, matchedBiz];
+      const filtered = prev.filter(
+        (b) => !conflictIds.has(b.id) && b.ownerEmail.toLowerCase() !== normalizedEmail
+      );
+      const nextBizs = [...filtered, matchedBiz];
+      localStorage.setItem(STORAGE_KEYS.BUSINESSES, JSON.stringify(nextBizs));
+      return nextBizs;
     });
 
     ensureTenantDefaults(matchedBiz);
 
     if (auth.currentUser) {
       saveBusinessToFirestore(matchedBiz).catch((e) => console.warn('Sync matched biz note:', e));
-      if (conflicts.length > 0) {
-        deleteBusinessConflictsFromFirestore(conflicts).catch((e) => console.warn('Purge conflicts note:', e));
+      if (uniqueConflicts.length > 0) {
+        deleteBusinessConflictsFromFirestore(uniqueConflicts).catch((e) =>
+          console.warn('Purge conflicts note:', e)
+        );
       }
     }
 

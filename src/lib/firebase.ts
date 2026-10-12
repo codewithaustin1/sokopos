@@ -1,3 +1,4 @@
+import '../storageGuard';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
   getAuth,
@@ -17,9 +18,7 @@ import {
 import {
   getFirestore,
   initializeFirestore,
-  persistentLocalCache,
-  persistentSingleTabManager,
-  persistentMultipleTabManager,
+  memoryLocalCache,
   doc,
   getDocFromServer,
   getDoc,
@@ -81,21 +80,41 @@ googleProvider.setCustomParameters({
   prompt: 'select_account',
 });
 
-// Firestore Instance with resilient offline cache and auto-detecting transport
+// Evict any stale or bloated Firestore client state from localStorage
+if (typeof window !== 'undefined' && window.localStorage) {
+  try {
+    const keysToPurge: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (
+        k &&
+        (k.startsWith('firestore_clients_') ||
+          k.startsWith('firestore_mutations_') ||
+          k.startsWith('firestore_'))
+      ) {
+        keysToPurge.push(k);
+      }
+    }
+    keysToPurge.forEach((k) => localStorage.removeItem(k));
+  } catch (e) {
+    console.warn('Storage cleanup note:', e);
+  }
+}
+
+// Firestore Instance with memory-safe local cache per Firebase Integration Skill
+// Using memoryLocalCache prevents QuotaExceededError and assertion crashes from localStorage in iframe environments
 let dbInstance: Firestore;
 try {
   dbInstance = initializeFirestore(
     app,
     {
-      localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager(),
-      }),
+      localCache: memoryLocalCache(),
       experimentalAutoDetectLongPolling: true,
     },
     firebaseConfig.firestoreDatabaseId
   );
 } catch (err) {
-  console.warn('initializeFirestore with persistent cache unavailable, falling back:', err);
+  console.warn('initializeFirestore with memory cache unavailable, falling back:', err);
   try {
     dbInstance = getFirestore(app, firebaseConfig.firestoreDatabaseId);
   } catch (err2) {
