@@ -13,11 +13,25 @@ import {
   Fingerprint,
   Delete,
   Loader2,
+  Zap,
+  Sparkles,
+  ShieldCheck,
+  Smartphone,
+  Check,
+  ChevronRight,
+  Monitor,
+  Printer,
+  Receipt,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { soundFx } from '../utils/audio';
 import { SignUpSkeleton } from './SignUpSkeleton';
 import { LegalAndFaqModal, LegalTab } from './LegalAndFaqModal';
+import { KenyaPaymentBadges } from './landing/KenyaPaymentBadges';
+import { IndustrySolutionsSwitcher } from './landing/IndustrySolutionsSwitcher';
+import { HardwareCompatibilityGuide } from './landing/HardwareCompatibilityGuide';
+import { LegacyPosComparison } from './landing/LegacyPosComparison';
+import { WhatsAppFloatingButton } from './landing/WhatsAppFloatingButton';
 
 interface SignInViewProps {
   onLoginSuccess?: () => void;
@@ -187,6 +201,22 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     }
   };
 
+  const handleLaunchDemoSandbox = () => {
+    const ok = loginWithGoogle('upfrontretaile@gmail.com', 'Platform Administrator');
+    if (ok) {
+      showToast('🚀 Welcome to SokoPoS Interactive Demo Sandbox! Explore products, test M-Pesa checkout, or view live analytics.', 'success');
+      onLoginSuccess?.();
+    }
+  };
+
+  const scrollToAuthCard = (targetTab?: 'google' | 'terminal' | 'register') => {
+    if (targetTab) setActiveTab(targetTab);
+    const el = document.getElementById('auth-card-container');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
   const activeStaffMember = systemUsers.find((u) => u.id === selectedStaffId);
 
   // Structural Skeleton Shimmer Gate while checking initial Firebase session
@@ -302,70 +332,170 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-[1px] pointer-events-none z-0" />
       )}
 
-      {/* Top Bar: Terminal Status */}
+      {/* Top Navigation Bar: Brand, Solutions Navigation, and Demo Actions */}
       <header
-        className={`px-6 py-4 border-b flex items-center justify-between shrink-0 relative z-10 ${
+        className={`px-4 sm:px-8 py-3.5 border-b flex items-center justify-between shrink-0 relative z-20 sticky top-0 ${
           loginBgGraphic
-            ? 'border-white/10 bg-slate-950/60 backdrop-blur-md'
-            : 'border-slate-800/80 bg-slate-900/50 backdrop-blur-md'
+            ? 'border-white/10 bg-slate-950/85 backdrop-blur-md'
+            : 'border-slate-800/80 bg-slate-950/85 backdrop-blur-md'
         }`}
       >
-        {platformLogo ? (
-          <div className="flex items-center gap-3">
+        {/* Brand */}
+        <div className="flex items-center gap-3">
+          {platformLogo ? (
             <img
               src={platformLogo}
               alt="Platform Logo"
-              className="h-8 max-h-9 max-w-[160px] object-contain drop-shadow-sm"
+              className="h-8 max-h-9 max-w-[150px] object-contain drop-shadow-sm"
             />
-            <div>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                PRO RETAIL
-              </span>
-              <div className="text-[11px] text-slate-400">Smart Retail & Business Management</div>
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-3">
+          ) : (
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-black text-white shadow-md shadow-blue-500/20">
               S
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-black text-sm tracking-tight text-white">SokoPoS</span>
-                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                  PRO RETAIL
-                </span>
-              </div>
-              <div className="text-[11px] text-slate-400">Smart Retail & Business Management</div>
+          )}
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-black text-sm tracking-tight text-white">SokoPoS</span>
+              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                PRO RETAIL
+              </span>
             </div>
+            <div className="text-[11px] text-slate-400">Smart Retail & Business Management</div>
           </div>
-        )}
+        </div>
 
-        <div className="hidden sm:flex items-center gap-3 text-xs font-medium text-slate-400">
-          <div className="flex items-center gap-2 bg-slate-800/60 px-3 py-1.5 rounded-full border border-slate-700/60">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-[11px] font-semibold text-slate-300">Terminal Ready</span>
-          </div>
-          <div className="text-[11px] text-slate-400">
-            Secure Connection • Works Offline
-          </div>
+        {/* Quick Nav Anchors for Desktop Visitors */}
+        <nav className="hidden lg:flex items-center gap-6 text-xs font-semibold text-slate-300">
+          <a href="#industry-solutions" className="hover:text-blue-400 transition">
+            Solutions
+          </a>
+          <a href="#kenya-payments" className="hover:text-blue-400 transition">
+            M-Pesa & eTIMS
+          </a>
+          <a href="#hardware-guide" className="hover:text-blue-400 transition">
+            Hardware Freedom
+          </a>
+          <a href="#pricing-comparison" className="hover:text-blue-400 transition">
+            Why SokoPoS
+          </a>
+        </nav>
+
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            id="top-nav-demo-btn"
+            onClick={handleLaunchDemoSandbox}
+            className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-blue-500/20 transition cursor-pointer"
+          >
+            <Zap className="w-3.5 h-3.5 fill-white text-white" />
+            <span className="hidden xs:inline">Interactive</span>
+            <span>Demo</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => scrollToAuthCard('terminal')}
+            className="px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 hover:text-white font-bold text-xs border border-slate-700/70 transition cursor-pointer flex items-center gap-1.5"
+          >
+            <Fingerprint className="w-3.5 h-3.5 text-blue-400" />
+            <span className="hidden sm:inline">Cashier</span>
+            <span>PIN</span>
+          </button>
         </div>
       </header>
 
-      {/* Main Authentication Container with Vertical Scroll Affordance */}
-      <main className="flex-1 flex flex-col items-center justify-center p-3.5 sm:p-6 py-6 sm:py-10 relative z-10 w-full overflow-y-auto">
-        {/* Soft Ambient Radial Glow behind the Card for visual depth */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] sm:w-[460px] h-[320px] sm:h-[460px] bg-blue-600/10 rounded-full blur-3xl pointer-events-none -z-1" />
+      {/* Main Container with Full Landing Flow */}
+      <main className="flex-1 flex flex-col relative z-10 w-full overflow-y-auto overflow-x-hidden">
+        {/* Soft Ambient Radial Glow for Depth */}
+        <div className="absolute top-40 left-1/2 -translate-x-1/2 w-[350px] sm:w-[600px] h-[350px] sm:h-[600px] bg-blue-600/10 rounded-full blur-3xl pointer-events-none -z-1" />
 
-        <div
-          className={`w-full max-w-[360px] xs:max-w-[390px] sm:max-w-[420px] rounded-[28px] sm:rounded-[32px] shadow-2xl overflow-hidden my-auto transition-all border border-slate-700/60 ${
-            loginBgGraphic
-              ? 'bg-[#18202c]/95 backdrop-blur-xl ring-1 ring-white/10 shadow-2xl shadow-black/80'
-              : 'bg-[#18202c] shadow-2xl shadow-black/70'
-          }`}
-        >
-          {/* Top Section (#18202c) */}
-          <div className="p-4.5 sm:p-6 pt-4.5 sm:pt-6">
+        {/* SECTION: HERO SHOWCASE (Dual-Column: Pitch on Left, Auth on Right) */}
+        <section className="w-full max-w-7xl mx-auto px-4 sm:px-6 pt-6 sm:pt-12 pb-10 sm:pb-16 relative">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+            
+            {/* Left Column (7 cols): High-Impact Value Pitch & Quick Demo Launcher */}
+            <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-bold tracking-wide uppercase">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Kenya's Modern Cloud POS Platform</span>
+              </div>
+
+              <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-white tracking-tight leading-[1.12]">
+                The High-Velocity POS Built for Kenyan Retailers, Bars & Supermarkets
+              </h1>
+
+              <p className="text-sm sm:text-base text-slate-300 max-w-2xl mx-auto lg:mx-0 leading-relaxed">
+                Say goodbye to KSh 30,000+ upfront software licenses, clunky desktop towers, and manual debt books. SokoPoS runs on any phone, tablet, or PC with instant M-Pesa STK push, KRA eTIMS tax compliance, and 100% offline resilience.
+              </p>
+
+              {/* Primary Dual Action CTAs */}
+              <div className="pt-2 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3.5">
+                <button
+                  type="button"
+                  id="hero-launch-demo-btn"
+                  onClick={handleLaunchDemoSandbox}
+                  className="w-full sm:w-auto px-6 py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-xl shadow-blue-500/30 hover:scale-[1.02] active:scale-[0.98] transition cursor-pointer"
+                >
+                  <Zap className="w-5 h-5 fill-white text-white" />
+                  <span>Launch Interactive Demo Sandbox</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => scrollToAuthCard('register')}
+                  className="w-full sm:w-auto px-5 py-4 rounded-2xl bg-slate-800/90 hover:bg-slate-700/90 text-slate-200 hover:text-white font-bold text-sm border border-slate-700/80 transition cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Store className="w-4 h-4 text-blue-400" />
+                  <span>Set Up a New Store</span>
+                </button>
+              </div>
+
+              {/* Subtitle Under CTA */}
+              <div className="flex items-center justify-center lg:justify-start gap-3 text-xs text-slate-400 flex-wrap">
+                <span className="flex items-center gap-1 text-emerald-400 font-semibold">
+                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                  5-Second Live Sandbox
+                </span>
+                <span>•</span>
+                <span>No Credit Card</span>
+                <span>•</span>
+                <span>Instant Pre-loaded Inventory</span>
+              </div>
+
+              {/* Live Metric Stats Banner */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-4 border-t border-slate-800/80">
+                <div className="bg-slate-900/70 p-3 rounded-2xl border border-slate-800/80 text-center lg:text-left">
+                  <div className="text-base sm:text-lg font-black text-white">KES 25M+</div>
+                  <div className="text-[10px] text-slate-400 font-medium">Monthly Processed</div>
+                </div>
+                <div className="bg-slate-900/70 p-3 rounded-2xl border border-slate-800/80 text-center lg:text-left">
+                  <div className="text-base sm:text-lg font-black text-emerald-400">100%</div>
+                  <div className="text-[10px] text-slate-400 font-medium">Offline Resilient</div>
+                </div>
+                <div className="bg-slate-900/70 p-3 rounded-2xl border border-slate-800/80 text-center lg:text-left">
+                  <div className="text-base sm:text-lg font-black text-blue-400">&lt; 18s</div>
+                  <div className="text-[10px] text-slate-400 font-medium">Avg Checkout Speed</div>
+                </div>
+                <div className="bg-slate-900/70 p-3 rounded-2xl border border-slate-800/80 text-center lg:text-left">
+                  <div className="text-base sm:text-lg font-black text-amber-400">eTIMS</div>
+                  <div className="text-[10px] text-slate-400 font-medium">KRA Tax Ready</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column (5 cols): Embedded Frictionless Auth Card */}
+            <div id="auth-card-container" className="lg:col-span-5 flex justify-center w-full">
+              <div
+                className={`w-full max-w-[360px] xs:max-w-[390px] sm:max-w-[420px] rounded-[28px] sm:rounded-[32px] shadow-2xl overflow-hidden my-auto transition-all border border-slate-700/60 ${
+                  loginBgGraphic
+                    ? 'bg-[#18202c]/95 backdrop-blur-xl ring-1 ring-white/10 shadow-2xl shadow-black/80'
+                    : 'bg-[#18202c] shadow-2xl shadow-black/70'
+                }`}
+              >
+                {/* Top Section (#18202c) */}
+                <div className="p-4.5 sm:p-6 pt-4.5 sm:pt-6">
             {/* If in New Store Registration mode, display Back Navigation Header */}
             {activeTab === 'register' ? (
               <div className="flex items-center justify-between mb-3">
@@ -809,16 +939,75 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             )}
           </div>
         </div>
-      </main>
+      </div>
+    </div>
+  </section>
 
-      {/* Footer System Disclaimer with Legal & FAQ Links */}
-      <footer
-        className={`px-6 py-4 border-t text-center text-xs text-slate-400 shrink-0 relative z-10 ${
-          loginBgGraphic
-            ? 'border-white/10 bg-slate-950/60 backdrop-blur-md'
-            : 'border-slate-800/80 bg-slate-900/40'
-        }`}
-      >
+  {/* SECTION 1: KENYA PAYMENT & COMPLIANCE BADGES */}
+  <KenyaPaymentBadges onLaunchDemo={handleLaunchDemoSandbox} />
+
+  {/* SECTION 2: INTERACTIVE INDUSTRY SOLUTIONS SWITCHER */}
+  <IndustrySolutionsSwitcher onLaunchDemo={handleLaunchDemoSandbox} />
+
+  {/* SECTION 3: HARDWARE COMPATIBILITY GUIDE & SAVINGS CALCULATOR */}
+  <HardwareCompatibilityGuide onLaunchDemo={handleLaunchDemoSandbox} />
+
+  {/* SECTION 4: LEGACY POS COMPARISON (SOKOPOS VS SIMBAPOS / DESKTOP) */}
+  <LegacyPosComparison 
+    onLaunchDemo={handleLaunchDemoSandbox} 
+    onStartRegister={() => scrollToAuthCard('register')} 
+  />
+
+  {/* SECTION 5: FINAL CONVERSION BANNER */}
+  <section className="w-full py-14 px-4 sm:px-6 bg-gradient-to-b from-[#0e141f] to-slate-950 border-t border-slate-800 text-center relative">
+    <div className="max-w-3xl mx-auto space-y-5">
+      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-bold tracking-wide uppercase">
+        <Zap className="w-3.5 h-3.5 fill-blue-400 text-blue-400" />
+        <span>Ready to modernise your store?</span>
+      </div>
+
+      <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight">
+        Start Using SokoPoS in 30 Seconds — Zero Risk
+      </h2>
+
+      <p className="text-xs sm:text-sm text-slate-300 max-w-xl mx-auto leading-relaxed">
+        Test our live terminal right in your browser now with pre-loaded inventory, or register your retail location with your Google Account for full ownership.
+      </p>
+
+      <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+        <button
+          type="button"
+          onClick={handleLaunchDemoSandbox}
+          className="w-full sm:w-auto px-6 py-4 rounded-2xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-black text-sm flex items-center justify-center gap-2.5 shadow-xl shadow-blue-500/30 cursor-pointer transition hover:scale-102"
+        >
+          <Zap className="w-4 h-4 fill-white text-white" />
+          <span>Launch Interactive Demo Sandbox</span>
+          <ArrowRight className="w-4 h-4" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => scrollToAuthCard('register')}
+          className="w-full sm:w-auto px-6 py-4 rounded-2xl bg-slate-800/90 hover:bg-slate-700/90 text-slate-200 hover:text-white font-bold text-sm border border-slate-700/80 cursor-pointer transition"
+        >
+          Set Up a New Store Free
+        </button>
+      </div>
+    </div>
+  </section>
+</main>
+
+{/* Floating WhatsApp Action Button */}
+<WhatsAppFloatingButton phoneNumber="+254740463021" />
+
+{/* Footer System Disclaimer with Legal & FAQ Links */}
+<footer
+  className={`px-6 py-5 border-t text-center text-xs text-slate-400 shrink-0 relative z-10 ${
+    loginBgGraphic
+      ? 'border-white/10 bg-slate-950/70 backdrop-blur-md'
+      : 'border-slate-800/80 bg-slate-950/90'
+  }`}
+>
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px]">
           {/* Copyright statement */}
           <div className="flex items-center gap-1.5 flex-wrap justify-center text-slate-400">

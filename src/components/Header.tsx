@@ -336,7 +336,7 @@ export const Header: React.FC<HeaderProps> = ({
                 className="fixed inset-0 z-40"
                 onClick={() => setIsUserMenuOpen(false)}
               />
-              <div className="absolute top-full right-0 mt-2 w-72 bg-white rounded-2xl shadow-2xl border border-slate-200 p-2 z-50 animate-in fade-in-50 text-xs">
+              <div className="absolute top-full right-0 mt-2 w-72 sm:w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 p-2 z-50 animate-in fade-in-50 text-xs max-h-[min(500px,calc(100vh-4.5rem))] overflow-y-auto modal-scrollbar overscroll-contain">
                 {/* User card */}
                 <div className="p-3 bg-slate-50 rounded-xl mb-1 border border-slate-100">
                   <div className="font-black text-slate-800">{currentUser.name}</div>

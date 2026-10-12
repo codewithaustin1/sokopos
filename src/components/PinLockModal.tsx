@@ -217,7 +217,7 @@ export const PinLockModal: React.FC = () => {
         {/* Footer */}
         <div className="flex justify-between items-center text-[11px] sm:text-xs text-slate-400 border-t border-slate-200 pt-3 sm:pt-4 mt-4 sm:mt-5 shrink-0">
           <span>SokoPoS v3.2.0 • Online</span>
-          <span>Support: +254 700 000 000</span>
+          <span>Support: +254 740 463 021</span>
         </div>
       </div>
     </div>

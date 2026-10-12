@@ -1431,7 +1431,7 @@ export const BusinessProfileSettingsModal: React.FC = () => {
                         <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider block">
                           Subscription Hotline
                         </span>
-                        <div className="mt-1 font-bold text-slate-800 text-xs">+254 700 000 000</div>
+                        <div className="mt-1 font-bold text-slate-800 text-xs">+254 740 463 021</div>
                       </div>
                       <div className="text-[10px] text-slate-500">24/7 WhatsApp & Billing Support</div>
                     </div>
