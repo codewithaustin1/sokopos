@@ -87,10 +87,6 @@ export const HardwareCompatibilityGuide: React.FC<{ onLaunchDemo?: () => void }>
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="text-center max-w-3xl mx-auto mb-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold tracking-wide uppercase mb-3">
-            <Layers className="w-3.5 h-3.5" />
-            <span>Hardware Freedom Guaranteed</span>
-          </div>
           <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight">
             Use Hardware You Already Own — Zero Lock-In
           </h2>

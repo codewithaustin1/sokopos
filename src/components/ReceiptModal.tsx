@@ -22,7 +22,48 @@ export const ReceiptModal: React.FC = () => {
   const [isAutoPrinting, setIsAutoPrinting] = useState<boolean>(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
 
-  // Auto-Print on Checkout: Automatically invoke browser window.print() dialog once transaction completes
+  // Dedicated Thermal Receipt Print Handler:
+  // Adds print-isolation CSS class, invokes native window.print(), and cleans up
+  const handlePrintReceipt = () => {
+    document.body.classList.add('printing-thermal-receipt');
+
+    try {
+      window.print();
+    } catch (err) {
+      console.warn('Thermal receipt print invocation error:', err);
+    }
+
+    const cleanup = () => {
+      document.body.classList.remove('printing-thermal-receipt');
+      window.removeEventListener('afterprint', cleanup);
+    };
+
+    window.addEventListener('afterprint', cleanup);
+    setTimeout(cleanup, 2500);
+  };
+
+  // Browser print lifecycle listener: Guarantees isolation even if user triggers Ctrl+P or browser print menu
+  useEffect(() => {
+    if (!activeReceipt) return;
+
+    const onBeforePrint = () => {
+      document.body.classList.add('printing-thermal-receipt');
+    };
+    const onAfterPrint = () => {
+      document.body.classList.remove('printing-thermal-receipt');
+    };
+
+    window.addEventListener('beforeprint', onBeforePrint);
+    window.addEventListener('afterprint', onAfterPrint);
+
+    return () => {
+      window.removeEventListener('beforeprint', onBeforePrint);
+      window.removeEventListener('afterprint', onAfterPrint);
+      document.body.classList.remove('printing-thermal-receipt');
+    };
+  }, [activeReceipt]);
+
+  // Auto-Print on Checkout: Automatically invoke filtered print dialog once transaction completes
   useEffect(() => {
     if (activeReceipt && autoPrintReceipt) {
       if (hasAutoPrintedRef.current !== activeReceipt.id) {
@@ -31,7 +72,7 @@ export const ReceiptModal: React.FC = () => {
 
         const timer = setTimeout(() => {
           try {
-            window.print();
+            handlePrintReceipt();
           } catch (err) {
             console.warn('Auto-print invocation error:', err);
           } finally {
@@ -44,10 +85,15 @@ export const ReceiptModal: React.FC = () => {
     }
   }, [activeReceipt, autoPrintReceipt]);
 
-  // Keyboard shortcut listener for receipt modal: Esc or Enter to dismiss/next sale
+  // Keyboard shortcut listener for receipt modal: Ctrl+P / Cmd+P to print, Esc or Enter to dismiss/next sale
   useEffect(() => {
     if (!activeReceipt) return;
     const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P')) {
+        e.preventDefault();
+        handlePrintReceipt();
+        return;
+      }
       if (e.key === 'Escape' || e.key === 'Enter') {
         e.preventDefault();
         setActiveReceipt(null);
@@ -60,7 +106,7 @@ export const ReceiptModal: React.FC = () => {
   if (!activeReceipt) return null;
 
   const handlePrint = () => {
-    window.print();
+    handlePrintReceipt();
   };
 
   const handleDownloadPdf = () => {
@@ -174,7 +220,7 @@ export const ReceiptModal: React.FC = () => {
         <div
           ref={receiptRef}
           id="receipt-printable-canvas"
-          className={`receipt-printable-canvas bg-white w-full ${receiptMaxWidthClass} rounded-xl shadow-xl border border-slate-300 p-4 sm:p-6 flex flex-col justify-between text-slate-800 font-mono text-xs select-text`}
+          className={`receipt-printable-canvas receipt-format-${receiptFormat || 'standard'} bg-white w-full ${receiptMaxWidthClass} rounded-xl shadow-xl border border-slate-300 p-4 sm:p-6 flex flex-col justify-between text-slate-800 font-mono text-xs select-text`}
         >
           {/* Header */}
           <div className="text-center space-y-1 pb-3 border-b border-dashed border-slate-300">
@@ -502,7 +548,7 @@ export const ReceiptModal: React.FC = () => {
           {/* Barcode Graphic & Footer */}
           <div className="pt-4 flex flex-col items-center text-center">
             {/* Styled Simulated Thermal Barcode */}
-            <div className="w-56 h-9 bg-slate-900 rounded-sm flex items-center justify-center text-white text-[9px] tracking-widest font-mono select-none">
+            <div className="receipt-barcode-box w-56 h-9 bg-slate-900 rounded-sm flex items-center justify-center text-white text-[9px] tracking-widest font-mono select-none">
               ||||| | |||||| ||| ||||| ||||| ||||
             </div>
             <span className="text-[10px] font-mono text-slate-400 mt-1">
@@ -518,6 +564,18 @@ export const ReceiptModal: React.FC = () => {
 
         {/* Action Buttons Below Receipt */}
         <div className="no-print w-full max-w-[360px] mt-3 sm:mt-4 space-y-2">
+          {/* Primary Action: Dedicated 'Print Receipt' Button */}
+          <button
+            id="print-receipt-btn"
+            type="button"
+            onClick={handlePrintReceipt}
+            className="primary-cta-shimmer w-full bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white py-3.5 px-4 rounded-xl font-black text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer group"
+            title="Print thermal receipt (Clean layout without browser chrome or page UI)"
+          >
+            <Printer className="w-4 h-4 text-blue-100 group-hover:scale-110 transition-transform" />
+            <span>Print Receipt</span>
+          </button>
+
           {!isFullyRefunded && (
             <button
               onClick={handleInitiateReturn}
@@ -528,22 +586,14 @@ export const ReceiptModal: React.FC = () => {
             </button>
           )}
 
-          <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
-            <button
-              onClick={handlePrint}
-              className="bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-1 cursor-pointer"
-              title="Print thermal receipt"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span>Print</span>
-            </button>
+          <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
             <button
               onClick={handleDownloadPdf}
               className="bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 py-2.5 rounded-xl font-bold text-xs shadow-xs transition flex items-center justify-center gap-1 cursor-pointer"
               title="Download official 80mm PDF receipt"
             >
               <Download className="w-3.5 h-3.5 text-rose-600" />
-              <span>PDF</span>
+              <span>Download PDF</span>
             </button>
             <button
               id="receipt-sms-share-btn"
@@ -559,7 +609,7 @@ export const ReceiptModal: React.FC = () => {
               className="bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-1 cursor-pointer"
               title="Start Next Sale"
             >
-              <span>Next</span>
+              <span>Next Sale</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>

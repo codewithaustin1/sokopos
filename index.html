@@ -3,12 +3,133 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SokoPoS Point of Sale</title>
+    <title>SokoPoS Point of Sale – M-Pesa, eTIMS & Retail POS Kenya</title>
     <meta name="description" content="Multi-location Point of Sale system with integrated inventory management, barcode scanning, real-time sales analytics, and cloud synchronization." />
-    <meta property="og:title" content="SokoPoS Point of Sale" />
-    <meta property="og:description" content="Multi-location Point of Sale system with integrated inventory management, barcode scanning, real-time sales analytics, and cloud synchronization." />
+    <meta name="keywords" content="point of sale kenya, pos system nairobi, mpesa pos, kra etims pos software, supermarket pos kenya, retail inventory software, offline pos system, barcode scanner pos, kenya cloud point of sale, bar and restaurant pos kenya, liquor store pos kenya, agrovet pos software" />
+    <meta name="author" content="SokoPoS Kenya" />
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+    <meta name="googlebot" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+
+    <!-- Geotargeting for Kenyan and East African Search Intent -->
+    <meta name="geo.region" content="KE" />
+    <meta name="geo.placename" content="Nairobi" />
+    <meta name="geo.position" content="-1.2921;36.8219" />
+    <meta name="ICBM" content="-1.2921, 36.8219" />
+
+    <!-- Canonical Link -->
+    <link rel="canonical" href="https://sokopos.co.ke/" />
+
+    <!-- OpenGraph Social Cards -->
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="SokoPoS" />
+    <meta property="og:locale" content="en_KE" />
+    <meta property="og:title" content="SokoPoS Point of Sale – M-Pesa, eTIMS & Retail POS Kenya" />
+    <meta property="og:description" content="Multi-location Point of Sale system with integrated inventory management, barcode scanning, real-time sales analytics, and cloud synchronization." />
+    <meta property="og:url" content="https://sokopos.co.ke/" />
+
+    <!-- Twitter / X Cards -->
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="SokoPoS Point of Sale – M-Pesa, eTIMS & Retail POS Kenya" />
+    <meta name="twitter:description" content="Multi-location Point of Sale system with integrated inventory management, barcode scanning, real-time sales analytics, and cloud synchronization." />
+    <meta name="twitter:creator" content="@SokoPoS" />
+
+    <!-- Schema.org JSON-LD Structured Data: SoftwareApplication, Organization, & FAQPage -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "SoftwareApplication",
+          "@id": "https://sokopos.co.ke/#software",
+          "name": "SokoPoS Point of Sale",
+          "operatingSystem": "Web Browser, Android, iOS, Windows, macOS, Linux",
+          "applicationCategory": "BusinessApplication",
+          "applicationSubCategory": "Point of Sale & Inventory Management",
+          "description": "Multi-location Point of Sale system with integrated inventory management, barcode scanning, real-time sales analytics, and cloud synchronization.",
+          "url": "https://sokopos.co.ke/",
+          "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "KES",
+            "availability": "https://schema.org/InStock",
+            "category": "Free Sandbox & Commercial Cloud"
+          },
+          "featureList": [
+            "Safaricom M-Pesa STK Push & Dynamic QR Code Checkout",
+            "KRA eTIMS Tax Compliance & Standard 16% VAT Categorization",
+            "100% Offline Resilience with Local IndexedDB Sync Vault",
+            "Standard ESC/POS Thermal Receipt Printing (58mm & 80mm)",
+            "Automatic Cash Drawer Release via RJ11/RJ12 Kickout Port",
+            "Sub-55ms Keyboard Wedge & Mobile Camera Barcode Scanning",
+            "Multi-Branch Store Inventory Tracking & Stock Transfers"
+          ]
+        },
+        {
+          "@type": "Organization",
+          "@id": "https://sokopos.co.ke/#organization",
+          "name": "SokoPoS Enterprise Platform",
+          "url": "https://sokopos.co.ke/",
+          "areaServed": {
+            "@type": "Country",
+            "name": "Kenya"
+          },
+          "contactPoint": {
+            "@type": "ContactPoint",
+            "telephone": "+254-740-463021",
+            "contactType": "Customer Support",
+            "areaServed": "KE",
+            "availableLanguage": ["English", "Swahili"]
+          }
+        },
+        {
+          "@type": "FAQPage",
+          "@id": "https://sokopos.co.ke/#faq",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "How does M-Pesa integration work on SokoPoS?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "SokoPoS supports multiple M-Pesa payment workflows: direct STK Push (where the customer receives an automatic prompt on their phone to enter their M-Pesa PIN), dynamic customer-facing QR codes, Buy Goods Till numbers, and Paybill accounts with account reference matching."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "How do offline transactions sync back to the cloud?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Every sale made while offline is automatically placed in an encrypted local FIFO queue. The moment an active network connection (Wi-Fi or mobile data) is detected, SokoPoS flushes the queue to Google Cloud Firestore in the background without cashier intervention."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Is SokoPoS compatible with standard thermal receipt printers and cash drawers?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Yes. SokoPoS supports plug-and-play standard 80mm and 58mm ESC/POS thermal receipt printers via USB, Bluetooth, or LAN. Standard RJ11/RJ12 cash drawers plug directly into the printer kick-out port and open automatically upon completing a cash transaction."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "How are cents handled during cash vs. electronic payments?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Electronic payments (M-Pesa and Card terminals) settle exact transaction amounts down to the cent. For cash payments involving cents, SokoPoS applies Standard Half-Up rounding: KES 0.50 and above rounds up to KES 1, while below KES 0.50 rounds down to KES 0."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Which barcode scanners are compatible with SokoPoS?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "SokoPoS works out-of-the-box with any standard USB or Bluetooth handheld or desktop barcode scanner configured in HID Keyboard Wedge mode (such as Honeywell, Zebra, Sunlux, Netum) and also includes a camera barcode scanner for phones and tablets."
+              }
+            }
+          ]
+        }
+      ]
+    }
+    </script>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%232563eb'/><text x='16' y='23' font-size='20' font-family='sans-serif' font-weight='900' fill='white' text-anchor='middle'>S</text></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

@@ -286,10 +286,6 @@ export const IndustrySolutionsSwitcher: React.FC<{ onLaunchDemo?: () => void }> 
       <div className="max-w-6xl mx-auto relative z-10">
         {/* Header */}
         <div className="text-center max-w-3xl mx-auto mb-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-bold tracking-wide uppercase mb-3">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Tailored for Every Kenyan Retail Vertical</span>
-          </div>
           <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight">
             How SokoPoS Transforms Your Specific Business
           </h2>
@@ -328,9 +324,6 @@ export const IndustrySolutionsSwitcher: React.FC<{ onLaunchDemo?: () => void }> 
             {/* Left 7 Columns: Value proposition & features */}
             <div className="lg:col-span-7 space-y-6">
               <div>
-                <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-blue-500/10 text-blue-400 text-[11px] font-extrabold uppercase tracking-wider mb-2 border border-blue-500/20">
-                  {activeIndustry.badge}
-                </div>
                 <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight">
                   {activeIndustry.tagline}
                 </h3>
@@ -372,11 +365,11 @@ export const IndustrySolutionsSwitcher: React.FC<{ onLaunchDemo?: () => void }> 
                   <button
                     type="button"
                     onClick={onLaunchDemo}
-                    className="w-full sm:w-auto px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 cursor-pointer transition"
+                    className="primary-cta-shimmer w-full sm:w-auto px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg cursor-pointer transition group"
                   >
-                    <Zap className="w-4 h-4" />
+                    <Zap className="w-4 h-4 group-hover:scale-110 transition-transform" />
                     <span>Test {activeIndustry.name} in Sandbox Demo</span>
-                    <ArrowRight className="w-4 h-4" />
+                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                   </button>
                 </div>
               )}

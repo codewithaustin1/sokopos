@@ -1988,7 +1988,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                       Math.max(0, -((selectedCustomer.storeCreditBalance || 0) - currentGuardrail.payableAmount)) >
                         (selectedCustomer.creditLimit || 0)))
                 }
-                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-black py-3 px-4 rounded-xl shadow-md transition text-xs flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+                className={`w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-black py-3.5 px-4 rounded-xl shadow-md transition text-xs flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed ${
+                  !isProcessing && !hasZeroStock && activeShift?.status === 'open' && (selectedMethod !== 'cash' || tenderedAmount >= currentGuardrail.payableAmount) && (selectedMethod !== 'split' || isSplitValid)
+                    ? 'primary-cta-shimmer-emerald'
+                    : ''
+                }`}
               >
                 {isProcessing ? (
                   <>

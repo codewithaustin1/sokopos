@@ -96,6 +96,93 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
   });
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  const RECENT_SEARCHES_STORAGE_KEY = 'sokopos_recent_searches';
+  const MAX_RECENT_SEARCHES = 8;
+
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(RECENT_SEARCHES_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(
+            (item): item is string => typeof item === 'string' && item.trim().length > 0
+          );
+        }
+      }
+    } catch {
+      // Ignore read errors
+    }
+    return [];
+  });
+  const [isSearchFocused, setIsSearchFocused] = useState<boolean>(false);
+
+  const saveRecentSearch = (term: string) => {
+    const trimmed = term.trim();
+    if (!trimmed) return;
+
+    setRecentSearches((prev) => {
+      const filtered = prev.filter((item) => item.toLowerCase() !== trimmed.toLowerCase());
+      const updated = [trimmed, ...filtered].slice(0, MAX_RECENT_SEARCHES);
+      try {
+        localStorage.setItem(RECENT_SEARCHES_STORAGE_KEY, JSON.stringify(updated));
+      } catch {
+        // Ignore write errors
+      }
+      return updated;
+    });
+  };
+
+  const removeRecentSearch = (termToRemove: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setRecentSearches((prev) => {
+      const updated = prev.filter((item) => item !== termToRemove);
+      try {
+        localStorage.setItem(RECENT_SEARCHES_STORAGE_KEY, JSON.stringify(updated));
+      } catch {
+        // Ignore write errors
+      }
+      return updated;
+    });
+  };
+
+  const clearAllRecentSearches = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setRecentSearches([]);
+    try {
+      localStorage.removeItem(RECENT_SEARCHES_STORAGE_KEY);
+    } catch {
+      // Ignore write errors
+    }
+  };
+
+  const handleSelectRecentSearch = (term: string) => {
+    setSearchQuery(term);
+    saveRecentSearch(term);
+    setIsSearchFocused(false);
+    searchInputRef.current?.focus();
+  };
+
+  // Close recent searches popover on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(event.target as Node)
+      ) {
+        setIsSearchFocused(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, []);
 
   // Global Ctrl+F / Cmd+F shortcut to focus product search while on the register tab
   useEffect(() => {
@@ -106,6 +193,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         setTimeout(() => {
           searchInputRef.current?.focus();
           searchInputRef.current?.select();
+          setIsSearchFocused(true);
         }, 20);
       }
     };
@@ -115,6 +203,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
       setTimeout(() => {
         searchInputRef.current?.focus();
         searchInputRef.current?.select();
+        setIsSearchFocused(true);
       }, 20);
     };
 
@@ -168,14 +257,19 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         setSearchQuery('');
       } else {
         (e.target as HTMLInputElement).blur();
+        setIsSearchFocused(false);
       }
       return;
     }
     if (e.key === 'Enter') {
       if (searchQuery.trim()) {
         e.preventDefault();
+        const term = searchQuery.trim();
+        saveRecentSearch(term);
+        setIsSearchFocused(false);
+
         // 1. Direct barcode or SKU lookup
-        const res = handleBarcodeScanned(searchQuery.trim());
+        const res = handleBarcodeScanned(term);
         if (res.success) {
           setSearchQuery('');
           return;
@@ -277,40 +371,159 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         }`}
       >
         {/* Search & Category Header */}
-        <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3 items-stretch sm:items-center justify-between shrink-0">
-          {/* Quick Search with Barcode Enter support & Ctrl+F shortcut */}
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 sm:top-3 pointer-events-none" />
-            <input
-              id="register-search-input"
-              ref={searchInputRef}
-              type="text"
-              placeholder="Search product, SKU or scan barcode..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={handleSearchKeyDown}
-              className="w-full bg-white border border-slate-300 rounded-xl py-2 pl-9 pr-28 text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 shadow-2xs transition"
-            />
-            <div className="absolute right-1.5 top-1.5 bottom-1.5 flex items-center gap-1">
-              <span
-                className="hidden sm:inline-flex items-center text-[10px] font-mono font-bold text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-2xs pointer-events-none"
-                title="Keyboard shortcut: Ctrl+F"
-              >
-                Ctrl+F
-              </span>
-              <button
-                type="button"
-                onClick={openBarcodeScanner}
-                className="px-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-[10px] font-bold flex items-center gap-1 border border-blue-200 cursor-pointer h-full"
-              >
-                <Scan className="w-3 h-3" /> Scan (F2)
-              </button>
+        <div className="flex flex-col gap-2 shrink-0">
+          <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3 items-stretch sm:items-center justify-between">
+            {/* Quick Search with Barcode Enter support & Ctrl+F shortcut */}
+            <div ref={searchContainerRef} className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 sm:top-3 pointer-events-none" />
+              <input
+                id="register-search-input"
+                ref={searchInputRef}
+                type="text"
+                placeholder="Search product, SKU or scan barcode..."
+                value={searchQuery}
+                onFocus={() => setIsSearchFocused(true)}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
+                className="w-full bg-white border border-slate-300 rounded-xl py-2 pl-9 pr-32 text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 shadow-2xs transition"
+              />
+              <div className="absolute right-1.5 top-1.5 bottom-1.5 flex items-center gap-1">
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('');
+                      searchInputRef.current?.focus();
+                    }}
+                    title="Clear search"
+                    className="p-1 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-md transition cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <span
+                  className="hidden sm:inline-flex items-center text-[10px] font-mono font-bold text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-2xs pointer-events-none"
+                  title="Keyboard shortcut: Ctrl+F"
+                >
+                  Ctrl+F
+                </span>
+                <button
+                  type="button"
+                  onClick={openBarcodeScanner}
+                  className="px-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-[10px] font-bold flex items-center gap-1 border border-blue-200 cursor-pointer h-full"
+                >
+                  <Scan className="w-3 h-3" /> Scan (F2)
+                </button>
+              </div>
+
+              {/* Recent Searches Dropdown Popover */}
+              {isSearchFocused && (
+                <div className="absolute top-full left-0 right-0 mt-1.5 z-40 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+                  <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-100 text-[11px]">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-600 uppercase tracking-wider">
+                      <Clock className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Recent Searches</span>
+                    </div>
+                    {recentSearches.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={clearAllRecentSearches}
+                        className="text-[10px] font-bold text-slate-400 hover:text-red-600 transition cursor-pointer hover:underline"
+                      >
+                        Clear All
+                      </button>
+                    )}
+                  </div>
+
+                  {recentSearches.length > 0 ? (
+                    <div className="max-h-56 overflow-y-auto py-1">
+                      {recentSearches.map((term) => {
+                        const matchCount = (products || []).filter(
+                          (p) =>
+                            p.name.toLowerCase().includes(term.toLowerCase()) ||
+                            p.sku.toLowerCase().includes(term.toLowerCase()) ||
+                            p.barcode.includes(term)
+                        ).length;
+
+                        return (
+                          <div
+                            key={term}
+                            onClick={() => handleSelectRecentSearch(term)}
+                            className="flex items-center justify-between px-3 py-1.5 hover:bg-blue-50/70 transition cursor-pointer group text-xs"
+                          >
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <Clock className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 shrink-0" />
+                              <span className="font-semibold text-slate-700 group-hover:text-blue-700 truncate">
+                                {term}
+                              </span>
+                              <span className="text-[10px] font-medium text-slate-400 bg-slate-100 group-hover:bg-blue-100/70 group-hover:text-blue-600 px-1.5 py-0.5 rounded shrink-0">
+                                {matchCount} {matchCount === 1 ? 'match' : 'matches'}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => removeRecentSearch(term, e)}
+                              title={`Remove "${term}" from history`}
+                              className="p-1 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded transition shrink-0 ml-2 cursor-pointer"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="px-3 py-3 text-center text-slate-400 text-xs">
+                      <p className="font-medium text-slate-500">No recent searches yet</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Products searched by name, SKU or barcode will appear here for fast re-selection.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="text-[11px] font-semibold text-slate-500 whitespace-nowrap hidden lg:block">
+              Location: <span className="font-bold text-slate-800">{currentLocation.name}</span>
             </div>
           </div>
 
-          <div className="text-[11px] font-semibold text-slate-500 whitespace-nowrap hidden lg:block">
-            Location: <span className="font-bold text-slate-800">{currentLocation.name}</span>
-          </div>
+          {/* Quick-Access Recent Search Chips (visible when catalog is displayed without a search query) */}
+          {recentSearches.length > 0 && !searchQuery && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none text-xs">
+              <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-0.5">
+                <Clock className="w-3 h-3 text-slate-400" />
+                <span>Recent:</span>
+              </div>
+              {recentSearches.slice(0, 6).map((term) => (
+                <div
+                  key={`chip-${term}`}
+                  className="inline-flex items-center bg-white border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 rounded-lg pl-2 pr-1 py-0.5 shadow-2xs text-[11px] font-semibold text-slate-700 transition cursor-pointer shrink-0 group"
+                  onClick={() => handleSelectRecentSearch(term)}
+                  title={`Filter catalog by "${term}"`}
+                >
+                  <span className="group-hover:text-blue-700 truncate max-w-[120px]">{term}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => removeRecentSearch(term, e)}
+                    className="ml-1 p-0.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded transition cursor-pointer"
+                    title={`Remove "${term}"`}
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={clearAllRecentSearches}
+                className="text-[10px] font-medium text-slate-400 hover:text-red-600 transition shrink-0 ml-1 hover:underline cursor-pointer"
+                title="Clear all recent searches"
+              >
+                Clear
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Category Filter Chips */}
@@ -349,7 +562,12 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                 return (
                   <div
                     key={prod.id}
-                    onClick={() => addToCart(prod)}
+                    onClick={() => {
+                      if (searchQuery.trim()) {
+                        saveRecentSearch(searchQuery.trim());
+                      }
+                      addToCart(prod);
+                    }}
                     title={isOutOfStock ? `Cannot sell ${prod.name}: 0 stock available` : `Add ${prod.name} to cart`}
                     className={`border rounded-xl p-2.5 sm:p-3.5 flex flex-col justify-between shadow-2xs transition select-none relative ${
                       isOutOfStock
@@ -696,7 +914,9 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               type="button"
               disabled={cart.length === 0}
               onClick={onProceedToPayment}
-              className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-slate-300 text-white font-black py-3 sm:py-3.5 px-4 rounded-xl shadow-md hover:shadow-lg transition text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed group"
+              className={`bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-slate-300 text-white font-black py-3 sm:py-3.5 px-4 rounded-xl shadow-md hover:shadow-lg transition text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed group ${
+                cart.length > 0 ? 'primary-cta-shimmer' : ''
+              }`}
               title="Open full payment settlement options (Shortcuts: Space, Enter)"
             >
               <span>Settle</span>

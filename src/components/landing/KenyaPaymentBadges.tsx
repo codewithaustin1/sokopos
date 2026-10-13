@@ -1,26 +1,18 @@
 import React from 'react';
 import { 
-  Zap, 
-  ShieldCheck, 
   WifiOff, 
   Smartphone, 
-  Receipt, 
   CheckCircle2, 
-  ArrowRight,
-  TrendingUp,
-  FileCheck
+  TrendingUp, 
+  FileCheck 
 } from 'lucide-react';
 
-export const KenyaPaymentBadges: React.FC<{ onLaunchDemo?: () => void }> = ({ onLaunchDemo }) => {
+export const KenyaPaymentBadges: React.FC = () => {
   return (
     <section id="kenya-payments" className="w-full py-10 px-4 sm:px-6 bg-slate-900/60 border-y border-slate-800/80 relative">
       <div className="max-w-6xl mx-auto">
         {/* Section Header */}
         <div className="text-center max-w-2xl mx-auto mb-8">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold tracking-wide uppercase mb-3">
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Built for Kenyan Commercial Realities</span>
-          </div>
           <h2 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-white tracking-tight">
             Seamless M-Pesa, KRA eTIMS & 100% Offline Resilience
           </h2>
@@ -119,33 +111,6 @@ export const KenyaPaymentBadges: React.FC<{ onLaunchDemo?: () => void }> = ({ on
             </div>
           </div>
         </div>
-
-        {/* Live Interactive Sandbox Banner */}
-        {onLaunchDemo && (
-          <div className="mt-6 p-4 rounded-2xl bg-gradient-to-r from-blue-900/30 via-slate-900 to-emerald-900/30 border border-blue-500/30 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0">
-                <Zap className="w-4.5 h-4.5" />
-              </div>
-              <div>
-                <div className="text-white font-bold text-xs sm:text-sm">
-                  Want to test M-Pesa STK push simulation and cash drawer checkout?
-                </div>
-                <div className="text-[11px] text-slate-400">
-                  Try the full interactive sandbox terminal right now — zero registration needed.
-                </div>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onLaunchDemo}
-              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shrink-0 transition shadow-md shadow-blue-500/20 cursor-pointer"
-            >
-              <span>Test M-Pesa in Demo</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
       </div>
     </section>
   );

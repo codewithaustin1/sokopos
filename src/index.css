@@ -380,12 +380,57 @@ html.dark .bg-black\/60 {
   }
 
   /* -------------------------------------------------------------
-     POS THERMAL RECEIPT & LABEL PRINTING UNBOXING
+     POS THERMAL RECEIPT & LABEL PRINTING UNBOXING & VIEW FILTERING
+     Ensures window.print() isolates ONLY the thermal receipt layout,
+     completely hiding all UI chrome, navigation menus, and workspace elements.
      ------------------------------------------------------------- */
+  body.printing-thermal-receipt > *:not(#root),
+  body:has(#receipt-printable-canvas) > *:not(#root) {
+    display: none !important;
+  }
+
+  body.printing-thermal-receipt #root > div > *:not(#receipt-display-modal):not(:has(#receipt-printable-canvas)),
+  body:has(#receipt-printable-canvas) #root > div > *:not(#receipt-display-modal):not(:has(#receipt-printable-canvas)) {
+    display: none !important;
+  }
+
+  /* Universal chrome and navigation suppression during thermal receipt printing */
+  body.printing-thermal-receipt #main-pos-header,
+  body.printing-thermal-receipt #sidebar-nav,
+  body.printing-thermal-receipt #mobile-bottom-nav,
+  body.printing-thermal-receipt main,
+  body.printing-thermal-receipt nav,
+  body.printing-thermal-receipt header,
+  body.printing-thermal-receipt footer,
+  body.printing-thermal-receipt aside,
+  body.printing-thermal-receipt #super-admin-banner,
+  body.printing-thermal-receipt #scanner-intercept-hud,
+  body.printing-thermal-receipt [role="banner"],
+  body.printing-thermal-receipt [role="alert"],
+  body.printing-thermal-receipt .no-print,
+  body.printing-thermal-receipt button,
+  body:has(#receipt-printable-canvas) #main-pos-header,
+  body:has(#receipt-printable-canvas) #sidebar-nav,
+  body:has(#receipt-printable-canvas) #mobile-bottom-nav,
+  body:has(#receipt-printable-canvas) main,
+  body:has(#receipt-printable-canvas) nav,
+  body:has(#receipt-printable-canvas) header,
+  body:has(#receipt-printable-canvas) footer,
+  body:has(#receipt-printable-canvas) aside,
+  body:has(#receipt-printable-canvas) #super-admin-banner,
+  body:has(#receipt-printable-canvas) #scanner-intercept-hud,
+  body:has(#receipt-printable-canvas) [role="banner"],
+  body:has(#receipt-printable-canvas) [role="alert"],
+  body:has(#receipt-printable-canvas) .no-print,
+  body:has(#receipt-printable-canvas) button {
+    display: none !important;
+  }
+
   #receipt-display-modal,
   #refund-receipt-display-modal,
   #product-labels-modal {
     position: static !important;
+    display: block !important;
     background: transparent !important;
     padding: 0 !important;
     margin: 0 auto !important;
@@ -400,6 +445,8 @@ html.dark .bg-black\/60 {
   #receipt-display-modal > div,
   #refund-receipt-display-modal > div,
   #product-labels-modal > div {
+    position: static !important;
+    display: block !important;
     background: transparent !important;
     padding: 0 !important;
     margin: 0 auto !important;
@@ -408,6 +455,7 @@ html.dark .bg-black\/60 {
     max-width: 100% !important;
     max-height: none !important;
     overflow: visible !important;
+    width: 100% !important;
   }
 
   #receipt-printable-canvas,
@@ -417,10 +465,18 @@ html.dark .bg-black\/60 {
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
-    padding: 4px 6px !important;
+    padding: 4mm 6mm !important;
     margin: 0 auto !important;
     width: 100% !important;
-    page-break-inside: auto !important;
+    max-width: 80mm !important; /* Ideal standard thermal roll width */
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+  }
+
+  #receipt-printable-canvas.receipt-format-58mm {
+    max-width: 56mm !important; /* 58mm compact thermal roll width */
+    padding: 2mm 3mm !important;
   }
 
   .thermal-label-card {
@@ -436,13 +492,21 @@ html.dark .bg-black\/60 {
   #receipt-printable-canvas *,
   #product-labels-printable-container * {
     color: #000000 !important;
-    border-color: #000000 !important;
+    border-color: #222222 !important;
     text-shadow: none !important;
+    box-shadow: none !important;
+  }
+
+  #receipt-printable-canvas .receipt-barcode-box {
+    background-color: #000000 !important;
+    color: #ffffff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   @page {
-    size: A4 portrait;
-    margin: 10mm 12mm;
+    size: auto;
+    margin: 4mm;
   }
 }
 
@@ -627,5 +691,153 @@ html.dark .modal-scrollbar::-webkit-scrollbar-thumb:hover {
   background-color: #64748b;
 }
 
+/* =========================================================================
+   PRIMARY CTA SHIMMER SWEEP SYSTEM (ZERO GLOW)
+   Clean, crisp light-beam sheen sweep across button surface without outer glow or box-shadow aura
+   ========================================================================= */
 
+@keyframes cta-shimmer-sweep {
+  0% {
+    transform: translateX(-160%) skewX(-20deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.85;
+  }
+  45% {
+    transform: translateX(260%) skewX(-20deg);
+    opacity: 0.85;
+  }
+  55%, 100% {
+    transform: translateX(260%) skewX(-20deg);
+    opacity: 0;
+  }
+}
 
+/* Primary CTA Shimmer Sweep - Clean Surface Light-Beam (No Glow) */
+.primary-cta-shimmer,
+.primary-cta-shimmer-emerald {
+  position: relative;
+  overflow: hidden !important;
+  isolation: isolate;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease, opacity 0.2s ease;
+}
+
+.primary-cta-shimmer:hover,
+.primary-cta-shimmer-emerald:hover {
+  transform: translateY(-1px);
+}
+
+.primary-cta-shimmer:active,
+.primary-cta-shimmer-emerald:active {
+  transform: translateY(1px) scale(0.985);
+}
+
+/* Clean surface light-beam sweep without outer glow */
+.primary-cta-shimmer::before,
+.primary-cta-shimmer-emerald::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: 0;
+  width: 50%;
+  height: 200%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.04) 15%,
+    rgba(255, 255, 255, 0.3) 50%,
+    rgba(255, 255, 255, 0.04) 85%,
+    transparent 100%
+  );
+  transform: translateX(-160%) skewX(-20deg);
+  animation: cta-shimmer-sweep 3.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.primary-cta-shimmer:hover::before,
+.primary-cta-shimmer-emerald:hover::before {
+  animation: cta-shimmer-sweep 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.primary-cta-shimmer > *,
+.primary-cta-shimmer-emerald > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* =========================================================================
+   WHATSAPP FLOATING BUTTON PROACTIVE BEACON TOOLTIP
+   Slides in with a gentle single bounce after delay, then smoothly dismisses
+   ========================================================================= */
+
+@keyframes whatsapp-tooltip-bounce {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.94);
+  }
+  35% {
+    opacity: 1;
+    transform: translateY(-6px) scale(1.02);
+  }
+  60% {
+    transform: translateY(2px) scale(0.99);
+  }
+  80% {
+    transform: translateY(-1px) scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes whatsapp-tooltip-fade-out {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.95);
+  }
+}
+
+.whatsapp-tooltip-enter {
+  animation: whatsapp-tooltip-bounce 0.75s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.whatsapp-tooltip-exit {
+  animation: whatsapp-tooltip-fade-out 0.4s ease-out forwards;
+}
+
+/* WhatsApp Floating Button Pre-Tooltip Shake Alert */
+@keyframes whatsapp-button-shake {
+  0%, 100% {
+    transform: rotate(0deg) scale(1);
+  }
+  15% {
+    transform: rotate(-14deg) scale(1.08);
+  }
+  30% {
+    transform: rotate(12deg) scale(1.08);
+  }
+  45% {
+    transform: rotate(-9deg) scale(1.05);
+  }
+  60% {
+    transform: rotate(7deg) scale(1.03);
+  }
+  75% {
+    transform: rotate(-4deg) scale(1.01);
+  }
+  90% {
+    transform: rotate(2deg) scale(1);
+  }
+}
+
+.whatsapp-button-shake {
+  animation: whatsapp-button-shake 0.7s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  transform-origin: bottom right;
+}

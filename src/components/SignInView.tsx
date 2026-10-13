@@ -75,6 +75,42 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const [newOwnerEmail, setNewOwnerEmail] = useState('');
   const [newOwnerName, setNewOwnerName] = useState('');
 
+  // Accelerating Counter Animation for "KES 25M+" metric
+  const [metricCount, setMetricCount] = useState<number>(1);
+
+  useEffect(() => {
+    // Accelerating count-up animation from 1 to 25
+    const target = 25;
+    const duration = 2200; // 2.2 seconds total duration
+    const startTime = performance.now();
+
+    let animationFrameId: number;
+
+    const animate = (currentTime: number) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+
+      // Accelerating curve (ease-in / exponential power curve: progress^2.5)
+      // Starts slow and speeds up rapidly as it climbs to 25
+      const easedProgress = Math.pow(progress, 2.5);
+      const currentVal = Math.max(1, Math.min(target, Math.round(1 + (target - 1) * easedProgress)));
+
+      setMetricCount(currentVal);
+
+      if (progress < 1) {
+        animationFrameId = requestAnimationFrame(animate);
+      }
+    };
+
+    animationFrameId = requestAnimationFrame(animate);
+
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, []);
+
   // Keep selectedStaffId aligned if systemUsers changes
   useEffect(() => {
     if (!selectedStaffId && systemUsers.length > 0) {
@@ -416,11 +452,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             
             {/* Left Column (7 cols): High-Impact Value Pitch & Quick Demo Launcher */}
             <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-bold tracking-wide uppercase">
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Kenya's Modern Cloud POS Platform</span>
-              </div>
-
               <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-white tracking-tight leading-[1.12]">
                 The High-Velocity POS Built for Kenyan Retailers, Bars & Supermarkets
               </h1>
@@ -435,11 +466,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   type="button"
                   id="hero-launch-demo-btn"
                   onClick={handleLaunchDemoSandbox}
-                  className="w-full sm:w-auto px-6 py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-xl shadow-blue-500/30 hover:scale-[1.02] active:scale-[0.98] transition cursor-pointer"
+                  className="primary-cta-shimmer w-full sm:w-auto px-7 py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-sm sm:text-base flex items-center justify-center gap-3 cursor-pointer group"
                 >
-                  <Zap className="w-5 h-5 fill-white text-white" />
-                  <span>Launch Interactive Demo Sandbox</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-white/20 text-white shadow-inner shrink-0 group-hover:scale-110 group-hover:rotate-6 transition-transform">
+                    <Zap className="w-3.5 h-3.5 fill-white text-white" />
+                  </span>
+                  <span className="tracking-tight">Launch Interactive Demo Sandbox</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </button>
 
                 <button
@@ -467,7 +500,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               {/* Live Metric Stats Banner */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-4 border-t border-slate-800/80">
                 <div className="bg-slate-900/70 p-3 rounded-2xl border border-slate-800/80 text-center lg:text-left">
-                  <div className="text-base sm:text-lg font-black text-white">KES 25M+</div>
+                  <div className="text-base sm:text-lg font-black text-white tracking-tight">
+                    <span>KES </span>
+                    <span className="tabular-nums font-mono">{metricCount}</span>
+                    <span>M+</span>
+                  </div>
                   <div className="text-[10px] text-slate-400 font-medium">Monthly Processed</div>
                 </div>
                 <div className="bg-slate-900/70 p-3 rounded-2xl border border-slate-800/80 text-center lg:text-left">
@@ -479,7 +516,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   <div className="text-[10px] text-slate-400 font-medium">Avg Checkout Speed</div>
                 </div>
                 <div className="bg-slate-900/70 p-3 rounded-2xl border border-slate-800/80 text-center lg:text-left">
-                  <div className="text-base sm:text-lg font-black text-amber-400">eTIMS</div>
+                  <div className="text-base sm:text-lg font-black text-red-500">eTIMS</div>
                   <div className="text-[10px] text-slate-400 font-medium">KRA Tax Ready</div>
                 </div>
               </div>
@@ -565,7 +602,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       setIsFirebaseSigningIn(false);
                     }
                   }}
-                  className="w-full bg-[#1d8af3] hover:bg-[#167edb] active:bg-[#1270c5] text-white font-bold text-base sm:text-lg py-3.5 sm:py-4 px-4 rounded-2xl transition shadow-lg shadow-blue-500/25 flex items-center justify-center gap-3.5 cursor-pointer disabled:opacity-60"
+                  className="primary-cta-shimmer w-full bg-[#1d8af3] hover:bg-[#167edb] active:bg-[#1270c5] text-white font-bold text-base sm:text-lg py-3.5 sm:py-4 px-4 rounded-2xl transition shadow-lg flex items-center justify-center gap-3.5 cursor-pointer disabled:opacity-60"
                 >
                   <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center shadow-xs shrink-0 p-1">
                     <svg className="w-4.5 h-4.5" viewBox="0 0 24 24">
@@ -944,7 +981,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   </section>
 
   {/* SECTION 1: KENYA PAYMENT & COMPLIANCE BADGES */}
-  <KenyaPaymentBadges onLaunchDemo={handleLaunchDemoSandbox} />
+  <KenyaPaymentBadges />
 
   {/* SECTION 2: INTERACTIVE INDUSTRY SOLUTIONS SWITCHER */}
   <IndustrySolutionsSwitcher onLaunchDemo={handleLaunchDemoSandbox} />
@@ -961,11 +998,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   {/* SECTION 5: FINAL CONVERSION BANNER */}
   <section className="w-full py-14 px-4 sm:px-6 bg-gradient-to-b from-[#0e141f] to-slate-950 border-t border-slate-800 text-center relative">
     <div className="max-w-3xl mx-auto space-y-5">
-      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-bold tracking-wide uppercase">
-        <Zap className="w-3.5 h-3.5 fill-blue-400 text-blue-400" />
-        <span>Ready to modernise your store?</span>
-      </div>
-
       <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight">
         Start Using SokoPoS in 30 Seconds — Zero Risk
       </h2>
@@ -978,11 +1010,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         <button
           type="button"
           onClick={handleLaunchDemoSandbox}
-          className="w-full sm:w-auto px-6 py-4 rounded-2xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-black text-sm flex items-center justify-center gap-2.5 shadow-xl shadow-blue-500/30 cursor-pointer transition hover:scale-102"
+          className="primary-cta-shimmer w-full sm:w-auto px-7 py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-md cursor-pointer transition group"
         >
-          <Zap className="w-4 h-4 fill-white text-white" />
+          <Zap className="w-4 h-4 fill-white text-white group-hover:scale-110 transition-transform" />
           <span>Launch Interactive Demo Sandbox</span>
-          <ArrowRight className="w-4 h-4" />
+          <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
         </button>
 
         <button

@@ -14,7 +14,18 @@ export const RefundReceiptModal: React.FC = () => {
   const { refund, originalTx } = activeRefundReceipt;
 
   const handlePrint = () => {
-    window.print();
+    document.body.classList.add('printing-thermal-receipt');
+    try {
+      window.print();
+    } catch (err) {
+      console.warn('Thermal print invocation error:', err);
+    }
+    const cleanup = () => {
+      document.body.classList.remove('printing-thermal-receipt');
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+    setTimeout(cleanup, 2500);
   };
 
   const handleOpenShare = () => {
@@ -46,7 +57,8 @@ export const RefundReceiptModal: React.FC = () => {
         {/* Printable Thermal Refund Voucher Canvas */}
         <div
           ref={receiptRef}
-          className="bg-white w-full max-w-[380px] rounded-xl shadow-xl border border-slate-300 p-4 sm:p-6 flex flex-col justify-between text-slate-800 font-mono text-xs select-text"
+          id="receipt-printable-canvas"
+          className="receipt-printable-canvas bg-white w-full max-w-[380px] rounded-xl shadow-xl border border-slate-300 p-4 sm:p-6 flex flex-col justify-between text-slate-800 font-mono text-xs select-text"
         >
           {/* Header */}
           <div className="text-center space-y-1 pb-3 border-b border-dashed border-slate-300">

@@ -55,10 +55,6 @@ export const LegacyPosComparison: React.FC<{ onLaunchDemo?: () => void; onStartR
       <div className="max-w-5xl mx-auto">
         {/* Header */}
         <div className="text-center max-w-3xl mx-auto mb-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-bold tracking-wide uppercase mb-3">
-            <DollarSign className="w-3.5 h-3.5" />
-            <span>Transparent Kenyan Comparison</span>
-          </div>
           <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight">
             Why Modern Stores are Switching from Legacy POS
           </h2>
@@ -113,11 +109,11 @@ export const LegacyPosComparison: React.FC<{ onLaunchDemo?: () => void; onStartR
             <button
               type="button"
               onClick={onLaunchDemo}
-              className="w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 cursor-pointer transition"
+              className="primary-cta-shimmer w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg cursor-pointer transition group"
             >
-              <Zap className="w-4 h-4" />
+              <Zap className="w-4 h-4 group-hover:scale-110 transition-transform" />
               <span>Launch Live Interactive Demo (Instant Access)</span>
-              <ArrowRight className="w-4 h-4" />
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </button>
           )}
           {onStartRegister && (
