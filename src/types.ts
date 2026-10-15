@@ -372,6 +372,24 @@ export interface Transaction {
   totalRefunded?: number;
   syncedToCloud: boolean;
   syncTimestamp?: string;
+  etimsData?: DigitaxEtimsData;
+}
+
+export interface DigitaxEtimsData {
+  saleId?: string;
+  cuSerialNumber?: string; // KRA Control Unit Serial (e.g. KRARVS000000005)
+  cuInvoiceNumber?: number | string; // KRA CU Invoice # (e.g. 1181464)
+  receiptNumber?: number | string; // Fiscal Receipt #
+  internalData?: string; // KRA Internal Security Hash
+  receiptSignature?: string; // Certified KRA Cryptographic Signature
+  etimsUrl?: string; // Direct KRA QR verification link
+  offlineUrl?: string; // Digitax fallback offline verification link
+  status?: 'PENDING' | 'COMPLETED' | 'FAILED';
+  taxPin?: string; // Business KRA PIN (e.g. A011001890C)
+  customerTin?: string; // Buyer KRA PIN
+  customerName?: string; // Buyer Name
+  verifiedAt?: string;
+  isPartnerVerified?: boolean;
 }
 
 export interface Cashier {

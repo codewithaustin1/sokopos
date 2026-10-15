@@ -45,24 +45,24 @@ export const KenyaPaymentBadges: React.FC = () => {
             </div>
           </div>
 
-          {/* Badge 2: KRA eTIMS Compliance */}
+          {/* Badge 2: KRA eTIMS Compliance with Digitax Partnership */}
           <div className="bg-[#131b26] p-4.5 rounded-2xl border border-slate-800 hover:border-blue-500/40 transition-all duration-200 group">
             <div className="flex items-center justify-between mb-3">
               <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-105 transition-transform">
                 <FileCheck className="w-5 h-5" />
               </div>
               <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/30">
-                Tax Compliant
+                Digitax Partner
               </span>
             </div>
             <h3 className="text-white font-bold text-sm mb-1.5 flex items-center gap-1.5">
-              <span>KRA eTIMS Readiness</span>
+              <span>KRA eTIMS by Digitax</span>
             </h3>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Automated 16% standard VAT, Zero-Rated, and Exempt tax categorization. Every invoice formats tax breakdowns ready for tax filing.
+              Automated KRA tax compliance provided in partnership with Digitax. Real-time VAT classification (16% Class A, 0% Class B), certified Control Unit (CU) numbers, and instant QR codes.
             </p>
             <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-blue-400 font-semibold">
-              <span>Compliant Receipt Formats</span>
+              <span>Digitax Certified Invoicing</span>
               <CheckCircle2 className="w-3.5 h-3.5" />
             </div>
           </div>

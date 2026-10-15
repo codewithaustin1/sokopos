@@ -446,6 +446,99 @@ Extract:
     }
   });
 
+  // -------------------------------------------------------------
+  // Digitax KRA eTIMS Proxy API (In Partnership with Digitax)
+  // -------------------------------------------------------------
+  const DIGITAX_DEFAULT_API_KEY = process.env.DIGITAX_API_KEY || 'KEN_TEST_api_key_0HBmI6qU0WOhnkjcVgf8cleoFR1yIWsk';
+  const DIGITAX_BASE_URL = 'https://api.digitax.tech/ke/v2';
+
+  app.get('/api/digitax/etims-info', async (req, res) => {
+    try {
+      const apiKey = (req.headers['x-api-key'] as string) || DIGITAX_DEFAULT_API_KEY;
+      const response = await fetch(`${DIGITAX_BASE_URL}/etims-info`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': apiKey,
+        },
+      });
+      const data = await response.json();
+      return res.status(response.status).json(data);
+    } catch (err: any) {
+      console.error('Error proxying Digitax etims-info:', err);
+      return res.status(500).json({ error: err.message || 'Digitax etims-info proxy failed' });
+    }
+  });
+
+  app.get('/api/digitax/items', async (req, res) => {
+    try {
+      const apiKey = (req.headers['x-api-key'] as string) || DIGITAX_DEFAULT_API_KEY;
+      const response = await fetch(`${DIGITAX_BASE_URL}/items`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': apiKey,
+        },
+      });
+      const data = await response.json();
+      return res.status(response.status).json(data);
+    } catch (err: any) {
+      console.error('Error proxying Digitax items:', err);
+      return res.status(500).json({ error: err.message || 'Digitax items proxy failed' });
+    }
+  });
+
+  app.get('/api/digitax/sales', async (req, res) => {
+    try {
+      const apiKey = (req.headers['x-api-key'] as string) || DIGITAX_DEFAULT_API_KEY;
+      const response = await fetch(`${DIGITAX_BASE_URL}/sales`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': apiKey,
+        },
+      });
+      const data = await response.json();
+      return res.status(response.status).json(data);
+    } catch (err: any) {
+      console.error('Error proxying Digitax sales:', err);
+      return res.status(500).json({ error: err.message || 'Digitax sales proxy failed' });
+    }
+  });
+
+  app.post('/api/digitax/sales', async (req, res) => {
+    try {
+      const apiKey = (req.headers['x-api-key'] as string) || DIGITAX_DEFAULT_API_KEY;
+      const response = await fetch(`${DIGITAX_BASE_URL}/sales`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': apiKey,
+        },
+        body: JSON.stringify(req.body),
+      });
+      const data = await response.json();
+      return res.status(response.status).json(data);
+    } catch (err: any) {
+      console.error('Error proxying Digitax create sale:', err);
+      return res.status(500).json({ error: err.message || 'Digitax create sale proxy failed' });
+    }
+  });
+
+  app.get('/api/digitax/sales/:id', async (req, res) => {
+    try {
+      const apiKey = (req.headers['x-api-key'] as string) || DIGITAX_DEFAULT_API_KEY;
+      const response = await fetch(`${DIGITAX_BASE_URL}/sales/${req.params.id}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': apiKey,
+        },
+      });
+      const data = await response.json();
+      return res.status(response.status).json(data);
+    } catch (err: any) {
+      console.error('Error proxying Digitax sale details:', err);
+      return res.status(500).json({ error: err.message || 'Digitax sale details proxy failed' });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

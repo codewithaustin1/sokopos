@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Lock, AlignLeft, ChevronDown } from 'lucide-react';
+import { Lock, AlignLeft, ChevronDown, AlertTriangle, Zap, CheckCircle2 } from 'lucide-react';
 import { usePos } from '../../context/PosContext';
 
 interface ShiftInitializationCardProps {
@@ -31,12 +31,17 @@ export const ShiftInitializationCard: React.FC<ShiftInitializationCardProps> = (
     currentUser,
     openShift,
     showToast,
+    interruptedSession,
+    resumeInterruptedShift,
+    closeShift,
+    soundFx,
   } = usePos();
 
   const [openingFloatInput, setOpeningFloatInput] = useState<string>('5000');
   const [openingNotes, setOpeningNotes] = useState<string>('');
   const [isDenomDrawerOpen, setIsDenomDrawerOpen] = useState<boolean>(false);
   const [openDenoms, setOpenDenoms] = useState<Record<string, number>>({});
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Display operator details
   const operatorName = currentCashier?.name || currentUser?.name || 'Platform Administrator / Cashier';
@@ -70,21 +75,32 @@ export const ShiftInitializationCard: React.FC<ShiftInitializationCardProps> = (
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
     const floatAmount = parseFloat(openingFloatInput);
     if (isNaN(floatAmount) || floatAmount < 0) {
       showToast('Please enter a valid opening float amount.', 'error');
       return;
     }
 
-    openShift(
-      floatAmount,
-      openingNotes.trim() || undefined,
-      Object.keys(openDenoms).length > 0 ? openDenoms : undefined
-    );
+    setIsSubmitting(true);
+    try {
+      openShift(
+        floatAmount,
+        openingNotes.trim() || undefined,
+        Object.keys(openDenoms).length > 0 ? openDenoms : undefined,
+        true // Allow cleanly auto-reconciling interrupted session if present
+      );
 
-    showToast(`Shift opened successfully with KES ${floatAmount.toLocaleString()} float!`, 'success');
-    if (onSuccess) {
-      onSuccess();
+      showToast(`Shift opened successfully with KES ${floatAmount.toLocaleString()} float!`, 'success');
+      if (onSuccess) {
+        onSuccess();
+      }
+    } catch (err: any) {
+      soundFx?.playError?.();
+      showToast(err?.message || 'Could not open shift session', 'error');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -113,6 +129,68 @@ export const ShiftInitializationCard: React.FC<ShiftInitializationCardProps> = (
 
       {/* Main Form Body */}
       <form onSubmit={handleSubmit} className="p-6 sm:p-7 space-y-4 bg-white">
+        {/* Interrupted Session Detected Callout */}
+        {interruptedSession && (
+          <div className="bg-amber-50/90 border-2 border-amber-300 rounded-2xl p-4 space-y-3 shadow-2xs">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-700 flex items-center justify-center shrink-0 mt-0.5">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-black text-xs sm:text-sm text-amber-950">
+                    Interrupted Session: Shift #{interruptedSession.shiftNumber}
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-900 border border-amber-300">
+                    Needs Resolution
+                  </span>
+                </div>
+                <p className="text-[11px] text-amber-800 mt-1 leading-relaxed">
+                  Operator: <strong>{interruptedSession.cashierName}</strong> • Opening Float: <strong>KES {interruptedSession.openingFloat.toLocaleString()}</strong>.
+                  This shift was interrupted following an unexpected reload or restart. All recorded transactions and attribution are preserved.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+              <button
+                type="button"
+                id="resume-interrupted-shift-btn"
+                onClick={() => {
+                  const ok = resumeInterruptedShift(interruptedSession.id);
+                  if (ok) {
+                    onSuccess?.();
+                  }
+                }}
+                className="w-full py-2.5 px-3 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Zap className="w-3.5 h-3.5 fill-white text-white" />
+                <span>Resume Shift #{interruptedSession.shiftNumber}</span>
+              </button>
+
+              <button
+                type="button"
+                id="reconcile-close-interrupted-btn"
+                onClick={() => {
+                  try {
+                    closeShift({
+                      closingCountedCash: interruptedSession.openingFloat,
+                      notes: 'Interrupted shift reconciled and closed to allow opening a new shift.',
+                    });
+                    showToast(`Shift #${interruptedSession.shiftNumber} closed and reconciled successfully.`, 'success');
+                  } catch (err: any) {
+                    showToast(err?.message || 'Failed to close interrupted shift', 'error');
+                  }
+                }}
+                className="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-900 active:bg-slate-950 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Reconcile & Close Previous</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Operating Cashier Box */}
         <div className="bg-[#f8fafc] border border-slate-200 rounded-xl p-3 flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">

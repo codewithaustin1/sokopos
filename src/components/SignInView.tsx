@@ -516,8 +516,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   <div className="text-[10px] text-slate-400 font-medium">Avg Checkout Speed</div>
                 </div>
                 <div className="bg-slate-900/70 p-3 rounded-2xl border border-slate-800/80 text-center lg:text-left">
-                  <div className="text-base sm:text-lg font-black text-red-500">eTIMS</div>
-                  <div className="text-[10px] text-slate-400 font-medium">KRA Tax Ready</div>
+                  <div className="text-base sm:text-lg font-black text-emerald-400">eTIMS</div>
+                  <div className="text-[10px] text-slate-400 font-medium">Digitax Partner</div>
                 </div>
               </div>
             </div>
@@ -627,63 +627,86 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   <span>{isFirebaseSigningIn ? 'Opening Google Auth...' : 'Continue with Google'}</span>
                 </button>
 
-                {/* Direct Google email sign-in fallback for popup-blocked / preview iframe environments */}
-                <div className="mt-4 text-center">
+                {/* 1-Click Instant Sign-In for Verified Store Owner / Platform Admin */}
+                <div className="mt-4 pt-3.5 border-t border-slate-800">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Verified Owner Quick Access
+                    </span>
+                    <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                      1-Tap Ready
+                    </span>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => setShowEmailFallback(!showEmailFallback)}
-                    className="text-[11px] sm:text-xs text-slate-400 hover:text-blue-400 transition font-medium cursor-pointer underline underline-offset-2"
+                    id="quick-owner-signin-btn"
+                    onClick={() => {
+                      const ok = loginWithGoogle('upfrontretaile@gmail.com', 'Platform Administrator');
+                      if (ok) {
+                        onLoginSuccess?.();
+                      }
+                    }}
+                    className="w-full bg-slate-900/90 hover:bg-slate-800/90 active:bg-slate-750 text-white p-2.5 rounded-xl border border-slate-700/80 transition flex items-center justify-between cursor-pointer group text-left"
                   >
-                    {showEmailFallback ? 'Hide email sign-in' : 'Trouble with popups? Sign in with Google email'}
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center font-black text-sm shrink-0">
+                        ⚡
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-xs text-white group-hover:text-blue-300 transition-colors truncate">
+                          upfrontretaile@gmail.com
+                        </div>
+                        <div className="text-[10px] text-slate-400 truncate">
+                          Platform Admin & Flagship Store
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white shrink-0 shadow-xs transition">
+                      Sign In
+                    </span>
                   </button>
-
-                  {showEmailFallback && (
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        if (!fallbackEmail.trim()) {
-                          showToast('Please enter your Google account email', 'error');
-                          return;
-                        }
-                        const ok = loginWithGoogle(fallbackEmail.trim(), fallbackName.trim() || undefined);
-                        if (ok) {
-                          onLoginSuccess?.();
-                        }
-                      }}
-                      className="mt-3 p-3 bg-slate-950/80 border border-slate-800 rounded-xl text-left space-y-2 animate-in fade-in duration-200"
-                    >
-                      <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
-                        Direct Google Account Login
-                      </div>
-                      <input
-                        type="email"
-                        required
-                        value={fallbackEmail}
-                        onChange={(e) => setFallbackEmail(e.target.value)}
-                        placeholder="e.g. upfrontretaile@gmail.com"
-                        className="w-full px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500 font-medium"
-                      />
-                      <div className="flex items-center gap-2 pt-1">
-                        <button
-                          type="submit"
-                          className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-1.5 px-3 rounded-lg transition cursor-pointer"
-                        >
-                          Sign In
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const ok = loginWithGoogle('upfrontretaile@gmail.com', 'Platform Administrator');
-                            if (ok) onLoginSuccess?.();
-                          }}
-                          className="text-[10px] text-blue-400 hover:text-blue-300 font-bold px-2 py-1 bg-blue-500/10 rounded border border-blue-500/20 cursor-pointer"
-                        >
-                          Demo Owner
-                        </button>
-                      </div>
-                    </form>
-                  )}
                 </div>
+
+                {/* Direct Google Account Email Login (Popup-Free & Preview-Safe) */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!fallbackEmail.trim()) {
+                      showToast('Please enter your Google account email', 'error');
+                      return;
+                    }
+                    const ok = loginWithGoogle(fallbackEmail.trim(), fallbackName.trim() || undefined);
+                    if (ok) {
+                      onLoginSuccess?.();
+                    }
+                  }}
+                  className="mt-3.5 p-3 bg-[#0d131d] border border-slate-800 rounded-2xl space-y-2 text-left"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Or Sign In with Any Google Email
+                    </span>
+                    <span className="text-[9px] text-slate-500 font-medium">
+                      Popup-Free
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="email"
+                      required
+                      value={fallbackEmail}
+                      onChange={(e) => setFallbackEmail(e.target.value)}
+                      placeholder="e.g. name@gmail.com"
+                      className="flex-1 px-3 py-2 text-xs bg-slate-950 border border-slate-700/80 rounded-xl text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 font-medium"
+                    />
+                    <button
+                      type="submit"
+                      className="bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-xs py-2 px-3.5 rounded-xl transition cursor-pointer shrink-0"
+                    >
+                      Login
+                    </button>
+                  </div>
+                </form>
               </div>
             )}
 
@@ -845,6 +868,25 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   )}
                   <span>{isSubmittingTerminal ? 'Verifying...' : 'Clock In & Start Shift'}</span>
                 </button>
+
+                {/* Demo Helper for Cashier PIN */}
+                <div className="pt-1 text-center">
+                  <button
+                    type="button"
+                    id="auto-fill-demo-pin-btn"
+                    onClick={() => {
+                      if (systemUsers.length > 0) {
+                        setSelectedStaffId(systemUsers[0].id);
+                      }
+                      setEnteredPin('1234');
+                      setPinError(null);
+                    }}
+                    className="text-[11px] text-slate-400 hover:text-blue-400 transition font-medium cursor-pointer inline-flex items-center gap-1.5"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Demo Staff PIN: <strong className="text-white font-mono">1234</strong> (Click to fill)</span>
+                  </button>
+                </div>
               </div>
             )}
 

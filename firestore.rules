@@ -34,9 +34,10 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Businesses collection
+    // Businesses collection - Read allowed so POS terminals can identify active store tenant, write protected
     match /businesses/{businessId} {
-      allow read, write: if isSignedIn();
+      allow read: if true;
+      allow write: if isSignedIn();
     }
 
     // Customers collection (Tenant Row-Level Security)

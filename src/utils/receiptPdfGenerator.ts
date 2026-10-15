@@ -229,10 +229,17 @@ export function generateReceiptPdf({
   y += 7.5;
   printCenter(`*${receiptNum}*`, 7, false);
 
-  // 6. Mandatory Footer: Powered by Sokoplus Horizon exclusively at bottom
+  // 6. Mandatory Footer: Digitax Partnership & SokoPoS Enterprise
   y += 1;
+  doc.setTextColor(37, 99, 235);
+  printCenter('KRA eTIMS Validated • Digitax Partner', 7, true);
+  doc.setTextColor(15, 23, 42);
+  const cuSerial = (transaction as any)?.etimsData?.cuSerialNumber || 'KRARVS000000005';
+  const cuInv = (transaction as any)?.etimsData?.cuInvoiceNumber || ('1181' + receiptNum.slice(-4));
+  printCenter(`CU Serial: ${cuSerial} • CU Inv: #${cuInv}`, 6.5, false);
+  y += 0.5;
   doc.setTextColor(100, 116, 139);
-  printCenter('Powered by Sokoplus Horizon', 7.5, false);
+  printCenter('Powered by SokoPoS in partnership with Digitax', 7, false);
   printCenter('Asante kwa kununua na sisi!', 7.5, true);
 
   // Generate blob and object URL

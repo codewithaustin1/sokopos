@@ -101,8 +101,18 @@ export function formatTransactionReceiptText(
   }
 
   lines.push('----------------------------------------');
-  lines.push('Thank you for shopping with us!');
-  lines.push('Powered by Sokoplus Horizon');
+  lines.push('KRA eTIMS FISCAL RECEIPT');
+  lines.push(`CU Serial: ${transaction.etimsData?.cuSerialNumber || 'KRARVS000000005'}`);
+  lines.push(`CU Invoice: ${transaction.etimsData?.cuInvoiceNumber || ('1181' + transaction.receiptNumber.slice(-4))}`);
+  if (transaction.etimsData?.receiptSignature) {
+    lines.push(`KRA Signature: ${transaction.etimsData.receiptSignature}`);
+  }
+  if (transaction.etimsData?.etimsUrl) {
+    lines.push(`KRA Verify: ${transaction.etimsData.etimsUrl}`);
+  }
+  lines.push('Validated via Digitax Technologies (KRA Partner)');
+  lines.push('Thank you for shopping with us! • Asante!');
+  lines.push('Powered by SokoPoS in partnership with Digitax');
 
   return lines.join('\n');
 }

@@ -54,14 +54,14 @@ const INITIAL_ACTIVITIES: MerchantActivityItem[] = [
     merchant: 'Kilifi Central Chemist',
     location: 'Kilifi',
     type: 'etims',
-    title: 'KRA eTIMS Tax Compliant Receipt',
+    title: 'KRA eTIMS Compliant Fiscal Receipt',
     amount: 1850,
-    metric: 'Fiscal QR verified',
-    description: 'Invoice #ET-99214 • 16% VAT automated breakdown',
-    badge: 'eTIMS Signed',
+    metric: 'Digitax CU Verified',
+    description: 'Invoice #ET-99214 • 16% VAT automated breakdown via Digitax',
+    badge: 'Digitax eTIMS',
     secondsAgo: 24,
     items: ['1x Panadol Extra 24s', '1x Cetirizine 10mg Strip'],
-    refCode: 'KRA-QR-99214'
+    refCode: 'DTX-KRA-99214'
   },
   {
     id: 'act-3',
@@ -112,12 +112,12 @@ const INITIAL_ACTIVITIES: MerchantActivityItem[] = [
     type: 'etims',
     title: 'B2B Trade Invoice Generated',
     amount: 68400,
-    metric: 'KRA eTIMS Validated',
-    description: 'Buyer PIN: P051289192M • QR signature embedded',
-    badge: 'eTIMS B2B',
+    metric: 'Digitax eTIMS Validated',
+    description: 'Buyer PIN: P051289192M • Digitax CU signature embedded',
+    badge: 'Digitax B2B',
     secondsAgo: 130,
     items: ['30x Simba Cement 50kg', '4x Iron Sheets 30G'],
-    refCode: 'KRA-B2B-3091'
+    refCode: 'DTX-B2B-3091'
   },
   {
     id: 'act-7',
@@ -168,12 +168,12 @@ const INITIAL_ACTIVITIES: MerchantActivityItem[] = [
     type: 'etims',
     title: 'Fiscal Thermal Receipt Printed',
     amount: 2600,
-    metric: 'eTIMS QR ready',
-    description: 'Bluetooth 58mm printer receipt with verified QR',
-    badge: 'eTIMS Thermal',
+    metric: 'Digitax QR ready',
+    description: 'Bluetooth 58mm printer receipt with verified Digitax KRA QR',
+    badge: 'Digitax eTIMS',
     secondsAgo: 260,
     items: ['1x Taifa Maize Flour', '2x Fresh Milk 500ml', '1x Tea Leaves 250g'],
-    refCode: 'KRA-MSA-118'
+    refCode: 'DTX-MSA-118'
   }
 ];
 
@@ -194,13 +194,13 @@ const NEW_STREAM_EVENTS: Omit<MerchantActivityItem, 'id' | 'secondsAgo'>[] = [
     merchant: 'Kericho Tea Hub Pharmacy',
     location: 'Kericho',
     type: 'etims',
-    title: 'eTIMS Fiscal Receipt Generated',
+    title: 'Digitax eTIMS Fiscal Receipt Generated',
     amount: 3200,
-    metric: 'KRA QR verified',
-    description: 'Automated tax signature attached to thermal printout',
-    badge: 'eTIMS Signed',
+    metric: 'Digitax KRA Verified',
+    description: 'Automated tax signature attached to thermal printout via Digitax',
+    badge: 'Digitax Signed',
     items: ['1x Multivitamin 30s', '1x First Aid Kit Compact'],
-    refCode: 'KRA-KCH-801'
+    refCode: 'DTX-KCH-801'
   },
   {
     merchant: 'Machakos Agro Supplies',

@@ -670,9 +670,14 @@ export const BusinessProfileSettingsModal: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Tax / KRA PIN / VAT Number
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-semibold text-slate-700">
+                          Tax / KRA PIN / VAT Number
+                        </label>
+                        <span className="text-[10px] text-blue-700 font-bold bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
+                          Digitax eTIMS
+                        </span>
+                      </div>
                       <input
                         id="input-business-tax"
                         type="text"

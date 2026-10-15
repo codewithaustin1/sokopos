@@ -10,6 +10,7 @@ export const PinLockModal: React.FC = () => {
     verifyPin,
     currentLocation,
     forceLogoutSession,
+    logout,
   } = usePos();
 
   const [pinInput, setPinInput] = useState('');
@@ -205,7 +206,11 @@ export const PinLockModal: React.FC = () => {
           <button
             type="button"
             onClick={() => {
-              forceLogoutSession('admin_action', undefined, 'Operator switched at locked terminal');
+              if (typeof forceLogoutSession === 'function') {
+                forceLogoutSession('admin_action', undefined, 'Operator switched at locked terminal');
+              } else {
+                logout();
+              }
             }}
             className="mt-3 sm:mt-4 text-[11px] font-bold text-slate-500 hover:text-red-600 transition flex items-center gap-1.5 cursor-pointer py-1.5 px-3 rounded-lg hover:bg-slate-100"
           >
