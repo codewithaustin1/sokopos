@@ -473,58 +473,57 @@ export const LiveMerchantTicker: React.FC<{
               <div
                 key={`${item.id}-${index}`}
                 onClick={() => setSelectedItem(item)}
-                className={`w-[290px] sm:w-[320px] shrink-0 bg-[#141b27] hover:bg-[#192231] rounded-2xl p-3.5 border transition-all duration-200 cursor-pointer text-left shadow-lg relative group/card ${
+                className={`w-[290px] sm:w-[320px] shrink-0 bg-white/85 hover:bg-white/95 text-black rounded-2xl p-3.5 border transition-all duration-200 cursor-pointer text-left shadow-md relative group/card ${
                   isFreshlyAdded
-                    ? 'border-emerald-400 shadow-emerald-500/20 ring-1 ring-emerald-400'
-                    : 'border-slate-800/90 hover:border-slate-700'
+                    ? 'border-emerald-500 shadow-emerald-500/20 ring-2 ring-emerald-500/40'
+                    : 'border-white/60 hover:border-neutral-300'
                 }`}
               >
                 {/* Top Row: Merchant Name, Location & Relative Time */}
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <div className="min-w-0">
-                    <div className="text-white font-bold text-xs truncate flex items-center gap-1.5">
+                    <div className="text-black font-extrabold text-xs truncate flex items-center gap-1.5">
                       <span className="truncate">{item.merchant}</span>
                     </div>
-                    <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
-                      <MapPin className="w-2.5 h-2.5 text-slate-500 shrink-0" />
+                    <div className="text-[10px] text-neutral-600 flex items-center gap-1 mt-0.5">
+                      <MapPin className="w-2.5 h-2.5 text-neutral-400 shrink-0" />
                       <span className="truncate">{item.location}, Kenya</span>
                     </div>
                   </div>
 
-                  <span className="text-[10px] font-mono font-medium text-slate-400 shrink-0 bg-slate-900/80 px-2 py-0.5 rounded-md border border-slate-800">
+                  <span className="text-[10px] font-mono font-medium text-neutral-700 shrink-0 bg-neutral-100 px-2 py-0.5 rounded-md border border-neutral-200">
                     {formatTimeAgo(item.secondsAgo)}
                   </span>
                 </div>
 
                 {/* Middle Row: Activity Title & Value */}
                 <div className="flex items-baseline justify-between gap-2 mb-2">
-                  <span className="text-slate-200 text-xs font-semibold truncate">
+                  <span className="text-neutral-900 text-xs font-semibold truncate">
                     {item.title}
                   </span>
                   {item.amount !== undefined && (
-                    <span className="text-sm font-black font-mono text-emerald-400 shrink-0">
+                    <span className="text-sm font-black font-mono text-emerald-700 shrink-0">
                       KSh {item.amount.toLocaleString()}
                     </span>
                   )}
                 </div>
 
-                {/* Bottom Row: Badge Pill, Metric, and Inspect Hint */}
-                <div className="flex items-center justify-between text-[10px] pt-2 border-t border-slate-800/80">
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border font-semibold ${style.pillBg}`}>
+                {/* Bottom Row: Icon & Metric - Card label badge removed */}
+                <div className="flex items-center justify-between text-[10px] pt-2 border-t border-neutral-200/80">
+                  <span className="inline-flex items-center gap-1.5 p-1 rounded-md bg-neutral-100 border border-neutral-200 text-neutral-800 font-semibold">
                     {style.icon}
-                    <span>{item.badge}</span>
                   </span>
 
-                  <span className="text-slate-400 font-mono flex items-center gap-1">
-                    <Clock className="w-2.5 h-2.5 text-slate-500" />
+                  <span className="text-neutral-600 font-mono flex items-center gap-1">
+                    <Clock className="w-2.5 h-2.5 text-neutral-400" />
                     <span>{item.metric}</span>
                   </span>
                 </div>
 
                 {/* Hover Quick Action Cue */}
-                <div className="absolute inset-0 bg-blue-600/10 rounded-2xl opacity-0 group-hover/card:opacity-100 transition-opacity pointer-events-none border border-blue-500/30 flex items-end justify-end p-2.5">
-                  <span className="text-[9px] font-black uppercase tracking-wider text-blue-300 bg-slate-900/90 px-2 py-0.5 rounded border border-blue-500/40">
-                    Click to Inspect
+                <div className="absolute inset-0 bg-blue-600/5 rounded-2xl opacity-0 group-hover/card:opacity-100 transition-opacity pointer-events-none border border-blue-500/30 flex items-end justify-end p-2.5">
+                  <span className="text-[9px] font-black uppercase tracking-wider text-blue-700 bg-white/95 px-2 py-0.5 rounded border border-blue-200 shadow-xs">
+                    Inspect
                   </span>
                 </div>
               </div>
@@ -533,26 +532,22 @@ export const LiveMerchantTicker: React.FC<{
         </div>
       </div>
 
-      {/* Item Detail & Flow Sandbox Modal */}
+      {/* Item Detail & Flow Sandbox Modal - Translucent white card */}
       {selectedItem && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
           onClick={() => setSelectedItem(null)}
         >
           <div 
-            className="bg-[#141b27] border border-slate-700/80 rounded-3xl max-w-md w-full p-6 shadow-2xl relative space-y-4"
+            className="bg-white/95 backdrop-blur-xl border border-white/60 rounded-3xl max-w-md w-full p-6 shadow-2xl relative space-y-4 text-black"
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 mb-2">
-                  <Activity className="w-3 h-3 text-emerald-400" />
-                  <span>Simulated POS Event #{selectedItem.refCode}</span>
-                </div>
-                <h3 className="text-lg font-black text-white">{selectedItem.merchant}</h3>
-                <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
-                  <MapPin className="w-3 h-3 text-slate-500" />
+                <h3 className="text-lg font-black text-black">{selectedItem.merchant}</h3>
+                <p className="text-xs text-neutral-600 flex items-center gap-1 mt-0.5">
+                  <MapPin className="w-3 h-3 text-neutral-400" />
                   <span>{selectedItem.location}, Kenya</span>
                   <span>•</span>
                   <span>{formatTimeAgo(selectedItem.secondsAgo)}</span>
@@ -562,20 +557,20 @@ export const LiveMerchantTicker: React.FC<{
               <button
                 type="button"
                 onClick={() => setSelectedItem(null)}
-                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer"
+                className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-600 hover:text-black flex items-center justify-center transition cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Receipt Summary Card */}
-            <div className="bg-[#0b1018] rounded-2xl p-4 border border-slate-800/90 space-y-3 font-mono text-xs">
-              <div className="flex justify-between items-center text-slate-300 pb-2 border-b border-slate-800">
-                <span className="font-bold text-white uppercase text-[11px] font-sans">
+            <div className="bg-neutral-50 rounded-2xl p-4 border border-neutral-200 space-y-3 font-mono text-xs text-black">
+              <div className="flex justify-between items-center text-neutral-700 pb-2 border-b border-neutral-200">
+                <span className="font-bold text-black uppercase text-[11px] font-sans">
                   {selectedItem.title}
                 </span>
                 {selectedItem.amount && (
-                  <span className="text-emerald-400 font-black text-sm">
+                  <span className="text-emerald-700 font-black text-sm">
                     KSh {selectedItem.amount.toLocaleString()}
                   </span>
                 )}

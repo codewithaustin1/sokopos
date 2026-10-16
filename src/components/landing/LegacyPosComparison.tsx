@@ -1,10 +1,7 @@
 import React from 'react';
-import { Check, X, ShieldCheck, Zap, ArrowRight, DollarSign } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 
-export const LegacyPosComparison: React.FC<{ onLaunchDemo?: () => void; onStartRegister?: () => void }> = ({
-  onLaunchDemo,
-  onStartRegister,
-}) => {
+export const LegacyPosComparison: React.FC<{ onLaunchDemo?: () => void; onStartRegister?: () => void }> = () => {
   const comparisons = [
     {
       feature: 'Upfront Software License',
@@ -63,37 +60,37 @@ export const LegacyPosComparison: React.FC<{ onLaunchDemo?: () => void; onStartR
           </p>
         </div>
 
-        {/* Comparison Table */}
-        <div className="overflow-x-auto rounded-3xl border border-slate-800 bg-[#111722] shadow-2xl">
+        {/* Comparison Table - Translucent white background with black text */}
+        <div className="overflow-x-auto rounded-3xl border border-white/60 bg-white/90 backdrop-blur-md shadow-2xl text-black">
           <table className="w-full text-left border-collapse min-w-[600px]">
             <thead>
-              <tr className="border-b border-slate-800 bg-[#161f2e]">
-                <th className="py-4 px-5 text-xs font-black uppercase tracking-wider text-slate-300 w-2/5">
+              <tr className="border-b border-neutral-200 bg-neutral-100">
+                <th className="py-4 px-5 text-xs font-black uppercase tracking-wider text-black w-2/5">
                   Comparison Metric
                 </th>
-                <th className="py-4 px-4 text-xs font-bold uppercase tracking-wider text-slate-400 w-[30%]">
+                <th className="py-4 px-4 text-xs font-bold uppercase tracking-wider text-neutral-600 w-[30%]">
                   Traditional Legacy POS (e.g. SimbaPOS)
                 </th>
-                <th className="py-4 px-5 text-xs font-black uppercase tracking-wider text-blue-400 bg-blue-600/10 border-l border-blue-500/20 w-[30%]">
+                <th className="py-4 px-5 text-xs font-black uppercase tracking-wider text-blue-700 bg-blue-50/70 border-l border-blue-200 w-[30%]">
                   SokoPoS Cloud Terminal
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/70 text-xs">
+            <tbody className="divide-y divide-neutral-200/80 text-xs">
               {comparisons.map((row, idx) => (
-                <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
-                  <td className="py-3.5 px-5 font-bold text-white flex items-center gap-2">
+                <tr key={idx} className="hover:bg-neutral-50/80 transition-colors">
+                  <td className="py-3.5 px-5 font-bold text-black flex items-center gap-2">
                     <span>{row.feature}</span>
                   </td>
-                  <td className="py-3.5 px-4 text-slate-400">
+                  <td className="py-3.5 px-4 text-neutral-700">
                     <div className="flex items-start gap-2">
-                      <X className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                      <X className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                       <span>{row.legacy}</span>
                     </div>
                   </td>
-                  <td className="py-3.5 px-5 text-slate-100 bg-blue-600/5 border-l border-blue-500/20 font-semibold">
+                  <td className="py-3.5 px-5 text-neutral-900 bg-blue-50/40 border-l border-blue-200 font-semibold">
                     <div className="flex items-start gap-2">
-                      <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                      <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                       <span>{row.soko}</span>
                     </div>
                   </td>
@@ -101,30 +98,6 @@ export const LegacyPosComparison: React.FC<{ onLaunchDemo?: () => void; onStartR
               ))}
             </tbody>
           </table>
-        </div>
-
-        {/* Action Row */}
-        <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-          {onLaunchDemo && (
-            <button
-              type="button"
-              onClick={onLaunchDemo}
-              className="primary-cta-shimmer w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg cursor-pointer transition group"
-            >
-              <Zap className="w-4 h-4 group-hover:scale-110 transition-transform" />
-              <span>Launch Live Interactive Demo (Instant Access)</span>
-              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            </button>
-          )}
-          {onStartRegister && (
-            <button
-              type="button"
-              onClick={onStartRegister}
-              className="w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold text-xs sm:text-sm border border-slate-700 cursor-pointer transition"
-            >
-              Set Up My Store Free
-            </button>
-          )}
         </div>
       </div>
     </section>

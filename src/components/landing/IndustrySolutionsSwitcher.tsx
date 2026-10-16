@@ -317,32 +317,32 @@ export const IndustrySolutionsSwitcher: React.FC<{ onLaunchDemo?: () => void }> 
           })}
         </div>
 
-        {/* Selected Industry Card with 2-Column Showcase */}
-        <div className="bg-[#121924] rounded-3xl border border-slate-800 p-5 sm:p-8 shadow-2xl transition-all">
+        {/* Selected Industry Card with 2-Column Showcase - Translucent white background with black text */}
+        <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-white/60 p-5 sm:p-8 shadow-2xl transition-all text-black">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             
             {/* Left 7 Columns: Value proposition & features */}
             <div className="lg:col-span-7 space-y-6">
               <div>
-                <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                <h3 className="text-xl sm:text-2xl font-black text-black tracking-tight">
                   {activeIndustry.tagline}
                 </h3>
-                <p className="text-xs sm:text-sm text-slate-300 mt-2 leading-relaxed bg-slate-900/70 p-3 rounded-xl border border-slate-800/80">
-                  <strong className="text-blue-400">Core Problem Solved:</strong> {activeIndustry.painPoints}
+                <p className="text-xs sm:text-sm text-neutral-800 mt-2 leading-relaxed bg-neutral-100/90 p-3 rounded-xl border border-neutral-200">
+                  <strong className="text-blue-700">Core Problem Solved:</strong> {activeIndustry.painPoints}
                 </p>
               </div>
 
               {/* Feature Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 {activeIndustry.features.map((feat, idx) => (
-                  <div key={idx} className="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800/80 hover:border-slate-700 transition">
+                  <div key={idx} className="bg-white/85 backdrop-blur-md p-3.5 rounded-xl border border-white/60 shadow-sm hover:bg-white/95 transition text-black">
                     <div className="flex items-start gap-2.5">
-                      <div className="w-5 h-5 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0 mt-0.5">
+                      <div className="w-5 h-5 rounded-full bg-emerald-100 border border-emerald-300 flex items-center justify-center text-emerald-700 shrink-0 mt-0.5">
                         <Check className="w-3 h-3 stroke-[3]" />
                       </div>
                       <div>
-                        <h4 className="text-xs font-bold text-white mb-1">{feat.title}</h4>
-                        <p className="text-[11px] text-slate-400 leading-normal">{feat.desc}</p>
+                        <h4 className="text-xs font-bold text-black mb-1">{feat.title}</h4>
+                        <p className="text-[11px] text-neutral-700 leading-normal">{feat.desc}</p>
                       </div>
                     </div>
                   </div>
@@ -350,11 +350,11 @@ export const IndustrySolutionsSwitcher: React.FC<{ onLaunchDemo?: () => void }> 
               </div>
 
               {/* Industry Metrics Banner */}
-              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800">
+              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-neutral-200">
                 {activeIndustry.sampleStats.map((stat, idx) => (
-                  <div key={idx} className="bg-slate-950/60 p-2.5 rounded-xl text-center border border-slate-800/60">
-                    <div className="text-xs sm:text-sm font-black text-emerald-400">{stat.value}</div>
-                    <div className="text-[10px] text-slate-400 font-medium">{stat.label}</div>
+                  <div key={idx} className="bg-white/85 backdrop-blur-md p-2.5 rounded-xl text-center border border-white/60 shadow-sm text-black">
+                    <div className="text-xs sm:text-sm font-black text-black">{stat.value}</div>
+                    <div className="text-[10px] text-neutral-700 font-medium">{stat.label}</div>
                   </div>
                 ))}
               </div>
@@ -376,68 +376,65 @@ export const IndustrySolutionsSwitcher: React.FC<{ onLaunchDemo?: () => void }> 
             </div>
 
             {/* Right 5 Columns: Interactive Simulated Receipt Slip */}
-            <div className="lg:col-span-5 bg-slate-950 rounded-2xl p-5 border border-slate-800 shadow-inner">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800 text-[11px]">
-                <span className="font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                  <Receipt className="w-3.5 h-3.5 text-blue-400" />
+            <div className="lg:col-span-5 bg-white/95 backdrop-blur-md rounded-2xl p-5 border border-neutral-200 shadow-md text-black">
+              <div className="flex items-center justify-between pb-3 border-b border-neutral-200 text-[11px]">
+                <span className="font-bold uppercase tracking-wider text-neutral-700 flex items-center gap-1.5">
+                  <Receipt className="w-3.5 h-3.5 text-blue-600" />
                   Simulated Thermal Receipt Output
-                </span>
-                <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono text-[10px] border border-emerald-500/20">
-                  80mm ESC/POS
                 </span>
               </div>
 
               {/* Receipt Body */}
-              <div className="font-mono text-xs text-slate-200 mt-4 space-y-2.5 bg-[#0a0f16] p-4 rounded-xl border border-slate-800/80 shadow-md">
-                <div className="text-center border-b border-dashed border-slate-700/80 pb-2">
-                  <div className="font-bold text-white text-sm">{activeIndustry.mockReceipt.storeName}</div>
-                  <div className="text-[10px] text-slate-400">P.O. Box 40822 Nairobi, Kenya</div>
-                  <div className="text-[10px] text-emerald-400 font-semibold">{activeIndustry.mockReceipt.category}</div>
+              <div className="font-mono text-xs text-neutral-900 mt-4 space-y-2.5 bg-neutral-50 p-4 rounded-xl border border-neutral-200 shadow-sm">
+                <div className="text-center border-b border-dashed border-neutral-300 pb-2">
+                  <div className="font-bold text-black text-sm">{activeIndustry.mockReceipt.storeName}</div>
+                  <div className="text-[10px] text-neutral-600">P.O. Box 40822 Nairobi, Kenya</div>
+                  <div className="text-[10px] text-emerald-700 font-semibold">{activeIndustry.mockReceipt.category}</div>
                 </div>
 
                 <div className="space-y-1.5 pt-1 text-[11px]">
                   {activeIndustry.mockReceipt.items.map((item, idx) => (
                     <div key={idx} className="flex justify-between items-start">
                       <div className="min-w-0 pr-2">
-                        <div className="truncate text-white font-medium">{item.name}</div>
-                        <div className="text-[9px] text-slate-400">
+                        <div className="truncate text-black font-medium">{item.name}</div>
+                        <div className="text-[9px] text-neutral-600">
                           {item.qty} x KES {item.price.toFixed(2)} ({item.tax})
                         </div>
                       </div>
-                      <div className="font-bold text-white shrink-0">
+                      <div className="font-bold text-black shrink-0">
                         KES {(item.qty * item.price).toFixed(2)}
                       </div>
                     </div>
                   ))}
                 </div>
 
-                <div className="border-t border-dashed border-slate-700/80 pt-2 text-[11px] space-y-1">
-                  <div className="flex justify-between text-slate-400">
+                <div className="border-t border-dashed border-neutral-300 pt-2 text-[11px] space-y-1">
+                  <div className="flex justify-between text-neutral-600">
                     <span>Subtotal:</span>
                     <span>KES {activeIndustry.mockReceipt.subtotal.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-slate-400">
+                  <div className="flex justify-between text-neutral-600">
                     <span>Tax (eTIMS breakdown):</span>
                     <span>KES {activeIndustry.mockReceipt.vat.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-white font-extrabold text-sm pt-1 border-t border-slate-800">
+                  <div className="flex justify-between text-black font-extrabold text-sm pt-1 border-t border-neutral-200">
                     <span>TOTAL:</span>
-                    <span className="text-emerald-400">KES {activeIndustry.mockReceipt.total.toFixed(2)}</span>
+                    <span className="text-emerald-700">KES {activeIndustry.mockReceipt.total.toFixed(2)}</span>
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-dashed border-slate-700/80 text-center text-[10px] text-slate-400">
-                  <div className="font-semibold text-blue-400">{activeIndustry.mockReceipt.specialNote}</div>
-                  <div className="text-[9px] mt-1 text-slate-400">Powered by SokoPoS Cloud Terminal</div>
+                <div className="pt-2 border-t border-dashed border-neutral-300 text-center text-[10px] text-neutral-600">
+                  <div className="font-semibold text-blue-700">{activeIndustry.mockReceipt.specialNote}</div>
+                  <div className="text-[9px] mt-1 text-neutral-500">Powered by SokoPoS Cloud Terminal</div>
                 </div>
               </div>
 
-              <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400 px-1">
-                <span className="flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <div className="mt-3 flex items-center justify-between text-[11px] text-neutral-600 px-1">
+                <span className="flex items-center gap-1 font-semibold text-emerald-700">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
                   KRA eTIMS Validated
                 </span>
-                <span className="text-slate-400">Instant PDF & WhatsApp Share</span>
+                <span className="text-neutral-600">Instant PDF & WhatsApp Share</span>
               </div>
             </div>
 

@@ -26,7 +26,8 @@ import {
 import { usePos } from '../context/PosContext';
 import { soundFx } from '../utils/audio';
 import { SignUpSkeleton } from './SignUpSkeleton';
-import { LegalAndFaqModal, LegalTab } from './LegalAndFaqModal';
+import { LegalTab } from './LegalAndFaqModal';
+import { LegalPageView } from './LegalPageView';
 import { KenyaPaymentBadges } from './landing/KenyaPaymentBadges';
 import { IndustrySolutionsSwitcher } from './landing/IndustrySolutionsSwitcher';
 import { HardwareCompatibilityGuide } from './landing/HardwareCompatibilityGuide';
@@ -55,12 +56,44 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const [isFirebaseSigningIn, setIsFirebaseSigningIn] = useState(false);
   const [isRegisteringStore, setIsRegisteringStore] = useState(false);
   const [isSimulatingSkeleton, setIsSimulatingSkeleton] = useState(false);
-  const [legalModalTab, setLegalModalTab] = useState<LegalTab | null>(null);
+  const [activeLegalPage, setActiveLegalPage] = useState<LegalTab | null>(null);
 
-  // Fallback direct email entry for restricted preview iframes / popup-blocked environments
-  const [showEmailFallback, setShowEmailFallback] = useState(false);
-  const [fallbackEmail, setFallbackEmail] = useState('');
-  const [fallbackName, setFallbackName] = useState('');
+  // Synchronize URL hash with active legal page for browser history & direct links
+  useEffect(() => {
+    const handleHash = () => {
+      const hash = window.location.hash.replace('#', '').toLowerCase();
+      if (hash === 'terms' || hash === 'tos') {
+        setActiveLegalPage('terms');
+      } else if (hash === 'privacy') {
+        setActiveLegalPage('privacy');
+      } else if (hash === 'faq') {
+        setActiveLegalPage('faq');
+      } else if (hash === 'ownership' || hash === 'legal' || hash === 'ip') {
+        setActiveLegalPage('ownership');
+      } else if (hash === 'compliance' || hash === 'gcp') {
+        setActiveLegalPage('compliance');
+      } else if (!hash) {
+        setActiveLegalPage(null);
+      }
+    };
+
+    handleHash();
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
+
+  const navigateToLegalPage = (tab: LegalTab) => {
+    setActiveLegalPage(tab);
+    window.location.hash = `#${tab}`;
+  };
+
+  const returnToLogin = () => {
+    setActiveLegalPage(null);
+    if (window.location.hash) {
+      window.history.pushState(null, '', window.location.pathname + window.location.search);
+    }
+  };
+
 
   // Terminal PIN / Staff login state
   const [selectedStaffId, setSelectedStaffId] = useState<string>(() => systemUsers[0]?.id || '');
@@ -240,7 +273,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const handleLaunchDemoSandbox = () => {
     const ok = loginWithGoogle('upfrontretaile@gmail.com', 'Platform Administrator');
     if (ok) {
-      showToast('🚀 Welcome to SokoPoS Interactive Demo Sandbox! Explore products, test M-Pesa checkout, or view live analytics.', 'success');
+      showToast('Welcome to SokoPoS Interactive Demo Sandbox! Explore products, test M-Pesa checkout, or view live analytics.', 'success');
       onLoginSuccess?.();
     }
   };
@@ -254,6 +287,18 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   };
 
   const activeStaffMember = systemUsers.find((u) => u.id === selectedStaffId);
+
+  // Render Full-Page Legal, FAQ, or Compliance view as the Body of this SPA (Zero floating modals)
+  if (activeLegalPage) {
+    return (
+      <LegalPageView
+        currentTab={activeLegalPage}
+        onTabChange={navigateToLegalPage}
+        onBackToLogin={returnToLogin}
+        loginBgGraphic={loginBgGraphic}
+      />
+    );
+  }
 
   // Structural Skeleton Shimmer Gate while checking initial Firebase session
   if (isFirebaseAuthLoading) {
@@ -311,7 +356,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             <div className="flex items-center gap-3 flex-wrap justify-center font-medium">
               <button
                 type="button"
-                onClick={() => setLegalModalTab('terms')}
+                onClick={() => navigateToLegalPage('terms')}
                 className="text-slate-400 hover:text-blue-400 transition cursor-pointer"
               >
                 Terms of Service
@@ -319,7 +364,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               <span className="text-slate-600">•</span>
               <button
                 type="button"
-                onClick={() => setLegalModalTab('privacy')}
+                onClick={() => navigateToLegalPage('privacy')}
                 className="text-slate-400 hover:text-blue-400 transition cursor-pointer"
               >
                 Privacy Policy
@@ -327,7 +372,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               <span className="text-slate-600">•</span>
               <button
                 type="button"
-                onClick={() => setLegalModalTab('faq')}
+                onClick={() => navigateToLegalPage('faq')}
                 className="text-blue-400 hover:text-blue-300 font-semibold transition cursor-pointer"
               >
                 FAQ
@@ -335,12 +380,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             </div>
           </div>
         </footer>
-
-        <LegalAndFaqModal
-          isOpen={legalModalTab !== null}
-          initialTab={legalModalTab || 'terms'}
-          onClose={() => setLegalModalTab(null)}
-        />
       </div>
     );
   }
@@ -477,10 +516,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
                 <button
                   type="button"
+                  id="hero-setup-new-store-btn"
                   onClick={() => scrollToAuthCard('register')}
-                  className="w-full sm:w-auto px-5 py-4 rounded-2xl bg-slate-800/90 hover:bg-slate-700/90 text-slate-200 hover:text-white font-bold text-sm border border-slate-700/80 transition cursor-pointer flex items-center justify-center gap-2"
+                  className="w-full sm:w-auto px-5 py-4 rounded-2xl bg-[#DC2626] hover:bg-[#b91c1c] active:bg-[#991b1b] text-white font-bold text-sm border border-red-700 shadow-lg shadow-red-600/30 transition cursor-pointer flex items-center justify-center gap-2"
                 >
-                  <Store className="w-4 h-4 text-blue-400" />
+                  <Store className="w-4 h-4 text-white" />
                   <span>Set Up a New Store</span>
                 </button>
               </div>
@@ -497,41 +537,37 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 <span>Instant Pre-loaded Inventory</span>
               </div>
 
-              {/* Live Metric Stats Banner */}
+              {/* Live Metric Stats Banner - Translucent white background with black text */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-4 border-t border-slate-800/80">
-                <div className="bg-slate-900/70 p-3 rounded-2xl border border-slate-800/80 text-center lg:text-left">
-                  <div className="text-base sm:text-lg font-black text-white tracking-tight">
+                <div className="bg-white/85 backdrop-blur-md p-3 rounded-2xl border border-white/60 text-center lg:text-left shadow-md text-black">
+                  <div className="text-base sm:text-lg font-black text-black tracking-tight">
                     <span>KES </span>
                     <span className="tabular-nums font-mono">{metricCount}</span>
                     <span>M+</span>
                   </div>
-                  <div className="text-[10px] text-slate-400 font-medium">Monthly Processed</div>
+                  <div className="text-[10px] text-neutral-800 font-semibold">Monthly Processed</div>
                 </div>
-                <div className="bg-slate-900/70 p-3 rounded-2xl border border-slate-800/80 text-center lg:text-left">
-                  <div className="text-base sm:text-lg font-black text-emerald-400">100%</div>
-                  <div className="text-[10px] text-slate-400 font-medium">Offline Resilient</div>
+                <div className="bg-white/85 backdrop-blur-md p-3 rounded-2xl border border-white/60 text-center lg:text-left shadow-md text-black">
+                  <div className="text-base sm:text-lg font-black text-black">100%</div>
+                  <div className="text-[10px] text-neutral-800 font-semibold">Offline Resilient</div>
                 </div>
-                <div className="bg-slate-900/70 p-3 rounded-2xl border border-slate-800/80 text-center lg:text-left">
-                  <div className="text-base sm:text-lg font-black text-blue-400">&lt; 18s</div>
-                  <div className="text-[10px] text-slate-400 font-medium">Avg Checkout Speed</div>
+                <div className="bg-white/85 backdrop-blur-md p-3 rounded-2xl border border-white/60 text-center lg:text-left shadow-md text-black">
+                  <div className="text-base sm:text-lg font-black text-black">&lt; 18s</div>
+                  <div className="text-[10px] text-neutral-800 font-semibold">Avg Checkout Speed</div>
                 </div>
-                <div className="bg-slate-900/70 p-3 rounded-2xl border border-slate-800/80 text-center lg:text-left">
-                  <div className="text-base sm:text-lg font-black text-emerald-400">eTIMS</div>
-                  <div className="text-[10px] text-slate-400 font-medium">Digitax Partner</div>
+                <div className="bg-white/85 backdrop-blur-md p-3 rounded-2xl border border-white/60 text-center lg:text-left shadow-md text-black">
+                  <div className="text-base sm:text-lg font-black text-black">eTIMS</div>
+                  <div className="text-[10px] text-neutral-800 font-semibold">Digitax Partner</div>
                 </div>
               </div>
             </div>
 
-            {/* Right Column (5 cols): Embedded Frictionless Auth Card */}
+            {/* Right Column (5 cols): Embedded Frictionless Auth Card - Translucent white background with black text */}
             <div id="auth-card-container" className="lg:col-span-5 flex justify-center w-full">
               <div
-                className={`w-full max-w-[360px] xs:max-w-[390px] sm:max-w-[420px] rounded-[28px] sm:rounded-[32px] shadow-2xl overflow-hidden my-auto transition-all border border-slate-700/60 ${
-                  loginBgGraphic
-                    ? 'bg-[#18202c]/95 backdrop-blur-xl ring-1 ring-white/10 shadow-2xl shadow-black/80'
-                    : 'bg-[#18202c] shadow-2xl shadow-black/70'
-                }`}
+                className="w-full max-w-[360px] xs:max-w-[390px] sm:max-w-[420px] rounded-[28px] sm:rounded-[32px] shadow-2xl overflow-hidden my-auto transition-all border border-white/60 bg-white/90 backdrop-blur-xl shadow-black/40 text-black"
               >
-                {/* Top Section (#18202c) */}
+                {/* Top Section */}
                 <div className="p-4.5 sm:p-6 pt-4.5 sm:pt-6">
             {/* If in New Store Registration mode, display Back Navigation Header */}
             {activeTab === 'register' ? (
@@ -539,26 +575,23 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 <button
                   type="button"
                   onClick={() => setActiveTab('google')}
-                  className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white font-semibold transition cursor-pointer"
+                  className="inline-flex items-center gap-1.5 text-xs text-neutral-600 hover:text-black font-semibold transition cursor-pointer"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   <span>Back to Login</span>
                 </button>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
-                  New Store
-                </span>
               </div>
             ) : (
               /* Segmented Mode Selector: [ Login ] [ PIN Pad ] */
-              <div className="grid grid-cols-2 gap-1.5 bg-[#0e131c] p-1.5 rounded-2xl border border-slate-800/90">
+              <div className="grid grid-cols-2 gap-1.5 bg-neutral-100 p-1.5 rounded-2xl border border-neutral-200">
                 <button
                   type="button"
                   id="login-tab-btn"
                   onClick={() => setActiveTab('google')}
                   className={`py-2.5 sm:py-3 px-3 rounded-xl text-sm sm:text-base font-bold transition flex items-center justify-center cursor-pointer ${
                     activeTab === 'google'
-                      ? 'bg-[#333d4e] text-white shadow-xs'
-                      : 'text-slate-400 hover:text-slate-200 font-medium'
+                      ? 'bg-white text-black shadow-xs'
+                      : 'text-neutral-500 hover:text-neutral-900 font-medium'
                   }`}
                 >
                   Login
@@ -570,8 +603,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   onClick={() => setActiveTab('terminal')}
                   className={`py-2.5 sm:py-3 px-3 rounded-xl text-sm sm:text-base font-bold transition flex items-center justify-center cursor-pointer ${
                     activeTab === 'terminal'
-                      ? 'bg-[#333d4e] text-white shadow-xs'
-                      : 'text-slate-400 hover:text-slate-200 font-medium'
+                      ? 'bg-white text-black shadow-xs'
+                      : 'text-neutral-500 hover:text-neutral-900 font-medium'
                   }`}
                 >
                   PIN Pad
@@ -579,10 +612,10 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               </div>
             )}
 
-            {/* TAB 1: GOOGLE OAUTH - EXACT IMAGE DESIGN */}
+            {/* TAB 1: GOOGLE OAUTH */}
             {activeTab === 'google' && (
               <div className="pt-1">
-                <h1 className="text-white font-extrabold text-xl sm:text-[24px] tracking-tight text-center my-6 sm:my-7 leading-tight">
+                <h1 className="text-black font-extrabold text-xl sm:text-[24px] tracking-tight text-center my-6 sm:my-7 leading-tight">
                   Log In to POS Terminal
                 </h1>
 
@@ -624,104 +657,47 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       />
                     </svg>
                   </div>
-                  <span>{isFirebaseSigningIn ? 'Opening Google Auth...' : 'Continue with Google'}</span>
+                  {isFirebaseSigningIn ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                      <span>Opening Google Auth...</span>
+                    </span>
+                  ) : (
+                    <span>Continue with Google</span>
+                  )}
                 </button>
 
-                {/* 1-Click Instant Sign-In for Verified Store Owner / Platform Admin */}
-                <div className="mt-4 pt-3.5 border-t border-slate-800">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                      Verified Owner Quick Access
+                {isFirebaseSigningIn && (
+                  <div className="mt-2.5 flex items-center justify-between px-2 text-[11px] text-neutral-800 bg-white/90 p-2 rounded-xl border border-neutral-200 animate-in fade-in">
+                    <span className="flex items-center gap-1.5 font-medium">
+                      <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                      Waiting for Google account approval...
                     </span>
-                    <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                      1-Tap Ready
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    id="quick-owner-signin-btn"
-                    onClick={() => {
-                      const ok = loginWithGoogle('upfrontretaile@gmail.com', 'Platform Administrator');
-                      if (ok) {
-                        onLoginSuccess?.();
-                      }
-                    }}
-                    className="w-full bg-slate-900/90 hover:bg-slate-800/90 active:bg-slate-750 text-white p-2.5 rounded-xl border border-slate-700/80 transition flex items-center justify-between cursor-pointer group text-left"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center font-black text-sm shrink-0">
-                        ⚡
-                      </div>
-                      <div className="min-w-0">
-                        <div className="font-bold text-xs text-white group-hover:text-blue-300 transition-colors truncate">
-                          upfrontretaile@gmail.com
-                        </div>
-                        <div className="text-[10px] text-slate-400 truncate">
-                          Platform Admin & Flagship Store
-                        </div>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white shrink-0 shadow-xs transition">
-                      Sign In
-                    </span>
-                  </button>
-                </div>
-
-                {/* Direct Google Account Email Login (Popup-Free & Preview-Safe) */}
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (!fallbackEmail.trim()) {
-                      showToast('Please enter your Google account email', 'error');
-                      return;
-                    }
-                    const ok = loginWithGoogle(fallbackEmail.trim(), fallbackName.trim() || undefined);
-                    if (ok) {
-                      onLoginSuccess?.();
-                    }
-                  }}
-                  className="mt-3.5 p-3 bg-[#0d131d] border border-slate-800 rounded-2xl space-y-2 text-left"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                      Or Sign In with Any Google Email
-                    </span>
-                    <span className="text-[9px] text-slate-500 font-medium">
-                      Popup-Free
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="email"
-                      required
-                      value={fallbackEmail}
-                      onChange={(e) => setFallbackEmail(e.target.value)}
-                      placeholder="e.g. name@gmail.com"
-                      className="flex-1 px-3 py-2 text-xs bg-slate-950 border border-slate-700/80 rounded-xl text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 font-medium"
-                    />
                     <button
-                      type="submit"
-                      className="bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-xs py-2 px-3.5 rounded-xl transition cursor-pointer shrink-0"
+                      type="button"
+                      onClick={() => setIsFirebaseSigningIn(false)}
+                      className="text-[11px] text-red-600 hover:text-red-700 font-semibold cursor-pointer px-2 py-0.5 rounded bg-red-50 hover:bg-red-100 transition"
                     >
-                      Login
+                      Cancel
                     </button>
                   </div>
-                </form>
+                )}
+
               </div>
             )}
 
             {/* TAB 2: TERMINAL KEYPAD PIN */}
             {activeTab === 'terminal' && (
-              <div className="pt-1 space-y-3">
-                <h1 className="text-white font-extrabold text-lg sm:text-xl tracking-tight text-center mt-3 mb-2 leading-tight">
+              <div className="pt-1 space-y-3 text-black">
+                <h1 className="text-black font-extrabold text-lg sm:text-xl tracking-tight text-center mt-3 mb-2 leading-tight">
                   Log In to POS Terminal
                 </h1>
 
                 {/* Staff Selector */}
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1">
-                      <User className="w-3 h-3 text-blue-400" />
+                    <label className="text-[11px] font-bold text-neutral-800 flex items-center gap-1">
+                      <User className="w-3 h-3 text-blue-600" />
                       Cashier / Staff Profile:
                     </label>
                     <button
@@ -731,7 +707,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         setEnteredPin('');
                         setPinError(null);
                       }}
-                      className="text-[10px] font-semibold text-blue-400 hover:underline cursor-pointer"
+                      className="text-[10px] font-semibold text-blue-600 hover:underline cursor-pointer"
                     >
                       {isCustomStaff ? 'Select from list' : 'Custom username'}
                     </button>
@@ -743,7 +719,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       value={customUsername}
                       onChange={(e) => setCustomUsername(e.target.value)}
                       placeholder="Staff username or badge code (e.g. john.mutua or #8841)"
-                      className="w-full px-3 py-1.5 text-xs bg-slate-950 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500 font-medium"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-neutral-300 rounded-lg text-black focus:outline-none focus:border-blue-500 font-medium"
                     />
                   ) : (
                     <div className="grid grid-cols-2 gap-1.5 max-h-24 overflow-y-auto pr-1">
@@ -760,8 +736,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                             }}
                             className={`p-1.5 rounded-lg border text-left text-xs transition cursor-pointer flex items-center gap-2 ${
                               isSelected
-                                ? 'bg-blue-600/20 border-blue-500 text-white font-bold'
-                                : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                                ? 'bg-blue-50 border-blue-500 text-black font-bold'
+                                : 'bg-white border-neutral-200 text-neutral-800 hover:border-neutral-400'
                             }`}
                           >
                             <div
@@ -773,7 +749,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                             </div>
                             <div className="min-w-0">
                               <div className="truncate text-[11px] font-semibold">{staff.name}</div>
-                              <div className="text-[9px] text-slate-400">
+                              <div className="text-[9px] text-neutral-500">
                                 {staff.code} • {staff.role}
                               </div>
                             </div>
@@ -784,9 +760,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   )}
                 </div>
 
-                {/* PIN Display & Masked Dots */}
-                <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-2.5 text-center">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                {/* PIN Display & Masked Dots - Translucent white card */}
+                <div className="bg-white/90 border border-neutral-200 rounded-xl p-2.5 text-center shadow-xs">
+                  <div className="text-[10px] font-bold text-neutral-800 uppercase tracking-wider mb-1">
                     ENTER 4-DIGIT PIN
                   </div>
 
@@ -799,8 +775,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           key={index}
                           className={`w-3.5 h-3.5 rounded-full transition-all duration-150 ${
                             isFilled
-                              ? 'bg-blue-500 scale-110 shadow-sm shadow-blue-500/50'
-                              : 'bg-slate-800 border border-slate-700'
+                              ? 'bg-blue-600 scale-110 shadow-sm shadow-blue-500/50'
+                              : 'bg-neutral-200 border border-neutral-300'
                           }`}
                         />
                       );
@@ -808,12 +784,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   </div>
 
                   {pinError ? (
-                    <div className="text-[11px] text-red-400 font-semibold mt-1 flex items-center justify-center gap-1 animate-shake">
+                    <div className="text-[11px] text-red-600 font-semibold mt-1 flex items-center justify-center gap-1 animate-shake">
                       <AlertCircle className="w-3 h-3 shrink-0" />
                       <span>{pinError}</span>
                     </div>
                   ) : (
-                    <div className="text-[9px] text-slate-400">
+                    <div className="text-[9px] text-neutral-500">
                       Enter registered 4-digit PIN
                     </div>
                   )}
@@ -826,7 +802,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       key={digit}
                       type="button"
                       onClick={() => handleKeypadPress(digit)}
-                      className="h-10 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 active:bg-blue-600 text-base font-black text-white border border-slate-700/70 transition shadow-xs flex items-center justify-center cursor-pointer select-none"
+                      className="h-10 rounded-lg bg-white/90 hover:bg-neutral-100 active:bg-blue-600 text-base font-black text-black border border-neutral-200 transition shadow-xs flex items-center justify-center cursor-pointer select-none"
                     >
                       {digit}
                     </button>
@@ -834,21 +810,21 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   <button
                     type="button"
                     onClick={handleKeypadClear}
-                    className="h-10 rounded-lg bg-slate-900 hover:bg-slate-800 text-[10px] font-bold text-slate-400 border border-slate-800 transition flex items-center justify-center cursor-pointer select-none"
+                    className="h-10 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-[10px] font-bold text-neutral-700 border border-neutral-200 transition flex items-center justify-center cursor-pointer select-none"
                   >
                     CLEAR
                   </button>
                   <button
                     type="button"
                     onClick={() => handleKeypadPress('0')}
-                    className="h-10 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 active:bg-blue-600 text-base font-black text-white border border-slate-700/70 transition shadow-xs flex items-center justify-center cursor-pointer select-none"
+                    className="h-10 rounded-lg bg-white/90 hover:bg-neutral-100 active:bg-blue-600 text-base font-black text-black border border-neutral-200 transition shadow-xs flex items-center justify-center cursor-pointer select-none"
                   >
                     0
                   </button>
                   <button
                     type="button"
                     onClick={handleKeypadBackspace}
-                    className="h-10 rounded-lg bg-slate-900 hover:bg-slate-800 text-xs font-bold text-slate-400 border border-slate-800 transition flex items-center justify-center cursor-pointer select-none"
+                    className="h-10 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-xs font-bold text-neutral-700 border border-neutral-200 transition flex items-center justify-center cursor-pointer select-none"
                   >
                     <Delete className="w-4 h-4" />
                   </button>
@@ -881,10 +857,10 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       setEnteredPin('1234');
                       setPinError(null);
                     }}
-                    className="text-[11px] text-slate-400 hover:text-blue-400 transition font-medium cursor-pointer inline-flex items-center gap-1.5"
+                    className="text-[11px] text-neutral-600 hover:text-blue-600 transition font-medium cursor-pointer inline-flex items-center gap-1.5"
                   >
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>Demo Staff PIN: <strong className="text-white font-mono">1234</strong> (Click to fill)</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>Demo Staff PIN: <strong className="text-black font-mono">1234</strong> (Click to fill)</span>
                   </button>
                 </div>
               </div>
@@ -893,16 +869,16 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             {/* TAB 3: REGISTER NEW STORE */}
             {activeTab === 'register' && (
               isRegisteringStore || isSimulatingSkeleton ? (
-                <div className="relative">
+                <div className="relative text-black">
                   <div className="px-2 pt-1 flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
+                    <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">
                       {isSimulatingSkeleton ? 'Skeleton Animation Preview' : 'Store Provisioning'}
                     </span>
                     {isSimulatingSkeleton && (
                       <button
                         type="button"
                         onClick={() => setIsSimulatingSkeleton(false)}
-                        className="text-xs text-slate-400 hover:text-white underline cursor-pointer"
+                        className="text-xs text-neutral-500 hover:text-black underline cursor-pointer"
                       >
                         Exit Preview
                       </button>
@@ -920,16 +896,16 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   />
                 </div>
               ) : (
-                <form onSubmit={handleRegisterStoreSubmit} className="space-y-3 pt-1">
-                  <h1 className="text-white font-bold text-xl tracking-tight text-center mb-1">
+                <form onSubmit={handleRegisterStoreSubmit} className="space-y-3 pt-1 text-black">
+                  <h1 className="text-black font-bold text-xl tracking-tight text-center mb-1">
                     Set Up a New Store
                   </h1>
-                  <p className="text-[11px] text-slate-400 text-center mb-3">
+                  <p className="text-[11px] text-neutral-600 text-center mb-3">
                     Register a retail location. Google Account receives full administrative ownership.
                   </p>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                    <label className="block text-[11px] font-bold text-neutral-800 mb-1">
                       Store / Business Name *
                     </label>
                     <input
@@ -938,12 +914,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       value={newStoreName}
                       onChange={(e) => setNewStoreName(e.target.value)}
                       placeholder="e.g. Mombasa Coastal Grocers"
-                      className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500 font-medium"
+                      className="w-full px-3 py-2 text-xs bg-white border border-neutral-300 rounded-xl text-black placeholder:text-neutral-400 focus:outline-none focus:border-blue-500 font-medium"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                    <label className="block text-[11px] font-bold text-neutral-800 mb-1">
                       Business Owner Google Email *
                     </label>
                     <input
@@ -952,12 +928,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       value={newOwnerEmail}
                       onChange={(e) => setNewOwnerEmail(e.target.value)}
                       placeholder="e.g. owner@coastal-grocers.com"
-                      className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500 font-medium"
+                      className="w-full px-3 py-2 text-xs bg-white border border-neutral-300 rounded-xl text-black placeholder:text-neutral-400 focus:outline-none focus:border-blue-500 font-medium"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                    <label className="block text-[11px] font-bold text-neutral-800 mb-1">
                       Owner Full Name (Optional)
                     </label>
                     <input
@@ -965,7 +941,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       value={newOwnerName}
                       onChange={(e) => setNewOwnerName(e.target.value)}
                       placeholder="e.g. Fatuma Ali"
-                      className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500 font-medium"
+                      className="w-full px-3 py-2 text-xs bg-white border border-neutral-300 rounded-xl text-black placeholder:text-neutral-400 focus:outline-none focus:border-blue-500 font-medium"
                     />
                   </div>
 
@@ -983,25 +959,25 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             )}
           </div>
 
-          {/* Bottom Footer Section (#283243) - EXACT IMAGE DESIGN */}
-          <div className="bg-[#283243] px-5 sm:px-6 py-5 sm:py-6 border-t border-slate-700/60 space-y-3.5 text-center">
+          {/* Bottom Footer Section - Translucent white background with black text */}
+          <div className="bg-white/95 px-5 sm:px-6 py-5 sm:py-6 border-t border-neutral-200 space-y-3.5 text-center text-black">
             {activeTab === 'register' ? (
               <>
-                <p className="text-slate-300 font-normal text-sm sm:text-base">
+                <p className="text-neutral-700 font-normal text-sm sm:text-base">
                   Already have a registered location?
                 </p>
                 <button
                   type="button"
                   onClick={() => setActiveTab('google')}
-                  className="w-full bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-900 font-bold text-sm sm:text-base py-3 sm:py-3.5 px-5 rounded-2xl shadow-md flex items-center justify-center gap-2.5 transition cursor-pointer"
+                  className="w-full bg-neutral-900 hover:bg-black active:bg-neutral-800 text-white font-bold text-sm sm:text-base py-3 sm:py-3.5 px-5 rounded-2xl shadow-md flex items-center justify-center gap-2.5 transition cursor-pointer"
                 >
-                  <ArrowLeft className="w-4 h-4 text-slate-900 shrink-0" />
+                  <ArrowLeft className="w-4 h-4 text-white shrink-0" />
                   <span>Return to Login</span>
                 </button>
               </>
             ) : (
               <>
-                <p className="text-slate-300 font-normal text-sm sm:text-base">
+                <p className="text-neutral-700 font-normal text-sm sm:text-base">
                   Need to register a new location?
                 </p>
 
@@ -1009,9 +985,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   type="button"
                   id="setup-new-store-btn"
                   onClick={() => setActiveTab('register')}
-                  className="w-full bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-900 font-bold text-sm sm:text-base py-3 sm:py-3.5 px-5 rounded-2xl shadow-md flex items-center justify-center gap-2.5 transition cursor-pointer"
+                  className="w-full bg-[#DC2626] hover:bg-[#b91c1c] active:bg-[#991b1b] text-white font-bold text-sm sm:text-base py-3 sm:py-3.5 px-5 rounded-2xl shadow-lg shadow-red-600/30 flex items-center justify-center gap-2.5 transition cursor-pointer border border-red-700"
                 >
-                  <Store className="w-5 h-5 text-slate-900 stroke-[2] shrink-0" />
+                  <Store className="w-5 h-5 text-white stroke-[2] shrink-0" />
                   <span>Set Up a New Store</span>
                 </button>
               </>
@@ -1032,10 +1008,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   <HardwareCompatibilityGuide onLaunchDemo={handleLaunchDemoSandbox} />
 
   {/* SECTION 4: LEGACY POS COMPARISON (SOKOPOS VS SIMBAPOS / DESKTOP) */}
-  <LegacyPosComparison 
-    onLaunchDemo={handleLaunchDemoSandbox} 
-    onStartRegister={() => scrollToAuthCard('register')} 
-  />
+  <LegacyPosComparison />
 
   {/* SECTION 5: FINAL CONVERSION BANNER */}
   <section className="w-full py-14 px-4 sm:px-6 bg-gradient-to-b from-[#0e141f] to-slate-950 border-t border-slate-800 text-center relative">
@@ -1062,7 +1035,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         <button
           type="button"
           onClick={() => scrollToAuthCard('register')}
-          className="w-full sm:w-auto px-6 py-4 rounded-2xl bg-slate-800/90 hover:bg-slate-700/90 text-slate-200 hover:text-white font-bold text-sm border border-slate-700/80 cursor-pointer transition"
+          className="w-full sm:w-auto px-6 py-4 rounded-2xl bg-[#DC2626] hover:bg-[#b91c1c] active:bg-[#991b1b] text-white font-bold text-sm border border-red-700 shadow-lg shadow-red-600/30 cursor-pointer transition"
         >
           Set Up a New Store Free
         </button>
@@ -1093,7 +1066,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             <button
               type="button"
               id="footer-terms-btn"
-              onClick={() => setLegalModalTab('terms')}
+              onClick={() => navigateToLegalPage('terms')}
               className="text-slate-400 hover:text-blue-400 transition cursor-pointer"
             >
               Terms of Service
@@ -1102,7 +1075,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             <button
               type="button"
               id="footer-privacy-btn"
-              onClick={() => setLegalModalTab('privacy')}
+              onClick={() => navigateToLegalPage('privacy')}
               className="text-slate-400 hover:text-blue-400 transition cursor-pointer"
             >
               Privacy Policy
@@ -1111,7 +1084,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             <button
               type="button"
               id="footer-faq-btn"
-              onClick={() => setLegalModalTab('faq')}
+              onClick={() => navigateToLegalPage('faq')}
               className="text-blue-400 hover:text-blue-300 font-semibold transition cursor-pointer flex items-center gap-1"
             >
               <span>FAQ</span>
@@ -1120,7 +1093,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             <button
               type="button"
               id="footer-legal-notice-btn"
-              onClick={() => setLegalModalTab('ownership')}
+              onClick={() => navigateToLegalPage('ownership')}
               className="text-slate-400 hover:text-blue-400 transition cursor-pointer"
             >
               Legal & IP
@@ -1128,13 +1101,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           </div>
         </div>
       </footer>
-
-      {/* Legal & FAQ Modal */}
-      <LegalAndFaqModal
-        isOpen={legalModalTab !== null}
-        initialTab={legalModalTab || 'terms'}
-        onClose={() => setLegalModalTab(null)}
-      />
     </div>
   );
 };

@@ -2986,7 +2986,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                             {/* Bottom area */}
                             <div className="bg-[#283243] p-1.5 border-t border-slate-700/60 space-y-1">
                               <div className="text-[6.5px] text-slate-300">Need to register a new location?</div>
-                              <div className="w-full py-0.5 px-1.5 rounded-md bg-white text-slate-900 font-bold text-[7px] flex items-center justify-center gap-1 shadow-2xs">
+                              <div className="w-full py-0.5 px-1.5 rounded-md bg-[#DC2626] text-white font-bold text-[7px] flex items-center justify-center gap-1 shadow-2xs">
                                 <span>Set Up a New Store</span>
                               </div>
                             </div>

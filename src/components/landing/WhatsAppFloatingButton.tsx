@@ -126,7 +126,7 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
                 Nairobi Support Specialist
               </div>
               <p className="text-xs font-semibold text-slate-100 leading-snug group-hover:text-white transition-colors">
-                Need help setting up your store? Chat with our Nairobi team 👋
+                Need help setting up your store? Chat with our Nairobi team.
               </p>
               <div className="mt-1.5 flex items-center gap-1 text-[10px] text-emerald-300 font-bold">
                 <span>Tap to chat on WhatsApp</span>
@@ -194,7 +194,7 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
             className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md transition cursor-pointer"
           >
             <WhatsAppLogo className="w-4 h-4" />
-            <span>Chat on WhatsApp</span>
+            <span>Talk on WhatsApp</span>
           </button>
         </div>
       )}
@@ -206,11 +206,11 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
         className={`group flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-xl shadow-emerald-900/40 transition-all duration-200 border border-emerald-400/40 hover:scale-105 cursor-pointer ${
           isShaking ? 'whatsapp-button-shake' : ''
         }`}
-        aria-label="Chat with SokoPoS Specialist on WhatsApp"
+        aria-label="Talk to a POS Specialist on WhatsApp"
       >
         <WhatsAppLogo className="w-6 h-6 shrink-0" />
-        <span className="hidden sm:inline font-bold">Chat with a POS Specialist</span>
-        <span className="sm:hidden font-bold">Chat</span>
+        <span className="hidden sm:inline font-bold">Talk to a POS Specialist</span>
+        <span className="sm:hidden font-bold">Talk to Specialist</span>
       </button>
     </div>
   );

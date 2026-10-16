@@ -602,11 +602,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
     const now = new Date().toISOString();
 
-    // Query both local businesses and remote Firestore businesses for any existing accounts
+    // Query local businesses immediately to avoid login delays; query Firestore with a short timeout
     let candidateBusinesses = [...businesses];
     if (auth.currentUser) {
       try {
-        const remoteBizs = await getBusinessesFromFirestore();
+        const timeoutPromise = new Promise<Business[]>((resolve) => setTimeout(() => resolve([]), 1200));
+        const remoteBizs = await Promise.race([getBusinessesFromFirestore(), timeoutPromise]);
         if (Array.isArray(remoteBizs) && remoteBizs.length > 0) {
           const map = new Map<string, Business>();
           candidateBusinesses.forEach((b) => map.set(b.id, b));
@@ -699,20 +700,22 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       console.warn('Tenant defaults bootstrap notice:', e);
     }
 
-    // 4. Firestore level: save winner with latest lastLoginAt, delete all conflicts
+    // 4. Firestore level: non-blocking background sync so login transitions instantly
     if (auth.currentUser) {
-      try {
-        await saveBusinessToFirestore(winner);
-      } catch (e) {
-        console.warn('Firestore sync winner note:', e);
-      }
-      if (uniqueConflicts.length > 0) {
+      (async () => {
         try {
-          await deleteBusinessConflictsFromFirestore(uniqueConflicts);
+          await saveBusinessToFirestore(winner);
         } catch (e) {
-          console.warn('Firestore delete conflicts note:', e);
+          console.warn('Firestore sync winner note:', e);
         }
-      }
+        if (uniqueConflicts.length > 0) {
+          try {
+            await deleteBusinessConflictsFromFirestore(uniqueConflicts);
+          } catch (e) {
+            console.warn('Firestore delete conflicts note:', e);
+          }
+        }
+      })();
     }
 
     return { winner, purgedCount: uniqueConflicts.length };
@@ -5465,20 +5468,33 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const loginWithFirebaseGoogle = async (): Promise<boolean> => {
     try {
       setIsFirebaseAuthLoading(true);
-      const userCredential = await signInWithPopup(auth, googleProvider);
-      const firebaseUser = userCredential.user;
+
+      // Fast-path: Check if user is already authenticated in Firebase Auth client
+      let firebaseUser = auth.currentUser;
+      if (!firebaseUser || !firebaseUser.email) {
+        // Enforce a 20s timeout race so popup authorization never hangs indefinitely
+        const popupPromise = signInWithPopup(auth, googleProvider);
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Google authorization popup timed out. Please allow popups or use Direct Sign-In.')), 20000)
+        );
+        const userCredential = await Promise.race([popupPromise, timeoutPromise]);
+        firebaseUser = userCredential.user;
+      }
+
       if (!firebaseUser || !firebaseUser.email) {
         throw new Error('No user data returned from Google Authentication.');
       }
 
-      const idToken = await firebaseUser.getIdToken();
-      const tokenResult = await firebaseUser.getIdTokenResult();
-      const expirationTime = new Date(tokenResult.expirationTime).getTime();
+      const idToken = await firebaseUser.getIdToken().catch(() => '');
+      const tokenResult = await firebaseUser.getIdTokenResult().catch(() => null);
+      const expirationTime = tokenResult?.expirationTime
+        ? new Date(tokenResult.expirationTime).getTime()
+        : Date.now() + 3600 * 1000;
 
       const normalizedEmail = firebaseUser.email.toLowerCase().trim();
       const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
 
-      // Enforce uniqueness: prioritize account last logged into & delete conflicts at Firestore level
+      // Enforce uniqueness: prioritize account last logged into
       const { winner: matchedBiz } = await prioritizeAccountAndPurgeConflicts(
         normalizedEmail,
         firebaseUser.displayName || undefined
@@ -5509,9 +5525,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         sessionStatus: 'verified',
       };
 
+      // Set state immediately for zero-lag terminal transition
       setCurrentUser(authUser);
       setActiveBusinessIdState(targetBizId);
+      setIsFirebaseAuthLoading(false);
 
+      // Async background tasks: non-blocking profile save and inventory freshness warmup
       saveUserProfileToFirestore({
         uid: firebaseUser.uid,
         email: firebaseUser.email,
@@ -5520,12 +5539,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         displayName: firebaseUser.displayName || '',
       });
 
-      // Always fetch inventory fresh from Firestore server on every successful login (not served from cache)
       fetchFreshInventoryFromServer(targetBizId, false).catch((err) =>
         console.warn('Fresh inventory fetch on Google OAuth login notice:', err)
       );
 
-      setIsFirebaseAuthLoading(false);
       soundFx.playSuccess();
       showToast(
         `Authenticated via Firebase Google OAuth (${firebaseUser.email})`,
