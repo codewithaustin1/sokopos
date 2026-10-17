@@ -2,57 +2,37 @@ import React, { useState } from 'react';
 import {
   ShoppingCart,
   Package,
-  BarChart3,
   Radio,
   Users,
-  Building2,
-  Scan,
   ChevronLeft,
   ChevronRight,
-  ShieldCheck,
-  Store,
-  Sparkles,
   RotateCcw,
-  Moon,
-  Sun,
-  Palette,
   Clock,
   FileText,
   Truck,
-  CreditCard,
-  Tag,
+  Settings,
+  ShieldAlert,
 } from 'lucide-react';
 import { AnalyticsIcon } from './icons/AnalyticsIcon';
 import { usePos } from '../context/PosContext';
-import { isSuperAdminEmail } from '../data/initialData';
 
 interface SidebarNavProps {
-  currentTab: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers';
-  setCurrentTab: (tab: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers') => void;
-  openBarcodeScanner: () => void;
+  currentTab: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers' | 'settings' | 'super-admin';
+  setCurrentTab: (tab: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers' | 'settings' | 'super-admin') => void;
+  openBarcodeScanner?: () => void;
   openSuperAdminModal?: (tab?: 'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding') => void;
 }
 
 export const SidebarNav: React.FC<SidebarNavProps> = ({
   currentTab,
   setCurrentTab,
-  openBarcodeScanner,
-  openSuperAdminModal,
 }) => {
   const {
     cart,
-    customers,
     pendingOfflineCount,
     currentUser,
-    currentLocation,
-    currentBusiness,
-    businesses,
-    activeShift,
     isSuperAdmin,
-    openBusinessSettings,
     openReturnsModal,
-    isDarkMode,
-    toggleDarkMode,
   } = usePos();
 
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -244,136 +224,71 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
                 )}
               </button>
 
-              {/* Business Settings Action */}
+              {/* Store Settings Tab */}
               <button
-                id="sidebar-nav-business-settings"
-                onClick={() => openBusinessSettings('profile')}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition text-slate-600 hover:text-blue-600 hover:bg-blue-50/60 cursor-pointer group ${
-                  isCollapsed ? 'justify-center px-2' : ''
-                }`}
-                title="Business Settings & Store Branches"
+                id="sidebar-nav-settings"
+                onClick={() => setCurrentTab('settings')}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer group ${
+                  currentTab === 'settings'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                } ${isCollapsed ? 'justify-center px-2' : ''}`}
+                title="Store Settings"
               >
-                <Building2 className="w-4 h-4 text-blue-600 shrink-0 group-hover:scale-105 transition-transform" />
+                <Settings
+                  className={`w-4 h-4 shrink-0 transition ${
+                    currentTab === 'settings'
+                      ? 'text-white'
+                      : 'text-blue-600 group-hover:text-blue-700'
+                  }`}
+                />
                 {!isCollapsed && (
-                  <span className="flex-1 text-left truncate">Business Settings</span>
+                  <span className="flex-1 text-left truncate">Store Settings</span>
                 )}
               </button>
 
-              {/* Subscriptions Tab (Restricted strictly to upfrontretaile@gmail.com only) */}
-              {isSuperAdminEmail(currentUser?.email) && (
+              {/* Super-Admin Console Tab (Super Admin Only) */}
+              {isSuperAdmin && (
                 <button
-                  id="sidebar-nav-subscriptions"
-                  onClick={() => openSuperAdminModal?.('subscriptions')}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition text-slate-600 hover:text-amber-700 hover:bg-amber-50/60 cursor-pointer group ${
-                    isCollapsed ? 'justify-center px-2' : ''
-                  }`}
-                  title="POS Subscriptions & Tenant Access Control (Super Admin Only)"
+                  id="sidebar-nav-superadmin"
+                  onClick={() => setCurrentTab('super-admin')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer group ${
+                    currentTab === 'super-admin'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-amber-900 hover:bg-amber-50'
+                  } ${isCollapsed ? 'justify-center px-2' : ''}`}
+                  title="Super-Admin Console"
                 >
-                  <CreditCard className="w-4 h-4 text-amber-500 shrink-0 group-hover:scale-105 transition-transform" />
+                  <ShieldAlert
+                    className={`w-4 h-4 shrink-0 transition ${
+                      currentTab === 'super-admin'
+                        ? 'text-white'
+                        : 'text-amber-600 group-hover:text-amber-700'
+                    }`}
+                  />
                   {!isCollapsed && (
-                    <span className="flex-1 text-left truncate">Subscriptions</span>
+                    <span className="flex-1 text-left truncate">Super-Admin</span>
                   )}
                   {!isCollapsed && (
-                    businesses.some((b) => b.status === 'suspended') ? (
-                      <span className="text-[10px] font-black px-1.5 py-0.2 rounded-full leading-none shrink-0 bg-rose-500 text-white">
-                        {businesses.filter((b) => b.status === 'suspended').length} Off
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full leading-none shrink-0 bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        All Active
-                      </span>
-                    )
+                    <span
+                      className={`text-[9px] font-black px-1.5 py-0.2 rounded uppercase ${
+                        currentTab === 'super-admin'
+                          ? 'bg-white text-blue-600'
+                          : 'bg-amber-100 text-amber-800'
+                      }`}
+                    >
+                      Root
+                    </span>
                   )}
                 </button>
               )}
-
-              {/* POS Packages & Pricing Action (For Store Owners & Admins) */}
-              <button
-                id="sidebar-nav-pricing"
-                onClick={() => openBusinessSettings('pricing')}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition text-slate-600 hover:text-purple-700 hover:bg-purple-50/60 cursor-pointer group ${
-                  isCollapsed ? 'justify-center px-2' : ''
-                }`}
-                title="POS Packages Architecture & Subscription Pricing"
-              >
-                <Tag className="w-4 h-4 text-purple-600 shrink-0 group-hover:scale-105 transition-transform" />
-                {!isCollapsed && (
-                  <span className="flex-1 text-left truncate">POS Packages</span>
-                )}
-                {!isCollapsed && (
-                  <span className="text-[10px] font-extrabold px-1.5 py-0.2 rounded-full leading-none shrink-0 bg-purple-100 text-purple-800 border border-purple-200 uppercase">
-                    {currentBusiness?.plan === 'professional' ? 'BUSINESS' : (currentBusiness?.plan?.toUpperCase() || 'BUSINESS')}
-                  </span>
-                )}
-              </button>
             </nav>
           </div>
         )}
       </div>
 
       {/* Sidebar Footer Controls */}
-      <div className="p-2.5 border-t border-slate-200 bg-slate-50/60 space-y-2">
-        {/* Quick Optical Scanner Launcher */}
-        <button
-          type="button"
-          id="sidebar-quick-scan-btn"
-          onClick={openBarcodeScanner}
-          className={`w-full flex items-center gap-2.5 px-3 py-2 bg-white hover:bg-blue-50 text-blue-700 border border-blue-200 hover:border-blue-300 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer ${
-            isCollapsed ? 'justify-center px-2' : ''
-          }`}
-          title="Open Barcode Scanner (F2)"
-        >
-          <Scan className="w-4 h-4 text-blue-600 shrink-0" />
-          {!isCollapsed && (
-            <div className="flex-1 flex items-center justify-between text-left">
-              <span>Quick Scan</span>
-              <kbd className="bg-slate-100 border border-slate-200 text-slate-500 font-mono text-[9px] px-1 py-0.5 rounded">
-                F2
-              </kbd>
-            </div>
-          )}
-        </button>
-
-        {/* Quick Dark Mode Theme Toggle in Sidebar */}
-        <button
-          type="button"
-          id="sidebar-theme-toggle-btn"
-          onClick={toggleDarkMode}
-          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold transition border cursor-pointer ${
-            isDarkMode
-              ? 'bg-blue-950/70 text-blue-300 border-blue-500/40 hover:bg-blue-900/80 shadow-2xs'
-              : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
-          } ${isCollapsed ? 'justify-center px-2' : ''}`}
-          title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dim Retail Dark Mode'}
-        >
-          {isDarkMode ? (
-            <Sun className="w-4 h-4 text-amber-400 shrink-0" />
-          ) : (
-            <Moon className="w-4 h-4 text-slate-600 shrink-0" />
-          )}
-          {!isCollapsed && (
-            <div className="flex-1 flex items-center justify-between text-left">
-              <span>{isDarkMode ? 'Dark Mode' : 'Light Mode'}</span>
-              <span className="text-[10px] font-bold opacity-70">
-                {isDarkMode ? 'Dim Retail' : 'Daytime'}
-              </span>
-            </div>
-          )}
-        </button>
-
-        {/* Store & Terminal Active Status Card */}
-        {!isCollapsed && (
-          <div className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-[11px]">
-            <div className="flex items-center gap-1.5 font-bold text-slate-800 truncate">
-              <Store className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-              <span className="truncate">{currentLocation.name}</span>
-            </div>
-            <div className="text-[10px] text-slate-400 truncate mt-0.5">
-              {currentLocation.terminalName} • {currentLocation.code}
-            </div>
-          </div>
-        )}
-
+      <div className="p-2 border-t border-slate-200 bg-slate-50/60">
         {/* Collapse / Expand Toggle Button */}
         <button
           type="button"

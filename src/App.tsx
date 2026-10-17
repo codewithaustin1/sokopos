@@ -62,9 +62,12 @@ function PosAppContent() {
     activeShift,
     showToast,
     setSelectedCustomer,
+    isBusinessSettingsOpen,
+    setIsBusinessSettingsOpen,
+    businessSettingsDefaultTab,
   } = usePos();
 
-  const [currentTab, setCurrentTab] = useState<'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers'>('register');
+  const [currentTab, setCurrentTab] = useState<'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers' | 'settings' | 'super-admin'>('register');
 
   useEffect(() => {
     if (isShiftModalOpen) {
@@ -72,6 +75,14 @@ function PosAppContent() {
       setIsShiftModalOpen(false);
     }
   }, [isShiftModalOpen, setIsShiftModalOpen]);
+
+  useEffect(() => {
+    if (isBusinessSettingsOpen) {
+      setCurrentTab('settings');
+      setIsBusinessSettingsOpen(false);
+    }
+  }, [isBusinessSettingsOpen, setIsBusinessSettingsOpen]);
+
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [paymentInitialMethod, setPaymentInitialMethod] = useState<PaymentMethod>('mpesa');
@@ -79,6 +90,12 @@ function PosAppContent() {
   const [isSuperAdminModalOpen, setIsSuperAdminModalOpen] = useState(false);
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const [superAdminModalDefaultTab, setSuperAdminModalDefaultTab] = useState<'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding'>('tenants');
+
+  const handleOpenSuperAdmin = (tab?: 'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding') => {
+    const targetTab = tab === 'subscriptions' && !isSuperAdminEmail(currentUser?.email) ? 'tenants' : (tab || 'tenants');
+    setSuperAdminModalDefaultTab(targetTab);
+    setCurrentTab('super-admin');
+  };
 
   const handleOpenPayment = (method: PaymentMethod = 'cash') => {
     // Strict Guardrail: No transaction may be tendered or completed without an open session
@@ -198,6 +215,11 @@ function PosAppContent() {
         if (isSuperAdminModalOpen) {
           e.preventDefault();
           setIsSuperAdminModalOpen(false);
+          return;
+        }
+        if (currentTab === 'settings' || currentTab === 'super-admin') {
+          e.preventDefault();
+          setCurrentTab('register');
           return;
         }
         return;
@@ -392,18 +414,9 @@ function PosAppContent() {
 
       {/* Persistent Super-Admin Safeguard Warning Banner (Required Safeguard) */}
       <SuperAdminBanner
-        onOpenAuditLog={() => {
-          setSuperAdminModalDefaultTab('audit');
-          setIsSuperAdminModalOpen(true);
-        }}
-        onOpenProvisionModal={() => {
-          setSuperAdminModalDefaultTab('provision');
-          setIsSuperAdminModalOpen(true);
-        }}
-        onOpenBrandingModal={() => {
-          setSuperAdminModalDefaultTab('branding');
-          setIsSuperAdminModalOpen(true);
-        }}
+        onOpenAuditLog={() => handleOpenSuperAdmin('audit')}
+        onOpenProvisionModal={() => handleOpenSuperAdmin('provision')}
+        onOpenBrandingModal={() => handleOpenSuperAdmin('branding')}
       />
 
       {/* Main Top Header */}
@@ -411,11 +424,7 @@ function PosAppContent() {
         openBarcodeScanner={() => setIsScannerOpen(true)}
         openSignOutModal={() => setIsSignOutModalOpen(true)}
         openHelpModal={() => setIsHelpModalOpen(true)}
-        openSuperAdminModal={(tab) => {
-          const targetTab = tab === 'subscriptions' && !isSuperAdminEmail(currentUser?.email) ? 'tenants' : (tab || 'tenants');
-          setSuperAdminModalDefaultTab(targetTab);
-          setIsSuperAdminModalOpen(true);
-        }}
+        openSuperAdminModal={handleOpenSuperAdmin}
       />
 
       {/* Super Admin Alert Banner if current tenant is suspended */}
@@ -436,10 +445,7 @@ function PosAppContent() {
             </button>
             {isSuperAdminEmail(currentUser?.email) && (
               <button
-                onClick={() => {
-                  setSuperAdminModalDefaultTab('subscriptions');
-                  setIsSuperAdminModalOpen(true);
-                }}
+                onClick={() => handleOpenSuperAdmin('subscriptions')}
                 className="bg-rose-950 hover:bg-black/40 text-rose-200 font-semibold px-2.5 py-1 rounded-lg text-xs transition border border-rose-700 cursor-pointer"
               >
                 Subscriptions Tab
@@ -456,11 +462,7 @@ function PosAppContent() {
           currentTab={currentTab}
           setCurrentTab={setCurrentTab}
           openBarcodeScanner={() => setIsScannerOpen(true)}
-          openSuperAdminModal={(tab) => {
-            const targetTab = tab === 'subscriptions' && !isSuperAdminEmail(currentUser?.email) ? 'tenants' : (tab || 'tenants');
-            setSuperAdminModalDefaultTab(targetTab);
-            setIsSuperAdminModalOpen(true);
-          }}
+          openSuperAdminModal={handleOpenSuperAdmin}
         />
 
         {/* Primary Tab Viewport OR Suspended Subscription Screen for Non-Super-Admin */}
@@ -531,6 +533,18 @@ function PosAppContent() {
                 }}
               />
             )}
+            {currentTab === 'settings' && (
+              <BusinessProfileSettingsModal
+                initialTab={businessSettingsDefaultTab}
+                onClose={() => setCurrentTab('register')}
+              />
+            )}
+            {currentTab === 'super-admin' && isSuperAdmin && (
+              <SuperAdminDashboardModal
+                defaultTab={superAdminModalDefaultTab}
+                onClose={() => setCurrentTab('register')}
+              />
+            )}
           </main>
         )}
       </div>
@@ -571,15 +585,6 @@ function PosAppContent() {
         isOpen={isSignOutModalOpen}
         onClose={() => setIsSignOutModalOpen(false)}
       />
-
-      <SuperAdminDashboardModal
-        isOpen={isSuperAdminModalOpen}
-        onClose={() => setIsSuperAdminModalOpen(false)}
-        defaultTab={superAdminModalDefaultTab}
-      />
-
-      {/* Business Profile, Branch & RBAC Settings Modal */}
-      <BusinessProfileSettingsModal />
 
       {/* Destructive Action Confirmation Safeguard Modal */}
       <DestructiveConfirmModal />

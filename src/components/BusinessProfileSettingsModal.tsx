@@ -55,7 +55,15 @@ import { LoyaltySettingsPanel } from './LoyaltySettingsPanel';
 import { PricingSlider } from './pricing/PricingSlider';
 import { PackageTierId } from '../types/pricing';
 
-export const BusinessProfileSettingsModal: React.FC = () => {
+export interface BusinessProfileSettingsViewProps {
+  initialTab?: 'profile' | 'branches' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset';
+  onClose?: () => void;
+}
+
+export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewProps> = ({
+  initialTab,
+  onClose,
+}) => {
   const {
     currentBusiness,
     activeBusinessId,
@@ -97,7 +105,7 @@ export const BusinessProfileSettingsModal: React.FC = () => {
   } = usePos();
 
   const [activeTab, setActiveTab] = useState<'profile' | 'branches' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset'>(
-    businessSettingsDefaultTab || 'profile'
+    initialTab || businessSettingsDefaultTab || 'profile'
   );
 
   const [isResetStoreModalOpen, setIsResetStoreModalOpen] = useState(false);
@@ -109,10 +117,12 @@ export const BusinessProfileSettingsModal: React.FC = () => {
   const [isSwitchingPlan, setIsSwitchingPlan] = useState(false);
 
   React.useEffect(() => {
-    if (businessSettingsDefaultTab) {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    } else if (businessSettingsDefaultTab) {
       setActiveTab(businessSettingsDefaultTab);
     }
-  }, [businessSettingsDefaultTab]);
+  }, [initialTab, businessSettingsDefaultTab]);
 
   // Profile Form State
   const [profileName, setProfileName] = useState(currentBusiness?.name || '');
@@ -148,13 +158,6 @@ export const BusinessProfileSettingsModal: React.FC = () => {
   const [showPin, setShowPin] = useState(false);
   const [isUpdatingCredentials, setIsUpdatingCredentials] = useState(false);
 
-  // Sync initial tab when modal opens
-  React.useEffect(() => {
-    if (businessSettingsDefaultTab) {
-      setActiveTab(businessSettingsDefaultTab);
-    }
-  }, [businessSettingsDefaultTab]);
-
   // Sync profile form when currentBusiness changes
   React.useEffect(() => {
     if (currentBusiness) {
@@ -164,8 +167,6 @@ export const BusinessProfileSettingsModal: React.FC = () => {
       setProfileCurrency(currentBusiness.currency || 'KES');
     }
   }, [currentBusiness]);
-
-  if (!isBusinessSettingsOpen) return null;
 
   // Handle Profile Update
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -372,80 +373,54 @@ export const BusinessProfileSettingsModal: React.FC = () => {
 
   return (
     <div
-      id="business-profile-settings-modal-backdrop"
-      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) setIsBusinessSettingsOpen(false);
-      }}
+      id="business-profile-settings-view"
+      className="flex-1 h-full w-full flex flex-col overflow-hidden bg-slate-50 min-w-0 font-sans"
     >
-      <div
-        id="business-profile-settings-container"
-        className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[96vh] sm:max-h-[92vh] my-auto"
-      >
-        {/* Modal Top Header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 bg-slate-900 text-white border-b border-slate-800">
-          <div className="flex items-center gap-2.5 sm:gap-3">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0">
-              <Building2 className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                <h2 className="text-base sm:text-lg font-bold tracking-tight text-white">
-                  {currentBusiness?.name || 'Business Settings'}
-                </h2>
-                <span className="px-1.5 py-0.5 text-[10px] sm:text-[11px] font-semibold bg-blue-500/20 text-blue-300 rounded border border-blue-400/30 uppercase tracking-wider">
-                  {currentBusiness?.plan || 'Starter'} Plan
-                </span>
-                {isSuperAdmin && (
-                  <span className="px-1.5 py-0.5 text-[10px] sm:text-[11px] font-bold bg-amber-500/20 text-amber-300 rounded border border-amber-400/30">
-                    Super-Admin
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] sm:text-xs text-slate-400 hidden sm:block">
-                Tenant Architecture: Accounts, Roles, Credentials & Multi-Branch Management
-              </p>
-            </div>
+      {/* Top Header Bar */}
+      <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 bg-slate-900 text-white border-b border-slate-800 shrink-0 shadow-xs">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0">
+            <Building2 className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
-          <div className="flex items-center gap-2">
-            {/* Quick Dark Mode Toggle in Header */}
-            <button
-              id="settings-modal-header-theme-toggle"
-              type="button"
-              onClick={toggleDarkMode}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
-                isDarkMode
-                  ? 'bg-blue-950/70 border-blue-500/40 text-blue-300 hover:bg-blue-900/80'
-                  : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'
-              }`}
-              title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dim Retail Dark Mode'}
-            >
-              {isDarkMode ? (
-                <>
-                  <Sun className="w-3.5 h-3.5 text-amber-400" />
-                  <span className="hidden xs:inline">Light Mode</span>
-                </>
-              ) : (
-                <>
-                  <Moon className="w-3.5 h-3.5 text-blue-400" />
-                  <span className="hidden xs:inline">Dark Mode</span>
-                </>
+          <div>
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <h2 className="text-base sm:text-lg font-bold tracking-tight text-white">
+                {currentBusiness?.name || 'Business Settings'}
+              </h2>
+              <span className="px-1.5 py-0.5 text-[10px] sm:text-[11px] font-semibold bg-blue-500/20 text-blue-300 rounded border border-blue-400/30 uppercase tracking-wider">
+                {currentBusiness?.plan || 'Starter'} Plan
+              </span>
+              {isSuperAdmin && (
+                <span className="px-1.5 py-0.5 text-[10px] sm:text-[11px] font-bold bg-amber-500/20 text-amber-300 rounded border border-amber-400/30">
+                  Super-Admin
+                </span>
               )}
-            </button>
-
-            <button
-              id="close-business-settings-btn"
-              onClick={() => setIsBusinessSettingsOpen(false)}
-              className="p-1.5 sm:p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-              title="Close Settings"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            </div>
+            <p className="text-[11px] sm:text-xs text-slate-400 hidden sm:block">
+              Tenant Architecture: Accounts, Roles, Credentials, Taxes & Multi-Branch Management
+            </p>
           </div>
         </div>
+        <div className="flex items-center gap-2">
+          {onClose && (
+            <button
+              id="close-business-settings-btn"
+              onClick={() => {
+                onClose();
+                setIsBusinessSettingsOpen(false);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 transition cursor-pointer text-xs font-bold"
+              title="Return to Register"
+            >
+              <X className="w-4 h-4" />
+              <span className="hidden sm:inline">Close</span>
+            </button>
+          )}
+        </div>
+      </div>
 
-        {/* Tab Selection Bar */}
-        <div className="flex border-b border-slate-200 bg-slate-50 px-3 sm:px-6 gap-1 sm:gap-2 overflow-x-auto">
+      {/* Tab Selection Bar with Horizontal Scrollbar where necessary */}
+      <div className="flex border-b border-slate-200 bg-white px-3 sm:px-6 gap-1 sm:gap-2 overflow-x-auto shrink-0 modal-scrollbar">
           <button
             id="tab-profile-btn"
             onClick={() => setActiveTab('profile')}
@@ -615,8 +590,8 @@ export const BusinessProfileSettingsModal: React.FC = () => {
           </button>
         </div>
 
-        {/* Modal Body (Scrollable) */}
-        <div className="flex-1 overflow-y-auto p-3.5 sm:p-6 bg-slate-50/50">
+        {/* Main View Body (Scrollable with visible scrollbar) */}
+        <div className="flex-1 overflow-y-auto p-3.5 sm:p-6 lg:p-8 bg-slate-50 modal-scrollbar overscroll-contain">
           {/* ========================================================= */}
           {/* TAB 1: BUSINESS PROFILE */}
           {/* ========================================================= */}
@@ -780,31 +755,6 @@ export const BusinessProfileSettingsModal: React.FC = () => {
                     <div className="text-lg font-bold text-white">Bcrypt 10x</div>
                     <div className="text-[11px] text-slate-400">Credential Crypto</div>
                   </div>
-                </div>
-
-                {/* Display & Lighting Mode Quick Section in Profile */}
-                <div className="mt-4 pt-3 border-t border-slate-700/60 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 text-left">
-                    <Palette className="w-4 h-4 text-blue-400 shrink-0" />
-                    <div>
-                      <div className="text-xs font-bold text-white">Dim Retail Lighting Mode</div>
-                      <div className="text-[10px] text-slate-400">
-                        {isDarkMode ? 'Low-glare dark theme active' : 'Standard light theme active'}
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={toggleDarkMode}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                      isDarkMode
-                        ? 'bg-blue-600 hover:bg-blue-500 text-white'
-                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
-                    }`}
-                  >
-                    {isDarkMode ? <Sun className="w-3.5 h-3.5 text-amber-300" /> : <Moon className="w-3.5 h-3.5 text-blue-400" />}
-                    <span>{isDarkMode ? 'Switch to Light' : 'Switch to Dark'}</span>
-                  </button>
                 </div>
               </div>
             </div>
@@ -3079,27 +3029,33 @@ export const BusinessProfileSettingsModal: React.FC = () => {
           })()}
         </div>
 
-        {/* Modal Footer */}
-        <div className="px-6 py-3 bg-slate-100 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
+        {/* View Footer */}
+        <div className="px-6 py-3 bg-slate-100 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 shrink-0">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
             <span>Business Tenant: <strong>{currentBusiness?.name}</strong></span>
           </div>
-          <button
-            onClick={() => setIsBusinessSettingsOpen(false)}
-            className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg transition cursor-pointer"
-          >
-            Close Settings
-          </button>
+          {onClose && (
+            <button
+              onClick={() => {
+                onClose();
+                setIsBusinessSettingsOpen(false);
+              }}
+              className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg transition cursor-pointer"
+            >
+              Back to POS
+            </button>
+          )}
         </div>
-      </div>
 
-      {/* Reset Store Modal Dialog */}
-      <ResetStoreModal
-        isOpen={isResetStoreModalOpen}
-        onClose={() => setIsResetStoreModalOpen(false)}
-        businessId={currentBusiness?.id}
-      />
-    </div>
+        {/* Reset Store Modal Dialog */}
+        <ResetStoreModal
+          isOpen={isResetStoreModalOpen}
+          onClose={() => setIsResetStoreModalOpen(false)}
+          businessId={currentBusiness?.id}
+        />
+      </div>
   );
 };
+
+export { BusinessProfileSettingsModal as BusinessProfileSettingsView };

@@ -8,28 +8,18 @@ import {
   ChevronDown,
   Building2,
   CheckCircle2,
-  Users,
   Shield,
   LogOut,
-  User,
-  Sparkles,
   Store,
-  KeyRound,
   Settings,
   Moon,
   Sun,
-  Palette,
-  Printer,
-  Image as ImageIcon,
   Clock,
-  Receipt,
   CreditCard,
-  Tag,
   Keyboard,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { ScannerStatusBadge } from './ScannerStatusBadge';
-import { isSuperAdminEmail } from '../data/initialData';
 
 interface HeaderProps {
   currentTab?: 'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff';
@@ -66,7 +56,6 @@ export const Header: React.FC<HeaderProps> = ({
     openBusinessSettings,
     isDarkMode,
     toggleDarkMode,
-    autoPrintReceipt,
     showToast,
     platformLogo,
   } = usePos();
@@ -105,8 +94,8 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         )}
 
-        {/* Multi-Location Switcher Dropdown (scoped to current business) */}
-        <div className="relative min-w-0">
+        {/* Multi-Location Switcher Dropdown (scoped to current business - hidden on mobile, accessed via bottom nav hamburger) */}
+        <div className="hidden lg:block relative min-w-0">
           <button
             id="header-location-picker-btn"
             onClick={() => setIsLocationMenuOpen(!isLocationMenuOpen)}
@@ -248,21 +237,6 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </button>
 
-        {/* Global POS Hotkeys & Shortcuts Guide Trigger (F10) */}
-        <button
-          id="header-hotkeys-help-btn"
-          type="button"
-          onClick={openHelpModal}
-          className="flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 p-2 sm:px-2.5 sm:py-2 rounded-lg text-xs font-bold border border-slate-200 transition cursor-pointer min-h-[36px]"
-          title="POS Hotkeys & Keyboard Shortcuts Guide (F10)"
-        >
-          <Keyboard className="w-4 h-4 text-slate-600 shrink-0" />
-          <span className="hidden xl:inline text-xs">Hotkeys</span>
-          <kbd className="hidden sm:inline-block text-[10px] font-mono font-bold bg-white text-slate-600 px-1.5 py-0.5 rounded border border-slate-200 shadow-2xs">
-            F10
-          </kbd>
-        </button>
-
         {/* Cloud Sync & Online/Offline Pill */}
         <div className="flex items-center bg-slate-100 rounded-lg p-0.5 sm:p-1 border border-slate-200">
           <button
@@ -356,171 +330,71 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
                 </div>
 
-                {/* Prominent Business Profile Settings Entry */}
-                <button
-                  id="user-menu-business-settings-btn"
-                  onClick={() => {
-                    setIsUserMenuOpen(false);
-                    openBusinessSettings('profile');
-                  }}
-                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left font-bold text-blue-800 bg-blue-50/80 hover:bg-blue-100 transition cursor-pointer border border-blue-100 mb-1"
-                >
-                  <div className="flex items-center gap-2">
-                    <Building2 className="w-4 h-4 text-blue-600" />
-                    <span>Business Profile & Settings</span>
-                  </div>
-                  <span className="text-[10px] bg-blue-600 text-white font-extrabold px-1.5 py-0.5 rounded uppercase">
-                    Config
-                  </span>
-                </button>
+                {/* Primary Store Settings & Administration Group */}
+                <div className="space-y-1 mb-1.5 pb-1.5 border-b border-slate-100">
+                  {/* Store Settings (Groups Profile, Taxes, PINs, Hardware, Appearance) */}
+                  <button
+                    id="user-menu-business-settings-btn"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      openBusinessSettings('profile');
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left font-bold text-slate-800 hover:bg-slate-100 hover:text-blue-700 transition cursor-pointer border border-transparent hover:border-slate-200"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Settings className="w-4 h-4 text-blue-600 shrink-0" />
+                      <div>
+                        <div className="leading-tight">Store Settings</div>
+                        <div className="text-[10px] text-slate-400 font-normal">Profile, Taxes, Hardware & PINs</div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 font-bold px-1.5 py-0.5 rounded uppercase">
+                      Config
+                    </span>
+                  </button>
 
-                {/* Direct Tax Management Entry */}
-                <button
-                  id="user-menu-tax-settings-btn"
-                  onClick={() => {
-                    setIsUserMenuOpen(false);
-                    openBusinessSettings('tax');
-                  }}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-bold text-emerald-800 bg-emerald-50/80 hover:bg-emerald-100 transition cursor-pointer border border-emerald-100 mb-1"
-                >
-                  <div className="flex items-center gap-2">
-                    <Receipt className="w-4 h-4 text-emerald-600" />
-                    <span>Taxes & VAT/GST Rates</span>
-                  </div>
-                  <span className="text-[10px] bg-emerald-600 text-white font-extrabold px-1.5 py-0.5 rounded uppercase">
-                    Tax
-                  </span>
-                </button>
+                  {/* POS Packages & Subscription */}
+                  <button
+                    id="user-menu-pricing-plans-btn"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      openBusinessSettings('pricing');
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <CreditCard className="w-4 h-4 text-purple-600 shrink-0" />
+                      <span>POS Packages & Subscription</span>
+                    </div>
+                    <span className="text-[10px] bg-purple-50 text-purple-700 border border-purple-200 font-extrabold px-1.5 py-0.5 rounded uppercase">
+                      {currentBusiness?.plan || 'Plans'}
+                    </span>
+                  </button>
 
-                {/* Direct Pricing & Packages Entry for Business Owner */}
-                <button
-                  id="user-menu-pricing-plans-btn"
-                  onClick={() => {
-                    setIsUserMenuOpen(false);
-                    openBusinessSettings('pricing');
-                  }}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-bold text-purple-800 bg-purple-50/80 hover:bg-purple-100 transition cursor-pointer border border-purple-100 mb-1"
-                >
-                  <div className="flex items-center gap-2">
-                    <Tag className="w-4 h-4 text-purple-600" />
-                    <span>POS Packages & Pricing</span>
-                  </div>
-                  <span className="text-[10px] bg-purple-600 text-white font-extrabold px-1.5 py-0.5 rounded uppercase">
-                    Plans
-                  </span>
-                </button>
-
-                <div className="space-y-0.5">
-                  {/* Super-admin console */}
+                  {/* Super-Admin Console (Single consolidated entry for all platform controls) */}
                   {isSuperAdmin && (
-                    <div className="space-y-1 mb-1 pb-1 border-b border-slate-100">
-                      <button
-                        onClick={() => {
-                          setIsUserMenuOpen(false);
-                          openSuperAdminModal('tenants');
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 transition cursor-pointer"
-                      >
-                        <Shield className="w-4 h-4 text-blue-600" />
-                        <span>Super-Admin Console & Audit</span>
-                      </button>
-
-                      {isSuperAdminEmail(currentUser?.email) && (
-                        <button
-                          id="user-menu-subscriptions-btn"
-                          onClick={() => {
-                            setIsUserMenuOpen(false);
-                            openSuperAdminModal('subscriptions');
-                          }}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-xs font-bold text-emerald-900 bg-emerald-50 hover:bg-emerald-100 transition cursor-pointer"
-                        >
-                          <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Subscriptions & POS Access Control</span>
-                        </button>
-                      )}
-
-                      <button
-                        id="user-menu-pricing-tiers-btn"
-                        onClick={() => {
-                          setIsUserMenuOpen(false);
-                          openSuperAdminModal('pricing');
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-xs font-bold text-purple-900 bg-purple-50 hover:bg-purple-100 transition cursor-pointer"
-                      >
-                        <Tag className="w-3.5 h-3.5 text-purple-600" />
-                        <span>Pricing Tiers Configuration (Basic/Pro/Ent)</span>
-                      </button>
-
-                      <button
-                        id="user-menu-branding-btn"
-                        onClick={() => {
-                          setIsUserMenuOpen(false);
-                          openSuperAdminModal('branding');
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left text-xs font-bold text-blue-900 bg-blue-50 hover:bg-blue-100 transition cursor-pointer"
-                      >
-                        <Palette className="w-3.5 h-3.5 text-blue-600" />
-                        <span>Platform Branding & Assets (Logo, Favicon)</span>
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Credential & PIN Settings */}
-                  <button
-                    id="user-menu-credentials-btn"
-                    onClick={() => {
-                      setIsUserMenuOpen(false);
-                      openBusinessSettings('credentials');
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer"
-                  >
-                    <KeyRound className="w-4 h-4 text-slate-500" />
-                    <span>Credential & PIN Settings</span>
-                  </button>
-
-                  {/* Appearance & Dark Mode Settings */}
-                  <button
-                    id="user-menu-appearance-btn"
-                    onClick={() => {
-                      setIsUserMenuOpen(false);
-                      openBusinessSettings('appearance');
-                    }}
-                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Palette className="w-4 h-4 text-slate-500" />
-                      <span>Appearance & Dark Mode</span>
-                    </div>
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
-                      {isDarkMode ? 'Dark' : 'Light'}
-                    </span>
-                  </button>
-
-                  {/* Printing & Hardware Preferences */}
-                  <button
-                    id="user-menu-hardware-btn"
-                    onClick={() => {
-                      setIsUserMenuOpen(false);
-                      openBusinessSettings('hardware');
-                    }}
-                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Printer className="w-4 h-4 text-slate-500" />
-                      <span>Printing & Hardware</span>
-                    </div>
-                    <span
-                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
-                        autoPrintReceipt
-                          ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                          : 'bg-slate-100 text-slate-600 border border-slate-200'
-                      }`}
+                    <button
+                      id="user-menu-superadmin-console-btn"
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        openSuperAdminModal('tenants');
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer"
                     >
-                      {autoPrintReceipt ? 'Auto Print ON' : 'Manual'}
-                    </span>
-                  </button>
+                      <div className="flex items-center gap-2.5">
+                        <Shield className="w-4 h-4 text-blue-600 shrink-0" />
+                        <span>Super-Admin Console</span>
+                      </div>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                        Admin
+                      </span>
+                    </button>
+                  )}
+                </div>
 
-                  {/* Global POS Keyboard Shortcuts & Hotkeys Guide */}
+                {/* Terminal Utilities */}
+                <div className="space-y-1 mb-1.5 pb-1.5 border-b border-slate-100">
+                  {/* Keyboard Shortcuts & Hotkeys Guide */}
                   <button
                     id="user-menu-hotkeys-btn"
                     type="button"
@@ -530,9 +404,9 @@ export const Header: React.FC<HeaderProps> = ({
                     }}
                     className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer"
                   >
-                    <div className="flex items-center gap-2">
-                      <Keyboard className="w-4 h-4 text-slate-500" />
-                      <span>Keyboard Shortcuts &amp; Hotkeys</span>
+                    <div className="flex items-center gap-2.5">
+                      <Keyboard className="w-4 h-4 text-slate-500 shrink-0" />
+                      <span>Keyboard Shortcuts & Hotkeys</span>
                     </div>
                     <kbd className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 shadow-2xs">
                       F10
@@ -541,39 +415,41 @@ export const Header: React.FC<HeaderProps> = ({
 
                   {/* Register PIN Lock */}
                   <button
+                    id="user-menu-lock-register-btn"
                     onClick={() => {
                       setIsUserMenuOpen(false);
                       setIsPinLocked(true);
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer"
                   >
-                    <Lock className="w-4 h-4 text-slate-500" />
+                    <Lock className="w-4 h-4 text-slate-500 shrink-0" />
                     <span>Lock Register (Enter PIN)</span>
                   </button>
-
-                  {/* Sign out of POS */}
-                  <button
-                    onClick={() => {
-                      setIsUserMenuOpen(false);
-                      if (openSignOutModal) {
-                        openSignOutModal();
-                      } else {
-                        logout();
-                      }
-                    }}
-                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-bold text-red-600 hover:bg-red-50 transition cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2">
-                      <LogOut className="w-4 h-4 text-red-500" />
-                      <span>Sign Out of POS</span>
-                    </div>
-                    {activeShift && (
-                      <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700">
-                        Shift Open
-                      </span>
-                    )}
-                  </button>
                 </div>
+
+                {/* Sign Out of POS */}
+                <button
+                  id="user-menu-signout-btn"
+                  onClick={() => {
+                    setIsUserMenuOpen(false);
+                    if (openSignOutModal) {
+                      openSignOutModal();
+                    } else {
+                      logout();
+                    }
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left font-bold text-red-600 hover:bg-red-50 transition cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <LogOut className="w-4 h-4 text-red-500 shrink-0" />
+                    <span>Sign Out of POS</span>
+                  </div>
+                  {activeShift && (
+                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700">
+                      Shift Open
+                    </span>
+                  )}
+                </button>
               </div>
             </>
           )}

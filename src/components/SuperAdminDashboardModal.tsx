@@ -45,7 +45,7 @@ import { PricingSlider } from './pricing/PricingSlider';
 import { PackageTierId } from '../types/pricing';
 
 interface SuperAdminDashboardModalProps {
-  isOpen: boolean;
+  isOpen?: boolean;
   onClose: () => void;
   defaultTab?: 'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding';
 }
@@ -413,7 +413,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
     }
   };
 
-  if (!isOpen) return null;
+  if (isOpen === false) return null;
 
   const handleProvisionSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -445,36 +445,40 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-      <div className="bg-white w-full max-w-5xl h-[88vh] rounded-2xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col">
-        {/* Header */}
-        <div className="bg-slate-900 px-6 py-4 text-white flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-amber-500 text-slate-950 rounded-xl">
-              <ShieldAlert className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-black tracking-tight">Platform Super-Admin Oversight</h2>
-                <span className="bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border border-amber-500/30">
-                  ROOT PRIVILEGES
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Multi-tenant provisioning, cross-business isolation control & write audit ledger
-              </p>
-            </div>
+    <div
+      id="pos-superadmin-view"
+      className="flex-1 h-full w-full flex flex-col overflow-hidden bg-slate-50 min-w-0 font-sans"
+    >
+      {/* Header */}
+      <div className="bg-slate-900 px-4 sm:px-6 py-3.5 sm:py-4 text-white flex items-center justify-between shrink-0 border-b border-slate-800 shadow-xs">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          <div className="p-2 bg-amber-500 text-slate-950 rounded-xl">
+            <ShieldAlert className="w-5 h-5" />
           </div>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-black tracking-tight">Platform Super-Admin Oversight</h2>
+              <span className="bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border border-amber-500/30">
+                ROOT PRIVILEGES
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Multi-tenant provisioning, cross-business isolation control & write audit ledger
+            </p>
+          </div>
         </div>
+        <button
+          onClick={onClose}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 transition cursor-pointer text-xs font-bold"
+          title="Return to Register"
+        >
+          <X className="w-4 h-4" />
+          <span className="hidden sm:inline">Close</span>
+        </button>
+      </div>
 
-        {/* Tab Navigation */}
-        <div className="bg-slate-100 border-b border-slate-200 px-6 flex items-center gap-4 text-xs font-bold shrink-0 overflow-x-auto">
+      {/* Tab Navigation with Horizontal Scrollbar where necessary */}
+      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center gap-4 text-xs font-bold shrink-0 overflow-x-auto modal-scrollbar">
           <button
             onClick={() => setActiveTab('tenants')}
             className={`py-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap cursor-pointer ${
@@ -559,8 +563,8 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
           </button>
         </div>
 
-        {/* Main Content Area */}
-        <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
+        {/* Main Content Area (Scrollable with visible scrollbar) */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-slate-50 modal-scrollbar overscroll-contain">
           {/* TAB 1: ALL BUSINESS TENANTS */}
           {activeTab === 'tenants' && (
             <div className="space-y-4">
@@ -3017,6 +3021,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
           )}
         </div>
       </div>
-    </div>
   );
 };
+
+export { SuperAdminDashboardModal as SuperAdminDashboardView };

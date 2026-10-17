@@ -18,20 +18,17 @@ import {
   Cloud,
   CheckCircle2,
   Store,
-  Moon,
-  Sun,
-  Palette,
-  Printer,
   Clock,
   FileText,
   Truck,
   Keyboard,
+  Settings,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 
 interface MobileBottomNavProps {
-  currentTab: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers';
-  setCurrentTab: (tab: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers') => void;
+  currentTab: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers' | 'settings' | 'super-admin';
+  setCurrentTab: (tab: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers' | 'settings' | 'super-admin') => void;
   openBarcodeScanner: () => void;
   onRequestSignOut: () => void;
   openHelpModal?: () => void;
@@ -58,11 +55,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     openBusinessSettings,
     setIsPinLocked,
     isSuperAdmin,
-    setIsSuperAdminDashboardOpen,
     syncStatus,
-    isDarkMode,
-    toggleDarkMode,
-    autoPrintReceipt,
   } = usePos();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -70,7 +63,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   const totalCartItems = cart.reduce((acc, item) => acc + item.quantity, 0);
   const isOwnerOrAdmin = currentUser.role === 'business_owner' || isSuperAdmin;
 
-  const handleNavClick = (tab: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers') => {
+  const handleNavClick = (tab: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers' | 'settings' | 'super-admin') => {
     setCurrentTab(tab);
     setIsMenuOpen(false);
   };
@@ -278,78 +271,23 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
 
               <button
                 type="button"
+                id="mobile-drawer-store-settings-btn"
                 onClick={() => {
-                  setIsMenuOpen(false);
                   openBusinessSettings('profile');
+                  handleNavClick('settings');
                 }}
                 className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs transition cursor-pointer border border-slate-200/80"
               >
                 <div className="flex items-center gap-2.5">
-                  <Building2 className="w-4 h-4 text-indigo-600" />
-                  <span>Business Profile & Branches</span>
+                  <Settings className="w-4 h-4 text-blue-600" />
+                  <div className="text-left">
+                    <div>Store Settings</div>
+                    <div className="text-[10px] font-normal text-slate-500">
+                      Profile, Taxes, Hardware & Appearance
+                    </div>
+                  </div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-slate-400" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsMenuOpen(false);
-                  openBusinessSettings('credentials');
-                }}
-                className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs transition cursor-pointer border border-slate-200/80"
-              >
-                <div className="flex items-center gap-2.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  <span>Security & Terminal PIN</span>
-                </div>
-                <ChevronRight className="w-4 h-4 text-slate-400" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsMenuOpen(false);
-                  openBusinessSettings('appearance');
-                }}
-                className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs transition cursor-pointer border border-slate-200/80"
-              >
-                <div className="flex items-center gap-2.5">
-                  <Palette className="w-4 h-4 text-blue-600" />
-                  <span>Appearance & Dark Mode</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">
-                    {isDarkMode ? 'Dark' : 'Light'}
-                  </span>
-                  <ChevronRight className="w-4 h-4 text-slate-400" />
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsMenuOpen(false);
-                  openBusinessSettings('hardware');
-                }}
-                className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs transition cursor-pointer border border-slate-200/80"
-              >
-                <div className="flex items-center gap-2.5">
-                  <Printer className="w-4 h-4 text-slate-600" />
-                  <span>Printing & Hardware</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                      autoPrintReceipt
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-slate-200 text-slate-700'
-                    }`}
-                  >
-                    {autoPrintReceipt ? 'Auto Print ON' : 'Manual'}
-                  </span>
-                  <ChevronRight className="w-4 h-4 text-slate-400" />
-                </div>
               </button>
 
               <button
@@ -375,9 +313,9 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
               {isSuperAdmin && (
                 <button
                   type="button"
+                  id="mobile-drawer-superadmin-btn"
                   onClick={() => {
-                    setIsMenuOpen(false);
-                    setIsSuperAdminDashboardOpen(true);
+                    handleNavClick('super-admin');
                   }}
                   className="w-full flex items-center justify-between p-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold text-xs transition cursor-pointer border border-amber-300"
                 >
