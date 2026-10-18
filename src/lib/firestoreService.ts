@@ -328,14 +328,14 @@ export async function saveUserProfileToFirestore(user: {
   try {
     await setDoc(
       doc(db, 'users', user.uid),
-      {
+      sanitizeForFirestore({
         uid: user.uid,
         email: user.email,
         role: user.role,
         businessId: user.businessId || null,
         displayName: user.displayName || '',
         updatedAt: new Date().toISOString(),
-      },
+      }),
       { merge: true }
     );
   } catch (error) {

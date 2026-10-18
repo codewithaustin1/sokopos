@@ -115,18 +115,22 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     // Accelerating count-up animation from 1 to 25
     const target = 25;
     const duration = 2200; // 2.2 seconds total duration
-    const startTime = performance.now();
+    const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
 
     let animationFrameId: number;
 
-    const animate = (currentTime: number) => {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
+    const animate = (timestamp?: number) => {
+      const now = typeof timestamp === 'number' && !isNaN(timestamp)
+        ? timestamp
+        : (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      const elapsed = Math.max(0, now - startTime);
+      const progress = Math.max(0, Math.min(elapsed / duration, 1));
 
       // Accelerating curve (ease-in / exponential power curve: progress^2.5)
       // Starts slow and speeds up rapidly as it climbs to 25
       const easedProgress = Math.pow(progress, 2.5);
-      const currentVal = Math.max(1, Math.min(target, Math.round(1 + (target - 1) * easedProgress)));
+      const calculatedVal = Math.round(1 + (target - 1) * easedProgress);
+      const currentVal = isNaN(calculatedVal) ? target : Math.max(1, Math.min(target, calculatedVal));
 
       setMetricCount(currentVal);
 
@@ -371,7 +375,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   return (
     <div
       id="pos-login-page"
-      className={`min-h-full w-full flex flex-col justify-between text-slate-100 font-sans selection:bg-blue-600 selection:text-white relative overflow-x-hidden ${
+      className={`min-h-full w-full flex flex-col justify-between text-slate-100 font-sans selection:bg-blue-600 selection:text-white relative overflow-x-clip ${
         loginBgGraphic ? 'bg-slate-950/40 backdrop-blur-[2px]' : 'bg-slate-950'
       }`}
       style={
@@ -393,10 +397,10 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
       {/* Top Navigation Bar: Brand, Solutions Navigation, and Demo Actions */}
       <header
-        className={`px-4 sm:px-8 py-3.5 border-b flex items-center justify-between shrink-0 relative z-20 sticky top-0 ${
+        className={`px-4 sm:px-8 py-3.5 border-b flex items-center justify-between shrink-0 sticky top-0 z-50 ${
           loginBgGraphic
-            ? 'border-white/10 bg-slate-950/85 backdrop-blur-md'
-            : 'border-slate-800/80 bg-slate-950/85 backdrop-blur-md'
+            ? 'border-white/10 bg-slate-950/95 backdrop-blur-md shadow-md shadow-black/30'
+            : 'border-slate-800/80 bg-slate-950/95 backdrop-blur-md shadow-md shadow-black/30'
         }`}
       >
         {/* Brand */}
@@ -457,7 +461,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       </header>
 
       {/* Main Container with Full Landing Flow */}
-      <main className="flex-1 flex flex-col relative z-10 w-full overflow-y-auto overflow-x-hidden">
+      <main className="flex-1 flex flex-col relative z-10 w-full overflow-x-clip">
         {/* Soft Ambient Radial Glow for Depth */}
         <div className="absolute top-40 left-1/2 -translate-x-1/2 w-[350px] sm:w-[600px] h-[350px] sm:h-[600px] bg-blue-600/10 rounded-full blur-3xl pointer-events-none -z-1" />
 
@@ -515,7 +519,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 <div className="bg-white/85 backdrop-blur-md p-3 rounded-2xl border border-white/60 text-center lg:text-left shadow-md text-black">
                   <div className="text-base sm:text-lg font-black text-black tracking-tight">
                     <span>KES </span>
-                    <span className="tabular-nums font-mono">{metricCount}</span>
+                    <span className="tabular-nums font-mono">{String(isNaN(metricCount) ? 25 : metricCount)}</span>
                     <span>M+</span>
                   </div>
                   <div className="text-[10px] text-neutral-800 font-semibold">Monthly Processed</div>
@@ -987,7 +991,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   <section className="w-full py-14 px-4 sm:px-6 bg-gradient-to-b from-[#0e141f] to-slate-950 border-t border-slate-800 text-center relative">
     <div className="max-w-3xl mx-auto space-y-5">
       <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight">
-        Start Using SokoPoS in 30 Seconds — Zero Risk
+        Launch in 30 Seconds.
       </h2>
 
       <p className="text-xs sm:text-sm text-slate-300 max-w-xl mx-auto leading-relaxed">

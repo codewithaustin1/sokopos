@@ -53,11 +53,8 @@ export const LegacyPosComparison: React.FC<{ onLaunchDemo?: () => void; onStartR
         {/* Header */}
         <div className="text-center max-w-3xl mx-auto mb-10">
           <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight">
-            Why Modern Stores are Switching from Legacy POS
+            Why Switch
           </h2>
-          <p className="text-xs sm:text-sm text-slate-400 mt-2">
-            See how SokoPoS eliminates the unnecessary capital expenditure and technician delays of legacy desktop vendors like SimbaPOS.
-          </p>
         </div>
 
         {/* Comparison Table - Translucent white background with black text */}

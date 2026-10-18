@@ -297,11 +297,12 @@ export const LiveMerchantTicker: React.FC<{
     return [...filteredActivities, ...filteredActivities];
   }, [filteredActivities]);
 
-  const formatTimeAgo = (seconds: number) => {
+  const formatTimeAgo = (seconds?: number) => {
+    if (seconds === undefined || seconds === null || isNaN(seconds)) return 'Just now';
     if (seconds < 15) return 'Just now';
-    if (seconds < 60) return `${seconds}s ago`;
+    if (seconds < 60) return `${Math.floor(seconds)}s ago`;
     const mins = Math.floor(seconds / 60);
-    return `${mins}m ago`;
+    return `${isNaN(mins) ? 1 : mins}m ago`;
   };
 
   const getTypeStyle = (type: MerchantActivityItem['type']) => {
@@ -501,7 +502,7 @@ export const LiveMerchantTicker: React.FC<{
                   <span className="text-neutral-900 text-xs font-semibold truncate">
                     {item.title}
                   </span>
-                  {item.amount !== undefined && (
+                  {item.amount !== undefined && !isNaN(item.amount) && (
                     <span className="text-sm font-black font-mono text-emerald-700 shrink-0">
                       KSh {item.amount.toLocaleString()}
                     </span>
