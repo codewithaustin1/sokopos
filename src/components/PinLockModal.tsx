@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Lock, UserCheck, Shield, Loader2, LogOut, AlertTriangle } from 'lucide-react';
 import { usePos } from '../context/PosContext';
+import { AppLogo } from './common/AppLogo';
 
 export const PinLockModal: React.FC = () => {
   const {
@@ -104,14 +105,7 @@ export const PinLockModal: React.FC = () => {
       <div className="bg-slate-50 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 p-5 sm:p-7 flex flex-col my-auto max-h-[92vh] overflow-y-auto modal-scrollbar overscroll-contain">
         {/* Top Branding */}
         <div className="flex justify-between items-center mb-4 sm:mb-6 shrink-0">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-blue-600 tracking-tight leading-none">
-              SokoPoS
-            </h1>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-              by Sokoplus Horizon
-            </p>
-          </div>
+          <AppLogo theme="light" size="md" />
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 bg-white px-3 py-1 rounded-full border border-slate-200 shadow-2xs">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
             <span className="truncate max-w-[150px]">{currentLocation.name.split(' ')[0]}</span>

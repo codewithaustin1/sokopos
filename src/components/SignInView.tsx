@@ -33,6 +33,7 @@ import { IndustrySolutionsSwitcher } from './landing/IndustrySolutionsSwitcher';
 import { HardwareCompatibilityGuide } from './landing/HardwareCompatibilityGuide';
 import { LegacyPosComparison } from './landing/LegacyPosComparison';
 import { WhatsAppFloatingButton } from './landing/WhatsAppFloatingButton';
+import { AppLogo } from './common/AppLogo';
 
 interface SignInViewProps {
   onLoginSuccess?: () => void;
@@ -312,20 +313,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         className="min-h-full w-full bg-slate-950 flex flex-col justify-between text-slate-100 font-sans selection:bg-blue-600 selection:text-white"
       >
         <header className="px-6 py-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/50 backdrop-blur-md shrink-0">
-          <div className="flex items-center gap-3">
-            {platformLogo ? (
-              <img
-                src={platformLogo}
-                alt="Platform Logo"
-                className="h-8 max-h-9 max-w-[150px] object-contain drop-shadow-sm"
-              />
-            ) : (
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-black text-white shadow-md shadow-blue-500/20">
-                S
-              </div>
-            )}
-            <span className="font-black text-base sm:text-lg tracking-tight text-white">SokoPoS</span>
-          </div>
+          <AppLogo theme="dark" size="md" />
         </header>
 
         <main className="flex-1 flex items-center justify-center p-4 sm:p-6 my-auto py-8">
@@ -404,20 +392,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         }`}
       >
         {/* Brand */}
-        <div className="flex items-center gap-3">
-          {platformLogo ? (
-            <img
-              src={platformLogo}
-              alt="Platform Logo"
-              className="h-8 max-h-9 max-w-[150px] object-contain drop-shadow-sm"
-            />
-          ) : (
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-black text-white shadow-md shadow-blue-500/20">
-              S
-            </div>
-          )}
-          <span className="font-black text-base sm:text-lg tracking-tight text-white">SokoPoS</span>
-        </div>
+        <AppLogo theme="dark" size="md" />
 
         {/* Quick Nav Anchors for Desktop Visitors */}
         <nav className="hidden lg:flex items-center gap-6 text-xs font-semibold text-slate-300">

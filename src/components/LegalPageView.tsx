@@ -19,6 +19,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { LegalTab } from './LegalAndFaqModal';
+import { AppLogo } from './common/AppLogo';
 
 interface LegalPageViewProps {
   currentTab: LegalTab;
@@ -224,15 +225,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
           <div className="h-5 w-px bg-slate-800 hidden sm:block" />
 
           {/* Logo Brand */}
-          <div
-            onClick={onBackToLogin}
-            className="flex items-center gap-2.5 cursor-pointer select-none"
-          >
-            <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-sm shadow-md shadow-blue-500/20">
-              S
-            </div>
-            <span className="font-black text-base text-white tracking-tight">SokoPoS</span>
-          </div>
+          <AppLogo theme="dark" size="md" onClick={onBackToLogin} />
         </div>
 
         {/* Secondary Header Actions */}

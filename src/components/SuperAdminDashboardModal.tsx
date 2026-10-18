@@ -38,6 +38,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
+import { AppLogo } from './common/AppLogo';
 import { Business, PricingTier } from '../types';
 import { processAndOptimizeImage } from '../utils/imageOptimizer';
 import { SUPER_ADMIN_EMAIL, isSuperAdminEmail } from '../data/initialData';
@@ -2181,28 +2182,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
 
                         <div className="bg-white rounded-xl p-2.5 border border-slate-200 flex items-center justify-between shadow-xs">
                           {/* Left: Brand logo area */}
-                          <div className="flex items-center gap-2">
-                            {platformLogo ? (
-                              <div className="flex items-center gap-1.5">
-                                <img
-                                  src={platformLogo}
-                                  alt="Preview Logo"
-                                  className="h-6 max-w-[120px] object-contain"
-                                />
-                                <span className="bg-amber-400 text-slate-900 text-[8px] font-black px-1 py-0.2 rounded">
-                                  PRO
-                                </span>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-1">
-                                <span className="text-sm font-black text-blue-600 tracking-tight">
-                                  SokoPoS
-                                </span>
-                                <span className="bg-amber-400 text-slate-900 text-[8px] font-black px-1 py-0.2 rounded">
-                                  PRO
-                                </span>
-                              </div>
-                            )}
+                            <AppLogo theme="light" size="sm" />
 
                             <span className="text-[9px] text-slate-400 font-bold border-l border-slate-200 pl-2">
                               Flagship Branch
@@ -2944,25 +2924,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
 
                         {/* Simulated Top Bar */}
                         <div className="relative z-10 px-3 py-2 border-b border-white/10 bg-slate-950/60 backdrop-blur-md flex items-center justify-between text-white">
-                          <div className="flex items-center gap-1.5">
-                            {platformLogo ? (
-                              <img
-                                src={platformLogo}
-                                alt="Platform Logo"
-                                className="h-5 max-w-[90px] object-contain"
-                              />
-                            ) : (
-                              <div className="flex items-center gap-1.5">
-                                <div className="w-5 h-5 rounded-md bg-blue-600 flex items-center justify-center font-black text-[10px]">
-                                  S
-                                </div>
-                                <span className="text-[11px] font-bold tracking-tight">SokoPoS</span>
-                              </div>
-                            )}
-                            <span className="text-[8px] font-bold px-1 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                              PRO
-                            </span>
-                          </div>
+                          <AppLogo theme="dark" size="sm" />
                           <div className="flex items-center gap-1 text-[9px] text-slate-300">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                             <span>Terminal Ready</span>
