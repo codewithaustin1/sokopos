@@ -2123,154 +2123,120 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                   </span>
                 </div>
 
-                {/* Primary Persistent Toggle Switch */}
-                <div className="mt-5 p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                        isDarkMode ? 'bg-slate-800 text-blue-400' : 'bg-amber-100 text-amber-600'
-                      }`}
-                    >
-                      {isDarkMode ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
-                    </div>
-                    <div>
-                      <div className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                        <span>Terminal Dark Mode</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold">
-                          Persistent
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        {isDarkMode
-                          ? 'Deep slate palette enabled. Eye fatigue & counter screen reflections are actively minimized.'
-                          : 'Standard high-contrast light theme active for sunlit day shifts.'}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Toggle Control */}
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-xs font-bold text-slate-500">
-                      {isDarkMode ? 'Dark Mode On' : 'Dark Mode Off'}
-                    </span>
-                    <button
-                      type="button"
-                      id="settings-theme-main-toggle"
-                      role="switch"
-                      aria-checked={isDarkMode}
-                      onClick={toggleDarkMode}
-                      className={`relative inline-flex h-7 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 ${
-                        isDarkMode ? 'bg-blue-600' : 'bg-slate-300'
-                      }`}
-                      title={isDarkMode ? 'Disable Dark Mode' : 'Enable Dark Mode'}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out flex items-center justify-center ${
-                          isDarkMode ? 'translate-x-7' : 'translate-x-0'
-                        }`}
-                      >
-                        {isDarkMode ? (
-                          <Moon className="w-3.5 h-3.5 text-blue-600" />
-                        ) : (
-                          <Sun className="w-3.5 h-3.5 text-amber-500" />
-                        )}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Theme Choice Cards */}
+                {/* Minimalist Theme Selection Cards */}
                 <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* Light Theme Card */}
                   <div
+                    id="settings-theme-light-card"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => {
                       if (isDarkMode) toggleDarkMode();
                     }}
-                    className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        if (isDarkMode) toggleDarkMode();
+                      }
+                    }}
+                    className={`p-5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between select-none ${
                       !isDarkMode
-                        ? 'border-blue-600 bg-blue-50/20 ring-2 ring-blue-500/20 shadow-sm'
-                        : 'border-slate-200 bg-white hover:border-slate-300'
+                        ? 'border-blue-600 bg-blue-50/40 ring-2 ring-blue-500/20 shadow-sm'
+                        : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50'
                     }`}
                   >
                     <div>
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Sun className="w-4 h-4 text-amber-500" />
-                          <h4 className="text-sm font-bold text-slate-900">Light Palette</h4>
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                            !isDarkMode ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'
+                          }`}>
+                            <Sun className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-900">Light Theme</h4>
+                            <span className="text-[11px] text-slate-400">High ambient visibility</span>
+                          </div>
                         </div>
-                        {!isDarkMode && (
-                          <span className="text-[10px] bg-blue-600 text-white font-bold px-1.5 py-0.5 rounded">
-                            Active
+                        {!isDarkMode ? (
+                          <span className="text-[11px] bg-blue-600 text-white font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <Check className="w-3 h-3" />
+                            <span>Active</span>
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-slate-400 font-semibold px-2 py-0.5 rounded-full border border-slate-200">
+                            Select
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 mt-2">
-                        High ambient readability with crisp slate backgrounds and sharp typographic contrast.
+                      <p className="text-xs text-slate-500 mt-3 leading-relaxed">
+                        Crisp light backgrounds with high contrast for standard storefronts and daytime shifts.
                       </p>
-                      <div className="mt-3 p-2.5 rounded-lg bg-slate-100 border border-slate-200 text-[11px] space-y-1">
+                      <div className="mt-3.5 p-2.5 rounded-xl bg-slate-100 border border-slate-200 text-[11px] space-y-1">
                         <div className="flex justify-between font-bold text-slate-700">
-                          <span>Store Register</span>
+                          <span>Register Total</span>
                           <span className="text-blue-600 font-black">KES 1,250.00</span>
                         </div>
                         <div className="text-[10px] text-slate-400">Sunlit storefronts • Day shifts</div>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      className={`mt-4 w-full py-1.5 px-3 rounded-lg text-xs font-bold transition ${
-                        !isDarkMode
-                          ? 'bg-blue-600 text-white cursor-default'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                      }`}
-                    >
-                      {!isDarkMode ? 'Current Active Mode' : 'Switch to Light Mode'}
-                    </button>
                   </div>
 
                   {/* Dark Theme Card (Dim Retail) */}
                   <div
+                    id="settings-theme-dark-card"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => {
                       if (!isDarkMode) toggleDarkMode();
                     }}
-                    className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        if (!isDarkMode) toggleDarkMode();
+                      }
+                    }}
+                    className={`p-5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between select-none ${
                       isDarkMode
-                        ? 'border-blue-500 bg-slate-900 ring-2 ring-blue-500/20 shadow-sm'
-                        : 'border-slate-200 bg-slate-900 hover:border-blue-400'
+                        ? 'border-blue-500 bg-slate-900 ring-2 ring-blue-500/30 shadow-md text-white'
+                        : 'border-slate-200 bg-slate-900 hover:border-slate-400 text-white'
                     }`}
                   >
                     <div>
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Moon className="w-4 h-4 text-blue-400" />
-                          <h4 className="text-sm font-bold text-white">Dim Retail Dark Palette</h4>
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                            isDarkMode ? 'bg-blue-950 text-blue-400 border border-blue-800' : 'bg-slate-800 text-slate-400'
+                          }`}>
+                            <Moon className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-bold text-white">Dim Retail Dark</h4>
+                            <span className="text-[11px] text-slate-400">Night counter & low glare</span>
+                          </div>
                         </div>
-                        {isDarkMode && (
-                          <span className="text-[10px] bg-blue-600 text-white font-bold px-1.5 py-0.5 rounded">
-                            Active
+                        {isDarkMode ? (
+                          <span className="text-[11px] bg-blue-600 text-white font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <Check className="w-3 h-3" />
+                            <span>Active</span>
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-slate-400 font-semibold px-2 py-0.5 rounded-full border border-slate-700">
+                            Select
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-400 mt-2">
-                        Deep midnight slate (#090d16) engineered for dim retail environments, evening bars, and late shifts.
+                      <p className="text-xs text-slate-300 mt-3 leading-relaxed">
+                        Midnight slate palette engineered for dim retail counters, bars, and evening shifts.
                       </p>
-                      <div className="mt-3 p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] space-y-1">
+                      <div className="mt-3.5 p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-[11px] space-y-1">
                         <div className="flex justify-between font-bold text-slate-200">
-                          <span>Night Register</span>
+                          <span>Night Total</span>
                           <span className="text-blue-400 font-black">KES 1,250.00</span>
                         </div>
-                        <div className="text-[10px] text-slate-500">Low-glare • Barcode friendly</div>
+                        <div className="text-[10px] text-slate-500">Anti-reflection • Barcode friendly</div>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      className={`mt-4 w-full py-1.5 px-3 rounded-lg text-xs font-bold transition ${
-                        isDarkMode
-                          ? 'bg-blue-600 text-white cursor-default'
-                          : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
-                      }`}
-                    >
-                      {isDarkMode ? 'Current Active Mode' : 'Switch to Dark Mode'}
-                    </button>
                   </div>
                 </div>
 

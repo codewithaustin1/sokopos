@@ -87,7 +87,6 @@ function PosAppContent() {
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [paymentInitialMethod, setPaymentInitialMethod] = useState<PaymentMethod>('mpesa');
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
-  const [isSuperAdminModalOpen, setIsSuperAdminModalOpen] = useState(false);
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const [superAdminModalDefaultTab, setSuperAdminModalDefaultTab] = useState<'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding'>('tenants');
 
@@ -212,11 +211,6 @@ function PosAppContent() {
           setIsSignOutModalOpen(false);
           return;
         }
-        if (isSuperAdminModalOpen) {
-          e.preventDefault();
-          setIsSuperAdminModalOpen(false);
-          return;
-        }
         if (currentTab === 'settings' || currentTab === 'super-admin') {
           e.preventDefault();
           setCurrentTab('register');
@@ -268,8 +262,7 @@ function PosAppContent() {
         activeReceipt !== null ||
         activeRefundReceipt !== null ||
         isReturnsModalOpen ||
-        isSignOutModalOpen ||
-        isSuperAdminModalOpen;
+        isSignOutModalOpen;
 
       if (!isInputActive && !isModalActive && currentTab === 'register' && cart.length > 0) {
         if (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd') {
@@ -326,7 +319,6 @@ function PosAppContent() {
     activeRefundReceipt,
     isReturnsModalOpen,
     isSignOutModalOpen,
-    isSuperAdminModalOpen,
     isHelpModalOpen,
     settleExactCash,
     updateCartQuantity,
