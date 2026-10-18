@@ -2273,6 +2273,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       category: finalCategory,
       id: uniqueId,
       businessId: activeBusinessId,
+      supplierId: product.supplierId ?? null,
+      supplierName: product.supplierName ?? null,
       isPendingCloudSync: !isOnline || !auth.currentUser,
     };
 
@@ -3945,9 +3947,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       terminalName: currentLocation.terminalName,
       cashierId: currentCashier.id,
       cashierName: currentCashier.name,
-      customerId: customer?.id,
-      customerName: customer?.name,
-      customerPhone: customer?.phone,
+      customerId: customer?.id || null,
+      customerName: customer?.name || null,
+      customerPhone: customer?.phone || null,
       loyaltyPointsEarned: customer ? loyaltyPointsEarned : undefined,
       loyaltyPointsRedeemed: customer && loyaltyPointsRedeemed > 0 ? loyaltyPointsRedeemed : undefined,
       customerPreviousPoints: previousPoints,

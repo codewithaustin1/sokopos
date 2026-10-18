@@ -103,7 +103,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     const reorder = parseInt(reorderPoint, 10) || 10;
     const finalCat = category?.trim() || 'All';
     const chosenSupplier = suppliers.find((s) => s.id === supplierId);
-    const suppName = chosenSupplier ? chosenSupplier.name : undefined;
+    const suppName = chosenSupplier ? chosenSupplier.name : null;
 
     if (productToEdit) {
       updateProduct(productToEdit.id, {
@@ -115,8 +115,8 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         sellingPrice: sPrice,
         unit,
         reorderPoint: reorder,
-        description,
-        supplierId: supplierId || undefined,
+        description: description || '',
+        supplierId: supplierId || null,
         supplierName: suppName,
         stockByLocation: initialStocks,
       });
@@ -131,8 +131,8 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         unit,
         taxRate: 0.16,
         reorderPoint: reorder,
-        description,
-        supplierId: supplierId || undefined,
+        description: description || '',
+        supplierId: supplierId || null,
         supplierName: suppName,
         stockByLocation: initialStocks,
       });

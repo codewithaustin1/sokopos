@@ -77,6 +77,42 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
+/**
+ * Recursively removes keys with `undefined` values from objects and nested objects/arrays.
+ * Firestore strictly forbids `undefined` in document payloads (setDoc, updateDoc, writeBatch).
+ * Preserves `null`, primitives, Dates, and Firestore FieldValues.
+ */
+export function sanitizeForFirestore<T>(data: T): T {
+  if (data === undefined) {
+    return undefined as unknown as T;
+  }
+  if (data === null || typeof data !== 'object') {
+    return data;
+  }
+  if (data instanceof Date) {
+    return data;
+  }
+  if (Array.isArray(data)) {
+    return data
+      .filter((item) => item !== undefined)
+      .map((item) => sanitizeForFirestore(item)) as unknown as T;
+  }
+  // Check for Firestore FieldValue or special objects
+  if ('_methodName' in (data as Record<string, any>)) {
+    return data;
+  }
+  const clean: Record<string, any> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== undefined) {
+      const sanitized = sanitizeForFirestore(value);
+      if (sanitized !== undefined) {
+        clean[key] = sanitized;
+      }
+    }
+  }
+  return clean as T;
+}
+
 // -------------------------------------------------------------
 // Tenant Businesses Firestore API
 // -------------------------------------------------------------
@@ -95,7 +131,7 @@ export async function saveBusinessToFirestore(biz: Business): Promise<void> {
   if (!auth.currentUser) return;
   const path = `businesses/${biz.id}`;
   try {
-    await setDoc(doc(db, 'businesses', biz.id), biz);
+    await setDoc(doc(db, 'businesses', biz.id), sanitizeForFirestore(biz));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -108,7 +144,7 @@ export async function updateBusinessInFirestore(
   if (!auth.currentUser) return;
   const path = `businesses/${businessId}`;
   try {
-    await setDoc(doc(db, 'businesses', businessId), updates, { merge: true });
+    await setDoc(doc(db, 'businesses', businessId), sanitizeForFirestore(updates), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -371,7 +407,7 @@ export async function saveProductToFirestore(product: Product): Promise<void> {
   if (!auth.currentUser) return;
   const path = `products/${product.id}`;
   try {
-    await setDoc(doc(db, 'products', product.id), product);
+    await setDoc(doc(db, 'products', product.id), sanitizeForFirestore(product));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -384,7 +420,7 @@ export async function updateProductInFirestore(
   if (!auth.currentUser) return;
   const path = `products/${productId}`;
   try {
-    await setDoc(doc(db, 'products', productId), updates, { merge: true });
+    await setDoc(doc(db, 'products', productId), sanitizeForFirestore(updates), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -439,7 +475,7 @@ export async function saveCategoryToFirestore(category: Category): Promise<void>
   if (!auth.currentUser) return;
   const path = `categories/${category.id}`;
   try {
-    await setDoc(doc(db, 'categories', category.id), category);
+    await setDoc(doc(db, 'categories', category.id), sanitizeForFirestore(category));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -452,7 +488,7 @@ export async function updateCategoryInFirestore(
   if (!auth.currentUser) return;
   const path = `categories/${categoryId}`;
   try {
-    await setDoc(doc(db, 'categories', categoryId), updates, { merge: true });
+    await setDoc(doc(db, 'categories', categoryId), sanitizeForFirestore(updates), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -507,7 +543,7 @@ export async function saveLocationToFirestore(loc: Location): Promise<void> {
   if (!auth.currentUser) return;
   const path = `locations/${loc.id}`;
   try {
-    await setDoc(doc(db, 'locations', loc.id), loc);
+    await setDoc(doc(db, 'locations', loc.id), sanitizeForFirestore(loc));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -520,7 +556,7 @@ export async function updateLocationInFirestore(
   if (!auth.currentUser) return;
   const path = `locations/${locationId}`;
   try {
-    await setDoc(doc(db, 'locations', locationId), updates, { merge: true });
+    await setDoc(doc(db, 'locations', locationId), sanitizeForFirestore(updates), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -575,7 +611,7 @@ export async function saveCashierToFirestore(cashier: Cashier): Promise<void> {
   if (!auth.currentUser) return;
   const path = `cashiers/${cashier.id}`;
   try {
-    await setDoc(doc(db, 'cashiers', cashier.id), cashier);
+    await setDoc(doc(db, 'cashiers', cashier.id), sanitizeForFirestore(cashier));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -588,7 +624,7 @@ export async function updateCashierInFirestore(
   if (!auth.currentUser) return;
   const path = `cashiers/${cashierId}`;
   try {
-    await setDoc(doc(db, 'cashiers', cashierId), updates, { merge: true });
+    await setDoc(doc(db, 'cashiers', cashierId), sanitizeForFirestore(updates), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -643,7 +679,7 @@ export async function saveTransactionToFirestore(tx: Transaction): Promise<void>
   if (!auth.currentUser) return;
   const path = `transactions/${tx.id}`;
   try {
-    await setDoc(doc(db, 'transactions', tx.id), tx);
+    await setDoc(doc(db, 'transactions', tx.id), sanitizeForFirestore(tx));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -656,7 +692,7 @@ export async function updateTransactionInFirestore(
   if (!auth.currentUser) return;
   const path = `transactions/${txId}`;
   try {
-    await setDoc(doc(db, 'transactions', txId), partialTx, { merge: true });
+    await setDoc(doc(db, 'transactions', txId), sanitizeForFirestore(partialTx), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -666,7 +702,7 @@ export async function savePurgedSalesBackupToFirestore(backup: StoreSalesBackup)
   if (!auth.currentUser) return;
   const path = `purged_sales_backups/${backup.id}`;
   try {
-    await setDoc(doc(db, 'purged_sales_backups', backup.id), backup);
+    await setDoc(doc(db, 'purged_sales_backups', backup.id), sanitizeForFirestore(backup));
   } catch (error) {
     console.warn('Failed to save purged sales backup to Firestore:', error);
   }
@@ -699,7 +735,7 @@ export async function saveStockTransferToFirestore(transfer: StockTransfer): Pro
   if (!auth.currentUser) return;
   const path = `stock_transfers/${transfer.id}`;
   try {
-    await setDoc(doc(db, 'stock_transfers', transfer.id), transfer);
+    await setDoc(doc(db, 'stock_transfers', transfer.id), sanitizeForFirestore(transfer));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -709,7 +745,7 @@ export async function saveSyncLogToFirestore(log: SyncLogEvent): Promise<void> {
   if (!auth.currentUser) return;
   const path = `sync_logs/${log.id}`;
   try {
-    await setDoc(doc(db, 'sync_logs', log.id), log);
+    await setDoc(doc(db, 'sync_logs', log.id), sanitizeForFirestore(log));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -737,34 +773,34 @@ export async function seedInitialTenantDataToFirestore(params: {
       const batch = writeBatch(db);
 
       params.businesses.forEach((b) => {
-        batch.set(doc(db, 'businesses', b.id), b);
+        batch.set(doc(db, 'businesses', b.id), sanitizeForFirestore(b));
         counts.businesses++;
       });
 
       params.products.forEach((p) => {
-        batch.set(doc(db, 'products', p.id), p);
+        batch.set(doc(db, 'products', p.id), sanitizeForFirestore(p));
         counts.products++;
       });
 
       if (params.categories) {
         params.categories.forEach((cat) => {
-          batch.set(doc(db, 'categories', cat.id), cat);
+          batch.set(doc(db, 'categories', cat.id), sanitizeForFirestore(cat));
           counts.categories++;
         });
       }
 
       params.locations.forEach((l) => {
-        batch.set(doc(db, 'locations', l.id), l);
+        batch.set(doc(db, 'locations', l.id), sanitizeForFirestore(l));
         counts.locations++;
       });
 
       params.cashiers.forEach((c) => {
-        batch.set(doc(db, 'cashiers', c.id), c);
+        batch.set(doc(db, 'cashiers', c.id), sanitizeForFirestore(c));
         counts.cashiers++;
       });
 
       params.transactions.forEach((t) => {
-        batch.set(doc(db, 'transactions', t.id), t);
+        batch.set(doc(db, 'transactions', t.id), sanitizeForFirestore(t));
         counts.transactions++;
       });
 
@@ -797,7 +833,7 @@ export async function getPlatformSettingsFromFirestore(): Promise<PlatformSettin
 export async function savePlatformSettingsToFirestore(settings: PlatformSettings): Promise<void> {
   if (!auth.currentUser) return;
   try {
-    await setDoc(doc(db, 'platform_settings', 'global'), settings, { merge: true });
+    await setDoc(doc(db, 'platform_settings', 'global'), sanitizeForFirestore(settings), { merge: true });
   } catch (error) {
     console.warn('Failed to save platform settings to Firestore:', error);
   }
@@ -810,7 +846,7 @@ export async function saveCustomerToFirestore(customer: Customer): Promise<void>
   if (!auth.currentUser) return;
   const path = `customers/${customer.id}`;
   try {
-    await setDoc(doc(db, 'customers', customer.id), customer);
+    await setDoc(doc(db, 'customers', customer.id), sanitizeForFirestore(customer));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -822,10 +858,10 @@ export async function updateCustomerInFirestore(customerId: string, updates: Par
   try {
     await setDoc(
       doc(db, 'customers', customerId),
-      {
+      sanitizeForFirestore({
         ...updates,
         updatedAt: new Date().toISOString(),
-      },
+      }),
       { merge: true }
     );
   } catch (error) {
@@ -886,7 +922,7 @@ export async function saveSupplierToFirestore(supplier: Supplier): Promise<void>
   if (!auth.currentUser) return;
   const path = `suppliers/${supplier.id}`;
   try {
-    await setDoc(doc(db, 'suppliers', supplier.id), supplier);
+    await setDoc(doc(db, 'suppliers', supplier.id), sanitizeForFirestore(supplier));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -898,10 +934,10 @@ export async function updateSupplierInFirestore(supplierId: string, updates: Par
   try {
     await setDoc(
       doc(db, 'suppliers', supplierId),
-      {
+      sanitizeForFirestore({
         ...updates,
         updatedAt: new Date().toISOString(),
-      },
+      }),
       { merge: true }
     );
   } catch (error) {

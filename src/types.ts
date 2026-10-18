@@ -240,8 +240,8 @@ export interface Product {
   stockByLocation: Record<string, number>; // locationId -> count
   reorderPoint: number;
   description?: string;
-  supplierId?: string; // Linked supplier reference
-  supplierName?: string; // Denormalized supplier company name
+  supplierId?: string | null; // Linked supplier reference
+  supplierName?: string | null; // Denormalized supplier company name
   isPendingCloudSync?: boolean;
 }
 
@@ -332,9 +332,9 @@ export interface Transaction {
   terminalName: string;
   cashierId: string; // Performing operator
   cashierName: string; // Performing operator
-  customerId?: string;
-  customerName?: string;
-  customerPhone?: string;
+  customerId?: string | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
   loyaltyPointsEarned?: number;
   loyaltyPointsRedeemed?: number;
   customerPreviousPoints?: number;
