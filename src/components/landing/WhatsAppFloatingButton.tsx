@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { WhatsAppLogo } from '../ChannelLogos';
-import { X, MessageCircle, ArrowRight, ShieldCheck, HelpCircle } from 'lucide-react';
+import { X, ArrowRight } from 'lucide-react';
 
 interface WhatsAppFloatingButtonProps {
   phoneNumber?: string; // e.g. +254740463021
@@ -14,9 +15,14 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
   const [isTooltipDismissed, setIsTooltipDismissed] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
   const [isShaking, setIsShaking] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
 
   // Clean phone number to digits only for wa.me URL
   const cleanPhone = (phoneNumber || '254740463021').replace(/[^0-9]/g, '');
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   // Proactive Tooltip: Shakes the button immediately before (19.3s), then shows tooltip copy at 20s for 6s
   useEffect(() => {
@@ -97,9 +103,19 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
     setIsOpen(!isOpen);
   };
 
-  return (
-    <div className="fixed bottom-20 right-5 sm:right-6 z-40 flex flex-col items-end">
-      {/* Proactive Support Beacon Tooltip (Appears after 20s, bounces gently once, auto-dismisses after 6s) */}
+  if (!isMounted || typeof document === 'undefined') {
+    return null;
+  }
+
+  // Render via React Portal to document.body so the button is truly fixed to the viewport window,
+  // immune to any parent scroll container, overflow clipping, or CSS filter/backdrop-blur containing blocks.
+  return createPortal(
+    <div
+      id="whatsapp-fab-container"
+      className="fixed bottom-5 right-5 sm:bottom-6 sm:right-6 z-[9999] flex flex-col items-end pointer-events-auto"
+      style={{ isolation: 'isolate' }}
+    >
+      {/* Proactive Support Beacon Tooltip */}
       {showTooltip && !isOpen && (
         <div
           role="status"
@@ -107,7 +123,7 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
           onClick={handleTooltipClick}
           className={`${
             isExiting ? 'whatsapp-tooltip-exit' : 'whatsapp-tooltip-enter'
-          } mb-3 mr-1 max-w-[290px] sm:max-w-[320px] bg-slate-900/95 backdrop-blur-md text-white border border-emerald-500/50 rounded-2xl p-3.5 shadow-2xl shadow-black/80 cursor-pointer hover:border-emerald-400 transition-colors group relative`}
+          } mb-3 mr-1 max-w-[280px] sm:max-w-[320px] bg-slate-900/95 backdrop-blur-md text-white border border-emerald-500/50 rounded-2xl p-3.5 shadow-2xl shadow-black/80 cursor-pointer hover:border-emerald-400 transition-colors group relative`}
         >
           {/* Tail pointing toward the floating WhatsApp button */}
           <div className="absolute -bottom-1.5 right-6 w-3 h-3 bg-slate-900 border-r border-b border-emerald-500/50 rotate-45" />
@@ -149,7 +165,7 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
 
       {/* Quick Consultation Bubble Menu */}
       {isOpen && (
-        <div className="mb-3 w-72 sm:w-80 bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl p-4 animate-in slide-in-from-bottom-3 fade-in duration-200 text-slate-100">
+        <div className="mb-3 w-72 sm:w-84 bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl p-4 animate-in slide-in-from-bottom-3 fade-in duration-200 text-slate-100">
           <div className="flex items-center justify-between pb-2.5 border-b border-slate-800">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center">
@@ -159,7 +175,7 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
                 <div className="text-xs font-bold text-white">SokoPoS Kenya Support</div>
                 <div className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>Online</span>
+                  <span>Online Specialist</span>
                 </div>
               </div>
             </div>
@@ -167,6 +183,7 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
               type="button"
               onClick={() => setIsOpen(false)}
               className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
+              aria-label="Close menu"
             >
               <X className="w-4 h-4" />
             </button>
@@ -178,9 +195,9 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
                 key={idx}
                 type="button"
                 onClick={() => handleOpenWhatsApp(query.text)}
-                className="w-full text-left p-2 rounded-xl bg-slate-950 hover:bg-emerald-950/40 border border-slate-800 hover:border-emerald-500/40 transition text-xs flex items-center justify-between group cursor-pointer"
+                className="w-full text-left p-2.5 rounded-xl bg-slate-950 hover:bg-emerald-950/40 border border-slate-800 hover:border-emerald-500/40 transition text-xs flex items-center justify-between group cursor-pointer"
               >
-                <span className="font-semibold text-slate-200 group-hover:text-emerald-300 text-[11px]">
+                <span className="font-semibold text-slate-200 group-hover:text-emerald-300 text-[11px] leading-tight">
                   {query.title}
                 </span>
                 <ArrowRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 shrink-0" />
@@ -191,27 +208,30 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
           <button
             type="button"
             onClick={() => handleOpenWhatsApp()}
-            className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md transition cursor-pointer"
+            className="w-full py-2.5 px-3 rounded-xl bg-[#00A859] hover:bg-[#008f4c] active:bg-[#007a41] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md transition cursor-pointer"
           >
-            <WhatsAppLogo className="w-4 h-4" />
-            <span>Talk on WhatsApp</span>
+            <WhatsAppLogo className="w-4.5 h-4.5" />
+            <span>Chat on WhatsApp Directly</span>
           </button>
         </div>
       )}
 
-      {/* Floating Action Button */}
+      {/* Floating Action Button (FAB) Pill Matching User Specification */}
       <button
         type="button"
+        id="whatsapp-landing-fab"
         onClick={handleToggleOpen}
-        className={`group flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-xl shadow-emerald-900/40 transition-all duration-200 border border-emerald-400/40 hover:scale-105 cursor-pointer ${
+        className={`group flex items-center gap-2.5 sm:gap-3 px-4.5 py-2.5 sm:px-5 sm:py-3 rounded-full bg-[#00A859] hover:bg-[#00924D] active:bg-[#008043] text-white font-bold text-xs sm:text-sm shadow-xl shadow-black/35 hover:shadow-2xl hover:shadow-emerald-950/50 transition-all duration-200 border border-emerald-300/40 hover:scale-[1.03] active:scale-[0.98] cursor-pointer select-none ${
           isShaking ? 'whatsapp-button-shake' : ''
         }`}
         aria-label="Talk to a POS Specialist on WhatsApp"
       >
-        <WhatsAppLogo className="w-6 h-6 shrink-0" />
-        <span className="hidden sm:inline font-bold">Talk to a POS Specialist</span>
-        <span className="sm:hidden font-bold">Talk to Specialist</span>
+        <WhatsAppLogo className="w-6 h-6 sm:w-7 sm:h-7 shrink-0" />
+        <span className="font-bold tracking-tight whitespace-nowrap">
+          Talk to a POS Specialist
+        </span>
       </button>
-    </div>
+    </div>,
+    document.body
   );
 };

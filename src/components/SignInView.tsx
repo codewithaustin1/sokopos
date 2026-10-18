@@ -308,36 +308,20 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         className="min-h-full w-full bg-slate-950 flex flex-col justify-between text-slate-100 font-sans selection:bg-blue-600 selection:text-white"
       >
         <header className="px-6 py-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/50 backdrop-blur-md shrink-0">
-          {platformLogo ? (
-            <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3">
+            {platformLogo ? (
               <img
                 src={platformLogo}
                 alt="Platform Logo"
                 className="h-8 max-h-9 max-w-[150px] object-contain drop-shadow-sm"
               />
-              <div>
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                  PRO RETAIL
-                </span>
-                <div className="text-[11px] text-slate-400">Smart Retail & Business Management</div>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-3">
+            ) : (
               <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-black text-white shadow-md shadow-blue-500/20">
                 S
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-black text-sm tracking-tight text-white">SokoPoS</span>
-                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                    PRO RETAIL
-                  </span>
-                </div>
-                <div className="text-[11px] text-slate-400">Smart Retail & Business Management</div>
-              </div>
-            </div>
-          )}
+            )}
+            <span className="font-black text-base sm:text-lg tracking-tight text-white">SokoPoS</span>
+          </div>
         </header>
 
         <main className="flex-1 flex items-center justify-center p-4 sm:p-6 my-auto py-8">
@@ -428,15 +412,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               S
             </div>
           )}
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-black text-sm tracking-tight text-white">SokoPoS</span>
-              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                PRO RETAIL
-              </span>
-            </div>
-            <div className="text-[11px] text-slate-400">Smart Retail & Business Management</div>
-          </div>
+          <span className="font-black text-base sm:text-lg tracking-tight text-white">SokoPoS</span>
         </div>
 
         {/* Quick Nav Anchors for Desktop Visitors */}
@@ -495,9 +471,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 The High-Velocity POS Built for Kenyan Retailers, Bars & Supermarkets
               </h1>
 
-              <p className="text-sm sm:text-base text-slate-300 max-w-2xl mx-auto lg:mx-0 leading-relaxed">
-                Say goodbye to KSh 30,000+ upfront software licenses, clunky desktop towers, and manual debt books. SokoPoS runs on any phone, tablet, or PC with instant M-Pesa STK push, KRA eTIMS tax compliance, and 100% offline resilience.
-              </p>
 
               {/* Primary Dual Action CTAs */}
               <div className="pt-2 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3.5">
@@ -1049,13 +1022,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
 {/* Footer System Disclaimer with Legal & FAQ Links */}
 <footer
-  className={`px-6 py-5 border-t text-center text-xs text-slate-400 shrink-0 relative z-10 ${
+  className={`px-6 pt-6 pb-24 sm:pb-7 border-t text-center text-xs text-slate-400 shrink-0 relative z-10 ${
     loginBgGraphic
       ? 'border-white/10 bg-slate-950/70 backdrop-blur-md'
       : 'border-slate-800/80 bg-slate-950/90'
   }`}
 >
-        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px]">
+        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] sm:pr-72">
           {/* Copyright statement */}
           <div className="flex items-center gap-1.5 flex-wrap justify-center text-slate-400">
             <span>© 2026 SokoPoS Enterprise Platform</span>

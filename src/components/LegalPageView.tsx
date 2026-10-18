@@ -226,20 +226,12 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
           {/* Logo Brand */}
           <div
             onClick={onBackToLogin}
-            className="flex items-center gap-2 cursor-pointer select-none"
+            className="flex items-center gap-2.5 cursor-pointer select-none"
           >
             <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-sm shadow-md shadow-blue-500/20">
               S
             </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-black text-sm sm:text-base text-white tracking-tight">SokoPoS</span>
-                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                  PRO RETAIL
-                </span>
-              </div>
-              <div className="text-[10px] text-slate-400 hidden sm:block">Legal & Information Center</div>
-            </div>
+            <span className="font-black text-base text-white tracking-tight">SokoPoS</span>
           </div>
         </div>
 
