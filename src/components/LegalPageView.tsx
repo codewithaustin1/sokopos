@@ -925,8 +925,10 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
         }`}
       >
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px]">
-          {/* Copyright statement */}
-          <div className="flex items-center gap-1.5 flex-wrap justify-center text-slate-400">
+          {/* Brand Logo & Copyright statement */}
+          <div className="flex items-center gap-2.5 flex-wrap justify-center text-slate-400">
+            <AppLogo theme="dark" size="sm" onClick={onBackToLogin} />
+            <span className="hidden sm:inline text-slate-600">•</span>
             <span>© 2026 SokoPoS Enterprise Platform • Sokoplus Horizon</span>
           </div>
 

@@ -10,6 +10,7 @@ interface ProductFormModalProps {
   onClose: () => void;
   productToEdit?: Product | null;
   initialAiProduct?: ParsedProductPackage | null;
+  initialBarcode?: string;
 }
 
 export const ProductFormModal: React.FC<ProductFormModalProps> = ({
@@ -17,6 +18,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   onClose,
   productToEdit,
   initialAiProduct,
+  initialBarcode,
 }) => {
   const { categories, locations, suppliers, addProduct, updateProduct, deleteProduct, currentLocation } = usePos();
 
@@ -55,7 +57,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       setName('');
       const randNum = Math.floor(1000 + Math.random() * 9000);
       setSku(`SKU-${randNum}`);
-      setBarcode(`616${Math.floor(100000000 + Math.random() * 900000000)}`);
+      setBarcode(initialBarcode ? initialBarcode.trim() : `616${Math.floor(100000000 + Math.random() * 900000000)}`);
       const defaultCat = categories.find((c) => c !== 'All') || categories[0] || 'All';
       setCategory(defaultCat);
       setSupplierId('');

@@ -34,6 +34,7 @@ import { CheckCircle, AlertCircle, Info, Lock, AlertTriangle } from 'lucide-reac
 import { PaymentMethod } from './types';
 import { useBackgroundScanner } from './hooks/useBackgroundScanner';
 import { ScannerInterceptHUD } from './components/ScannerInterceptHUD';
+import { InventoryQuickCheckHUD } from './components/InventoryQuickCheckHUD';
 import { isSuperAdminEmail } from './data/initialData';
 
 function PosAppContent() {
@@ -46,6 +47,7 @@ function PosAppContent() {
     handleBarcodeScanned,
     isDarkMode,
     loginBgGraphic,
+    products,
     cart,
     cartTotal,
     settleExactCash,
@@ -66,6 +68,39 @@ function PosAppContent() {
     setIsBusinessSettingsOpen,
     businessSettingsDefaultTab,
   } = usePos();
+
+  // URL Path Routing: Ensure root URL ('/') always routes to landing page, not logged-in dashboard
+  const [currentPath, setCurrentPath] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return window.location.pathname || '/';
+    }
+    return '/';
+  });
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentPath(window.location.pathname || '/');
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // When unauthenticated, ensure URL stays at root '/'
+  useEffect(() => {
+    if (!currentUser && currentPath !== '/') {
+      if (typeof window !== 'undefined') {
+        window.history.replaceState(null, '', '/');
+      }
+      setCurrentPath('/');
+    }
+  }, [currentUser, currentPath]);
+
+  const navigateToTerminal = () => {
+    if (typeof window !== 'undefined') {
+      window.history.pushState(null, '', '/pos');
+    }
+    setCurrentPath('/pos');
+  };
 
   const [currentTab, setCurrentTab] = useState<'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers' | 'settings' | 'super-admin'>('register');
 
@@ -114,7 +149,13 @@ function PosAppContent() {
   // Persistent Background Barcode Scanner Listener:
   // Operates in the capture phase to capture high-speed keyboard wedge barcode bursts (< 55ms inter-key latency)
   // regardless of which input or modal element is currently focused, with automatic input restoration.
-  useBackgroundScanner({
+  // Optionally triggers an 'Inventory Quick-Check' HUD when an unrecognized barcode is scanned.
+  const {
+    isQuickCheckOpen,
+    quickCheckBarcode,
+    quickCheckMetadata,
+    closeQuickCheck,
+  } = useBackgroundScanner({
     onBarcodeScanned: (barcode) => {
       // Strict Guardrail: No barcode transaction may be initiated without an active session
       if (!activeShift || activeShift.status !== 'open') {
@@ -133,6 +174,15 @@ function PosAppContent() {
       handleBarcodeScanned(barcode);
     },
     enabled: true,
+    enableQuickCheckHUD: true,
+    products,
+    onUnrecognizedBarcode: (barcode) => {
+      soundFx.playBeep(320, 0.15);
+      showToast(
+        `Barcode "${barcode}" is not in catalog. Inventory Quick-Check opened.`,
+        'info'
+      );
+    },
     maxInterKeyLatencyMs: 55,
     enableInputRestoration: true,
   });
@@ -328,8 +378,11 @@ function PosAppContent() {
     soundFx,
   ]);
 
-  // Dedicated full-screen authentication gate when signed out
-  if (!currentUser) {
+  // Path-based routing: Root URL ('/') routes to Landing Page.
+  // POS terminal is accessible at '/pos' or '/app' when authenticated.
+  const isAtLandingPage = currentPath === '/' || !currentUser;
+
+  if (isAtLandingPage) {
     return (
       <div
         className="h-screen w-screen overflow-y-auto dark-scrollbar font-sans bg-slate-950"
@@ -368,7 +421,7 @@ function PosAppContent() {
             </div>
           </div>
         )}
-        <SignInView />
+        <SignInView onLoginSuccess={navigateToTerminal} />
       </div>
     );
   }
@@ -580,6 +633,14 @@ function PosAppContent() {
 
       {/* Destructive Action Confirmation Safeguard Modal */}
       <DestructiveConfirmModal />
+
+      {/* Inventory Quick-Check HUD for Instant Unrecognized Barcode Onboarding */}
+      <InventoryQuickCheckHUD
+        isOpen={isQuickCheckOpen}
+        barcode={quickCheckBarcode}
+        metadata={quickCheckMetadata}
+        onClose={closeQuickCheck}
+      />
 
       {/* Persistent Background Hardware Scanner Interception Telemetry HUD */}
       <ScannerInterceptHUD />

@@ -565,7 +565,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isFirebaseAuthLoading, setIsFirebaseAuthLoading] = useState<boolean>(true);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
 
-  // When logged out, currentUser is null. Default to super admin on initial run if not logged out.
+  // When logged out or visiting clean, currentUser is null.
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
     const isExplicitlyLoggedOut = localStorage.getItem(STORAGE_KEYS.IS_LOGGED_OUT) === 'true';
     if (isExplicitlyLoggedOut) {
@@ -579,7 +579,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         // fallback
       }
     }
-    return INITIAL_SUPER_ADMIN_USER;
+    return null;
   });
 
   useEffect(() => {
@@ -727,6 +727,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setFirebaseUser(fbUser);
       setIsFirebaseAuthLoading(false);
       if (fbUser && fbUser.email) {
+        // If user explicitly signed out, do not auto-login
+        const isExplicitlyLoggedOut = localStorage.getItem(STORAGE_KEYS.IS_LOGGED_OUT) === 'true';
+        if (isExplicitlyLoggedOut) {
+          return;
+        }
         // Clear logged out flag since an authentic Firebase user is active
         localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
 
@@ -5468,6 +5473,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // 14. Authentication Operations (Google OAuth & Credentials)
   const loginWithFirebaseGoogle = async (): Promise<boolean> => {
+    localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
     try {
       setIsFirebaseAuthLoading(true);
 
@@ -5816,36 +5822,59 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const logout = (): boolean => {
-    // Strict Guardrail: An operator may not log out while they have an open session; block logout until closed
+    // 1. If an active shift session is open, safely close and preserve it with full attribution
     if (activeShift && activeShift.status === 'open') {
-      soundFx.playError();
-      showToast(
-        `Logout Blocked: Shift #${activeShift.shiftNumber} is currently open for ${activeShift.cashierName}. You must balance the till and close your shift session before signing out.`,
-        'error'
+      const closedShift: ShiftSession = {
+        ...activeShift,
+        status: 'closed',
+        closedAt: new Date().toISOString(),
+        closedByCashierId: currentCashier?.id || activeShift.cashierId,
+        closedByCashierName: currentCashier?.name || activeShift.cashierName,
+        closingCountedCash:
+          activeShift.openingFloat + (activeShift.cashSales || 0) - (activeShift.cashRefunds || 0),
+        expectedCash:
+          activeShift.openingFloat + (activeShift.cashSales || 0) - (activeShift.cashRefunds || 0),
+        cashVariance: 0,
+        closingNotes: 'Shift session closed automatically upon operator sign-out.',
+      };
+
+      setAllShifts((prev) =>
+        prev.map((s) => (s.id === activeShift.id ? closedShift : s))
       );
-      setIsShiftModalOpen(true);
-      return false;
     }
 
-    // Clear Firebase session if active
-    firebaseSignOut(auth).catch((err) => {
-      console.warn('Firebase signout note:', err);
-    });
-
-    // Mark session as explicitly signed out
+    // 2. Mark session as explicitly signed out
     localStorage.setItem(STORAGE_KEYS.IS_LOGGED_OUT, 'true');
+    localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
 
-    // Reset server freshness status and timestamp for next login
+    // 3. Clear Firebase session if active
+    try {
+      firebaseSignOut(auth).catch((err) => {
+        console.warn('Firebase signout note:', err);
+      });
+    } catch (err) {
+      console.warn('Firebase signout exception:', err);
+    }
+
+    // 4. Reset server freshness status and timestamp for next login
     setIsInventoryFreshFromServer(false);
     setInventoryLastFetchedAt(null);
 
-    // Clear user session completely
+    // 5. Clear user session completely
     setCurrentUser(null);
     clearCart();
     setActiveReceipt(null);
+    setActiveRefundReceipt(null);
     setIsPinLocked(false);
     soundFx.playBeep(440, 0.15);
-    showToast('Signed out of POS terminal. Please sign in to resume.', 'info');
+    showToast('Signed out of POS terminal. Session terminated successfully.', 'info');
+
+    // 6. Navigate to root landing page
+    if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+      window.history.pushState(null, '', '/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+
     return true;
   };
 

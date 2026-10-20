@@ -2182,6 +2182,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
 
                         <div className="bg-white rounded-xl p-2.5 border border-slate-200 flex items-center justify-between shadow-xs">
                           {/* Left: Brand logo area */}
+                          <div className="flex items-center gap-2">
                             <AppLogo theme="light" size="sm" />
 
                             <span className="text-[9px] text-slate-400 font-bold border-l border-slate-200 pl-2">

@@ -41,6 +41,7 @@ interface SignInViewProps {
 
 export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const {
+    currentUser,
     loginWithGoogle,
     loginWithFirebaseGoogle,
     isFirebaseAuthLoading,
@@ -412,16 +413,29 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2.5">
-          <button
-            type="button"
-            id="top-nav-demo-btn"
-            onClick={handleLaunchDemoSandbox}
-            className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-blue-500/20 transition cursor-pointer"
-          >
-            <Zap className="w-3.5 h-3.5 fill-white text-white" />
-            <span className="hidden xs:inline">Interactive</span>
-            <span>Demo</span>
-          </button>
+          {currentUser ? (
+            <button
+              type="button"
+              id="top-nav-pos-terminal-btn"
+              onClick={onLoginSuccess}
+              className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition cursor-pointer"
+            >
+              <Monitor className="w-3.5 h-3.5" />
+              <span>Enter POS Terminal</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              id="top-nav-demo-btn"
+              onClick={handleLaunchDemoSandbox}
+              className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-blue-500/20 transition cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5 fill-white text-white" />
+              <span className="hidden xs:inline">Interactive</span>
+              <span>Demo</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -450,19 +464,48 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 The High-Velocity POS Built for Kenyan Retailers, Bars & Supermarkets
               </h1>
 
+              {/* Logged-In Active User Session Banner */}
+              {currentUser && (
+                <div className="p-3.5 sm:p-4 bg-emerald-950/70 border border-emerald-500/40 rounded-2xl flex items-center justify-between gap-3 text-left shadow-lg animate-in fade-in">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-sm shrink-0 border border-emerald-500/30">
+                      {currentUser.initials}
+                    </div>
+                    <div className="text-xs min-w-0">
+                      <div className="font-bold text-white flex items-center gap-2 truncate">
+                        <span>Logged in as {currentUser.name}</span>
+                        <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono font-bold border border-emerald-500/30">
+                          Active Session
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 truncate">
+                        {currentUser.businessName || currentUser.email}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onLoginSuccess}
+                    className="bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 font-black text-xs sm:text-sm px-4 py-2.5 rounded-xl transition cursor-pointer flex items-center gap-1.5 shrink-0 shadow-md"
+                  >
+                    <span>Enter Terminal</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
 
               {/* Primary Dual Action CTAs */}
               <div className="pt-2 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3.5">
                 <button
                   type="button"
                   id="hero-launch-demo-btn"
-                  onClick={handleLaunchDemoSandbox}
+                  onClick={currentUser ? onLoginSuccess : handleLaunchDemoSandbox}
                   className="primary-cta-shimmer w-full sm:w-auto px-7 py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-sm sm:text-base flex items-center justify-center gap-3 cursor-pointer group"
                 >
                   <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-white/20 text-white shadow-inner shrink-0 group-hover:scale-110 group-hover:rotate-6 transition-transform">
-                    <Zap className="w-3.5 h-3.5 fill-white text-white" />
+                    {currentUser ? <Monitor className="w-3.5 h-3.5 text-white" /> : <Zap className="w-3.5 h-3.5 fill-white text-white" />}
                   </span>
-                  <span className="tracking-tight">Launch Interactive Demo Sandbox</span>
+                  <span className="tracking-tight">{currentUser ? 'Launch POS Terminal' : 'Launch Interactive Demo Sandbox'}</span>
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </button>
 
@@ -1008,8 +1051,10 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   }`}
 >
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] sm:pr-72">
-          {/* Copyright statement */}
-          <div className="flex items-center gap-1.5 flex-wrap justify-center text-slate-400">
+          {/* Brand Logo & Copyright statement */}
+          <div className="flex items-center gap-2.5 flex-wrap justify-center text-slate-400">
+            <AppLogo theme="dark" size="sm" />
+            <span className="hidden sm:inline text-slate-600">•</span>
             <span>© 2026 SokoPoS Enterprise Platform</span>
           </div>
 

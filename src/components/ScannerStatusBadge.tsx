@@ -31,6 +31,7 @@ export const ScannerStatusBadge: React.FC<ScannerStatusBadgeProps> = ({ onScan }
         handleBarcodeScanned(barcode);
       }
     },
+    enabled: !!onScan,
   });
 
   const handleRunSimulation = async (sampleBarcode = '070000000001') => {
@@ -199,12 +200,36 @@ export const ScannerStatusBadge: React.FC<ScannerStatusBadgeProps> = ({ onScan }
                 />
                 <button
                   type="button"
+                  id="simulate-catalog-scan-btn"
                   disabled={isSimulating}
                   onClick={() => handleRunSimulation('070000000001')}
                   className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 transition cursor-pointer shrink-0"
+                  title="Simulate known catalog item (adds directly to cart)"
                 >
                   <Play className="w-3 h-3" />
                   <span>{isSimulating ? 'Bursting...' : 'Simulate Scan'}</span>
+                </button>
+              </div>
+
+              {/* Unrecognized Barcode Quick-Check HUD Test Trigger */}
+              <div className="pt-1.5 border-t border-blue-200/60 flex items-center justify-between gap-2">
+                <span className="text-[11px] text-blue-950 font-medium">
+                  Test Unrecognized Barcode:
+                </span>
+                <button
+                  type="button"
+                  id="simulate-unrecognized-barcode-btn"
+                  disabled={isSimulating}
+                  onClick={() => {
+                    const sampleUncatalogued = `616${Math.floor(100000000 + Math.random() * 900000000)}`;
+                    handleRunSimulation(sampleUncatalogued);
+                    setIsOpen(false);
+                  }}
+                  className="bg-cyan-600 hover:bg-cyan-700 active:bg-cyan-800 disabled:opacity-50 text-white font-bold px-2.5 py-1 rounded-lg text-[11px] flex items-center gap-1 transition cursor-pointer"
+                  title="Simulates a scan for a barcode NOT in the database, opening the Inventory Quick-Check HUD"
+                >
+                  <Zap className="w-3 h-3 text-cyan-200" />
+                  <span>Trigger Quick-Check HUD</span>
                 </button>
               </div>
             </div>

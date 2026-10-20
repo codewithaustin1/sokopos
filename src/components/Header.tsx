@@ -17,6 +17,7 @@ import {
   Clock,
   CreditCard,
   Keyboard,
+  Globe,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { ScannerStatusBadge } from './ScannerStatusBadge';
@@ -68,7 +69,17 @@ export const Header: React.FC<HeaderProps> = ({
     <header id="main-pos-header" className="bg-white border-b border-slate-200 h-14 sm:h-16 px-3 sm:px-4 md:px-6 flex items-center justify-between shrink-0 shadow-xs z-30 relative">
       {/* Brand & Business / Location Selector */}
       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-        <AppLogo theme="light" size="md" />
+        <AppLogo
+          theme="light"
+          size="md"
+          onClick={() => {
+            if (typeof window !== 'undefined') {
+              window.history.pushState(null, '', '/');
+              window.dispatchEvent(new PopStateEvent('popstate'));
+            }
+          }}
+          className="cursor-pointer hover:opacity-85 transition"
+        />
 
         {/* Multi-Location Switcher Dropdown (scoped to current business - hidden on mobile, accessed via bottom nav hamburger) */}
         <div className="hidden lg:block relative min-w-0">
@@ -400,6 +411,22 @@ export const Header: React.FC<HeaderProps> = ({
                   >
                     <Lock className="w-4 h-4 text-slate-500 shrink-0" />
                     <span>Lock Register (Enter PIN)</span>
+                  </button>
+
+                  {/* View Landing Page */}
+                  <button
+                    id="user-menu-landing-page-btn"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      if (typeof window !== 'undefined') {
+                        window.history.pushState(null, '', '/');
+                        window.dispatchEvent(new PopStateEvent('popstate'));
+                      }
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                  >
+                    <Globe className="w-4 h-4 text-blue-500 shrink-0" />
+                    <span>View Landing Page (Home)</span>
                   </button>
                 </div>
 
