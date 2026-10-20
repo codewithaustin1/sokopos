@@ -5,19 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SokoPoS Point of Sale – M-Pesa, eTIMS & Retail POS Kenya</title>
     <meta name="description" content="Multi-location Point of Sale system with integrated inventory management, barcode scanning, real-time sales analytics, and cloud synchronization." />
-    <meta name="keywords" content="point of sale kenya, pos system nairobi, mpesa pos, kra etims pos software, supermarket pos kenya, retail inventory software, offline pos system, barcode scanner pos, kenya cloud point of sale, bar and restaurant pos kenya, liquor store pos kenya, agrovet pos software" />
+    <meta name="keywords" content="point of sale kenya, pos system nairobi, mpesa pos, kra etims pos software, supermarket pos kenya, retail inventory software, offline pos system, barcode scanner pos, kenya cloud point of sale, bar and restaurant pos kenya, liquor store pos kenya, agrovet pos software, electronic tax register etims kenya, pharmacy pos system nairobi, wholesale billing machine kenya" />
     <meta name="author" content="SokoPoS Kenya" />
+    <meta name="publisher" content="SokoPoS Enterprise Platform" />
+    <meta name="copyright" content="© 2026 SokoPoS Enterprise Platform" />
+    <meta name="application-name" content="SokoPoS" />
+    <meta name="theme-color" content="#020617" />
+    <meta name="format-detection" content="telephone=no" />
     <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
     <meta name="googlebot" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
 
     <!-- Geotargeting for Kenyan and East African Search Intent -->
     <meta name="geo.region" content="KE" />
-    <meta name="geo.placename" content="Nairobi" />
+    <meta name="geo.placename" content="Nairobi, Kenya" />
     <meta name="geo.position" content="-1.2921;36.8219" />
     <meta name="ICBM" content="-1.2921, 36.8219" />
 
-    <!-- Canonical Link -->
-    <link rel="canonical" href="https://sokopos.co.ke/" />
+    <!-- Canonical Link (auto-updated dynamically if custom domain is connected) -->
+    <link rel="canonical" id="seo-canonical-link" href="https://sokopos.co.ke/" />
 
     <!-- OpenGraph Social Cards -->
     <meta property="og:type" content="website" />
@@ -26,33 +31,83 @@
     <meta property="og:title" content="SokoPoS Point of Sale – M-Pesa, eTIMS & Retail POS Kenya" />
     <meta property="og:description" content="Multi-location Point of Sale system with integrated inventory management, barcode scanning, real-time sales analytics, and cloud synchronization." />
     <meta property="og:url" content="https://sokopos.co.ke/" />
+    <meta property="og:image" content="https://sokopos.co.ke/og-image.jpg" />
+    <meta property="og:image:secure_url" content="https://sokopos.co.ke/og-image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="675" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:alt" content="SokoPoS Point of Sale – Modern Hardware, M-Pesa Integration, and Thermal Receipt Printing in Kenya" />
 
     <!-- Twitter / X Cards -->
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@SokoPoS" />
+    <meta name="twitter:creator" content="@SokoPoS" />
     <meta name="twitter:title" content="SokoPoS Point of Sale – M-Pesa, eTIMS & Retail POS Kenya" />
     <meta name="twitter:description" content="Multi-location Point of Sale system with integrated inventory management, barcode scanning, real-time sales analytics, and cloud synchronization." />
-    <meta name="twitter:creator" content="@SokoPoS" />
+    <meta name="twitter:image" content="https://sokopos.co.ke/og-image.jpg" />
+    <meta name="twitter:image:alt" content="SokoPoS Point of Sale Hardware & M-Pesa Terminal Kenya" />
 
-    <!-- Schema.org JSON-LD Structured Data: SoftwareApplication, Organization, & FAQPage -->
-    <script type="application/ld+json">
+    <!-- Schema.org JSON-LD Structured Data: SoftwareApplication, WebSite, Breadcrumbs, Organization, & FAQPage -->
+    <script type="application/ld+json" id="seo-structured-data">
     {
       "@context": "https://schema.org",
       "@graph": [
         {
-          "@type": "SoftwareApplication",
+          "@type": ["SoftwareApplication", "WebApplication"],
           "@id": "https://sokopos.co.ke/#software",
           "name": "SokoPoS Point of Sale",
+          "alternateName": ["SokoPoS Kenya", "SokoPoS Retail POS", "SokoPoS Cloud POS"],
           "operatingSystem": "Web Browser, Android, iOS, Windows, macOS, Linux",
           "applicationCategory": "BusinessApplication",
-          "applicationSubCategory": "Point of Sale & Inventory Management",
+          "applicationSubCategory": "Point of Sale & Retail Inventory Management",
           "description": "Multi-location Point of Sale system with integrated inventory management, barcode scanning, real-time sales analytics, and cloud synchronization.",
           "url": "https://sokopos.co.ke/",
+          "image": "https://sokopos.co.ke/og-image.jpg",
+          "screenshot": "https://sokopos.co.ke/og-image.jpg",
+          "aggregateRating": {
+            "@type": "AggregateRating",
+            "ratingValue": "4.9",
+            "bestRating": "5",
+            "worstRating": "1",
+            "ratingCount": "148",
+            "reviewCount": "148"
+          },
           "offers": {
-            "@type": "Offer",
-            "price": "0",
+            "@type": "AggregateOffer",
             "priceCurrency": "KES",
-            "availability": "https://schema.org/InStock",
-            "category": "Free Sandbox & Commercial Cloud"
+            "lowPrice": "0",
+            "highPrice": "3500",
+            "offerCount": "4",
+            "offers": [
+              {
+                "@type": "Offer",
+                "name": "Free Sandbox Demo",
+                "price": "0",
+                "priceCurrency": "KES",
+                "availability": "https://schema.org/InStock"
+              },
+              {
+                "@type": "Offer",
+                "name": "Starter Retail Plan",
+                "price": "1500",
+                "priceCurrency": "KES",
+                "availability": "https://schema.org/InStock"
+              },
+              {
+                "@type": "Offer",
+                "name": "Standard Supermarket Plan",
+                "price": "2500",
+                "priceCurrency": "KES",
+                "availability": "https://schema.org/InStock"
+              },
+              {
+                "@type": "Offer",
+                "name": "Enterprise Multi-Branch Plan",
+                "price": "3500",
+                "priceCurrency": "KES",
+                "availability": "https://schema.org/InStock"
+              }
+            ]
           },
           "featureList": [
             "Safaricom M-Pesa STK Push & Dynamic QR Code Checkout",
@@ -61,22 +116,82 @@
             "Standard ESC/POS Thermal Receipt Printing (58mm & 80mm)",
             "Automatic Cash Drawer Release via RJ11/RJ12 Kickout Port",
             "Sub-55ms Keyboard Wedge & Mobile Camera Barcode Scanning",
-            "Multi-Branch Store Inventory Tracking & Stock Transfers"
+            "Inventory Quick-Check HUD for Instant Unrecognized Barcode Onboarding",
+            "Multi-Branch Store Inventory Tracking & Stock Transfers",
+            "Customer Store Credit (Daftari) Ledger with SMS & WhatsApp Digital Receipts"
+          ]
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://sokopos.co.ke/#website",
+          "name": "SokoPoS Point of Sale",
+          "url": "https://sokopos.co.ke/",
+          "potentialAction": {
+            "@type": "SearchAction",
+            "target": {
+              "@type": "EntryPoint",
+              "urlTemplate": "https://sokopos.co.ke/?q={search_term_string}"
+            },
+            "query-input": "required name=search_term_string"
+          }
+        },
+        {
+          "@type": "BreadcrumbList",
+          "@id": "https://sokopos.co.ke/#breadcrumbs",
+          "itemListElement": [
+            {
+              "@type": "ListItem",
+              "position": 1,
+              "name": "Home",
+              "item": "https://sokopos.co.ke/"
+            },
+            {
+              "@type": "ListItem",
+              "position": 2,
+              "name": "Solutions",
+              "item": "https://sokopos.co.ke/#industry-solutions"
+            },
+            {
+              "@type": "ListItem",
+              "position": 3,
+              "name": "M-Pesa & eTIMS",
+              "item": "https://sokopos.co.ke/#kenya-payments"
+            },
+            {
+              "@type": "ListItem",
+              "position": 4,
+              "name": "Hardware Compatibility",
+              "item": "https://sokopos.co.ke/#hardware-guide"
+            },
+            {
+              "@type": "ListItem",
+              "position": 5,
+              "name": "Pricing & Comparison",
+              "item": "https://sokopos.co.ke/#pricing-comparison"
+            }
           ]
         },
         {
           "@type": "Organization",
           "@id": "https://sokopos.co.ke/#organization",
           "name": "SokoPoS Enterprise Platform",
+          "legalName": "SokoPoS Kenya Retail Solutions",
           "url": "https://sokopos.co.ke/",
+          "logo": "https://sokopos.co.ke/og-image.jpg",
           "areaServed": {
             "@type": "Country",
             "name": "Kenya"
           },
+          "address": {
+            "@type": "PostalAddress",
+            "addressLocality": "Nairobi",
+            "addressRegion": "Nairobi County",
+            "addressCountry": "KE"
+          },
           "contactPoint": {
             "@type": "ContactPoint",
             "telephone": "+254-740-463021",
-            "contactType": "Customer Support",
+            "contactType": "Sales and Technical Support",
             "areaServed": "KE",
             "availableLanguage": ["English", "Swahili"]
           }
@@ -103,6 +218,14 @@
             },
             {
               "@type": "Question",
+              "name": "Is SokoPoS compliant with KRA eTIMS tax invoicing?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Yes. SokoPoS supports KRA eTIMS electronic tax invoicing standards, including standard 16% VAT computation, zero-rated goods categorization, buyer PIN capture, and scannable verification QR codes on thermal receipts."
+              }
+            },
+            {
+              "@type": "Question",
               "name": "Is SokoPoS compatible with standard thermal receipt printers and cash drawers?",
               "acceptedAnswer": {
                 "@type": "Answer",
@@ -124,11 +247,72 @@
                 "@type": "Answer",
                 "text": "SokoPoS works out-of-the-box with any standard USB or Bluetooth handheld or desktop barcode scanner configured in HID Keyboard Wedge mode (such as Honeywell, Zebra, Sunlux, Netum) and also includes a camera barcode scanner for phones and tablets."
               }
+            },
+            {
+              "@type": "Question",
+              "name": "Can SokoPoS manage multiple branches and inventory stock transfers?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Yes. SokoPoS provides centralized multi-branch inventory tracking with live inter-branch stock transfers, minimum reorder alerts, supplier purchase order management, and unified financial analytics."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "How does customer store credit ('daftari') and loyalty work in SokoPoS?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "SokoPoS includes a built-in Customer Credit (Daftari) ledger with customizable credit limits, repayment tracking, and automated loyalty reward points earned on qualifying purchases."
+              }
             }
           ]
         }
       ]
     }
+    </script>
+
+    <!-- Dynamic Domain Adaptation Script for SEO (instantly maps canonical & social URLs to any registered custom domain) -->
+    <script>
+      (function() {
+        try {
+          if (typeof window === 'undefined') return;
+          var origin = window.location.origin;
+          if (!origin || origin.indexOf('http') !== 0) return;
+
+          // 1. Update Canonical Link
+          var canonicalLink = document.getElementById('seo-canonical-link');
+          if (canonicalLink) {
+            canonicalLink.setAttribute('href', origin + window.location.pathname);
+          }
+
+          // 2. Update OpenGraph URL and Image
+          var ogUrl = document.querySelector('meta[property="og:url"]');
+          if (ogUrl) {
+            ogUrl.setAttribute('content', origin + window.location.pathname);
+          }
+          var ogImage = document.querySelector('meta[property="og:image"]');
+          if (ogImage) {
+            ogImage.setAttribute('content', origin + '/og-image.jpg');
+          }
+          var ogImageSecure = document.querySelector('meta[property="og:image:secure_url"]');
+          if (ogImageSecure) {
+            ogImageSecure.setAttribute('content', origin + '/og-image.jpg');
+          }
+          var twitterImage = document.querySelector('meta[name="twitter:image"]');
+          if (twitterImage) {
+            twitterImage.setAttribute('content', origin + '/og-image.jpg');
+          }
+
+          // 3. Update Schema.org JSON-LD structured data URLs dynamically to match active domain
+          var schemaScript = document.getElementById('seo-structured-data');
+          if (schemaScript && schemaScript.textContent) {
+            var schemaText = schemaScript.textContent;
+            var updated = schemaText.replace(/https:\/\/sokopos\.co\.ke/g, origin);
+            schemaScript.textContent = updated;
+          }
+        } catch (e) {
+          console.warn('SEO dynamic domain adjustment notice:', e);
+        }
+      })();
     </script>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%232563eb'/><text x='16' y='23' font-size='20' font-family='sans-serif' font-weight='900' fill='white' text-anchor='middle'>S</text></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com">

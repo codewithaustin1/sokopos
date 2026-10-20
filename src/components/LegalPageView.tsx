@@ -209,7 +209,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
       }`}
     >
       {/* Top Navigation Bar */}
-      <header className="sticky top-0 z-30 w-full border-b border-slate-800 bg-slate-950/95 backdrop-blur-md px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4">
+      <header className="fixed top-0 left-0 right-0 z-30 w-full border-b border-slate-800 bg-slate-950/95 backdrop-blur-md px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 sm:gap-4">
           <button
             type="button"
@@ -242,7 +242,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
       </header>
 
       {/* Main Page Body */}
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-8 sm:pb-12">
         {/* Navigation Breadcrumb & Tab Pills */}
         <div className="mb-6">
           <div className="flex items-center gap-2 text-xs text-slate-400 mb-3">

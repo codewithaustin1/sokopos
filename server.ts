@@ -57,6 +57,72 @@ async function startServer() {
     statusCode: 429,
   });
 
+  // Dynamic SEO Robots & XML Sitemap endpoints that automatically resolve to the incoming host/domain
+  app.get('/robots.txt', (req, res) => {
+    const host = req.get('host') || 'sokopos.co.ke';
+    const proto = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+    const origin = `${proto}://${host}`;
+    res.type('text/plain');
+    res.send(`# robots.txt for SokoPoS Point of Sale
+User-agent: *
+Allow: /
+Allow: /#industry-solutions
+Allow: /#kenya-payments
+Allow: /#hardware-guide
+Allow: /#pricing-comparison
+
+# Prevent crawling of administrative API endpoints
+Disallow: /api/
+Disallow: /api/*
+
+# Dynamic XML Sitemap matching incoming domain
+Sitemap: ${origin}/sitemap.xml
+`);
+  });
+
+  app.get('/sitemap.xml', (req, res) => {
+    const host = req.get('host') || 'sokopos.co.ke';
+    const proto = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+    const origin = `${proto}://${host}`;
+    const today = new Date().toISOString().split('T')[0];
+    res.type('application/xml');
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
+  <url>
+    <loc>${origin}/</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>${origin}/#industry-solutions</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>${origin}/#kenya-payments</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>${origin}/#hardware-guide</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>${origin}/#pricing-comparison</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+</urlset>`);
+  });
+
   // API health
   app.get('/api/health', (req, res) => {
     res.json({
@@ -538,6 +604,9 @@ Extract:
       return res.status(500).json({ error: err.message || 'Digitax sale details proxy failed' });
     }
   });
+
+  // Serve public assets (og-image.jpg, robots.txt, sitemap.xml, icons, audio)
+  app.use(express.static(path.join(process.cwd(), 'public')));
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {

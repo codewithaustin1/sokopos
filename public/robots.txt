@@ -10,5 +10,5 @@ Allow: /#pricing-comparison
 Disallow: /api/
 Disallow: /api/*
 
-# XML Sitemap location
+# XML Sitemap location (fallback domain, dynamic resolution handled via server.ts)
 Sitemap: https://sokopos.co.ke/sitemap.xml

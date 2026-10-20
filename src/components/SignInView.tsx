@@ -610,9 +610,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             {/* TAB 1: GOOGLE OAUTH */}
             {activeTab === 'google' && (
               <div className="pt-1">
-                <h1 className="text-black font-extrabold text-xl sm:text-[24px] tracking-tight text-center my-6 sm:my-7 leading-tight">
+                <h2 className="text-black font-extrabold text-xl sm:text-[24px] tracking-tight text-center my-6 sm:my-7 leading-tight">
                   Log In to POS Terminal
-                </h1>
+                </h2>
 
                 {/* Primary: Live Firebase Google Button */}
                 <button
@@ -684,9 +684,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             {/* TAB 2: TERMINAL KEYPAD PIN */}
             {activeTab === 'terminal' && (
               <div className="pt-1 space-y-3 text-black">
-                <h1 className="text-black font-extrabold text-lg sm:text-xl tracking-tight text-center mt-3 mb-2 leading-tight">
+                <h2 className="text-black font-extrabold text-lg sm:text-xl tracking-tight text-center mt-3 mb-2 leading-tight">
                   Log In to POS Terminal
-                </h1>
+                </h2>
 
                 {/* Staff Selector */}
                 <div>
@@ -892,9 +892,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 </div>
               ) : (
                 <form onSubmit={handleRegisterStoreSubmit} className="space-y-3 pt-1 text-black">
-                  <h1 className="text-black font-bold text-xl tracking-tight text-center mb-1">
+                  <h2 className="text-black font-bold text-xl tracking-tight text-center mb-1">
                     Set Up a New Store
-                  </h1>
+                  </h2>
                   <p className="text-[11px] text-neutral-600 text-center mb-3">
                     Register a retail location. Google Account receives full administrative ownership.
                   </p>

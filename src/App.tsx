@@ -35,6 +35,8 @@ import { PaymentMethod } from './types';
 import { useBackgroundScanner } from './hooks/useBackgroundScanner';
 import { ScannerInterceptHUD } from './components/ScannerInterceptHUD';
 import { InventoryQuickCheckHUD } from './components/InventoryQuickCheckHUD';
+import { DynamicSitemapModal } from './components/DynamicSitemapModal';
+import { getSystemPaths, generateSitemapJson } from './utils/sitemapManifest';
 import { isSuperAdminEmail } from './data/initialData';
 
 function PosAppContent() {
@@ -94,6 +96,66 @@ function PosAppContent() {
       setCurrentPath('/');
     }
   }, [currentUser, currentPath]);
+
+  // Hidden Dynamic Sitemap View Triggered by Console Command (sitemap() / window.sitemap())
+  const [isSitemapOpen, setIsSitemapOpen] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.location.pathname === '/sitemap';
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const triggerSitemap = () => {
+      setIsSitemapOpen(true);
+      const manifest = generateSitemapJson();
+      const entries = getSystemPaths();
+
+      console.group('%c🗺️ SokoPoS Search Engine Sitemap & Crawler Pathways', 'color: #0284c7; font-weight: bold; font-size: 13px;');
+      console.log(`Active Domain: ${window.location.origin}`);
+      console.log(`Total System Routes: ${entries.length} (${entries.filter(e => !e.authRequired).length} public crawlable, ${entries.filter(e => e.authRequired).length} operational session routes)`);
+      console.table(
+        entries.map((e) => ({
+          Path: e.path,
+          Title: e.title,
+          Category: e.category,
+          Priority: e.priority,
+          Frequency: e.changeFreq,
+          Robots: e.robotsDirective,
+          Protected: e.authRequired ? 'Yes (Auth)' : 'No (Public)',
+        }))
+      );
+      console.log('%c💡 Tip: The Dynamic Sitemap HUD is now open on your screen with instant XML/JSON export and direct path inspection.', 'color: #10b981; font-style: italic;');
+      console.groupEnd();
+
+      return manifest;
+    };
+
+    // Attach to global window scope so developers/crawlers can invoke it anytime in console
+    (window as any).sitemap = triggerSitemap;
+    (window as any).showSitemap = triggerSitemap;
+    (window as any).__SOKOPOS_SITEMAP__ = triggerSitemap;
+
+    // Log helpful discovery hint in DevTools console
+    if (!(window as any).__sitemap_hint_shown__) {
+      (window as any).__sitemap_hint_shown__ = true;
+      console.info(
+        '%c🗺️ SokoPoS SEO Engine:%c Type %csitemap()%c or %cwindow.sitemap()%c in this console to inspect the dynamic search crawler sitemap.',
+        'color: #0284c7; font-weight: bold;',
+        'color: inherit;',
+        'background: #0f172a; color: #38bdf8; font-family: monospace; padding: 2px 4px; border-radius: 4px;',
+        'color: inherit;',
+        'background: #0f172a; color: #38bdf8; font-family: monospace; padding: 2px 4px; border-radius: 4px;',
+        'color: inherit;'
+      );
+    }
+
+    const handleEvent = () => setIsSitemapOpen(true);
+    window.addEventListener('sokopos-open-sitemap', handleEvent);
+    return () => {
+      window.removeEventListener('sokopos-open-sitemap', handleEvent);
+    };
+  }, []);
 
   const navigateToTerminal = () => {
     if (typeof window !== 'undefined') {
@@ -422,6 +484,12 @@ function PosAppContent() {
           </div>
         )}
         <SignInView onLoginSuccess={navigateToTerminal} />
+
+        {/* Hidden Dynamic Sitemap View triggered by console command */}
+        <DynamicSitemapModal
+          isOpen={isSitemapOpen}
+          onClose={() => setIsSitemapOpen(false)}
+        />
       </div>
     );
   }
@@ -644,6 +712,12 @@ function PosAppContent() {
 
       {/* Persistent Background Hardware Scanner Interception Telemetry HUD */}
       <ScannerInterceptHUD />
+
+      {/* Hidden Dynamic Sitemap View triggered by console command */}
+      <DynamicSitemapModal
+        isOpen={isSitemapOpen}
+        onClose={() => setIsSitemapOpen(false)}
+      />
     </div>
   );
 }
