@@ -95,11 +95,20 @@ export const ReportPrintModal: React.FC<ReportPrintModalProps> = ({
     audio?.playSuccess?.();
     const safeName = (data.business?.name || 'sokopos').replace(/[^a-z0-9]/gi, '_').toLowerCase();
     const filename = `${safeName}_${data.meta.id}_${Date.now()}`;
-    const headers = data.csvHeaders || data.tableHeaders;
-    const rows = data.csvRows || data.tableRows;
+    const rawHeaders = data.csvHeaders || data.tableHeaders;
+    const rawRows = data.csvRows || data.tableRows;
+    const isAction = (h: string) => h.toLowerCase() === 'action' || h.toLowerCase() === 'actions';
+    const hasAct = rawHeaders.some(isAction);
+    const headers = hasAct ? rawHeaders.filter((h) => !isAction(h)) : rawHeaders;
+    const rows = hasAct ? rawRows.map((r) => r.slice(0, headers.length)) : rawRows;
     exportToCsv(filename, headers, rows);
     showToast(`Exported ${data.meta.title} CSV`, 'success');
   };
+
+  const isActionHeader = (h: string) => h.toLowerCase() === 'action' || h.toLowerCase() === 'actions';
+  const printableHeaders = data.tableHeaders.filter((h) => !isActionHeader(h));
+  const hasActionInTable = printableHeaders.length < data.tableHeaders.length;
+  const printableRows = hasActionInTable ? data.tableRows.map((r) => r.slice(0, printableHeaders.length)) : data.tableRows;
 
   const currentDate = new Date().toLocaleString();
   const businessName = data.business?.name || 'SokoPoS Retail';
@@ -266,11 +275,11 @@ export const ReportPrintModal: React.FC<ReportPrintModalProps> = ({
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-y-2 border-slate-800 bg-slate-100 text-slate-800 text-[10px] font-black uppercase tracking-wider">
-                    {data.tableHeaders.map((header, idx) => (
+                    {printableHeaders.map((header, idx) => (
                       <th
                         key={idx}
                         className={`py-2.5 px-3 ${
-                          idx === 0 ? 'text-left' : idx >= data.tableHeaders.length - 2 ? 'text-right' : 'text-left'
+                          idx === 0 ? 'text-left' : idx >= printableHeaders.length - 2 ? 'text-right' : 'text-left'
                         }`}
                       >
                         {header}
@@ -279,14 +288,14 @@ export const ReportPrintModal: React.FC<ReportPrintModalProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 font-normal text-slate-700">
-                  {data.tableRows.length === 0 ? (
+                  {printableRows.length === 0 ? (
                     <tr>
-                      <td colSpan={data.tableHeaders.length} className="py-8 text-center text-slate-400">
+                      <td colSpan={printableHeaders.length} className="py-8 text-center text-slate-400">
                         No transactional data records found for this period.
                       </td>
                     </tr>
                   ) : (
-                    data.tableRows.map((row, rIdx) => (
+                    printableRows.map((row, rIdx) => (
                       <tr
                         key={rIdx}
                         className={rIdx % 2 === 1 ? 'bg-slate-50/70' : 'bg-white'}
@@ -297,7 +306,7 @@ export const ReportPrintModal: React.FC<ReportPrintModalProps> = ({
                             className={`py-2.5 px-3 text-[11px] ${
                               cIdx === 0
                                 ? 'font-bold text-slate-900'
-                                : cIdx >= data.tableHeaders.length - 2
+                                : cIdx >= printableHeaders.length - 2
                                 ? 'text-right font-mono font-medium'
                                 : 'text-slate-600'
                             }`}

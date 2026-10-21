@@ -4984,8 +4984,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     let timeoutId: NodeJS.Timeout;
     const INACTIVITY_LIMIT_MS = 15 * 60 * 1000; // 15 minutes
+    let lastReset = 0;
 
-    const resetTimer = () => {
+    // Throttle activity event execution (especially rapid scroll & mousemove) to keep main-thread 60fps
+    const throttledResetTimer = () => {
+      const now = Date.now();
+      if (now - lastReset < 3000) return;
+      lastReset = now;
       clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
         forceLogoutSession('timeout', undefined, 'Inactivity timeout after 15 minutes of idle terminal');
@@ -4993,12 +4998,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     const events = ['mousedown', 'mousemove', 'keydown', 'touchstart', 'scroll'];
-    events.forEach((evt) => window.addEventListener(evt, resetTimer, { passive: true }));
-    resetTimer();
+    events.forEach((evt) => window.addEventListener(evt, throttledResetTimer, { passive: true }));
+    throttledResetTimer();
 
     return () => {
       clearTimeout(timeoutId);
-      events.forEach((evt) => window.removeEventListener(evt, resetTimer));
+      events.forEach((evt) => window.removeEventListener(evt, throttledResetTimer));
     };
   }, [currentUser, forceLogoutSession]);
 

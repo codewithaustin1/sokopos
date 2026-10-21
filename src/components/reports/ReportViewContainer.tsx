@@ -66,12 +66,38 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
   dateRange,
   selectedLocationId,
 }) => {
-  const { shiftHistory, adminActivityLogs, supervisorOverrideLogs, suppliers, soundFx, showToast } = usePos();
+  const { shiftHistory, adminActivityLogs, supervisorOverrideLogs, suppliers, soundFx, showToast, setActiveReceipt } = usePos();
   const audio = soundFx || directSoundFx;
   const [activeReportId, setActiveReportId] = useState<ReportType>('sales');
   const [phaseFilter, setPhaseFilter] = useState<'all' | ReportCategory>('phase1');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
+
+  const handleReprintTransaction = (receiptNumOrId: string) => {
+    const clean = receiptNumOrId.replace(/^#/, '').trim().toLowerCase();
+    const targetTx = transactions.find(
+      (t) =>
+        t.receiptNumber.toLowerCase() === clean ||
+        t.id.toLowerCase() === clean ||
+        `#${t.receiptNumber.toLowerCase()}` === clean
+    );
+
+    if (targetTx) {
+      audio.playBarcodeBeep();
+      setActiveReceipt({
+        ...targetTx,
+        isReprint: true,
+        reprintedAt: new Date().toISOString(),
+      });
+      showToast(
+        `Duplicate receipt loaded for #${targetTx.receiptNumber}. Ready to provide customer copy.`,
+        'info'
+      );
+    } else {
+      audio.playError();
+      showToast(`Could not find transaction record for "${receiptNumOrId}"`, 'error');
+    }
+  };
 
   const activeBusinessObj: Business = useMemo(() => {
     if (currentBusiness) return currentBusiness;
@@ -164,7 +190,7 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
     switch (activeReportId) {
       // 1. Sales Report
       case 'sales': {
-        const headers = ['Receipt #', 'Date / Time', 'Location', 'Cashier', 'Items', 'Payment', `Total (${currency})`, 'Status'];
+        const headers = ['Receipt #', 'Date / Time', 'Location', 'Cashier', 'Items', 'Payment', `Total (${currency})`, 'Status', 'Action'];
         const rows = salesData.transactions
           .filter((tx) => {
             if (!searchQuery) return true;
@@ -184,6 +210,7 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
             tx.paymentMethod.toUpperCase(),
             tx.total.toFixed(2),
             tx.status.toUpperCase(),
+            'REPRINT',
           ]);
 
         return {
@@ -372,7 +399,7 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
 
       // 7. Refund / Void / Return Report
       case 'refund_void': {
-        const headers = ['Receipt #', 'Timestamp', 'Cashier', 'Returned Items', `Refund Amount (${currency})`, 'Return Reason'];
+        const headers = ['Receipt #', 'Timestamp', 'Cashier', 'Returned Items', `Refund Amount (${currency})`, 'Return Reason', 'Action'];
         const rows = refundData.itemizedRefunds
           .filter((r) => {
             if (!searchQuery) return true;
@@ -390,6 +417,7 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
             r.productName,
             r.amount.toFixed(2),
             r.reason,
+            'REPRINT',
           ]);
 
         return {
@@ -771,7 +799,10 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
 
   const handleInstantCsv = () => {
     const filename = `${activeBusinessObj.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${activeMeta.id}_${Date.now()}`;
-    exportToCsv(filename, reportPayload.tableHeaders, reportPayload.tableRows);
+    const hasAction = reportPayload.tableHeaders.some((h) => h.toLowerCase() === 'action');
+    const headers = hasAction ? reportPayload.tableHeaders.filter((h) => h.toLowerCase() !== 'action') : reportPayload.tableHeaders;
+    const rows = hasAction ? reportPayload.tableRows.map((r) => r.slice(0, headers.length)) : reportPayload.tableRows;
+    exportToCsv(filename, headers, rows);
   };
 
   return (
@@ -978,7 +1009,13 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
                     <th
                       key={idx}
                       className={`py-3 px-4 whitespace-nowrap ${
-                        idx === 0 ? 'text-left' : idx >= reportPayload.tableHeaders.length - 2 ? 'text-right' : 'text-left'
+                        idx === 0
+                          ? 'text-left'
+                          : h === 'Action'
+                          ? 'text-center'
+                          : idx >= reportPayload.tableHeaders.length - (reportPayload.tableHeaders.includes('Action') ? 3 : 2)
+                          ? 'text-right'
+                          : 'text-left'
                       }`}
                     >
                       {h}
@@ -996,20 +1033,62 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
                 ) : (
                   reportPayload.tableRows.map((row, rIdx) => (
                     <tr key={rIdx} className="hover:bg-slate-50/80 transition">
-                      {row.map((cell, cIdx) => (
-                        <td
-                          key={cIdx}
-                          className={`py-3 px-4 whitespace-nowrap ${
-                            cIdx === 0
-                              ? 'font-bold text-slate-900'
-                              : cIdx >= reportPayload.tableHeaders.length - 2
-                              ? 'text-right font-mono font-medium text-slate-900'
-                              : 'text-slate-600 text-[11px]'
-                          }`}
-                        >
-                          {typeof cell === 'boolean' ? (cell ? 'YES' : 'NO') : String(cell)}
-                        </td>
-                      ))}
+                      {row.map((cell, cIdx) => {
+                        const isActionColumn =
+                          reportPayload.tableHeaders[cIdx] === 'Action' || cell === 'REPRINT';
+
+                        if (isActionColumn) {
+                          const receiptNum = String(row[0]);
+                          return (
+                            <td key={cIdx} className="py-2.5 px-4 text-center whitespace-nowrap">
+                              <button
+                                type="button"
+                                id={`reprint-order-btn-${rIdx}`}
+                                onClick={() => handleReprintTransaction(receiptNum)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 active:bg-blue-200 text-blue-700 hover:text-blue-900 border border-blue-200/80 hover:border-blue-300 font-bold text-xs transition cursor-pointer shadow-2xs group"
+                                title={`Reprint duplicate receipt for ${receiptNum}`}
+                              >
+                                <Printer className="w-3.5 h-3.5 text-blue-600 group-hover:scale-110 transition-transform" />
+                                <span>Reprint</span>
+                              </button>
+                            </td>
+                          );
+                        }
+
+                        if (cIdx === 0 && (activeReportId === 'sales' || activeReportId === 'refund_void')) {
+                          return (
+                            <td key={cIdx} className="py-3 px-4 whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => handleReprintTransaction(String(cell))}
+                                className="font-mono font-bold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer flex items-center gap-1 text-left"
+                                title={`Click to reprint duplicate receipt for ${cell}`}
+                              >
+                                <span>{String(cell)}</span>
+                              </button>
+                            </td>
+                          );
+                        }
+
+                        const isNumericTotal =
+                          cIdx >= reportPayload.tableHeaders.length - (reportPayload.tableHeaders.includes('Action') ? 3 : 2) &&
+                          !reportPayload.tableHeaders[cIdx].includes('Status');
+
+                        return (
+                          <td
+                            key={cIdx}
+                            className={`py-3 px-4 whitespace-nowrap ${
+                              cIdx === 0
+                                ? 'font-bold text-slate-900'
+                                : isNumericTotal
+                                ? 'text-right font-mono font-medium text-slate-900'
+                                : 'text-slate-600 text-[11px]'
+                            }`}
+                          >
+                            {typeof cell === 'boolean' ? (cell ? 'YES' : 'NO') : String(cell)}
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))
                 )}

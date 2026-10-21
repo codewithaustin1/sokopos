@@ -51,6 +51,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ onNavigateToReport
     setActiveReceipt,
     openBusinessSettings,
     canResetStore,
+    showToast,
   } = usePos();
 
   // Active view mode: Overview Dashboard vs Dedicated Reporting Suite
@@ -636,11 +637,19 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ onNavigateToReport
                             <td className="py-3 px-4 text-right whitespace-nowrap space-x-1">
                               <button
                                 type="button"
-                                onClick={() => setActiveReceipt(tx)}
-                                className="text-[11px] font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded transition cursor-pointer"
-                                title="View / Print Receipt"
+                                onClick={() => {
+                                  setActiveReceipt({
+                                    ...tx,
+                                    isReprint: true,
+                                    reprintedAt: new Date().toISOString(),
+                                  });
+                                  showToast?.(`Duplicate receipt loaded for #${tx.receiptNumber}`, 'info');
+                                }}
+                                className="text-[11px] font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200/80 px-2.5 py-1 rounded-lg transition cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                                title="Reprint duplicate receipt for customer"
                               >
-                                Receipt
+                                <Printer className="w-3 h-3 text-blue-600" />
+                                <span>Reprint</span>
                               </button>
                               {!isFullyRefunded && (
                                 <button

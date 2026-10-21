@@ -373,6 +373,8 @@ export interface Transaction {
   syncedToCloud: boolean;
   syncTimestamp?: string;
   etimsData?: DigitaxEtimsData;
+  isReprint?: boolean;
+  reprintedAt?: string;
 }
 
 export interface DigitaxEtimsData {

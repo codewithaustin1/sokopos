@@ -35,6 +35,45 @@ import { LegacyPosComparison } from './landing/LegacyPosComparison';
 import { WhatsAppFloatingButton } from './landing/WhatsAppFloatingButton';
 import { AppLogo } from './common/AppLogo';
 
+// Isolated Animated Counter Subcomponent: Keeps main-thread 60fps by only re-rendering the single number span
+const AnimatedMetricCounter: React.FC<{ target?: number; duration?: number }> = React.memo(
+  ({ target = 25, duration = 2200 }) => {
+    const [count, setCount] = useState<number>(1);
+
+    useEffect(() => {
+      let animationFrameId: number;
+      const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+
+      const animate = (timestamp?: number) => {
+        const now =
+          typeof timestamp === 'number' && !isNaN(timestamp)
+            ? timestamp
+            : (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        const elapsed = Math.max(0, now - startTime);
+        const progress = Math.max(0, Math.min(elapsed / duration, 1));
+        const easedProgress = Math.pow(progress, 2.5);
+        const calculatedVal = Math.round(1 + (target - 1) * easedProgress);
+        const currentVal = isNaN(calculatedVal) ? target : Math.max(1, Math.min(target, calculatedVal));
+
+        setCount(currentVal);
+
+        if (progress < 1) {
+          animationFrameId = requestAnimationFrame(animate);
+        }
+      };
+
+      animationFrameId = requestAnimationFrame(animate);
+      return () => {
+        if (animationFrameId) {
+          cancelAnimationFrame(animationFrameId);
+        }
+      };
+    }, [target, duration]);
+
+    return <span className="tabular-nums font-mono">{count}</span>;
+  }
+);
+
 interface SignInViewProps {
   onLoginSuccess?: () => void;
 }
@@ -110,44 +149,32 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const [newOwnerEmail, setNewOwnerEmail] = useState('');
   const [newOwnerName, setNewOwnerName] = useState('');
 
-  // Accelerating Counter Animation for "KES 25M+" metric
-  const [metricCount, setMetricCount] = useState<number>(1);
+  // IntersectionObserver to pre-warm GPU layout and pre-render the login content 200px before entering viewport
+  const [isAuthPreloaded, setIsAuthPreloaded] = useState(true);
 
   useEffect(() => {
-    // Accelerating count-up animation from 1 to 25
-    const target = 25;
-    const duration = 2200; // 2.2 seconds total duration
-    const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (typeof window === 'undefined' || typeof IntersectionObserver === 'undefined') return;
+    const target = document.getElementById('auth-card-container');
+    if (!target) return;
 
-    let animationFrameId: number;
-
-    const animate = (timestamp?: number) => {
-      const now = typeof timestamp === 'number' && !isNaN(timestamp)
-        ? timestamp
-        : (typeof performance !== 'undefined' ? performance.now() : Date.now());
-      const elapsed = Math.max(0, now - startTime);
-      const progress = Math.max(0, Math.min(elapsed / duration, 1));
-
-      // Accelerating curve (ease-in / exponential power curve: progress^2.5)
-      // Starts slow and speeds up rapidly as it climbs to 25
-      const easedProgress = Math.pow(progress, 2.5);
-      const calculatedVal = Math.round(1 + (target - 1) * easedProgress);
-      const currentVal = isNaN(calculatedVal) ? target : Math.max(1, Math.min(target, calculatedVal));
-
-      setMetricCount(currentVal);
-
-      if (progress < 1) {
-        animationFrameId = requestAnimationFrame(animate);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setIsAuthPreloaded(true);
+            observer.disconnect();
+            break;
+          }
+        }
+      },
+      {
+        rootMargin: '200px 0px',
+        threshold: 0.01,
       }
-    };
+    );
 
-    animationFrameId = requestAnimationFrame(animate);
-
-    return () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
-    };
+    observer.observe(target);
+    return () => observer.disconnect();
   }, []);
 
   // Keep selectedStaffId aligned if systemUsers changes
@@ -289,6 +316,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     const el = document.getElementById('auth-card-container');
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const card = el.querySelector('div');
+      if (card) {
+        card.classList.add('ring-4', 'ring-blue-500/40');
+        setTimeout(() => {
+          card.classList.remove('ring-4', 'ring-blue-500/40');
+        }, 1400);
+      }
     }
   };
 
@@ -425,27 +459,34 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           ) : (
-            <button
-              type="button"
-              id="top-nav-demo-btn"
-              onClick={handleLaunchDemoSandbox}
-              className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-blue-500/20 transition cursor-pointer"
-            >
-              <Zap className="w-3.5 h-3.5 fill-white text-white" />
-              <span className="hidden xs:inline">Interactive</span>
-              <span>Demo</span>
-            </button>
-          )}
+            <>
+              {/* Mobile View: Account Icon (replaces Demo and Pin buttons, scrolls to login card) */}
+              <button
+                type="button"
+                id="mobile-nav-account-btn"
+                onClick={() => scrollToAuthCard()}
+                className="sm:hidden w-9 h-9 rounded-full bg-slate-800/90 hover:bg-slate-700 active:bg-slate-600 border border-slate-700/80 flex items-center justify-center transition cursor-pointer active:scale-95 shadow-sm group"
+                title="Account Login"
+                aria-label="Account Login"
+              >
+                <img
+                  src="/assets/aistudio/icons8-account-50_6ea01032.png"
+                  alt="Account"
+                  className="w-5 h-5 object-contain invert opacity-90 group-hover:opacity-100 transition-opacity"
+                />
+              </button>
 
-          <button
-            type="button"
-            onClick={() => scrollToAuthCard('terminal')}
-            className="px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 hover:text-white font-bold text-xs border border-slate-700/70 transition cursor-pointer flex items-center gap-1.5"
-          >
-            <Fingerprint className="w-3.5 h-3.5 text-blue-400" />
-            <span className="hidden sm:inline">Cashier</span>
-            <span>PIN</span>
-          </button>
+              {/* Desktop View: Text Login Button in header (scrolls to login card) */}
+              <button
+                type="button"
+                id="top-nav-login-btn"
+                onClick={() => scrollToAuthCard()}
+                className="hidden sm:inline-flex items-center px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-500/20 transition cursor-pointer"
+              >
+                Login
+              </button>
+            </>
+          )}
         </div>
       </header>
 
@@ -537,7 +578,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 <div className="bg-white/85 backdrop-blur-md p-3 rounded-2xl border border-white/60 text-center lg:text-left shadow-md text-black">
                   <div className="text-base sm:text-lg font-black text-black tracking-tight">
                     <span>KES </span>
-                    <span className="tabular-nums font-mono">{String(isNaN(metricCount) ? 25 : metricCount)}</span>
+                    <AnimatedMetricCounter target={25} />
                     <span>M+</span>
                   </div>
                   <div className="text-[10px] text-neutral-800 font-semibold">Monthly Processed</div>
