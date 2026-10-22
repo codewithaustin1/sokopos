@@ -59,10 +59,10 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
+      userId: auth.currentUser?.uid || 'staff-terminal-session',
+      email: auth.currentUser?.email || 'staff@internal.pos',
+      emailVerified: auth.currentUser?.emailVerified ?? false,
+      isAnonymous: auth.currentUser?.isAnonymous ?? false,
       tenantId: auth.currentUser?.tenantId,
       providerInfo:
         auth.currentUser?.providerData?.map((provider) => ({
@@ -117,7 +117,7 @@ export function sanitizeForFirestore<T>(data: T): T {
 // Tenant Businesses Firestore API
 // -------------------------------------------------------------
 export async function getBusinessesFromFirestore(): Promise<Business[]> {
-  if (!auth.currentUser) return [];
+  if (!db) return [];
   const path = 'businesses';
   try {
     const snap = await getDocs(collection(db, path));
@@ -128,7 +128,7 @@ export async function getBusinessesFromFirestore(): Promise<Business[]> {
 }
 
 export async function saveBusinessToFirestore(biz: Business): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `businesses/${biz.id}`;
   try {
     await setDoc(doc(db, 'businesses', biz.id), sanitizeForFirestore(biz));
@@ -141,7 +141,7 @@ export async function updateBusinessInFirestore(
   businessId: string,
   updates: Partial<Business>
 ): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `businesses/${businessId}`;
   try {
     await setDoc(doc(db, 'businesses', businessId), sanitizeForFirestore(updates), { merge: true });
@@ -151,7 +151,7 @@ export async function updateBusinessInFirestore(
 }
 
 export async function deleteBusinessFromFirestore(businessId: string): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `businesses/${businessId}`;
   try {
     await deleteDoc(doc(db, 'businesses', businessId));
@@ -264,7 +264,7 @@ export function resolveBusinessUniquenessConflicts(businesses: Business[]): {
 export async function deleteBusinessConflictsFromFirestore(
   conflicts: Business[]
 ): Promise<number> {
-  if (!auth.currentUser || !conflicts || conflicts.length === 0) return 0;
+  if (!db || !conflicts || conflicts.length === 0) return 0;
 
   let deletedCount = 0;
   for (const conflict of conflicts) {
@@ -285,7 +285,7 @@ export async function deleteBusinessConflictsFromFirestore(
 export async function purgeTenantAllDataFromFirestore(businessId: string): Promise<{
   purgedRecords: number;
 }> {
-  if (!auth.currentUser) return { purgedRecords: 0 };
+  if (!db) return { purgedRecords: 0 };
   let purgedRecords = 0;
   const collectionsToPurge = [
     'products',
@@ -323,7 +323,7 @@ export async function saveUserProfileToFirestore(user: {
   businessId?: string | null;
   displayName?: string;
 }): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `users/${user.uid}`;
   try {
     await setDoc(
@@ -347,7 +347,7 @@ export async function saveUserProfileToFirestore(user: {
 // Tenant Products Firestore API (Row-Level Security Scoped)
 // -------------------------------------------------------------
 export async function getTenantProductsFromFirestore(businessId: string): Promise<Product[]> {
-  if (!auth.currentUser) return [];
+  if (!db) return [];
   const path = 'products';
   try {
     const q = query(collection(db, path), where('businessId', '==', businessId));
@@ -363,7 +363,7 @@ export async function getTenantProductsFromFirestore(businessId: string): Promis
  * strictly bypassing any local client IndexedDB or memory cache.
  */
 export async function getFreshTenantProductsFromFirestore(businessId: string): Promise<Product[]> {
-  if (!auth.currentUser) return [];
+  if (!db) return [];
   const path = 'products';
   try {
     const q = query(collection(db, path), where('businessId', '==', businessId));
@@ -384,7 +384,7 @@ export function subscribeToTenantProducts(
   businessId: string,
   onData: (products: Product[], isFromCache?: boolean) => void
 ): Unsubscribe {
-  if (!auth.currentUser) {
+  if (!db) {
     return () => {};
   }
   const path = 'products';
@@ -404,7 +404,7 @@ export function subscribeToTenantProducts(
 }
 
 export async function saveProductToFirestore(product: Product): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `products/${product.id}`;
   try {
     await setDoc(doc(db, 'products', product.id), sanitizeForFirestore(product));
@@ -417,7 +417,7 @@ export async function updateProductInFirestore(
   productId: string,
   updates: Partial<Product>
 ): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `products/${productId}`;
   try {
     await setDoc(doc(db, 'products', productId), sanitizeForFirestore(updates), { merge: true });
@@ -427,7 +427,7 @@ export async function updateProductInFirestore(
 }
 
 export async function deleteProductFromFirestore(productId: string): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `products/${productId}`;
   try {
     await deleteDoc(doc(db, 'products', productId));
@@ -440,7 +440,7 @@ export async function deleteProductFromFirestore(productId: string): Promise<voi
 // Tenant Categories Firestore API (Unique per Shop)
 // -------------------------------------------------------------
 export async function getTenantCategoriesFromFirestore(businessId: string): Promise<Category[]> {
-  if (!auth.currentUser) return [];
+  if (!db) return [];
   const path = 'categories';
   try {
     const q = query(collection(db, path), where('businessId', '==', businessId));
@@ -455,7 +455,7 @@ export function subscribeToTenantCategories(
   businessId: string,
   onData: (categories: Category[]) => void
 ): Unsubscribe {
-  if (!auth.currentUser) {
+  if (!db) {
     return () => {};
   }
   const path = 'categories';
@@ -472,7 +472,7 @@ export function subscribeToTenantCategories(
 }
 
 export async function saveCategoryToFirestore(category: Category): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `categories/${category.id}`;
   try {
     await setDoc(doc(db, 'categories', category.id), sanitizeForFirestore(category));
@@ -485,7 +485,7 @@ export async function updateCategoryInFirestore(
   categoryId: string,
   updates: Partial<Category>
 ): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `categories/${categoryId}`;
   try {
     await setDoc(doc(db, 'categories', categoryId), sanitizeForFirestore(updates), { merge: true });
@@ -495,7 +495,7 @@ export async function updateCategoryInFirestore(
 }
 
 export async function deleteCategoryFromFirestore(categoryId: string): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `categories/${categoryId}`;
   try {
     await deleteDoc(doc(db, 'categories', categoryId));
@@ -508,7 +508,7 @@ export async function deleteCategoryFromFirestore(categoryId: string): Promise<v
 // Tenant Locations Firestore API
 // -------------------------------------------------------------
 export async function getTenantLocationsFromFirestore(businessId: string): Promise<Location[]> {
-  if (!auth.currentUser) return [];
+  if (!db) return [];
   const path = 'locations';
   try {
     const q = query(collection(db, path), where('businessId', '==', businessId));
@@ -523,7 +523,7 @@ export function subscribeToTenantLocations(
   businessId: string,
   onData: (locations: Location[]) => void
 ): Unsubscribe {
-  if (!auth.currentUser) {
+  if (!db) {
     return () => {};
   }
   const path = 'locations';
@@ -540,7 +540,7 @@ export function subscribeToTenantLocations(
 }
 
 export async function saveLocationToFirestore(loc: Location): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `locations/${loc.id}`;
   try {
     await setDoc(doc(db, 'locations', loc.id), sanitizeForFirestore(loc));
@@ -553,7 +553,7 @@ export async function updateLocationInFirestore(
   locationId: string,
   updates: Partial<Location>
 ): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `locations/${locationId}`;
   try {
     await setDoc(doc(db, 'locations', locationId), sanitizeForFirestore(updates), { merge: true });
@@ -563,7 +563,7 @@ export async function updateLocationInFirestore(
 }
 
 export async function deleteLocationFromFirestore(locationId: string): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `locations/${locationId}`;
   try {
     await deleteDoc(doc(db, 'locations', locationId));
@@ -576,7 +576,7 @@ export async function deleteLocationFromFirestore(locationId: string): Promise<v
 // Tenant Cashiers / Staff Firestore API
 // -------------------------------------------------------------
 export async function getTenantCashiersFromFirestore(businessId: string): Promise<Cashier[]> {
-  if (!auth.currentUser) return [];
+  if (!db) return [];
   const path = 'cashiers';
   try {
     const q = query(collection(db, path), where('businessId', '==', businessId));
@@ -584,6 +584,19 @@ export async function getTenantCashiersFromFirestore(businessId: string): Promis
     return snap.docs.map((d) => d.data() as Cashier);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
+    return [];
+  }
+}
+
+export async function getAllCashiersFromFirestore(): Promise<Cashier[]> {
+  if (!db) return [];
+  const path = 'cashiers';
+  try {
+    const snap = await getDocs(collection(db, path));
+    return snap.docs.map((d) => d.data() as Cashier);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+    return [];
   }
 }
 
@@ -591,7 +604,7 @@ export function subscribeToTenantCashiers(
   businessId: string,
   onData: (cashiers: Cashier[]) => void
 ): Unsubscribe {
-  if (!auth.currentUser) {
+  if (!db) {
     return () => {};
   }
   const path = 'cashiers';
@@ -608,7 +621,7 @@ export function subscribeToTenantCashiers(
 }
 
 export async function saveCashierToFirestore(cashier: Cashier): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `cashiers/${cashier.id}`;
   try {
     await setDoc(doc(db, 'cashiers', cashier.id), sanitizeForFirestore(cashier));
@@ -621,7 +634,7 @@ export async function updateCashierInFirestore(
   cashierId: string,
   updates: Partial<Cashier>
 ): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `cashiers/${cashierId}`;
   try {
     await setDoc(doc(db, 'cashiers', cashierId), sanitizeForFirestore(updates), { merge: true });
@@ -631,7 +644,7 @@ export async function updateCashierInFirestore(
 }
 
 export async function deleteCashierFromFirestore(cashierId: string): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `cashiers/${cashierId}`;
   try {
     await deleteDoc(doc(db, 'cashiers', cashierId));
@@ -644,7 +657,7 @@ export async function deleteCashierFromFirestore(cashierId: string): Promise<voi
 // Tenant Transactions Firestore API
 // -------------------------------------------------------------
 export async function getTenantTransactionsFromFirestore(businessId: string): Promise<Transaction[]> {
-  if (!auth.currentUser) return [];
+  if (!db) return [];
   const path = 'transactions';
   try {
     const q = query(collection(db, path), where('businessId', '==', businessId));
@@ -659,7 +672,7 @@ export function subscribeToTenantTransactions(
   businessId: string,
   onData: (transactions: Transaction[]) => void
 ): Unsubscribe {
-  if (!auth.currentUser) {
+  if (!db) {
     return () => {};
   }
   const path = 'transactions';
@@ -676,7 +689,7 @@ export function subscribeToTenantTransactions(
 }
 
 export async function saveTransactionToFirestore(tx: Transaction): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `transactions/${tx.id}`;
   try {
     await setDoc(doc(db, 'transactions', tx.id), sanitizeForFirestore(tx));
@@ -689,7 +702,7 @@ export async function updateTransactionInFirestore(
   txId: string,
   partialTx: Partial<Transaction>
 ): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `transactions/${txId}`;
   try {
     await setDoc(doc(db, 'transactions', txId), sanitizeForFirestore(partialTx), { merge: true });
@@ -699,7 +712,7 @@ export async function updateTransactionInFirestore(
 }
 
 export async function savePurgedSalesBackupToFirestore(backup: StoreSalesBackup): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `purged_sales_backups/${backup.id}`;
   try {
     await setDoc(doc(db, 'purged_sales_backups', backup.id), sanitizeForFirestore(backup));
@@ -709,7 +722,7 @@ export async function savePurgedSalesBackupToFirestore(backup: StoreSalesBackup)
 }
 
 export async function purgeTenantTransactionsFromFirestore(businessId: string): Promise<number> {
-  if (!auth.currentUser) return 0;
+  if (!db) return 0;
   const path = 'transactions';
   try {
     const q = query(collection(db, path), where('businessId', '==', businessId));
@@ -732,7 +745,7 @@ export async function purgeTenantTransactionsFromFirestore(businessId: string): 
 // Tenant Stock Transfers & Sync Logs Firestore API
 // -------------------------------------------------------------
 export async function saveStockTransferToFirestore(transfer: StockTransfer): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `stock_transfers/${transfer.id}`;
   try {
     await setDoc(doc(db, 'stock_transfers', transfer.id), sanitizeForFirestore(transfer));
@@ -742,7 +755,7 @@ export async function saveStockTransferToFirestore(transfer: StockTransfer): Pro
 }
 
 export async function saveSyncLogToFirestore(log: SyncLogEvent): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `sync_logs/${log.id}`;
   try {
     await setDoc(doc(db, 'sync_logs', log.id), sanitizeForFirestore(log));
@@ -763,7 +776,7 @@ export async function seedInitialTenantDataToFirestore(params: {
   transactions: Transaction[];
 }): Promise<{ seeded: boolean; counts: Record<string, number> }> {
   const counts = { businesses: 0, products: 0, categories: 0, locations: 0, cashiers: 0, transactions: 0 };
-  if (!auth.currentUser) {
+  if (!db) {
     return { seeded: false, counts };
   }
   try {
@@ -831,7 +844,7 @@ export async function getPlatformSettingsFromFirestore(): Promise<PlatformSettin
 }
 
 export async function savePlatformSettingsToFirestore(settings: PlatformSettings): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   try {
     await setDoc(doc(db, 'platform_settings', 'global'), sanitizeForFirestore(settings), { merge: true });
   } catch (error) {
@@ -843,7 +856,7 @@ export async function savePlatformSettingsToFirestore(settings: PlatformSettings
 // Customers & Store Credit Directory (Tenant Scoped)
 // -------------------------------------------------------------
 export async function saveCustomerToFirestore(customer: Customer): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `customers/${customer.id}`;
   try {
     await setDoc(doc(db, 'customers', customer.id), sanitizeForFirestore(customer));
@@ -853,7 +866,7 @@ export async function saveCustomerToFirestore(customer: Customer): Promise<void>
 }
 
 export async function updateCustomerInFirestore(customerId: string, updates: Partial<Customer>): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `customers/${customerId}`;
   try {
     await setDoc(
@@ -870,7 +883,7 @@ export async function updateCustomerInFirestore(customerId: string, updates: Par
 }
 
 export async function deleteCustomerFromFirestore(customerId: string): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `customers/${customerId}`;
   try {
     await deleteDoc(doc(db, 'customers', customerId));
@@ -883,7 +896,7 @@ export function subscribeToTenantCustomers(
   businessId: string,
   onUpdate: (customers: Customer[]) => void
 ): Unsubscribe {
-  if (!auth.currentUser) {
+  if (!db) {
     return () => {};
   }
   const q = query(collection(db, 'customers'), where('businessId', '==', businessId));
@@ -901,7 +914,7 @@ export function subscribeToTenantCustomers(
 }
 
 export async function getTenantCustomersFromFirestore(businessId: string): Promise<Customer[]> {
-  if (!auth.currentUser) return [];
+  if (!db) return [];
   const path = 'customers';
   try {
     const q = query(collection(db, 'customers'), where('businessId', '==', businessId));
@@ -919,7 +932,7 @@ export async function getTenantCustomersFromFirestore(businessId: string): Promi
 // Suppliers Management (Tenant Scoped)
 // -------------------------------------------------------------
 export async function saveSupplierToFirestore(supplier: Supplier): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `suppliers/${supplier.id}`;
   try {
     await setDoc(doc(db, 'suppliers', supplier.id), sanitizeForFirestore(supplier));
@@ -929,7 +942,7 @@ export async function saveSupplierToFirestore(supplier: Supplier): Promise<void>
 }
 
 export async function updateSupplierInFirestore(supplierId: string, updates: Partial<Supplier>): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `suppliers/${supplierId}`;
   try {
     await setDoc(
@@ -946,7 +959,7 @@ export async function updateSupplierInFirestore(supplierId: string, updates: Par
 }
 
 export async function deleteSupplierFromFirestore(supplierId: string): Promise<void> {
-  if (!auth.currentUser) return;
+  if (!db) return;
   const path = `suppliers/${supplierId}`;
   try {
     await deleteDoc(doc(db, 'suppliers', supplierId));
@@ -959,7 +972,7 @@ export function subscribeToTenantSuppliers(
   businessId: string,
   onUpdate: (suppliers: Supplier[]) => void
 ): Unsubscribe {
-  if (!auth.currentUser) {
+  if (!db) {
     return () => {};
   }
   const q = query(collection(db, 'suppliers'), where('businessId', '==', businessId));
@@ -977,7 +990,7 @@ export function subscribeToTenantSuppliers(
 }
 
 export async function getTenantSuppliersFromFirestore(businessId: string): Promise<Supplier[]> {
-  if (!auth.currentUser) return [];
+  if (!db) return [];
   const path = 'suppliers';
   try {
     const q = query(collection(db, 'suppliers'), where('businessId', '==', businessId));

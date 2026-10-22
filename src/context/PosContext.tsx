@@ -87,6 +87,8 @@ import {
   saveCashierToFirestore,
   updateCashierInFirestore,
   deleteCashierFromFirestore,
+  getTenantCashiersFromFirestore,
+  getAllCashiersFromFirestore,
   saveTransactionToFirestore,
   saveStockTransferToFirestore,
   saveSyncLogToFirestore,
@@ -1424,10 +1426,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       businessId: activeBusinessId,
       isOnline: true,
       lastSynced: new Date().toISOString(),
-      isPendingCloudSync: !isOnline || !auth.currentUser,
+      isPendingCloudSync: !isOnline,
     };
     setAllLocations((prev) => [...prev, newLoc]);
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       saveLocationToFirestore(newLoc)
         .then(() => {
           setAllLocations((prev) =>
@@ -1463,12 +1465,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const updatedLoc: Location = {
       ...oldLoc,
       ...updates,
-      isPendingCloudSync: !isOnline || !auth.currentUser,
+      isPendingCloudSync: !isOnline,
     };
     setAllLocations((prev) =>
       prev.map((l) => (l.id === id ? updatedLoc : l))
     );
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       updateLocationInFirestore(id, updates)
         .then(() => {
           setAllLocations((prev) =>
@@ -1534,7 +1536,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
 
         setAllLocations((prev) => prev.filter((l) => l.id !== id));
-        if (isOnline && auth.currentUser) {
+        if (isOnline) {
           deleteLocationFromFirestore(id).catch((err) =>
             console.warn('Firestore location delete:', err)
           );
@@ -1642,7 +1644,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         lastSynced: new Date().toISOString(),
         terminalName: 'Terminal #01 (Main)',
       };
-      if (auth.currentUser) {
+      if (isOnline) {
         saveLocationToFirestore(defaultLoc).catch((e) => console.warn('Sync default loc:', e));
       }
       return [...prevLocs, defaultLoc];
@@ -1725,11 +1727,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       pin: hashedPin,
       id: `user-${Date.now()}`,
       businessId: activeBusinessId,
-      isPendingCloudSync: !isOnline || !auth.currentUser,
+      isPendingCloudSync: !isOnline,
     };
 
     setAllSystemUsers((prev) => [...prev, newUser]);
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       saveCashierToFirestore(newUser)
         .then(() => {
           setAllSystemUsers((prev) =>
@@ -1803,13 +1805,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const updatedUser: Cashier = {
       ...oldUser,
       ...finalUpdates,
-      isPendingCloudSync: !isOnline || !auth.currentUser,
+      isPendingCloudSync: !isOnline,
     };
 
     setAllSystemUsers((prev) =>
       prev.map((u) => (u.id === id ? updatedUser : u))
     );
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       updateCashierInFirestore(id, finalUpdates)
         .then(() => {
           setAllSystemUsers((prev) =>
@@ -1863,7 +1865,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       businessId: targetUser.businessId,
       onConfirm: () => {
         setAllSystemUsers((prev) => prev.filter((u) => u.id !== id));
-        if (isOnline && auth.currentUser) {
+        if (isOnline) {
           deleteCashierFromFirestore(id).catch((err) => console.warn('Firestore cashier delete:', err));
         }
         if (isSuperAdmin) {
@@ -2059,12 +2061,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       id: `cat-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       businessId: activeBusinessId,
       createdAt: new Date().toISOString(),
-      isPendingCloudSync: !isOnline || !auth.currentUser,
+      isPendingCloudSync: !isOnline,
     };
 
     setAllCategories((prev) => [newCat, ...prev]);
 
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       saveCategoryToFirestore(newCat)
         .then(() => {
           setAllCategories((prev) =>
@@ -2099,7 +2101,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...oldCat,
       ...updates,
       name: trimmedName,
-      isPendingCloudSync: !isOnline || !auth.currentUser,
+      isPendingCloudSync: !isOnline,
     };
 
     setAllCategories((prev) => prev.map((c) => (c.id === id ? updated : c)));
@@ -2110,7 +2112,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         prev.map((p) => {
           if (p.businessId === activeBusinessId && p.category === oldCat.name) {
             const updatedProd = { ...p, category: trimmedName };
-            if (isOnline && auth.currentUser) {
+            if (isOnline) {
               updateProductInFirestore(p.id, { category: trimmedName }).catch(() => {});
             }
             return updatedProd;
@@ -2120,7 +2122,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       );
     }
 
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       updateCategoryInFirestore(id, updates)
         .then(() => {
           setAllCategories((prev) =>
@@ -2160,7 +2162,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       prev.map((p) => {
         if (p.businessId === activeBusinessId && p.category === target.name) {
           const updatedProd = { ...p, category: 'All' };
-          if (isOnline && auth.currentUser) {
+          if (isOnline) {
             updateProductInFirestore(p.id, { category: 'All' }).catch(() => {});
           }
           return updatedProd;
@@ -2169,7 +2171,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       })
     );
 
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       deleteCategoryFromFirestore(id).catch((err) => {
         console.warn('Firestore category delete:', err);
       });
@@ -2201,7 +2203,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const fetchFreshInventoryFromServer = useCallback(
     async (businessIdOverride?: string, showFeedback = false): Promise<Product[]> => {
       const targetBizId = businessIdOverride || activeBusinessId;
-      if (!targetBizId || !auth.currentUser) return [];
+      if (!targetBizId) return [];
 
       setIsInventoryLoading(true);
       try {
@@ -2227,7 +2229,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             // If the Firestore server currently has 0 products for this tenant,
             // check if there are initial template products to bootstrap to the server
             const defaultTemplate = INITIAL_PRODUCTS.filter((p) => p.businessId === targetBizId);
-            if (defaultTemplate.length > 0 && auth.currentUser) {
+            if (defaultTemplate.length > 0) {
               for (const prod of defaultTemplate) {
                 await saveProductToFirestore({ ...prod, isPendingCloudSync: false }).catch(() => {});
               }
@@ -2257,7 +2259,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Automated Fresh Inventory Fetch on Every Successful Login
   const lastLoggedInUserRef = useRef<string | null>(null);
   useEffect(() => {
-    if (currentUser && currentUser.id && auth.currentUser) {
+    if (currentUser && currentUser.id) {
       // Whenever a user logs in or switches tenant account
       if (lastLoggedInUserRef.current !== currentUser.id) {
         lastLoggedInUserRef.current = currentUser.id;
@@ -2280,11 +2282,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       businessId: activeBusinessId,
       supplierId: product.supplierId ?? null,
       supplierName: product.supplierName ?? null,
-      isPendingCloudSync: !isOnline || !auth.currentUser,
+      isPendingCloudSync: !isOnline,
     };
 
     setAllProducts((prev) => [newProduct, ...prev.filter((p) => p.id !== newProduct.id)]);
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       saveProductToFirestore(newProduct)
         .then(() => {
           setAllProducts((prev) =>
@@ -2334,10 +2336,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...oldProduct,
       ...updates,
       category: finalCategory,
-      isPendingCloudSync: !isOnline || !auth.currentUser,
+      isPendingCloudSync: !isOnline,
     };
     setAllProducts((prev) => prev.map((p) => (p.id === id ? updated : p)));
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       updateProductInFirestore(id, updates)
         .then(() => {
           setAllProducts((prev) =>
@@ -2388,7 +2390,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       businessId: target.businessId,
       onConfirm: () => {
         setAllProducts((prev) => prev.filter((p) => p.id !== id));
-        if (isOnline && auth.currentUser) {
+        if (isOnline) {
           deleteProductFromFirestore(id).catch((err) => console.warn('Firestore product delete:', err));
         }
         if (isSuperAdmin) {
@@ -2429,7 +2431,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setAllProducts((prev) =>
       prev.map((p) => (p.id === productId ? { ...p, stockByLocation: updatedStockMap } : p))
     );
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       updateProductInFirestore(productId, { stockByLocation: updatedStockMap }).catch((err) =>
         console.warn('Firestore stock update:', err)
       );
@@ -2478,7 +2480,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setAllProducts((prev) =>
       prev.map((p) => (p.id === productId ? { ...p, stockByLocation: updatedMap } : p))
     );
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       updateProductInFirestore(productId, { stockByLocation: updatedMap }).catch((err) =>
         console.warn('Firestore transfer update:', err)
       );
@@ -2525,12 +2527,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...targetProd,
       supplierId: supplierId || undefined,
       supplierName: suppName,
-      isPendingCloudSync: !isOnline || !auth.currentUser,
+      isPendingCloudSync: !isOnline,
     };
 
     setAllProducts((prev) => prev.map((p) => (p.id === productId ? updatedProd : p)));
 
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       updateProductInFirestore(productId, {
         supplierId: supplierId || null,
         supplierName: suppName || null,
@@ -2654,7 +2656,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setAllCustomers((prev) => [newCust, ...prev]);
 
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       saveCustomerToFirestore(newCust).catch((err) => console.warn('Firestore customer save:', err));
     }
 
@@ -2688,7 +2690,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setSelectedCustomer(updatedCust);
     }
 
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       updateCustomerInFirestore(id, updates).catch((err) => console.warn('Firestore customer update:', err));
     }
 
@@ -2715,7 +2717,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setSelectedCustomer(null);
     }
 
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       deleteCustomerFromFirestore(id).catch((err) => console.warn('Firestore customer delete:', err));
     }
 
@@ -2767,7 +2769,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setSelectedCustomer(updatedCust);
     }
 
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       updateCustomerInFirestore(customerId, {
         storeCreditBalance: newBalance,
         ledger: updatedCust.ledger,
@@ -2808,7 +2810,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setSelectedCustomer(updatedCust);
     }
 
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       updateCustomerInFirestore(customerId, { loyaltyPoints: updatedCust.loyaltyPoints }).catch(console.warn);
     }
 
@@ -2895,7 +2897,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setAllSuppliers((prev) => [newSupp, ...prev]);
 
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       saveSupplierToFirestore(newSupp).catch((err) => console.warn('Firestore supplier save:', err));
     }
 
@@ -2937,7 +2939,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       );
     }
 
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       updateSupplierInFirestore(id, updates).catch((err) => console.warn('Firestore supplier update:', err));
     }
 
@@ -2974,7 +2976,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       );
     }
 
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       deleteSupplierFromFirestore(id).catch((err) => console.warn('Firestore supplier delete:', err));
     }
 
@@ -3262,7 +3264,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setStoreSalesBackups((prev) => [backupPayload, ...prev]);
 
       // 3. Persist backup & purge in Firestore if online
-      if (isOnline && auth.currentUser) {
+      if (isOnline) {
         try {
           await savePurgedSalesBackupToFirestore(backupPayload);
           await purgeTenantTransactionsFromFirestore(businessId);
@@ -3318,7 +3320,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         details: `Store reset to clean zero. ${purgedCount} test sales archived to ${backupId} and purged by ${currentUser?.name}.`,
       };
       setAllSyncLogs((prev) => [syncLogEvent, ...prev]);
-      if (isOnline && auth.currentUser) {
+      if (isOnline) {
         saveSyncLogToFirestore(syncLogEvent).catch((err) => console.warn('Sync log save:', err));
       }
 
@@ -4060,7 +4062,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       })();
     }
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       saveTransactionToFirestore(newTx).catch((err) => console.warn('Firestore transaction save:', err));
       cart.forEach((ci) => {
         const prod = allProducts.find((p) => p.id === ci.productId);
@@ -4120,7 +4122,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
 
       setAllCustomers((prev) => prev.map((c) => (c.id === customer.id ? updatedCustomer : c)));
-      if (isOnline && auth.currentUser) {
+      if (isOnline) {
         updateCustomerInFirestore(customer.id, {
           totalSpent: updatedCustomer.totalSpent,
           visitCount: updatedCustomer.visitCount,
@@ -4466,7 +4468,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setAllProducts(updatedProductsState);
 
       // Cloud Firestore synchronization
-      if (isOnline && auth.currentUser) {
+      if (isOnline) {
         saveTransactionToFirestore(updatedTx).catch((err) =>
           console.warn('Firestore refund transaction update:', err)
         );
@@ -4514,7 +4516,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (selectedCustomer?.id === matchingCust.id) {
             setSelectedCustomer(updatedCust);
           }
-          if (isOnline && auth.currentUser) {
+          if (isOnline) {
             updateCustomerInFirestore(matchingCust.id, {
               storeCreditBalance: newCreditBalance,
               ledger: updatedCust.ledger,
@@ -5062,7 +5064,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         await new Promise((res) => setTimeout(res, 500));
       }
 
-      if (isOnline && auth.currentUser) {
+      if (isOnline) {
         try {
           // 1. Flush un-synced transactions
           const activeTenantTxs = allTransactions.filter(
@@ -5222,55 +5224,74 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     testFirebaseConnection().then((connected) => {
       setIsFirestoreConnected(connected);
-      if (connected && auth.currentUser) {
-        seedInitialTenantDataToFirestore({
-          businesses: INITIAL_BUSINESSES,
-          products: INITIAL_PRODUCTS,
-          categories: INITIAL_CATEGORIES,
-          locations: INITIAL_LOCATIONS,
-          cashiers: INITIAL_SYSTEM_USERS,
-          transactions: INITIAL_TRANSACTIONS,
-        }).catch((err) => console.warn('Tenant data initial seed check:', err));
-
+      if (connected) {
+        // Fetch businesses from Firestore
         getBusinessesFromFirestore()
           .then((remoteBizs) => {
             if (remoteBizs && remoteBizs.length > 0) {
               const validRemote = remoteBizs.filter(
                 (b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'
               );
-              const unverified = remoteBizs.filter(
-                (b) => !isRealGoogleAccount(b.ownerEmail) || b.id === 'biz-soko' || b.id === 'biz-quickmart'
-              );
-
-              // Auto-purge remote unverified businesses
-              if (unverified.length > 0 && auth.currentUser) {
-                unverified.forEach((b) => {
-                  deleteBusinessFromFirestore(b.id).catch((e) => console.warn('Clean fake remote biz:', e));
-                  purgeTenantAllDataFromFirestore(b.id).catch((e) => console.warn('Purge fake remote data:', e));
+              if (validRemote.length > 0) {
+                setBusinesses((prev) => {
+                  const combined = [
+                    ...prev.filter((b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'),
+                    ...validRemote,
+                  ];
+                  const { uniqueBusinesses } = resolveBusinessUniquenessConflicts(combined);
+                  return uniqueBusinesses.length > 0 ? uniqueBusinesses : validRemote;
                 });
+
+                const targetBiz = validRemote[0];
+                setActiveBusinessIdState((prev) => {
+                  if (!prev || prev === 'biz-upfront' || prev === 'biz-soko' || prev === 'biz-quickmart') {
+                    localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBiz.id);
+                    return targetBiz.id;
+                  }
+                  return prev;
+                });
+
+                getTenantCashiersFromFirestore(targetBiz.id)
+                  .then((remoteCashiers) => {
+                    if (remoteCashiers && remoteCashiers.length > 0) {
+                      setAllSystemUsers((prev) => {
+                        const otherTenants = prev.filter((u) => u.businessId !== targetBiz.id);
+                        const map = new Map<string, Cashier>();
+                        prev.filter((u) => u.businessId === targetBiz.id).forEach((u) => map.set(u.id, u));
+                        remoteCashiers.forEach((r) => map.set(r.id, { ...r, isPendingCloudSync: false }));
+                        return [...Array.from(map.values()), ...otherTenants];
+                      });
+                    }
+                  })
+                  .catch((e) => console.warn('Mount cashiers sync notice:', e));
               }
-
-              // Enforce uniqueness of businesses at both email and tenant ID levels
-              // Prioritize the account last logged into while deleting any conflicts at Firestore level
-              setBusinesses((prev) => {
-                const combined = [
-                  ...prev.filter((b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'),
-                  ...validRemote,
-                ];
-
-                const { uniqueBusinesses, conflictsToDelete } = resolveBusinessUniquenessConflicts(combined);
-
-                if (conflictsToDelete.length > 0 && auth.currentUser) {
-                  deleteBusinessConflictsFromFirestore(conflictsToDelete).catch((e) =>
-                    console.warn('Firestore purge conflicts on load:', e)
-                  );
-                }
-
-                return uniqueBusinesses.length > 0 ? uniqueBusinesses : INITIAL_BUSINESSES;
-              });
             }
           })
           .catch((err) => console.warn('Remote businesses load note:', err));
+
+        getAllCashiersFromFirestore()
+          .then((allRemoteCashiers) => {
+            if (allRemoteCashiers && allRemoteCashiers.length > 0) {
+              setAllSystemUsers((prev) => {
+                const map = new Map<string, Cashier>();
+                prev.forEach((u) => map.set(u.id, u));
+                allRemoteCashiers.forEach((r) => map.set(r.id, { ...r, isPendingCloudSync: false }));
+                return Array.from(map.values());
+              });
+            }
+          })
+          .catch((e) => console.warn('Mount all cashiers sync notice:', e));
+
+        if (auth.currentUser) {
+          seedInitialTenantDataToFirestore({
+            businesses: INITIAL_BUSINESSES,
+            products: INITIAL_PRODUCTS,
+            categories: INITIAL_CATEGORIES,
+            locations: INITIAL_LOCATIONS,
+            cashiers: INITIAL_SYSTEM_USERS,
+            transactions: INITIAL_TRANSACTIONS,
+          }).catch((err) => console.warn('Tenant data initial seed check:', err));
+        }
       }
     });
   }, [firebaseUser]);
@@ -5278,7 +5299,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Real-time Firestore Tenant Subscriptions with Row-Level Security Scoping
   // Rule from SKILL.md: Only attach onSnapshot listeners if auth is ready and user is authenticated
   useEffect(() => {
-    if (!isOnline || isFirebaseAuthLoading || !firebaseUser || !auth.currentUser) return;
+    if (!isOnline || isFirebaseAuthLoading || !activeBusinessId) return;
+    const hasActiveSession = Boolean(auth.currentUser || currentUser);
+    if (!hasActiveSession) return;
 
     let unsubProducts: (() => void) | undefined;
     let unsubCategories: (() => void) | undefined;
@@ -5318,7 +5341,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
             // Any offline items created or edited while offline
             const pendingOffline = currentTenantLocal.filter((p) => p.isPendingCloudSync);
-            if (auth.currentUser && pendingOffline.length > 0) {
+            if (pendingOffline.length > 0) {
               pendingOffline.forEach((p) => {
                 saveProductToFirestore({ ...p, isPendingCloudSync: false }).catch((err) =>
                   console.warn('Auto-sync offline product to Firestore:', err)
@@ -5351,7 +5374,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             const otherTenants = prev.filter((l) => l.businessId !== activeBusinessId);
 
             const pendingOffline = currentTenantLocal.filter((l) => l.isPendingCloudSync);
-            if (auth.currentUser && pendingOffline.length > 0) {
+            if (pendingOffline.length > 0) {
               pendingOffline.forEach((l) => {
                 saveLocationToFirestore({ ...l, isPendingCloudSync: false }).catch((err) =>
                   console.warn('Auto-sync offline location to Firestore:', err)
@@ -5383,7 +5406,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             const otherTenants = prev.filter((u) => u.businessId !== activeBusinessId);
 
             const pendingOffline = currentTenantLocal.filter((u) => u.isPendingCloudSync);
-            if (auth.currentUser && pendingOffline.length > 0) {
+            if (pendingOffline.length > 0) {
               pendingOffline.forEach((u) => {
                 saveCashierToFirestore({ ...u, isPendingCloudSync: false }).catch((err) =>
                   console.warn('Auto-sync offline cashier to Firestore:', err)
@@ -5422,7 +5445,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
             // Any offline transactions that need upload
             const pendingOffline = Array.from(map.values()).filter((t) => !t.syncedToCloud);
-            if (auth.currentUser && pendingOffline.length > 0) {
+            if (pendingOffline.length > 0) {
               pendingOffline.forEach((tx) => {
                 saveTransactionToFirestore({ ...tx, syncedToCloud: true }).catch((err) =>
                   console.warn('Auto-sync offline transaction to Firestore:', err)
@@ -5778,17 +5801,59 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const loginWithCredentials = async (username: string, pin: string): Promise<boolean> => {
     localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
     const trimmedUsername = username.trim().toLowerCase();
-    const candidateUsers = allSystemUsers.filter(
+    let candidateUsers = allSystemUsers.filter(
       (u) =>
         u.username?.toLowerCase() === trimmedUsername ||
         u.name.toLowerCase() === trimmedUsername ||
         u.code.toLowerCase() === trimmedUsername
     );
 
+    if (candidateUsers.length === 0 && isOnline) {
+      try {
+        let remoteCashiers = await getTenantCashiersFromFirestore(activeBusinessId);
+        if (!remoteCashiers || remoteCashiers.length === 0) {
+          remoteCashiers = await getAllCashiersFromFirestore();
+        }
+        if (remoteCashiers && remoteCashiers.length > 0) {
+          setAllSystemUsers((prev) => {
+            const map = new Map<string, Cashier>();
+            prev.forEach((u) => map.set(u.id, u));
+            remoteCashiers.forEach((r) => map.set(r.id, { ...r, isPendingCloudSync: false }));
+            return Array.from(map.values());
+          });
+          candidateUsers = remoteCashiers.filter(
+            (u) =>
+              u.username?.toLowerCase() === trimmedUsername ||
+              u.name.toLowerCase() === trimmedUsername ||
+              u.code.toLowerCase() === trimmedUsername
+          );
+        }
+      } catch (err) {
+        console.warn('Fresh remote cashiers check on login:', err);
+      }
+    }
+
     for (const matchedUser of candidateUsers) {
       const isValid = await verifyPinOnServer(pin, matchedUser.pin);
       if (isValid) {
-        const biz = businesses.find((b) => b.id === matchedUser.businessId);
+        let biz = businesses.find((b) => b.id === matchedUser.businessId);
+        if (!biz && isOnline) {
+          try {
+            const remoteBizs = await getBusinessesFromFirestore();
+            if (remoteBizs && remoteBizs.length > 0) {
+              setBusinesses((prev) => {
+                const map = new Map<string, Business>();
+                prev.forEach((b) => map.set(b.id, b));
+                remoteBizs.forEach((b) => map.set(b.id, b));
+                return Array.from(map.values());
+              });
+              biz = remoteBizs.find((b) => b.id === matchedUser.businessId);
+            }
+          } catch (e) {
+            console.warn('Fetch remote business for staff session:', e);
+          }
+        }
+
         const authUser: AuthUser = {
           id: matchedUser.id,
           email: `${matchedUser.username || matchedUser.code}@${biz?.code.toLowerCase() || 'pos'}.internal`,
@@ -5806,14 +5871,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         setCurrentUser(authUser);
         setActiveBusinessIdState(matchedUser.businessId);
+        localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, matchedUser.businessId);
         setCurrentCashier(matchedUser);
 
         // Always fetch inventory fresh from Firestore server on every successful login (not served from cache)
-        if (auth.currentUser) {
-          fetchFreshInventoryFromServer(matchedUser.businessId, false).catch((err) =>
-            console.warn('Fresh inventory fetch on credentials login notice:', err)
-          );
-        }
+        fetchFreshInventoryFromServer(matchedUser.businessId, false).catch((err) =>
+          console.warn('Fresh inventory fetch on credentials login notice:', err)
+        );
 
         soundFx.playSuccess();
         showToast(`Authenticated as ${matchedUser.name} (${matchedUser.role})`, 'success');
@@ -5965,7 +6029,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setBusinesses((prev) => [...prev, newBusiness]);
     setAllLocations((prev) => [...prev, defaultLocation]);
     setAllSystemUsers((prev) => [...prev, defaultStaff]);
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       saveBusinessToFirestore(newBusiness).catch((err) => console.warn('Firestore business save:', err));
       saveLocationToFirestore(defaultLocation).catch((err) => console.warn('Firestore location save:', err));
       saveCashierToFirestore(defaultStaff).catch((err) => console.warn('Firestore staff save:', err));
@@ -6165,7 +6229,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setBusinesses((prev) =>
         prev.map((b) => (b.id === activeBusinessId ? { ...b, hardwareSettings: updatedHardwareSettings } : b))
       );
-      if (isOnline && auth.currentUser) {
+      if (isOnline) {
         updateBusinessInFirestore(activeBusinessId, { hardwareSettings: updatedHardwareSettings }).catch((err) =>
           console.warn('Firestore hardware settings sync error:', err)
         );
@@ -6200,7 +6264,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setBusinesses((prev) =>
         prev.map((b) => (b.id === activeBusinessId ? { ...b, hardwareSettings: updatedHardwareSettings } : b))
       );
-      if (isOnline && auth.currentUser) {
+      if (isOnline) {
         updateBusinessInFirestore(activeBusinessId, { hardwareSettings: updatedHardwareSettings }).catch((err) =>
           console.warn('Firestore hardware format sync error:', err)
         );
@@ -6274,7 +6338,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         prev.map((loc) => (loc.businessId === activeBusinessId ? { ...loc, taxId: updates.taxNumber! } : loc))
       );
     }
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       updateBusinessInFirestore(activeBusinessId, updates).catch((err) =>
         console.warn('Firestore business update:', err)
       );
@@ -6304,7 +6368,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       prev.map((b) => (b.id === businessId ? updatedBiz : b))
     );
 
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       updateBusinessInFirestore(businessId, { status }).catch((err) =>
         console.warn('Firestore business status update:', err)
       );
@@ -6389,7 +6453,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       prev.map((b) => (b.id === businessId ? updatedBiz : b))
     );
 
-    if (isOnline && auth.currentUser) {
+    if (isOnline) {
       updateBusinessInFirestore(businessId, { plan }).catch((err) =>
         console.warn('Firestore business plan update error:', err)
       );
