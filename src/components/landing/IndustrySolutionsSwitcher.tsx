@@ -278,7 +278,7 @@ export const IndustrySolutionsSwitcher: React.FC<{ onLaunchDemo?: () => void }> 
   const activeIndustry = INDUSTRIES.find((ind) => ind.id === activeTabId) || INDUSTRIES[0];
 
   return (
-    <section id="industry-solutions" className="w-full py-12 px-4 sm:px-6 bg-slate-950 relative overflow-hidden">
+    <section id="industry-solutions" className="w-full py-14 px-4 sm:px-6 bg-slate-950 relative overflow-hidden">
       {/* Background Accent Glow */}
       <div className="absolute top-1/3 left-1/4 w-96 h-96 bg-blue-600/5 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-10 right-1/4 w-96 h-96 bg-emerald-600/5 rounded-full blur-3xl pointer-events-none" />

@@ -447,19 +447,14 @@ function PosAppContent() {
   if (isAtLandingPage) {
     return (
       <div
-        className="h-screen w-screen overflow-y-auto dark-scrollbar font-sans bg-slate-950"
-        style={
-          loginBgGraphic
-            ? {
-                backgroundImage: `url(${loginBgGraphic})`,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
-                backgroundAttachment: 'fixed',
-                backgroundRepeat: 'no-repeat',
-              }
-            : undefined
-        }
+        className="h-screen w-screen overflow-y-auto scroll-smooth dark-scrollbar font-sans bg-slate-950 relative"
       >
+        {loginBgGraphic && (
+          <div
+            className="fixed inset-0 pointer-events-none -z-10 bg-cover bg-center bg-no-repeat"
+            style={{ backgroundImage: `url(${loginBgGraphic})` }}
+          />
+        )}
         {/* Toast Notification Alert */}
         {toastMessage && (
           <div className="fixed top-6 right-6 z-[120] animate-in slide-in-from-top-3 fade-in duration-200">

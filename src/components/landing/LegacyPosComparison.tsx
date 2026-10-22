@@ -48,7 +48,7 @@ export const LegacyPosComparison: React.FC<{ onLaunchDemo?: () => void; onStartR
   ];
 
   return (
-    <section id="pricing-comparison" className="w-full py-12 px-4 sm:px-6 bg-slate-900/40 border-t border-slate-800/80 relative">
+    <section id="pricing-comparison" className="w-full py-14 px-4 sm:px-6 bg-slate-950 relative">
       <div className="max-w-5xl mx-auto">
         {/* Header */}
         <div className="text-center max-w-3xl mx-auto mb-10">

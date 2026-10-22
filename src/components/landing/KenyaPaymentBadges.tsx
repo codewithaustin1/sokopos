@@ -38,7 +38,7 @@ const ConstellationWatermark: React.FC<{ className?: string }> = ({ className = 
 
 export const KenyaPaymentBadges: React.FC = () => {
   return (
-    <section id="kenya-payments" className="w-full py-14 px-4 sm:px-6 bg-[#080d1a] border-y border-slate-800/80 relative">
+    <section id="kenya-payments" className="w-full py-14 px-4 sm:px-6 bg-slate-950 relative">
       <div className="max-w-5xl mx-auto">
         {/* Section Header */}
         <div className="text-center max-w-3xl mx-auto mb-10 sm:mb-12">

@@ -35,10 +35,10 @@ import { LegacyPosComparison } from './landing/LegacyPosComparison';
 import { WhatsAppFloatingButton } from './landing/WhatsAppFloatingButton';
 import { AppLogo } from './common/AppLogo';
 
-// Isolated Animated Counter Subcomponent: Keeps main-thread 60fps by only re-rendering the single number span
+// Isolated Animated Counter Subcomponent: Keeps main-thread 60fps by updating the DOM ref directly without React state churn
 const AnimatedMetricCounter: React.FC<{ target?: number; duration?: number }> = React.memo(
-  ({ target = 25, duration = 2200 }) => {
-    const [count, setCount] = useState<number>(1);
+  ({ target = 25, duration = 1800 }) => {
+    const spanRef = React.useRef<HTMLSpanElement>(null);
 
     useEffect(() => {
       let animationFrameId: number;
@@ -55,7 +55,9 @@ const AnimatedMetricCounter: React.FC<{ target?: number; duration?: number }> = 
         const calculatedVal = Math.round(1 + (target - 1) * easedProgress);
         const currentVal = isNaN(calculatedVal) ? target : Math.max(1, Math.min(target, calculatedVal));
 
-        setCount(currentVal);
+        if (spanRef.current) {
+          spanRef.current.textContent = String(currentVal);
+        }
 
         if (progress < 1) {
           animationFrameId = requestAnimationFrame(animate);
@@ -70,7 +72,7 @@ const AnimatedMetricCounter: React.FC<{ target?: number; duration?: number }> = 
       };
     }, [target, duration]);
 
-    return <span className="tabular-nums font-mono">{count}</span>;
+    return <span ref={spanRef} className="tabular-nums font-mono">{target}</span>;
   }
 );
 
@@ -398,24 +400,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   return (
     <div
       id="pos-login-page"
-      className={`min-h-full w-full flex flex-col justify-between text-slate-100 font-sans selection:bg-blue-600 selection:text-white relative overflow-x-clip ${
-        loginBgGraphic ? 'bg-slate-950/40 backdrop-blur-[2px]' : 'bg-slate-950'
-      }`}
-      style={
-        loginBgGraphic
-          ? {
-              backgroundImage: `url(${loginBgGraphic})`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              backgroundRepeat: 'no-repeat',
-              backgroundAttachment: 'fixed',
-            }
-          : undefined
-      }
+      className="min-h-full w-full flex flex-col justify-between text-slate-100 font-sans selection:bg-blue-600 selection:text-white relative bg-slate-950"
     >
       {/* Full-bleed background darkening overlay when custom graphic is active for WCAG AA contrast */}
       {loginBgGraphic && (
-        <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-[1px] pointer-events-none z-0" />
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-[1px] pointer-events-none -z-5" />
       )}
 
       {/* Top Navigation Bar: Brand, Solutions Navigation, and Demo Actions */}
@@ -491,9 +480,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       </header>
 
       {/* Main Container with Full Landing Flow */}
-      <main className="flex-1 flex flex-col relative z-10 w-full overflow-x-clip">
+      <main className="flex-1 flex flex-col relative z-10 w-full">
         {/* Soft Ambient Radial Glow for Depth */}
-        <div className="absolute top-40 left-1/2 -translate-x-1/2 w-[350px] sm:w-[600px] h-[350px] sm:h-[600px] bg-blue-600/10 rounded-full blur-3xl pointer-events-none -z-1" />
+        <div className="absolute top-40 left-1/2 -translate-x-1/2 w-[350px] sm:w-[600px] h-[350px] sm:h-[600px] bg-blue-600/10 rounded-full blur-3xl pointer-events-none -z-10" />
 
         {/* SECTION: HERO SHOWCASE (Dual-Column: Pitch on Left, Auth on Right) */}
         <section className="w-full max-w-7xl mx-auto px-4 sm:px-6 pt-6 sm:pt-12 pb-10 sm:pb-16 relative">
@@ -1047,7 +1036,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   <LegacyPosComparison />
 
   {/* SECTION 5: FINAL CONVERSION BANNER */}
-  <section className="w-full py-14 px-4 sm:px-6 bg-gradient-to-b from-[#0e141f] to-slate-950 border-t border-slate-800 text-center relative">
+  <section className="w-full py-16 px-4 sm:px-6 bg-slate-950 text-center relative">
     <div className="max-w-3xl mx-auto space-y-5">
       <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight">
         Launch in 30 Seconds.
@@ -1088,7 +1077,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   className={`px-6 pt-6 pb-24 sm:pb-7 border-t text-center text-xs text-slate-400 shrink-0 relative z-10 ${
     loginBgGraphic
       ? 'border-white/10 bg-slate-950/70 backdrop-blur-md'
-      : 'border-slate-800/80 bg-slate-950/90'
+      : 'border-slate-800/40 bg-slate-950'
   }`}
 >
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] sm:pr-72">
