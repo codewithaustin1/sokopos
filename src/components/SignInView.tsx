@@ -618,7 +618,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 </button>
               </div>
             ) : (
-              /* Segmented Mode Selector: [ Login ] [ PIN Pad ] */
+              /* Segmented Mode Selector: [ Owner ] [ Staff ] */
               <div className="grid grid-cols-2 gap-1.5 bg-neutral-100 p-1.5 rounded-2xl border border-neutral-200">
                 <button
                   type="button"
@@ -630,7 +630,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       : 'text-neutral-500 hover:text-neutral-900 font-medium'
                   }`}
                 >
-                  Login
+                  Owner
                 </button>
 
                 <button
@@ -643,7 +643,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       : 'text-neutral-500 hover:text-neutral-900 font-medium'
                   }`}
                 >
-                  PIN Pad
+                  Staff
                 </button>
               </div>
             )}

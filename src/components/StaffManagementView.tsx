@@ -188,37 +188,6 @@ export const StaffManagementView: React.FC = () => {
 
       {/* Main Content */}
       <div className="p-3.5 sm:p-6 space-y-4 sm:space-y-6 pb-20 md:pb-8">
-        {/* Multi-Tenancy Info Banner */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-3.5 sm:p-4 shadow-2xs flex items-start gap-3">
-          <div className="p-2 bg-blue-50 text-blue-600 rounded-xl shrink-0">
-            <Shield className="w-5 h-5" />
-          </div>
-          <div className="text-xs text-slate-600 space-y-1">
-            <span className="font-bold text-slate-800 block">
-              Multi-Tenancy & Data Isolation Enforced at Data-Access Layer
-            </span>
-            <p>
-              Users created here can only log in and view data belonging to{' '}
-              <strong className="text-slate-800">{currentBusiness.name}</strong>. They are strictly prohibited from querying or accessing inventory, sales, or reports from other business accounts.
-            </p>
-          </div>
-        </div>
-
-        {/* Operator Attribution Policy: Shared Logins Strictly Prohibited (Edge Case 3) */}
-        <div className="bg-amber-50 rounded-2xl border border-amber-200 p-3.5 sm:p-4 shadow-2xs flex items-start gap-3">
-          <div className="p-2 bg-amber-100 text-amber-700 rounded-xl shrink-0">
-            <Lock className="w-5 h-5" />
-          </div>
-          <div className="text-xs text-amber-800 space-y-1">
-            <span className="font-bold text-amber-900 block">
-              Attribution Integrity Guardrail: Shared Logins Strictly Prohibited
-            </span>
-            <p>
-              Attribution follows the authenticated account. Generic accounts or shared credentials (e.g. sharing terminal PINs or using generic "cashier" logins) render attribution meaningless and are forbidden. Every operator must authenticate with their own distinct account.
-            </p>
-          </div>
-        </div>
-
         {/* Users Container */}
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
           <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
