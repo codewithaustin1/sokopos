@@ -6,14 +6,12 @@ import {
   Tractor, 
   Pill, 
   Check, 
-  ArrowRight, 
   Sparkles, 
   Barcode, 
   Clock, 
   Receipt,
   Users,
-  ShieldCheck,
-  Zap
+  ShieldCheck
 } from 'lucide-react';
 
 interface IndustryData {
@@ -358,21 +356,6 @@ export const IndustrySolutionsSwitcher: React.FC<{ onLaunchDemo?: () => void }> 
                   </div>
                 ))}
               </div>
-
-              {/* Call to action */}
-              {onLaunchDemo && (
-                <div className="pt-2 flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={onLaunchDemo}
-                    className="primary-cta-shimmer w-full sm:w-auto px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg cursor-pointer transition group"
-                  >
-                    <Zap className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                    <span>Test {activeIndustry.name} in Sandbox Demo</span>
-                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                  </button>
-                </div>
-              )}
             </div>
 
             {/* Right 5 Columns: Interactive Simulated Receipt Slip */}

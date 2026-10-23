@@ -600,37 +600,36 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     userEmail: string,
     displayName?: string,
     customStoreName?: string
-  ): Promise<{ winner: Business; purgedCount: number }> => {
+  ): Promise<{ winner: Business; purgedCount: number; isExistingAccount: boolean }> => {
     const normalizedEmail = userEmail.toLowerCase().trim();
     const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
     const now = new Date().toISOString();
 
-    // Query local businesses immediately to avoid login delays; query Firestore with a short timeout
+    // Verify against our database to prevent duplicate account creation using the same Google account
     let candidateBusinesses = [...businesses];
-    if (auth.currentUser) {
-      try {
-        const timeoutPromise = new Promise<Business[]>((resolve) => setTimeout(() => resolve([]), 1200));
-        const remoteBizs = await Promise.race([getBusinessesFromFirestore(), timeoutPromise]);
-        if (Array.isArray(remoteBizs) && remoteBizs.length > 0) {
-          const map = new Map<string, Business>();
-          candidateBusinesses.forEach((b) => map.set(b.id, b));
-          remoteBizs.forEach((b) => map.set(b.id, b));
-          candidateBusinesses = Array.from(map.values());
-        }
-      } catch (err) {
-        console.warn('Could not fetch remote businesses for conflict check:', err);
+    try {
+      const remoteBizs = await getBusinessesFromFirestore();
+      if (Array.isArray(remoteBizs) && remoteBizs.length > 0) {
+        const map = new Map<string, Business>();
+        candidateBusinesses.forEach((b) => map.set(b.id, b));
+        remoteBizs.forEach((b) => map.set(b.id, b));
+        candidateBusinesses = Array.from(map.values());
       }
+    } catch (err) {
+      console.warn('Could not fetch remote businesses for uniqueness check:', err);
     }
 
-    // 1. Find all businesses associated with this email
+    // 1. Find all businesses associated with this email in database or local state
     const emailMatches = candidateBusinesses.filter(
-      (b) => b.ownerEmail && b.ownerEmail.toLowerCase() === normalizedEmail
+      (b) => b.ownerEmail && b.ownerEmail.toLowerCase().trim() === normalizedEmail
     );
 
     let winner: Business;
     let conflicts: Business[] = [];
+    let isExistingAccount = false;
 
     if (emailMatches.length > 0) {
+      isExistingAccount = true;
       // Sort: prioritize the account last logged into (most recent lastLoginAt, fallback to createdAt)
       const sorted = [...emailMatches].sort((a, b) => {
         const aScore = Math.max(
@@ -644,13 +643,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return bScore - aScore;
       });
 
-      const updatedName = customStoreName?.trim() || sorted[0].name;
-      winner = { ...sorted[0], name: updatedName, lastLoginAt: now };
+      // Maintain existing store identity — each Google account can create only one user account, no duplicates
+      winner = { ...sorted[0], lastLoginAt: now };
       conflicts = sorted.slice(1);
     } else if (isSuperAdminEmail) {
       const upfrontBiz = businesses.find((b) => b.id === 'biz-upfront') || INITIAL_BUSINESSES[0];
       winner = { ...upfrontBiz, lastLoginAt: now };
+      isExistingAccount = true;
     } else {
+      isExistingAccount = false;
       // Self-provision stable business
       const stableBizId = getStableBusinessIdForEmail(normalizedEmail);
       const bizName = customStoreName?.trim() || `${displayName || normalizedEmail.split('@')[0]}'s Store`;
@@ -722,7 +723,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       })();
     }
 
-    return { winner, purgedCount: uniqueConflicts.length };
+    return { winner, purgedCount: uniqueConflicts.length, isExistingAccount };
   };
 
   // Firebase Real Connection Validation & Auth State Synchronizer
@@ -5533,7 +5534,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
 
       // Enforce uniqueness: prioritize account last logged into
-      const { winner: matchedBiz } = await prioritizeAccountAndPurgeConflicts(
+      const { winner: matchedBiz, isExistingAccount } = await prioritizeAccountAndPurgeConflicts(
         normalizedEmail,
         firebaseUser.displayName || undefined,
         customStoreName
@@ -5583,10 +5584,22 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       );
 
       soundFx.playSuccess();
-      showToast(
-        `Authenticated via Firebase Google OAuth (${firebaseUser.email})`,
-        'success'
-      );
+      if (customStoreName && isExistingAccount) {
+        showToast(
+          `Account already exists: This Google account is already registered to "${matchedBiz.name}". You have been logged into your shop.`,
+          'info'
+        );
+      } else if (isExistingAccount) {
+        showToast(
+          `Welcome back, ${authUser.name}! Logged into ${matchedBiz.name}`,
+          'success'
+        );
+      } else {
+        showToast(
+          `Welcome to SokoPoS! Your shop "${matchedBiz.name}" has been created.`,
+          'success'
+        );
+      }
       return true;
     } catch (error: any) {
       setIsFirebaseAuthLoading(false);
@@ -5736,7 +5749,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       matchedBiz = {
         ...sorted[0],
         lastLoginAt: now,
-        ...(newBusinessName ? { name: newBusinessName } : {}),
       };
       conflicts = sorted.slice(1);
     } else {
@@ -5806,7 +5818,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setCurrentUser(bizOwnerUser);
     setActiveBusinessIdState(matchedBiz.id);
-    showToast(`Welcome back, ${bizOwnerUser.name}! Logged into ${matchedBiz.name}`, 'success');
+    if (newBusinessName && emailMatches.length > 0) {
+      showToast(
+        `Account already exists: This Google account is already registered to "${matchedBiz.name}". You have been logged into your shop.`,
+        'info'
+      );
+    } else {
+      showToast(`Welcome back, ${bizOwnerUser.name}! Logged into ${matchedBiz.name}`, 'success');
+    }
     return true;
   };
 
