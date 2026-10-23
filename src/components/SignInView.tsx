@@ -910,12 +910,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 </div>
               ) : (
                 <form onSubmit={handleRegisterStoreSubmit} className="space-y-4 pt-1 text-black">
-                  <h2 className="text-black font-bold text-xl sm:text-2xl tracking-tight text-center mb-1">
+                  <h2 className="text-black font-bold text-xl sm:text-2xl tracking-tight text-center mb-4">
                     Add New Shop
                   </h2>
-                  <p className="text-xs text-neutral-600 text-center max-w-sm mx-auto mb-3">
-                    Name your shop and connect your Google Account. Google provides verified ownership and access credentials in one tap.
-                  </p>
 
                   <div>
                     <label className="block text-xs font-bold text-neutral-800 mb-1.5">

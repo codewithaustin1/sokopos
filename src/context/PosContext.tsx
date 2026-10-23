@@ -5167,18 +5167,25 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // Automated background sync interval: triggers every 30 seconds when online & authenticated
+  // Automated background sync interval: triggers every 30 seconds for ANY active session (Owner or Staff)
   useEffect(() => {
-    if (!isOnline || !firebaseUser || !auth.currentUser) return;
+    const hasActiveSession = Boolean(currentUser || auth.currentUser);
+    if (!isOnline || !hasActiveSession || !activeBusinessId) return;
 
     const intervalId = setInterval(() => {
+      // 1. Flush any pending offline transactions, stock deductions, or cashier events
       triggerCloudSync(true).catch((err) =>
         console.warn('Background auto-sync tick:', err)
+      );
+
+      // 2. Fetch fresh live inventory directly from Firestore server to guarantee multi-device accuracy
+      fetchFreshInventoryFromServer(activeBusinessId, false).catch((err) =>
+        console.warn('Periodic fresh inventory sync tick:', err)
       );
     }, 30000);
 
     return () => clearInterval(intervalId);
-  }, [isOnline, firebaseUser, triggerCloudSync]);
+  }, [isOnline, currentUser, activeBusinessId, triggerCloudSync, fetchFreshInventoryFromServer]);
 
   // Automated sync on network reconnect (online/offline) and tab focus/visibility
   useEffect(() => {
@@ -5189,6 +5196,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       triggerCloudSync(false).catch((err) =>
         console.warn('Auto-sync on network reconnect error:', err)
       );
+      if (activeBusinessId) {
+        fetchFreshInventoryFromServer(activeBusinessId, false).catch((err) =>
+          console.warn('Auto-fresh inventory on reconnect error:', err)
+        );
+      }
     };
 
     const handleOffline = () => {
@@ -5198,9 +5210,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     const handleVisibilityOrFocus = () => {
-      if (document.visibilityState === 'visible' && navigator.onLine && auth.currentUser) {
+      const hasActiveSession = Boolean(currentUser || auth.currentUser);
+      if (document.visibilityState === 'visible' && navigator.onLine && hasActiveSession && activeBusinessId) {
         triggerCloudSync(true).catch((err) =>
           console.warn('Auto-sync on visibility/focus error:', err)
+        );
+        fetchFreshInventoryFromServer(activeBusinessId, false).catch((err) =>
+          console.warn('Auto-fresh inventory on focus error:', err)
         );
       }
     };
@@ -5216,7 +5232,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('focus', handleVisibilityOrFocus);
     };
-  }, [triggerCloudSync, showToast]);
+  }, [triggerCloudSync, showToast, activeBusinessId, currentUser, fetchFreshInventoryFromServer]);
 
   // 13.b Firestore Row-Level Security State & Tenant Data Synchronization
   const [isFirestoreConnected, setIsFirestoreConnected] = useState<boolean>(false);
