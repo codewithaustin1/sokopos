@@ -136,7 +136,7 @@ interface PosContextType {
   setCurrentUser: (user: AuthUser | null) => void;
   isAuthenticated: boolean;
   isFirebaseAuthLoading: boolean;
-  loginWithFirebaseGoogle: () => Promise<boolean>;
+  loginWithFirebaseGoogle: (customStoreName?: string) => Promise<boolean>;
   exchangeOAuthTokenForSession: (idToken: string, user: { email: string; name?: string; uid?: string }) => Promise<boolean>;
   businesses: Business[];
   currentBusiness: Business;
@@ -598,7 +598,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Prioritizes the account last logged into while deleting any conflicts at Firestore level.
   const prioritizeAccountAndPurgeConflicts = async (
     userEmail: string,
-    displayName?: string
+    displayName?: string,
+    customStoreName?: string
   ): Promise<{ winner: Business; purgedCount: number }> => {
     const normalizedEmail = userEmail.toLowerCase().trim();
     const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
@@ -643,7 +644,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return bScore - aScore;
       });
 
-      winner = { ...sorted[0], lastLoginAt: now };
+      const updatedName = customStoreName?.trim() || sorted[0].name;
+      winner = { ...sorted[0], name: updatedName, lastLoginAt: now };
       conflicts = sorted.slice(1);
     } else if (isSuperAdminEmail) {
       const upfrontBiz = businesses.find((b) => b.id === 'biz-upfront') || INITIAL_BUSINESSES[0];
@@ -651,7 +653,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } else {
       // Self-provision stable business
       const stableBizId = getStableBusinessIdForEmail(normalizedEmail);
-      const bizName = `${displayName || normalizedEmail.split('@')[0]}'s Store`;
+      const bizName = customStoreName?.trim() || `${displayName || normalizedEmail.split('@')[0]}'s Store`;
       winner = {
         id: stableBizId,
         name: bizName,
@@ -5500,7 +5502,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // 14. Authentication Operations (Google OAuth & Credentials)
-  const loginWithFirebaseGoogle = async (): Promise<boolean> => {
+  const loginWithFirebaseGoogle = async (customStoreName?: string): Promise<boolean> => {
     localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
     try {
       setIsFirebaseAuthLoading(true);
@@ -5533,7 +5535,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Enforce uniqueness: prioritize account last logged into
       const { winner: matchedBiz } = await prioritizeAccountAndPurgeConflicts(
         normalizedEmail,
-        firebaseUser.displayName || undefined
+        firebaseUser.displayName || undefined,
+        customStoreName
       );
 
       const targetBizId = isSuperAdminEmail ? 'biz-upfront' : matchedBiz.id;
@@ -5587,9 +5590,18 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return true;
     } catch (error: any) {
       setIsFirebaseAuthLoading(false);
-      soundFx.playError();
-      console.error('Firebase Google popup sign-in error:', error);
       const errorCode = error?.code || '';
+
+      // User closed or dismissed the popup window intentionally
+      if (errorCode === 'auth/popup-closed-by-user') {
+        console.info('Google sign-in popup closed by user.');
+        showToast('Sign-in cancelled. Click Continue with Google to try again.', 'info');
+        return false;
+      }
+
+      soundFx.playError();
+      console.warn('Firebase Google popup sign-in notice:', error?.message || error);
+
       if (errorCode === 'auth/unauthorized-domain') {
         showToast(
           'Preview Domain Restricted: This Cloud Run domain is not on Firebase Authorized Domains. Use Direct Google Login below.',
