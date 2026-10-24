@@ -115,7 +115,20 @@ export interface BusinessLoyaltySettings {
   updatedBy?: string;
 }
 
-export type BusinessPlanTier = 'starter' | 'professional' | 'enterprise' | 'business' | 'premium';
+export type BusinessPlanTier = 'free' | 'starter' | 'professional' | 'enterprise' | 'business' | 'premium';
+
+export interface BusinessSubscription {
+  status: 'active' | 'pending_activation' | 'expired';
+  planId: 'free' | 'starter' | 'business' | 'premium';
+  billingCycle: 'monthly' | 'annual' | 'one_time';
+  activatedAt?: string;
+  expiresAt?: string; // ISO string (30 days for monthly, 365 days for annual)
+  consultationPaid?: boolean;
+  isSimulatedPayment?: boolean;
+  lastPaymentReference?: string;
+  amountPaid?: number;
+  paymentPhone?: string;
+}
 
 export interface Business {
   id: string;
@@ -133,6 +146,7 @@ export interface Business {
   retailTheme?: RetailTheme;
   taxSettings?: BusinessTaxSettings;
   loyaltySettings?: BusinessLoyaltySettings;
+  subscription?: BusinessSubscription;
 }
 
 export * from './types/pricing';

@@ -60,6 +60,8 @@ export const Header: React.FC<HeaderProps> = ({
     toggleDarkMode,
     showToast,
     platformLogo,
+    isSubscriptionActive,
+    setIsSubscriptionModalOpen,
   } = usePos();
 
   const [isLocationMenuOpen, setIsLocationMenuOpen] = useState(false);
@@ -345,16 +347,29 @@ export const Header: React.FC<HeaderProps> = ({
                     id="user-menu-pricing-plans-btn"
                     onClick={() => {
                       setIsUserMenuOpen(false);
-                      openBusinessSettings('pricing');
+                      if (!isSubscriptionActive && !isSuperAdmin) {
+                        setIsSubscriptionModalOpen(true);
+                      } else {
+                        openBusinessSettings('pricing');
+                      }
                     }}
                     className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer"
                   >
                     <div className="flex items-center gap-2.5">
                       <CreditCard className="w-4 h-4 text-purple-600 shrink-0" />
-                      <span>POS Packages & Subscription</span>
+                      <div>
+                        <span>POS Packages & Subscription</span>
+                        {!isSubscriptionActive && !isSuperAdmin && (
+                          <div className="text-[10px] text-amber-600 font-bold">Activation Required to Tender</div>
+                        )}
+                      </div>
                     </div>
-                    <span className="text-[10px] bg-purple-50 text-purple-700 border border-purple-200 font-extrabold px-1.5 py-0.5 rounded uppercase">
-                      {currentBusiness?.plan || 'Plans'}
+                    <span className={`text-[10px] border font-extrabold px-1.5 py-0.5 rounded uppercase ${
+                      !isSubscriptionActive && !isSuperAdmin
+                        ? 'bg-amber-50 text-amber-700 border-amber-300'
+                        : 'bg-purple-50 text-purple-700 border-purple-200'
+                    }`}>
+                      {!isSubscriptionActive && !isSuperAdmin ? 'Activate' : (currentBusiness?.plan || 'Plans')}
                     </span>
                   </button>
 

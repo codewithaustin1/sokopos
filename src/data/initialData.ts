@@ -54,6 +54,15 @@ export const INITIAL_BUSINESSES: Business[] = [
       ...DEFAULT_TAX_SETTINGS,
       taxNumber: 'P011223344A',
     },
+    subscription: {
+      status: 'active',
+      planId: 'premium',
+      billingCycle: 'annual',
+      activatedAt: '2026-01-01T08:00:00.000Z',
+      expiresAt: '2099-12-31T23:59:59.000Z',
+      isSimulatedPayment: true,
+      lastPaymentReference: 'ADMIN-LIFETIME-UPFRONT',
+    },
   },
 ];
 
