@@ -22,12 +22,14 @@ import {
   Monitor,
   Printer,
   Receipt,
+  Tag,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { soundFx } from '../utils/audio';
 import { SignUpSkeleton } from './SignUpSkeleton';
 import { LegalTab } from './LegalAndFaqModal';
 import { LegalPageView } from './LegalPageView';
+import { PricingPageView } from './PricingPageView';
 import { KenyaPaymentBadges } from './landing/KenyaPaymentBadges';
 import { IndustrySolutionsSwitcher } from './landing/IndustrySolutionsSwitcher';
 import { HardwareCompatibilityGuide } from './landing/HardwareCompatibilityGuide';
@@ -101,21 +103,32 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const [isSimulatingSkeleton, setIsSimulatingSkeleton] = useState(false);
   const [activeLegalPage, setActiveLegalPage] = useState<LegalTab | null>(null);
 
-  // Synchronize URL hash with active legal page for browser history & direct links
+  const [isPricingPageOpen, setIsPricingPageOpen] = useState(false);
+
+  // Synchronize URL hash with active legal or pricing page for browser history & direct links
   useEffect(() => {
     const handleHash = () => {
       const hash = window.location.hash.replace('#', '').toLowerCase();
-      if (hash === 'terms' || hash === 'tos') {
+      if (hash === 'pricing' || hash === 'plans' || hash === 'price') {
+        setIsPricingPageOpen(true);
+        setActiveLegalPage(null);
+      } else if (hash === 'terms' || hash === 'tos') {
+        setIsPricingPageOpen(false);
         setActiveLegalPage('terms');
       } else if (hash === 'privacy') {
+        setIsPricingPageOpen(false);
         setActiveLegalPage('privacy');
       } else if (hash === 'faq') {
+        setIsPricingPageOpen(false);
         setActiveLegalPage('faq');
       } else if (hash === 'ownership' || hash === 'legal' || hash === 'ip') {
+        setIsPricingPageOpen(false);
         setActiveLegalPage('ownership');
       } else if (hash === 'compliance' || hash === 'gcp') {
+        setIsPricingPageOpen(false);
         setActiveLegalPage('compliance');
       } else if (!hash) {
+        setIsPricingPageOpen(false);
         setActiveLegalPage(null);
       }
     };
@@ -126,12 +139,21 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   }, []);
 
   const navigateToLegalPage = (tab: LegalTab) => {
+    setIsPricingPageOpen(false);
     setActiveLegalPage(tab);
     window.location.hash = `#${tab}`;
   };
 
+  const navigateToPricing = () => {
+    setActiveLegalPage(null);
+    setIsPricingPageOpen(true);
+    window.location.hash = '#pricing';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const returnToLogin = () => {
     setActiveLegalPage(null);
+    setIsPricingPageOpen(false);
     if (window.location.hash) {
       window.history.pushState(null, '', window.location.pathname + window.location.search);
     }
@@ -317,6 +339,20 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   };
 
   const activeStaffMember = systemUsers.find((u) => u.id === selectedStaffId);
+
+  // Render Full-Page Dedicated Pricing view
+  if (isPricingPageOpen) {
+    return (
+      <PricingPageView
+        onBackToLogin={returnToLogin}
+        onSelectPlan={(_planId) => {
+          returnToLogin();
+          setTimeout(() => scrollToAuthCard('register'), 100);
+        }}
+        loginBgGraphic={loginBgGraphic}
+      />
+    );
+  }
 
   // Render Full-Page Legal, FAQ, or Compliance view as the Body of this SPA (Zero floating modals)
   if (activeLegalPage) {
@@ -1080,8 +1116,18 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             <span>© 2026 SokoPoS Enterprise Platform</span>
           </div>
 
-          {/* Legal Navigation Links */}
+          {/* Legal & Pricing Navigation Links */}
           <div className="flex items-center gap-2.5 sm:gap-4 flex-wrap justify-center font-medium">
+            <button
+              type="button"
+              id="footer-pricing-btn"
+              onClick={navigateToPricing}
+              className="text-amber-400 hover:text-amber-300 font-bold transition cursor-pointer flex items-center gap-1"
+            >
+              <Tag className="w-3.5 h-3.5" />
+              <span>Pricing & Plans</span>
+            </button>
+            <span className="text-slate-600">•</span>
             <button
               type="button"
               id="footer-terms-btn"

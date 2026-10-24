@@ -932,8 +932,19 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
             <span>© 2026 SokoPoS Enterprise Platform • Sokoplus Horizon</span>
           </div>
 
-          {/* Working Legal Navigation Links */}
+          {/* Working Legal & Pricing Navigation Links */}
           <div className="flex items-center gap-2.5 sm:gap-4 flex-wrap justify-center font-medium">
+            <button
+              type="button"
+              id="legal-page-footer-pricing-btn"
+              onClick={() => {
+                window.location.hash = '#pricing';
+              }}
+              className="text-amber-400 hover:text-amber-300 font-bold transition cursor-pointer"
+            >
+              Pricing & Plans
+            </button>
+            <span className="text-slate-600">•</span>
             <button
               type="button"
               id="legal-page-footer-terms-btn"

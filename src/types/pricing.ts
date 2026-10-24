@@ -1,35 +1,70 @@
-export type PackageTierId = 'starter' | 'business' | 'premium';
+export type PackageTierId = 'free' | 'starter' | 'business' | 'premium';
 
 export interface PricingTierFeature {
   id: string;
   name: string;
   category: 'pos' | 'inventory' | 'reports' | 'branches' | 'support' | 'security';
+  includedInFree?: boolean;
   includedInStarter: boolean;
   includedInBusiness: boolean;
   includedInPremium: boolean;
 }
 
 export interface PricingTier {
-  id: string; // 'starter' | 'business' | 'premium'
+  id: string; // 'free' | 'starter' | 'business' | 'premium'
   tierKey: 'starter' | 'business' | 'premium' | 'professional' | 'enterprise';
-  name: string; // e.g. "STARTER", "BUSINESS", "PREMIUM"
-  alias: string; // "Basic", "Pro", "Enterprise"
-  badge?: string; // "Best Value", "Starter Choice", "Enterprise Scale"
+  name: string; // e.g. "FREE", "STARTER", "BUSINESS", "PREMIUM"
+  alias: string; // "Free Account", "Basic", "Pro", "Enterprise"
+  badge?: string; // "Best Value", "Starter Choice", "Enterprise Scale", "1-on-1 Setup"
   isPopular?: boolean;
-  monthlyPrice: number; // e.g. 399, 899, 1499
-  annualPrice: number; // e.g. 3990, 8990, 14990
+  monthlyPrice: number; // e.g. 0, 399, 899, 1499
+  annualPrice: number; // e.g. 0, 3990, 8990, 14990
+  consultationFee?: number; // e.g. 1999 for free account
+  consultationDescription?: string;
   currency: string; // "KES"
   tagline: string;
   description: string;
   maxBranches: number; // 1, 3, or -1 (unlimited)
-  maxStaffUsers: number; // 2, 10, or -1 (unlimited)
+  maxStaffUsers: number; // 1, 2, 10, or -1 (unlimited)
   features: string[];
-  colorTheme: 'blue' | 'indigo' | 'amber' | 'purple' | 'emerald';
+  colorTheme: 'emerald' | 'blue' | 'indigo' | 'amber' | 'purple' | 'cyan';
   supportLevel: string;
   isActive: boolean;
 }
 
 export const DEFAULT_PRICING_TIERS: PricingTier[] = [
+  {
+    id: 'free',
+    tierKey: 'starter',
+    name: 'FREE (ADVISORY)',
+    alias: 'Free Account',
+    badge: 'Zero Monthly Fee',
+    isPopular: false,
+    monthlyPrice: 0,
+    annualPrice: 0,
+    consultationFee: 1999,
+    consultationDescription: 'One-time onboarding advisory: 1-on-1 hardware pairing, catalog migration, KRA tax consultation, and staff training.',
+    currency: 'KES',
+    tagline: 'Zero monthly software subscription. Pay only once for expert onboarding & store setup.',
+    description: 'Lifetime free POS software paired with professional 1-on-1 retail setup, catalog onboarding, and hardware advisory.',
+    maxBranches: 1,
+    maxStaffUsers: 1,
+    features: [
+      'Lifetime Free Cloud POS Software (Ksh 0/month)',
+      '1 Store branch location (single checkout till)',
+      '1 Cashier / Owner login with secure PIN access',
+      'Up to 250 Inventory products with barcode scanning',
+      'Thermal receipt printing (58mm & 80mm format)',
+      'Offline cashiering with automatic cloud synchronization',
+      'M-Pesa, Cash & Split payment checkout',
+      'One-time Ksh 1,999 setup & consultation advisory session',
+      'Hardware & thermal printer Bluetooth/USB pairing guidance',
+      'Assisted catalog formatting & bulk CSV stock upload'
+    ],
+    colorTheme: 'emerald',
+    supportLevel: '1-on-1 Setup Consultation + Community',
+    isActive: true,
+  },
   {
     id: 'starter',
     tierKey: 'starter',

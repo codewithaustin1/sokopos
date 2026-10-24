@@ -50,6 +50,7 @@ export const ReceiptShareModal: React.FC<ReceiptShareModalProps> = ({
   const [emailAddress, setEmailAddress] = useState('');
   const [copied, setCopied] = useState(false);
   const [pdfDownloaded, setPdfDownloaded] = useState(false);
+  const [isSharingPdf, setIsSharingPdf] = useState(false);
   const [activeTab, setActiveTab] = useState<'channels' | 'preview'>('channels');
 
   // Format digital receipt text
@@ -72,18 +73,23 @@ export const ReceiptShareModal: React.FC<ReceiptShareModalProps> = ({
     return normalizePhoneNumber(phoneNumber);
   }, [phoneNumber]);
 
-  // Helper to generate and download the official 80mm POS PDF receipt
+  // Helper to generate the official 80mm POS PDF receipt
+  const createPdfReceipt = () => {
+    return generateReceiptPdf({
+      transaction,
+      location,
+      businessName,
+      businessTaxNumber,
+      customTitle: receiptTitle,
+      customSubtitle: receiptSubtitle,
+      customText: customText || receiptText,
+    });
+  };
+
+  // Helper to directly download the official 80mm POS PDF receipt
   const handleDirectPdfDownload = () => {
     try {
-      const { fileName, url } = generateReceiptPdf({
-        transaction,
-        location,
-        businessName,
-        businessTaxNumber,
-        customTitle: receiptTitle,
-        customSubtitle: receiptSubtitle,
-        customText: customText || receiptText,
-      });
+      const { fileName, url } = createPdfReceipt();
 
       const link = document.createElement('a');
       link.href = url;
@@ -104,7 +110,7 @@ export const ReceiptShareModal: React.FC<ReceiptShareModalProps> = ({
 
   if (!isOpen) return null;
 
-  // 1. Native OS Share Sheet (Direct text sharing via system sheet)
+  // 1. Native OS Share Sheet (Shares PDF Document when supported)
   const canUseNativeShare = typeof navigator !== 'undefined' && !!navigator.share;
 
   const handleNativeShare = async () => {
@@ -114,10 +120,21 @@ export const ReceiptShareModal: React.FC<ReceiptShareModalProps> = ({
     }
 
     try {
-      await navigator.share({
-        title: `${receiptTitle} - ${businessName || location.name}`,
-        text: receiptText,
-      });
+      const { blob, fileName } = createPdfReceipt();
+      const pdfFile = new File([blob], fileName, { type: 'application/pdf' });
+
+      if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+        await navigator.share({
+          files: [pdfFile],
+          title: `${receiptTitle} - ${businessName || location.name}`,
+          text: `Official sales receipt ${transaction?.receiptNumber || ''} from ${businessName || location.name}`,
+        });
+      } else {
+        await navigator.share({
+          title: `${receiptTitle} - ${businessName || location.name}`,
+          text: receiptText,
+        });
+      }
       showToast('Receipt shared successfully', 'success');
       onClose();
     } catch (err: unknown) {
@@ -128,15 +145,51 @@ export const ReceiptShareModal: React.FC<ReceiptShareModalProps> = ({
     }
   };
 
-  // 2. WhatsApp (Direct pre-filled receipt text)
-  const handleWhatsAppShare = () => {
-    const encodedText = encodeURIComponent(receiptText);
-    const targetUrl = cleanPhone
-      ? `https://wa.me/${cleanPhone}?text=${encodedText}`
-      : `https://wa.me/?text=${encodedText}`;
+  // 2. WhatsApp (Shares the official receipt as a PDF document, never bare text)
+  const handleWhatsAppShare = async () => {
+    setIsSharingPdf(true);
+    try {
+      const { blob, fileName, url } = createPdfReceipt();
+      const pdfFile = new File([blob], fileName, { type: 'application/pdf' });
 
-    window.open(targetUrl, '_blank', 'noopener,noreferrer');
-    showToast('Dispatched to WhatsApp', 'success');
+      // If mobile browser supports Web Share API with files (Android Chrome, iOS Safari)
+      if (typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+        await navigator.share({
+          files: [pdfFile],
+          title: fileName,
+          text: `Official PDF Sales Receipt #${transaction?.receiptNumber || 'N/A'} from ${businessName || location.name}`,
+        });
+        showToast('Receipt PDF shared to WhatsApp!', 'success');
+        return;
+      }
+
+      // Fallback for Desktop/Web where direct binary file injection via URL is not permitted by WhatsApp:
+      // 1. Download the PDF directly so the user has the file
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+      // 2. Open WhatsApp chat with clean document context (not bare line-item text)
+      const store = businessName || location.name;
+      const docMessage = `📄 *Official PDF Sales Receipt: ${fileName}*\n\nStore: ${store}\nReceipt: #${transaction?.receiptNumber || 'N/A'}\nTotal: ${receiptSubtitle}\n\n_The official PDF receipt has been downloaded and is ready to attach._`;
+      const encodedMsg = encodeURIComponent(docMessage);
+      const targetUrl = cleanPhone
+        ? `https://wa.me/${cleanPhone}?text=${encodedMsg}`
+        : `https://wa.me/?text=${encodedMsg}`;
+
+      window.open(targetUrl, '_blank', 'noopener,noreferrer');
+      showToast(`PDF receipt downloaded (${fileName}). Opened WhatsApp ready to attach document.`, 'success');
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      console.error('WhatsApp PDF share error:', err);
+      showToast('Failed to share PDF receipt to WhatsApp', 'error');
+    } finally {
+      setIsSharingPdf(false);
+    }
   };
 
   // 3. Instagram (Copies text to clipboard & opens Instagram Direct)
@@ -332,17 +385,21 @@ export const ReceiptShareModal: React.FC<ReceiptShareModalProps> = ({
                   <button
                     type="button"
                     onClick={handleWhatsAppShare}
-                    className="p-3 bg-emerald-50/70 hover:bg-emerald-100/80 border border-emerald-300 rounded-xl text-left transition flex items-center justify-between group cursor-pointer shadow-xs"
-                    title="Send receipt text directly via WhatsApp"
+                    disabled={isSharingPdf}
+                    className="p-3 bg-emerald-50/70 hover:bg-emerald-100/80 border border-emerald-300 rounded-xl text-left transition flex items-center justify-between group cursor-pointer shadow-xs disabled:opacity-60"
+                    title="Share official 80mm PDF sales receipt via WhatsApp"
                   >
                     <div className="flex items-center gap-2.5">
                       <WhatsAppLogo className="w-10 h-10" />
                       <div>
-                        <div className="font-bold text-slate-900 text-xs group-hover:text-emerald-800">
-                          WhatsApp
+                        <div className="font-bold text-slate-900 text-xs group-hover:text-emerald-800 flex items-center gap-1.5">
+                          <span>WhatsApp</span>
+                          <span className="text-[9px] bg-emerald-600 text-white font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider">
+                            PDF
+                          </span>
                         </div>
                         <div className="text-[10px] text-slate-500">
-                          {cleanPhone ? `Direct to +${cleanPhone}` : 'Choose contact in app'}
+                          {isSharingPdf ? 'Preparing PDF...' : cleanPhone ? `Direct PDF to +${cleanPhone}` : 'Send PDF document to contact'}
                         </div>
                       </div>
                     </div>
