@@ -36,7 +36,6 @@ import {
   BusinessPlanTier,
   DEFAULT_PRICING_TIERS,
   DigitaxEtimsData,
-  BusinessSubscription,
 } from '../types';
 import { digitaxService } from '../services/digitaxService';
 import {
@@ -165,17 +164,6 @@ interface PosContextType {
   updatePricingTier: (tierId: string, updates: Partial<PricingTier>) => void;
   resetPricingTiersToDefault: () => void;
   updateBusinessPlan: (businessId: string, plan: BusinessPlanTier) => Promise<void>;
-
-  // Subscription & Activation (Option 2 Tender-Gated Licensing)
-  isSubscriptionActive: boolean;
-  subscriptionDaysRemaining: number | null;
-  isSubscriptionModalOpen: boolean;
-  setIsSubscriptionModalOpen: (open: boolean) => void;
-  activateBusinessSubscription: (
-    planId: 'free' | 'starter' | 'business' | 'premium',
-    billingCycle: 'monthly' | 'annual',
-    paymentPhone: string
-  ) => Promise<{ success: boolean; message: string; subscription: BusinessSubscription }>;
 
   // Loyalty Program Settings
   loyaltySettings: BusinessLoyaltySettings;
@@ -675,15 +663,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ownerName: displayName || 'Business Owner',
         createdAt: now,
         lastLoginAt: now,
-        plan: 'business',
+        plan: 'professional',
         status: 'active',
         currency: 'KES',
         taxNumber: `P0${Math.floor(100000000 + Math.random() * 900000000)}Z`,
-        subscription: {
-          status: 'pending_activation',
-          planId: 'business',
-          billingCycle: 'monthly',
-        },
       };
     }
 
@@ -3854,17 +3837,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       throw new Error('Transaction prohibited: No active shift session is open.');
     }
 
-    // Option 2 Guardrail: Tendering sales strictly requires an active subscription
-    if (!isSubscriptionActive) {
-      soundFx.playError();
-      showToast(
-        'Subscription Required: Activate your package to process and tender live sales.',
-        'info'
-      );
-      setIsSubscriptionModalOpen(true);
-      throw new Error('Transaction prohibited: An active subscription is required to tender sales.');
-    }
-
     // Final Rule Enforcement: Ensure NO product with zero (0) stock is sold
     for (const cartItem of cart) {
       const prod = allProducts.find((p) => p.id === cartItem.productId);
@@ -4202,17 +4174,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return false;
     }
 
-    // Option 2 Guardrail: Tendering sales strictly requires an active subscription
-    if (!isSubscriptionActive) {
-      soundFx.playError();
-      showToast(
-        'Subscription Required: Activate your package to process and tender live sales.',
-        'info'
-      );
-      setIsSubscriptionModalOpen(true);
-      return false;
-    }
-
     if (cart.length === 0) {
       soundFx.playError();
       showToast('Cart is empty. Add items before settling.', 'warning');
@@ -4267,7 +4228,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       console.error('Exact cash checkout error:', err);
       return false;
     }
-  }, [cart, allProducts, currentLocation, cartTotal, processPayment, showToast, activeShift, setIsShiftModalOpen, isSubscriptionActive, setIsSubscriptionModalOpen]);
+  }, [cart, allProducts, currentLocation, cartTotal, processPayment, showToast, activeShift, setIsShiftModalOpen]);
 
   // 12.5 Returns & Refunds Processing
   const processRefund = useCallback(
@@ -6079,15 +6040,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       status: 'active',
       currency: 'KES',
       taxNumber: `P0${Math.floor(100000000 + Math.random() * 900000000)}Z`,
-      subscription: {
-        status: 'active',
-        planId: plan === 'enterprise' ? 'premium' : plan === 'professional' ? 'business' : 'starter',
-        billingCycle: 'monthly',
-        activatedAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-        isSimulatedPayment: true,
-        lastPaymentReference: `SUPER-ADMIN-GRANT-${Date.now().toString(36).toUpperCase()}`,
-      },
     };
 
     // Default location
@@ -6580,144 +6532,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     showToast(`Subscription plan updated to ${plan.toUpperCase()} for ${targetBiz.name}`, 'success');
   };
 
-  // Subscription & Activation (Option 2 Tender-Gated Licensing)
-  const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState<boolean>(false);
-
-  const isSubscriptionActive = useMemo(() => {
-    // 1. Super Admin role or biz-upfront platform master tenant are permanently active
-    if (isSuperAdmin || activeBusinessId === 'biz-upfront' || currentBusiness?.id === 'biz-upfront') {
-      return true;
-    }
-
-    // 2. If business status is suspended, subscription is inactive
-    if (currentBusiness?.status === 'suspended') {
-      return false;
-    }
-
-    const sub = currentBusiness?.subscription;
-    // 3. If no subscription record exists yet on a real business tenant:
-    // Option 2 allows free store and inventory setup, but tender requires activation
-    if (!sub) {
-      return false;
-    }
-
-    // 4. Status must be 'active'
-    if (sub.status !== 'active') {
-      return false;
-    }
-
-    // 5. Expiration check if expiresAt is set
-    if (sub.expiresAt) {
-      const expirationTime = new Date(sub.expiresAt).getTime();
-      if (!isNaN(expirationTime) && expirationTime < Date.now()) {
-        return false;
-      }
-    }
-
-    return true;
-  }, [isSuperAdmin, activeBusinessId, currentBusiness?.id, currentBusiness?.status, currentBusiness?.subscription]);
-
-  const subscriptionDaysRemaining = useMemo(() => {
-    if (isSuperAdmin || activeBusinessId === 'biz-upfront' || currentBusiness?.id === 'biz-upfront') {
-      return 9999;
-    }
-
-    const sub = currentBusiness?.subscription;
-    if (!sub || sub.status !== 'active' || !sub.expiresAt) {
-      return 0;
-    }
-
-    const diffMs = new Date(sub.expiresAt).getTime() - Date.now();
-    return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
-  }, [isSuperAdmin, activeBusinessId, currentBusiness?.id, currentBusiness?.subscription]);
-
-  const activateBusinessSubscription = async (
-    planId: 'free' | 'starter' | 'business' | 'premium',
-    billingCycle: 'monthly' | 'annual',
-    paymentPhone: string
-  ): Promise<{ success: boolean; message: string; subscription: BusinessSubscription }> => {
-    const isFree = planId === 'free';
-    // 30 days for monthly, 365 days for annual, or 10 years (3650 days) for Free + consultation fee
-    const durationDays = isFree ? 3650 : billingCycle === 'annual' ? 365 : 30;
-    const expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
-    const simulatedRef = `MPESA-${Math.random().toString(36).substring(2, 7).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
-
-    const payableAmount = isFree
-      ? 1999
-      : billingCycle === 'annual'
-      ? (DEFAULT_PRICING_TIERS.find((t) => t.id === planId)?.annualPrice || 8990)
-      : (DEFAULT_PRICING_TIERS.find((t) => t.id === planId)?.monthlyPrice || 899);
-
-    const newSub: BusinessSubscription = {
-      status: 'active',
-      planId,
-      billingCycle: isFree ? 'one_time' : billingCycle,
-      activatedAt: new Date().toISOString(),
-      expiresAt,
-      consultationPaid: isFree ? true : undefined,
-      isSimulatedPayment: true,
-      lastPaymentReference: simulatedRef,
-      amountPaid: payableAmount,
-      paymentPhone,
-    };
-
-    // Update in businesses list
-    const updatedBiz: Business = {
-      ...currentBusiness,
-      plan: planId,
-      subscription: newSub,
-      status: 'active',
-    };
-
-    setBusinesses((prev) => {
-      const next = prev.map((b) => (b.id === activeBusinessId ? updatedBiz : b));
-      localStorage.setItem(STORAGE_KEYS.BUSINESSES, JSON.stringify(next));
-      return next;
-    });
-
-    if (isOnline) {
-      updateBusinessInFirestore(activeBusinessId, {
-        plan: planId,
-        subscription: newSub,
-        status: 'active',
-      }).catch((err) => console.warn('Firestore subscription activation sync error:', err));
-    }
-
-    logAdminActivity({
-      category: 'system',
-      action: 'activate_subscription',
-      description: `Activated ${planId.toUpperCase()} subscription (${isFree ? 'Free Tier + Ksh 1,999 Consultation' : billingCycle === 'annual' ? 'Annual / 365 Days' : 'Monthly / 30 Days'}) via simulated M-Pesa (${paymentPhone})`,
-      recordType: 'business',
-      recordId: activeBusinessId,
-      beforeValue: currentBusiness?.subscription || null,
-      afterValue: newSub,
-    });
-
-    if (isSuperAdmin) {
-      logSuperAdminAction(
-        activeBusinessId,
-        'business',
-        activeBusinessId,
-        'update',
-        `Simulated subscription activation for "${currentBusiness.name}" (${planId.toUpperCase()}, Ref: ${simulatedRef})`,
-        currentBusiness?.subscription || null,
-        newSub
-      );
-    }
-
-    soundFx.playSuccess();
-    showToast(
-      `Package ${planId.toUpperCase()} activated (${durationDays === 3650 ? 'Lifetime Free Software' : `${durationDays} Days`})`,
-      'success'
-    );
-
-    return {
-      success: true,
-      message: 'Subscription successfully activated.',
-      subscription: newSub,
-    };
-  };
-
   // Retail Domain Accent Palette System
   const [retailTheme, setRetailThemeState] = useState<RetailTheme>(() => {
     const tenantSaved = localStorage.getItem(STORAGE_KEYS.getTenantRetailThemeKey(activeBusinessId));
@@ -6820,12 +6634,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updatePricingTier,
         resetPricingTiersToDefault,
         updateBusinessPlan,
-
-        isSubscriptionActive,
-        subscriptionDaysRemaining,
-        isSubscriptionModalOpen,
-        setIsSubscriptionModalOpen,
-        activateBusinessSubscription,
 
         loyaltySettings,
         updateLoyaltySettings,

@@ -28,7 +28,6 @@ import { PosHotkeysHelpModal } from './components/PosHotkeysHelpModal';
 import { SignInView } from './components/SignInView';
 import { SignOutConfirmModal } from './components/SignOutConfirmModal';
 import { BusinessProfileSettingsModal } from './components/BusinessProfileSettingsModal';
-import { SubscriptionActivationModal } from './components/SubscriptionActivationModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { SidebarNav } from './components/SidebarNav';
 import { CheckCircle, AlertCircle, Info, Lock, AlertTriangle } from 'lucide-react';
@@ -70,9 +69,6 @@ function PosAppContent() {
     isBusinessSettingsOpen,
     setIsBusinessSettingsOpen,
     businessSettingsDefaultTab,
-    isSubscriptionActive,
-    isSubscriptionModalOpen,
-    setIsSubscriptionModalOpen,
   } = usePos();
 
   // URL Path Routing: Ensure root URL ('/') always routes to landing page, not logged-in dashboard
@@ -208,18 +204,6 @@ function PosAppContent() {
       setCurrentTab('shifts');
       return;
     }
-
-    // Option 2 Guardrail: Setup and inventory remain unblocked, but tendering sales requires active subscription
-    if (!isSubscriptionActive) {
-      soundFx.playErrorTone();
-      showToast(
-        'Subscription Required: Activate your package to process and tender live customer sales.',
-        'info'
-      );
-      setIsSubscriptionModalOpen(true);
-      return;
-    }
-
     setPaymentInitialMethod(method);
     setIsPaymentOpen(true);
   };
@@ -697,15 +681,6 @@ function PosAppContent() {
         isOpen={isPaymentOpen}
         onClose={() => setIsPaymentOpen(false)}
         initialMethod={paymentInitialMethod}
-      />
-
-      <SubscriptionActivationModal
-        isOpen={isSubscriptionModalOpen}
-        onClose={() => setIsSubscriptionModalOpen(false)}
-        onSuccess={() => {
-          setIsSubscriptionModalOpen(false);
-          setIsPaymentOpen(true);
-        }}
       />
 
       <ReceiptModal />
