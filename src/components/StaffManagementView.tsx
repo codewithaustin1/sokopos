@@ -36,7 +36,7 @@ export const StaffManagementView: React.FC = () => {
 
   // Form fields
   const [name, setName] = useState('');
-  const [role, setRole] = useState<'cashier' | 'manager' | 'supervisor' | 'inventory_clerk'>('cashier');
+  const [role, setRole] = useState<Cashier['role']>('cashier');
   const [username, setUsername] = useState('');
   const [pin, setPin] = useState('');
   const [code, setCode] = useState('');

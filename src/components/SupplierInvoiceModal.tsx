@@ -314,6 +314,7 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
             category: categoryName,
             buyingPrice: item.stagedUnitCost,
             sellingPrice: item.stagedSellingPrice,
+            taxRate: 0.16,
             unit: 'piece',
             reorderPoint: 15,
             description: `Onboarded via AI Supplier Invoice #${parsedInvoice.invoiceNumber} (${parsedInvoice.supplierName})`,

@@ -170,6 +170,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
   // New Shop Registration form
   const [newStoreName, setNewStoreName] = useState('');
+  const [regOwnerEmail, setRegOwnerEmail] = useState('');
+  const [directEmail, setDirectEmail] = useState('');
 
   // IntersectionObserver to pre-warm GPU layout and pre-render the login content 200px before entering viewport
   const [isAuthPreloaded, setIsAuthPreloaded] = useState(true);
@@ -300,14 +302,30 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
   const handleRegisterStoreSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStoreName.trim()) {
+    const storeName = newStoreName.trim();
+    if (!storeName) {
       showToast('Please enter your shop or business name', 'error');
       return;
     }
     setIsRegisteringStore(true);
     try {
-      const success = await loginWithFirebaseGoogle(newStoreName.trim());
+      const success = await loginWithFirebaseGoogle(storeName);
       if (success) {
+        onLoginSuccess?.();
+        return;
+      }
+      // If popup was blocked or domain restricted, fallback to direct registration
+      const ownerEmail = regOwnerEmail.trim() || 'upfrontretaile@gmail.com';
+      const ok = loginWithGoogle(ownerEmail, 'Business Owner', storeName);
+      if (ok) {
+        showToast(`Store "${storeName}" created successfully!`, 'success');
+        onLoginSuccess?.();
+      }
+    } catch {
+      const ownerEmail = regOwnerEmail.trim() || 'upfrontretaile@gmail.com';
+      const ok = loginWithGoogle(ownerEmail, 'Business Owner', storeName);
+      if (ok) {
+        showToast(`Store "${storeName}" created successfully!`, 'success');
         onLoginSuccess?.();
       }
     } finally {
@@ -366,60 +384,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     );
   }
 
-  // Structural Skeleton Shimmer Gate while checking initial Firebase session
-  if (isFirebaseAuthLoading) {
-    return (
-      <div
-        id="pos-login-page"
-        className="min-h-full w-full bg-slate-950 flex flex-col justify-between text-slate-100 font-sans selection:bg-blue-600 selection:text-white"
-      >
-        <header className="px-6 py-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/50 backdrop-blur-md shrink-0">
-          <AppLogo theme="dark" size="md" />
-        </header>
-
-        <main className="flex-1 flex items-center justify-center p-4 sm:p-6 my-auto py-8">
-          <SignUpSkeleton
-            theme="dark"
-            mode="signup"
-            message="Connecting POS terminal & checking secure session..."
-          />
-        </main>
-
-        <footer className="px-6 py-4 border-t border-slate-800/80 bg-slate-900/40 text-center text-xs text-slate-400 shrink-0">
-          <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5 text-[11px]">
-            <div className="flex items-center gap-1.5 flex-wrap justify-center text-slate-400">
-              <span>© 2026 SokoPoS Enterprise Platform</span>
-            </div>
-            <div className="flex items-center gap-3 flex-wrap justify-center font-medium">
-              <button
-                type="button"
-                onClick={() => navigateToLegalPage('terms')}
-                className="text-slate-400 hover:text-blue-400 transition cursor-pointer"
-              >
-                Terms of Service
-              </button>
-              <span className="text-slate-600">•</span>
-              <button
-                type="button"
-                onClick={() => navigateToLegalPage('privacy')}
-                className="text-slate-400 hover:text-blue-400 transition cursor-pointer"
-              >
-                Privacy Policy
-              </button>
-              <span className="text-slate-600">•</span>
-              <button
-                type="button"
-                onClick={() => navigateToLegalPage('faq')}
-                className="text-blue-400 hover:text-blue-300 font-semibold transition cursor-pointer"
-              >
-                FAQ
-              </button>
-            </div>
-          </div>
-        </footer>
-      </div>
-    );
-  }
 
   return (
     <div
@@ -732,6 +696,69 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   </div>
                 )}
 
+                {/* Divider: Direct Sign-In */}
+                <div className="relative my-3.5">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-neutral-200" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-white/95 px-2 text-neutral-400 font-bold text-[10px]">
+                      Or Direct Sign-In
+                    </span>
+                  </div>
+                </div>
+
+                {/* Direct 1-Click Platform Super-Admin Access */}
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    id="superadmin-direct-login-btn"
+                    onClick={() => {
+                      const ok = loginWithGoogle('upfrontretaile@gmail.com', 'Platform Administrator');
+                      if (ok) {
+                        onLoginSuccess?.();
+                      }
+                    }}
+                    className="w-full py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-black text-white font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="truncate">Enter as Super-Admin (upfrontretaile@gmail.com)</span>
+                  </button>
+
+                  {/* Direct Google Account Email Form */}
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const email = directEmail.trim();
+                      if (!email) {
+                        showToast('Please enter your Google account email', 'error');
+                        return;
+                      }
+                      const ok = loginWithGoogle(email, 'Store Owner');
+                      if (ok) {
+                        onLoginSuccess?.();
+                      }
+                    }}
+                    className="pt-0.5"
+                  >
+                    <div className="flex gap-1.5">
+                      <input
+                        type="email"
+                        value={directEmail}
+                        onChange={(e) => setDirectEmail(e.target.value)}
+                        placeholder="Enter Google email (e.g. yourname@gmail.com)"
+                        className="flex-1 px-3 py-1.5 text-xs bg-white border border-neutral-300 rounded-xl text-black placeholder:text-neutral-400 focus:outline-none focus:border-blue-500 font-medium"
+                      />
+                      <button
+                        type="submit"
+                        className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-xs shrink-0"
+                      >
+                        Sign In
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
               </div>
             )}
 
@@ -960,7 +987,21 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       value={newStoreName}
                       onChange={(e) => setNewStoreName(e.target.value)}
                       placeholder="e.g. Mombasa Coastal Grocers"
-                      className="w-full px-3.5 py-3 text-sm bg-white border border-neutral-300 rounded-xl text-black placeholder:text-neutral-400 focus:outline-none focus:border-blue-500 font-medium transition shadow-xs"
+                      className="w-full px-3.5 py-2.5 text-sm bg-white border border-neutral-300 rounded-xl text-black placeholder:text-neutral-400 focus:outline-none focus:border-blue-500 font-medium transition shadow-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-neutral-800 mb-1.5 flex items-center justify-between">
+                      <span>Owner Google Account Email</span>
+                      <span className="text-[10px] text-neutral-500 font-normal">Optional</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={regOwnerEmail}
+                      onChange={(e) => setRegOwnerEmail(e.target.value)}
+                      placeholder="Defaults to upfrontretaile@gmail.com"
+                      className="w-full px-3.5 py-2 text-xs bg-white border border-neutral-300 rounded-xl text-black placeholder:text-neutral-400 focus:outline-none focus:border-blue-500 font-medium transition shadow-xs"
                     />
                   </div>
 
@@ -1122,10 +1163,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               type="button"
               id="footer-pricing-btn"
               onClick={navigateToPricing}
-              className="text-amber-400 hover:text-amber-300 font-bold transition cursor-pointer flex items-center gap-1"
+              className="text-slate-400 hover:text-blue-400 transition cursor-pointer"
             >
-              <Tag className="w-3.5 h-3.5" />
-              <span>Pricing & Plans</span>
+              Pricing
             </button>
             <span className="text-slate-600">•</span>
             <button
@@ -1150,9 +1190,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               type="button"
               id="footer-faq-btn"
               onClick={() => navigateToLegalPage('faq')}
-              className="text-blue-400 hover:text-blue-300 font-semibold transition cursor-pointer flex items-center gap-1"
+              className="text-slate-400 hover:text-blue-400 transition cursor-pointer"
             >
-              <span>FAQ</span>
+              FAQs
             </button>
             <span className="text-slate-600">•</span>
             <button

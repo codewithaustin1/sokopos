@@ -48,6 +48,7 @@ export const PricingSlider: React.FC<PricingSliderProps> = ({
   const currentTier = React.useMemo(() => {
     return tiers.find((t) => t.id === selectedTierId) || tiers[0] || {
       id: 'business',
+      tierKey: 'business' as const,
       name: 'BUSINESS',
       alias: 'Pro',
       monthlyPrice: 899,
@@ -61,7 +62,7 @@ export const PricingSlider: React.FC<PricingSliderProps> = ({
       features: [],
       supportLevel: 'Priority',
       isActive: true,
-      colorTheme: 'indigo',
+      colorTheme: 'indigo' as const,
     };
   }, [tiers, selectedTierId]);
 

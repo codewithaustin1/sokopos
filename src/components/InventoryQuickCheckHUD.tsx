@@ -278,7 +278,7 @@ export const InventoryQuickCheckHUD: React.FC<InventoryQuickCheckHUDProps> = ({
             {metadata && (
               <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-slate-400">
                 <Zap className="w-3 h-3 text-amber-400" />
-                {metadata.interKeyMeanLatencyMs.toFixed(0)}ms burst
+                {(metadata.interKeyAvgMs ?? 0).toFixed(0)}ms burst
               </span>
             )}
           </div>

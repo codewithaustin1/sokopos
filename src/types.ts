@@ -29,6 +29,7 @@ export interface Customer {
   visitCount: number; // Total transactions
   firstVisitAt: string;
   lastVisitAt: string;
+  kraPin?: string; // KRA Tax PIN for eTIMS customer invoices
   ledger?: CustomerCreditLedgerEntry[];
   createdAt: string;
   updatedAt?: string;
@@ -39,6 +40,7 @@ export type UserRole =
   | 'super_admin'
   | 'business_owner'
   | 'manager'
+  | 'supervisor'
   | 'cashier'
   | 'inventory_clerk';
 
@@ -129,10 +131,22 @@ export interface Business {
   status: 'active' | 'suspended';
   currency: string;
   taxNumber: string;
+  phone?: string;
   hardwareSettings?: BusinessHardwareSettings;
   retailTheme?: RetailTheme;
   taxSettings?: BusinessTaxSettings;
   loyaltySettings?: BusinessLoyaltySettings;
+  subscription?: {
+    status?: 'active' | 'expired' | 'trial' | 'grace_period';
+    expiresAt?: string;
+    licenseKey?: string;
+    activatedAt?: string;
+    plan?: BusinessPlanTier;
+    planId?: string;
+    billingCycle?: string;
+    isSimulatedPayment?: boolean;
+    [key: string]: any;
+  };
 }
 
 export * from './types/pricing';
@@ -141,8 +155,10 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string;
+  displayName?: string;
   initials: string;
   avatarUrl?: string;
+  avatarColor?: string;
   authProvider: 'google' | 'credentials' | 'firebase';
   role: UserRole;
   businessId: string | null; // null for platform super-admin
@@ -631,7 +647,9 @@ export type AdminActivityCategory =
   | 'security'
   | 'data_management'
   | 'customer'
-  | 'tenant';
+  | 'tenant'
+  | 'system'
+  | 'business_profile';
 
 export interface AdminActivityEntry {
   id: string;

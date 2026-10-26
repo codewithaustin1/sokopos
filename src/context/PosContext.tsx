@@ -164,6 +164,10 @@ interface PosContextType {
   updatePricingTier: (tierId: string, updates: Partial<PricingTier>) => void;
   resetPricingTiersToDefault: () => void;
   updateBusinessPlan: (businessId: string, plan: BusinessPlanTier) => Promise<void>;
+  isSubscriptionActive?: boolean;
+  isSubscriptionModalOpen?: boolean;
+  setIsSubscriptionModalOpen?: (open: boolean) => void;
+  activateBusinessSubscription?: (businessId: string, plan: BusinessPlanTier, voucherCode?: string) => Promise<{ success: boolean; message: string }>;
 
   // Loyalty Program Settings
   loyaltySettings: BusinessLoyaltySettings;
@@ -250,7 +254,7 @@ interface PosContextType {
   addCategory: (category: Omit<Category, 'id' | 'businessId' | 'createdAt'>) => Promise<Category>;
   updateCategory: (id: string, updates: Partial<Category>) => Promise<void>;
   deleteCategory: (id: string) => Promise<boolean>;
-  addProduct: (product: Omit<Product, 'id' | 'businessId'>) => void;
+  addProduct: (product: Omit<Product, 'id' | 'businessId'> & { id?: string }) => void;
   updateProduct: (id: string, updates: Partial<Product>) => void;
   deleteProduct: (id: string) => void;
   adjustStock: (productId: string, locationId: string, newStock: number, reason: string) => void;
@@ -335,6 +339,9 @@ interface PosContextType {
       storeCreditUsed?: number;
       loyaltyPointsRedeemed?: number;
       notes?: string;
+      mpesaMode?: string;
+      mpesaType?: string;
+      mpesaTarget?: string;
       splitBreakdown?: SplitPaymentTender[];
     }
   ) => Transaction;
@@ -385,7 +392,19 @@ interface PosContextType {
 
   // Back-office & Administrative Activity (Edge Case 5)
   adminActivityLogs: AdminActivityEntry[];
-  logAdminActivity: (params: Omit<AdminActivityEntry, 'id' | 'timestamp' | 'businessId' | 'businessName' | 'isAdministrative'>) => void;
+  logAdminActivity: (params: {
+    category: AdminActivityCategory;
+    action: string;
+    description: string;
+    recordType?: string;
+    recordId?: string;
+    adminId?: string;
+    adminEmail?: string;
+    adminName?: string;
+    adminRole?: string;
+    beforeValue?: unknown;
+    afterValue?: unknown;
+  }) => void;
 
   // Cloud Sync
   isOnline: boolean;
@@ -429,8 +448,8 @@ interface PosContextType {
   openShiftManagement: () => void;
 
   // Toast
-  toastMessage: { text: string; type: 'success' | 'error' | 'info' } | null;
-  showToast: (text: string, type?: 'success' | 'error' | 'info') => void;
+  toastMessage: { text: string; type: 'success' | 'error' | 'info' | 'warning' } | null;
+  showToast: (text: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
 
   // Audio Sound FX
   soundFx: typeof soundFx;
@@ -728,7 +747,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Firebase Real Connection Validation & Auth State Synchronizer
   useEffect(() => {
+    // Safety watchdog: ensure initial loading skeleton resolves within 1200ms even if Firebase auth is delayed in iframe
+    const watchdogTimer = setTimeout(() => {
+      setIsFirebaseAuthLoading(false);
+    }, 1200);
+
     const unsubscribe = onAuthStateChanged(auth, async (fbUser: FirebaseUser | null) => {
+      clearTimeout(watchdogTimer);
       setFirebaseUser(fbUser);
       setIsFirebaseAuthLoading(false);
       if (fbUser && fbUser.email) {
@@ -795,7 +820,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      clearTimeout(watchdogTimer);
+      unsubscribe();
+    };
   }, [businesses]);
 
   const isSuperAdmin = currentUser?.role === 'super_admin';
@@ -938,8 +966,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // 4. Toast notifications
-  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
-  const showToast = useCallback((text: string, type: 'success' | 'error' | 'info' = 'success') => {
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
+  const showToast = useCallback((text: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => {
     setToastMessage({ text, type });
     setTimeout(() => {
       setToastMessage((prev) => (prev?.text === text ? null : prev));
@@ -1012,7 +1040,19 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [adminActivityLogs]);
 
   const logAdminActivity = useCallback(
-    (params: Omit<AdminActivityEntry, 'id' | 'timestamp' | 'businessId' | 'businessName' | 'isAdministrative'>) => {
+    (params: {
+      category: AdminActivityCategory;
+      action: string;
+      description: string;
+      recordType?: string;
+      recordId?: string;
+      adminId?: string;
+      adminEmail?: string;
+      adminName?: string;
+      adminRole?: string;
+      beforeValue?: unknown;
+      afterValue?: unknown;
+    }) => {
       const targetBiz = businesses.find((b) => b.id === activeBusinessId);
       const newEntry: AdminActivityEntry = {
         id: `admin-act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -1022,12 +1062,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         category: params.category,
         action: params.action,
         description: params.description,
-        adminId: currentUser?.id || 'admin-system',
-        adminEmail: currentUser?.email || (isSuperAdmin ? SUPER_ADMIN_EMAIL : 'admin@sokopos.co.ke'),
-        adminName: currentUser?.name || 'Administrator',
-        adminRole: currentUser?.role || 'business_owner',
-        recordType: params.recordType,
-        recordId: params.recordId,
+        adminId: params.adminId || currentUser?.id || 'admin-system',
+        adminEmail: params.adminEmail || currentUser?.email || (isSuperAdmin ? SUPER_ADMIN_EMAIL : 'admin@sokopos.co.ke'),
+        adminName: params.adminName || currentUser?.name || 'Administrator',
+        adminRole: params.adminRole || currentUser?.role || 'business_owner',
+        recordType: params.recordType || 'general',
+        recordId: params.recordId || 'general',
         beforeValue: params.beforeValue ? JSON.parse(JSON.stringify(params.beforeValue)) : null,
         afterValue: params.afterValue ? JSON.parse(JSON.stringify(params.afterValue)) : null,
         isAdministrative: true,
@@ -1609,12 +1649,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
           if (data?.results && Array.isArray(data.results)) {
-            const hashMap = new Map(data.results.map((r: any) => [r.id, r.hash]));
+            const hashMap = new Map<string, string>(data.results.map((r: any) => [String(r.id), String(r.hash)]));
             setAllSystemUsers((prev) =>
               prev.map((u) => {
                 const newHash = hashMap.get(u.id);
                 if (newHash) {
-                  return { ...u, pin: newHash };
+                  return { ...u, pin: String(newHash) };
                 }
                 return u;
               })
@@ -3823,6 +3863,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       storeCreditUsed?: number;
       loyaltyPointsRedeemed?: number;
       notes?: string;
+      mpesaMode?: string;
+      mpesaType?: string;
+      mpesaTarget?: string;
       splitBreakdown?: SplitPaymentTender[];
     }
   ): Transaction => {

@@ -146,7 +146,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
   const [isAddingUser, setIsAddingUser] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [userName, setUserName] = useState('');
-  const [userRole, setUserRole] = useState<UserRole>('cashier');
+  const [userRole, setUserRole] = useState<Cashier['role']>('cashier');
   const [userUsername, setUserUsername] = useState('');
   const [userPin, setUserPin] = useState('');
   const [userAssignedLocId, setUserAssignedLocId] = useState<string>('');
@@ -305,6 +305,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
         pin: userPin.trim(),
         role: userRole,
         avatarColor: 'bg-indigo-600',
+        shiftStartedAt: new Date().toISOString(),
         assignedLocationId: userAssignedLocId || undefined,
       });
 
@@ -1783,7 +1784,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                         <select
                           id="user-select-role"
                           value={userRole}
-                          onChange={(e) => setUserRole(e.target.value as UserRole)}
+                          onChange={(e) => setUserRole(e.target.value as Cashier['role'])}
                           className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                         >
                           <option value="cashier">Cashier</option>

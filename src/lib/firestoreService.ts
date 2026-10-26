@@ -398,7 +398,11 @@ export function subscribeToTenantProducts(
       onData(prods, isFromCache);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, path);
+      try {
+        handleFirestoreError(error, OperationType.GET, path);
+      } catch (err) {
+        console.warn(`Firestore products subscription notice on "${path}":`, err);
+      }
     }
   );
 }
@@ -466,7 +470,11 @@ export function subscribeToTenantCategories(
       onData(snap.docs.map((d) => d.data() as Category));
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, path);
+      try {
+        handleFirestoreError(error, OperationType.GET, path);
+      } catch (err) {
+        console.warn(`Firestore categories subscription notice on "${path}":`, err);
+      }
     }
   );
 }
@@ -534,7 +542,11 @@ export function subscribeToTenantLocations(
       onData(snap.docs.map((d) => d.data() as Location));
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, path);
+      try {
+        handleFirestoreError(error, OperationType.GET, path);
+      } catch (err) {
+        console.warn(`Firestore locations subscription notice on "${path}":`, err);
+      }
     }
   );
 }
@@ -615,7 +627,11 @@ export function subscribeToTenantCashiers(
       onData(snap.docs.map((d) => d.data() as Cashier));
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, path);
+      try {
+        handleFirestoreError(error, OperationType.GET, path);
+      } catch (err) {
+        console.warn(`Firestore cashiers subscription notice on "${path}":`, err);
+      }
     }
   );
 }
@@ -683,7 +699,11 @@ export function subscribeToTenantTransactions(
       onData(snap.docs.map((d) => d.data() as Transaction));
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, path);
+      try {
+        handleFirestoreError(error, OperationType.GET, path);
+      } catch (err) {
+        console.warn(`Firestore transactions subscription notice on "${path}":`, err);
+      }
     }
   );
 }

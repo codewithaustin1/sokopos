@@ -121,10 +121,15 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
         id: 'all',
         businessId: activeBusinessObj.id,
         name: 'All Locations (Consolidated Enterprise)',
+        code: 'ALL',
         city: 'All Branches',
         address: 'All Branches & Terminals',
+        phone: '',
         currency: activeBusinessObj.currency || 'KES',
         taxId: activeBusinessObj.taxNumber || '',
+        isOnline: true,
+        lastSynced: new Date().toISOString(),
+        terminalName: 'All Terminals',
       };
     }
     const matched = locations.find((l) => l.id === selectedLocationId);
@@ -135,10 +140,15 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
       id: 'default-loc',
       businessId: activeBusinessObj.id,
       name: 'Main Store Location',
+      code: 'MAIN',
       city: 'Nairobi',
       address: 'Headquarters Terminal',
+      phone: '',
       currency: activeBusinessObj.currency || 'KES',
       taxId: activeBusinessObj.taxNumber || '',
+      isOnline: true,
+      lastSynced: new Date().toISOString(),
+      terminalName: 'Main Terminal',
     };
   }, [selectedLocationId, locations, currentLocation, activeBusinessObj]);
 

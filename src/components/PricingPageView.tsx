@@ -6,12 +6,6 @@ import {
   Store,
   Phone,
   Sparkles,
-  Users,
-  Printer,
-  FileCheck,
-  Layers,
-  ChevronDown,
-  ChevronUp,
 } from 'lucide-react';
 import { AppLogo } from './common/AppLogo';
 import { DEFAULT_PRICING_TIERS, PricingTier } from '../types/pricing';
@@ -27,7 +21,6 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
   onSelectPlan,
 }) => {
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
-  const [openFaqId, setOpenFaqId] = useState<string | null>('faq-free-tier');
 
   const handleSelect = (tier: PricingTier) => {
     if (onSelectPlan) {
@@ -266,82 +259,6 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
           })}
         </div>
 
-        {/* Deep Dive Section: Why Kenyan Retailers Choose the Free Advisory Account */}
-        <div className="bg-slate-900/90 rounded-3xl p-6 sm:p-10 border border-slate-800 shadow-xl space-y-8">
-          <div className="max-w-3xl mx-auto text-center space-y-3">
-            <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
-              The Ksh 1,999 Free Account Model Explained
-            </span>
-            <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              Why Pay a Consultation Fee for a Free Account?
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              Most software subscriptions fail because business owners are left to configure hardware, barcodes, and taxes alone. 
-              Our Free Account pairs <strong className="text-white">lifetime free software (Ksh 0/month)</strong> with a <strong className="text-white">one-time Ksh 1,999 professional onboarding session</strong> so you start operating smoothly on Day 1.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-2">
-              <div className="w-8 h-8 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center">
-                <Printer className="w-4 h-4" />
-              </div>
-              <h3 className="font-bold text-white text-sm">1. Hardware & Printer Pairing</h3>
-              <p className="text-xs text-slate-400 leading-snug">
-                We guide you through connecting your 58mm or 80mm Bluetooth/USB thermal receipt printer, barcode scanner, and electronic cash drawer.
-              </p>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-2">
-              <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                <Layers className="w-4 h-4" />
-              </div>
-              <h3 className="font-bold text-white text-sm">2. Stock & Catalog Migration</h3>
-              <p className="text-xs text-slate-400 leading-snug">
-                Send us your product list in Excel or a notebook snapshot. We format, structure categories, and import up to 250 SKUs ready for checkout.
-              </p>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-2">
-              <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
-                <FileCheck className="w-4 h-4" />
-              </div>
-              <h3 className="font-bold text-white text-sm">3. KRA eTIMS & Tax Audit</h3>
-              <p className="text-xs text-slate-400 leading-snug">
-                Review your business KRA PIN setup, 16% standard VAT, zero-rated goods, and Digitax validation compliance to avoid penalty notices.
-              </p>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-2">
-              <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
-                <Users className="w-4 h-4" />
-              </div>
-              <h3 className="font-bold text-white text-sm">4. Cashier Shift Training</h3>
-              <p className="text-xs text-slate-400 leading-snug">
-                Hands-on training for store staff on ringing sales, M-Pesa verification, split payments, return receipts, and end-of-day till reconciliation.
-              </p>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/60 via-slate-900 to-blue-950/60 border border-emerald-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="space-y-1 text-center sm:text-left">
-              <div className="font-bold text-white text-sm">Ready to set up your store with an expert?</div>
-              <div className="text-xs text-slate-300">
-                Book your Ksh 1,999 consultation now and unlock your Free SokoPoS account immediately.
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleScheduleConsultation}
-              className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm transition flex items-center gap-2 shrink-0 cursor-pointer shadow-lg shadow-emerald-600/30"
-            >
-              <Phone className="w-4 h-4" />
-              <span>Book Setup via WhatsApp</span>
-            </button>
-          </div>
-        </div>
-
         {/* Feature Comparison Table */}
         <div className="bg-slate-900/90 rounded-3xl p-6 sm:p-10 border border-slate-800 shadow-xl space-y-6">
           <div className="space-y-1 text-center sm:text-left">
@@ -449,65 +366,6 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
                 </tr>
               </tbody>
             </table>
-          </div>
-        </div>
-
-        {/* FAQ Section */}
-        <div className="bg-slate-900/90 rounded-3xl p-6 sm:p-10 border border-slate-800 shadow-xl space-y-6">
-          <div className="space-y-1 text-center sm:text-left">
-            <h2 className="text-2xl font-black text-white tracking-tight">Frequently Asked Questions</h2>
-            <p className="text-xs text-slate-400">Everything you need to know about pricing, billing, and consultations.</p>
-          </div>
-
-          <div className="space-y-3">
-            {[
-              {
-                id: 'faq-free-tier',
-                q: 'How does the Free Account with Ksh 1,999 consultation fee work?',
-                a: 'The software subscription is 100% free with zero monthly charges. You only pay a one-time onboarding and advisory fee of Ksh 1,999, which covers a dedicated 1-on-1 session to connect your thermal printer and barcode scanner, format and upload your product catalog, and train your staff on operating the POS register.',
-              },
-              {
-                id: 'faq-upgrade',
-                q: 'Can I upgrade from the Free Account to Starter or Business later?',
-                a: 'Yes, absolutely. As your retail business grows—such as adding a second branch or expanding staff beyond 1 cashier—you can upgrade to Starter (Ksh 399/mo) or Business (Ksh 899/mo) with a single click. All your existing products, sales histories, and stock levels carry over automatically.',
-              },
-              {
-                id: 'faq-mpesa-fees',
-                q: 'Are there hidden transaction commissions on M-Pesa or card sales?',
-                a: 'None at all. SokoPoS charges 0% commission on your sales. You keep 100% of your earnings. Standard Safaricom M-Pesa merchant charges (or your bank provider fees) apply directly as normal.',
-              },
-              {
-                id: 'faq-hardware',
-                q: 'Do I need expensive new hardware to run SokoPoS?',
-                a: 'No. SokoPoS runs right in modern web browsers on Android tablets, smartphones, laptops, and desktop computers. You can pair affordable ESC/POS 58mm or 80mm Bluetooth or USB printers and standard USB optical barcode scanners.',
-              },
-            ].map((faq) => {
-              const isOpen = openFaqId === faq.id;
-              return (
-                <div
-                  key={faq.id}
-                  className="rounded-2xl bg-slate-950/60 border border-slate-800/80 overflow-hidden transition"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setOpenFaqId(isOpen ? null : faq.id)}
-                    className="w-full p-4.5 text-left font-bold text-white text-xs sm:text-sm flex items-center justify-between gap-3 cursor-pointer hover:bg-slate-900/60 transition"
-                  >
-                    <span>{faq.q}</span>
-                    {isOpen ? (
-                      <ChevronUp className="w-4 h-4 text-blue-400 shrink-0" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
-                    )}
-                  </button>
-                  {isOpen && (
-                    <div className="px-4.5 pb-4.5 text-xs text-slate-300 leading-relaxed border-t border-slate-800/60 pt-3">
-                      {faq.a}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
           </div>
         </div>
       </main>
