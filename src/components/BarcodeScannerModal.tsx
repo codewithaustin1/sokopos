@@ -69,7 +69,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
   const lastScannedTimeRef = useRef<number>(0);
   const feedbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Initialize ZXing reader instance
+  // Initialize high-speed ZXing reader instance
   useEffect(() => {
     const hints = new Map();
     const formats = [
@@ -83,9 +83,9 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
       BarcodeFormat.QR_CODE,
     ];
     hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
-    hints.set(DecodeHintType.TRY_HARDER, true);
 
-    readerRef.current = new BrowserMultiFormatReader(hints, 300);
+    // 200ms interval between decode attempts to ensure video frames are rendered and avoid 0-width canvas IndexSizeError
+    readerRef.current = new BrowserMultiFormatReader(hints, 200);
 
     return () => {
       if (readerRef.current) {
@@ -182,6 +182,22 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
         }
       );
 
+      // Apply continuous auto-focus constraints if available
+      if (videoRef.current && videoRef.current.srcObject instanceof MediaStream) {
+        const track = videoRef.current.srcObject.getVideoTracks()[0];
+        if (track && (track as any).applyConstraints) {
+          (track as any).applyConstraints({
+            advanced: [
+              {
+                focusMode: 'continuous',
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+              } as any,
+            ],
+          }).catch(() => {});
+        }
+      }
+
       setIsCameraActive(true);
       setIsStartingCamera(false);
 
@@ -257,13 +273,22 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
     if (!trimmed) return;
 
     const now = Date.now();
-    // Debounce duplicate scans of the EXACT same item by 1.2s to prevent runaway scans while holding an item
-    if (trimmed === lastScannedCodeRef.current && now - lastScannedTimeRef.current < 1200) {
+    // Debounce duplicate scans of the EXACT same item by 800ms to allow quick consecutive scans
+    if (trimmed === lastScannedCodeRef.current && now - lastScannedTimeRef.current < 800) {
       return;
     }
 
     lastScannedCodeRef.current = trimmed;
     lastScannedTimeRef.current = now;
+
+    // Mobile haptic vibration
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try {
+        navigator.vibrate(40);
+      } catch {
+        // ignore
+      }
+    }
 
     // Trigger visual green reticle flash
     setScanSuccessFeedback(true);
@@ -272,7 +297,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
     }
     feedbackTimeoutRef.current = setTimeout(() => {
       setScanSuccessFeedback(false);
-    }, 800);
+    }, 600);
 
     // Call POS barcode engine
     const res = handleBarcodeScanned(trimmed);
@@ -557,31 +582,18 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
                         } top-1/2 -translate-y-1/2`}
                       />
 
-                      {/* Aim Helper Text */}
-                      <div className="absolute bottom-2 inset-x-0 text-center">
-                        <span className="bg-black/60 backdrop-blur-xs text-[10px] font-bold text-white px-2 py-0.5 rounded-full">
-                          Position barcode inside frame
-                        </span>
-                      </div>
                     </div>
                   </div>
                 )}
 
-                {/* Status Indicator Badges */}
-                <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-xs text-white text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-white/10 z-10">
+                {/* Streamlined Minimalist Status Badge */}
+                <div className="absolute top-2.5 left-2.5 bg-black/60 backdrop-blur-xs text-white text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-white/10 z-10">
                   <span
                     className={`w-2 h-2 rounded-full ${
                       isCameraActive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
                     }`}
                   />
-                  <span>
-                    {isCameraActive ? 'Laser Active • Continuous ZXing Engine' : 'Waiting for Camera'}
-                  </span>
-                </div>
-
-                <div className="absolute top-3 right-3 bg-black/70 backdrop-blur-xs text-white text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-white/10 z-10">
-                  <Zap className="w-3 h-3 text-amber-400" />
-                  <span>Hardware Laser Gun Ready</span>
+                  <span>{isCameraActive ? 'High-Speed Scanner Active' : 'Connecting Camera...'}</span>
                 </div>
               </div>
             </div>

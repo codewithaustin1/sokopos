@@ -164,10 +164,10 @@ interface PosContextType {
   updatePricingTier: (tierId: string, updates: Partial<PricingTier>) => void;
   resetPricingTiersToDefault: () => void;
   updateBusinessPlan: (businessId: string, plan: BusinessPlanTier) => Promise<void>;
-  isSubscriptionActive?: boolean;
-  isSubscriptionModalOpen?: boolean;
-  setIsSubscriptionModalOpen?: (open: boolean) => void;
-  activateBusinessSubscription?: (businessId: string, plan: BusinessPlanTier, voucherCode?: string) => Promise<{ success: boolean; message: string }>;
+  isSubscriptionActive: boolean;
+  isSubscriptionModalOpen: boolean;
+  setIsSubscriptionModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  activateBusinessSubscription: (businessId: string, plan: BusinessPlanTier, voucherCode?: string) => Promise<{ success: boolean; message: string }>;
 
   // Loyalty Program Settings
   loyaltySettings: BusinessLoyaltySettings;
@@ -824,7 +824,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       clearTimeout(watchdogTimer);
       unsubscribe();
     };
-  }, [businesses]);
+  }, []);
 
   const isSuperAdmin = currentUser?.role === 'super_admin';
   const isAuthenticated = Boolean(currentUser);
@@ -1722,12 +1722,17 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
   }, []);
 
+  const healedTenantsRef = useRef<Set<string>>(new Set());
+
   // Auto-heal active business defaults on initial load and whenever active business changes
   useEffect(() => {
     if (currentBusiness && currentBusiness.id && currentBusiness.id !== 'biz-upfront') {
-      ensureTenantDefaults(currentBusiness);
+      if (!healedTenantsRef.current.has(currentBusiness.id)) {
+        healedTenantsRef.current.add(currentBusiness.id);
+        ensureTenantDefaults(currentBusiness);
+      }
     }
-  }, [currentBusiness, ensureTenantDefaults]);
+  }, [currentBusiness?.id, ensureTenantDefaults]);
 
   const createSystemUser = async (user: Omit<Cashier, 'id' | 'businessId'>): Promise<boolean> => {
     // Only authenticated business owners or super-admin can create system users
@@ -6302,7 +6307,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } else {
       setReceiptFormatState('80mm');
     }
-  }, [activeBusinessId, currentBusiness?.id, currentBusiness?.hardwareSettings]);
+  }, [
+    activeBusinessId,
+    currentBusiness?.id,
+    currentBusiness?.hardwareSettings?.autoPrintReceipt,
+    currentBusiness?.hardwareSettings?.receiptFormat,
+  ]);
 
   const setAutoPrintReceipt = useCallback((enabled: boolean) => {
     setAutoPrintReceiptState(enabled);
@@ -6643,6 +6653,48 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return false;
     }
   };
+  // Package Subscription & Activation State
+  const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState<boolean>(false);
+
+  const isSubscriptionActive = useMemo(() => {
+    if (isSuperAdmin) return true;
+    if (!currentBusiness) return false;
+    if (currentBusiness.status === 'suspended' || currentBusiness.subscription?.status === 'expired') {
+      return false;
+    }
+    return currentBusiness.status === 'active';
+  }, [isSuperAdmin, currentBusiness]);
+
+  const activateBusinessSubscription = useCallback(
+    async (
+      businessId: string,
+      plan: BusinessPlanTier,
+      voucherCode?: string
+    ): Promise<{ success: boolean; message: string }> => {
+      const targetId = businessId || currentBusiness?.id;
+      if (!targetId) return { success: false, message: 'No target business tenant found' };
+
+      const now = new Date().toISOString();
+      const nextSubscription = {
+        status: 'active' as const,
+        plan: plan,
+        planId: plan,
+        activatedAt: now,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        isSimulatedPayment: true,
+      };
+
+      updateBusinessProfile({
+        plan: plan,
+        status: 'active',
+        subscription: nextSubscription,
+      });
+
+      showToast(`Package "${plan.toUpperCase()}" successfully activated!`, 'success');
+      return { success: true, message: `SIM-MPESA-${Math.floor(100000 + Math.random() * 900000)}` };
+    },
+    [currentBusiness?.id, updateBusinessProfile, showToast]
+  );
 
   return (
     <PosContext.Provider
@@ -6677,6 +6729,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updatePricingTier,
         resetPricingTiersToDefault,
         updateBusinessPlan,
+        isSubscriptionActive,
+        isSubscriptionModalOpen,
+        setIsSubscriptionModalOpen,
+        activateBusinessSubscription,
 
         loyaltySettings,
         updateLoyaltySettings,

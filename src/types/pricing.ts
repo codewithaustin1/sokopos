@@ -176,7 +176,7 @@ export const SLIDER_TIER_STEPS: SliderTierStep[] = [
     index: 1,
     tierId: 'business',
     label: 'BUSINESS',
-    subLabel: 'Pro • Best Value ⭐',
+    subLabel: 'Pro • Best Value',
     branchLabel: 'Up to 3 Branches',
     recommendedFor: 'Busy mini-marts, boutiques & multi-counter shops',
   },

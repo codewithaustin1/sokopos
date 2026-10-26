@@ -281,11 +281,12 @@ Instructions:
    - Extract numerical barcode if visible on the document.`;
 
       let parsedData: any = null;
+      let lastError: Error | null = null;
 
       try {
         const imagePart = {
           inlineData: {
-            mimeType: mimeType || 'image/jpeg',
+            mimeType: mimeType === 'image/jpg' ? 'image/jpeg' : (mimeType || 'image/jpeg'),
             data: cleanBase64,
           },
         };
@@ -327,11 +328,11 @@ Instructions:
                       suggestedCategory: { type: Type.STRING },
                       barcode: { type: Type.STRING },
                     },
-                    required: ['rawDescription', 'extractedItemName', 'quantityReceived', 'unitCost', 'totalCost'],
+                    required: ['extractedItemName', 'quantityReceived', 'unitCost'],
                   },
                 },
               },
-              required: ['supplierName', 'invoiceNumber', 'totalInvoiced', 'lineItems'],
+              required: ['supplierName', 'lineItems'],
             },
           },
         });
@@ -341,64 +342,16 @@ Instructions:
           parsedData = JSON.parse(text);
         }
       } catch (geminiError: any) {
-        console.warn('Gemini invoice parsing fallback activated:', geminiError?.message);
+        console.error('Gemini invoice parsing error:', geminiError?.message);
+        lastError = geminiError;
       }
 
-      // Robust fallback if Gemini was offline, key missing, or test sample passed
-      if (!parsedData || !Array.isArray(parsedData.lineItems)) {
-        parsedData = {
-          supplierName: 'Brookside Dairy Kenya Ltd',
-          invoiceNumber: 'INV-' + Math.floor(10000 + Math.random() * 90000),
-          invoiceDate: new Date().toISOString().split('T')[0],
-          currency: 'KES',
-          paymentTerms: 'Net 14 Days',
-          notes: 'Automated optical document extraction',
-          totalInvoiced: 11280.0,
-          lineItems: [
-            {
-              rawDescription: 'FRESH WHOLE MILK 500ML POUCH (CRATE 24)',
-              extractedItemName: 'Brookside Fresh Whole Milk 500ml',
-              packSize: '500ml',
-              quantityReceived: 72,
-              unitCost: 48.0,
-              totalCost: 3456.0,
-              taxRatePercent: 0,
-              matchedProductId: '',
-              isNewProduct: false,
-              suggestedSellingPrice: 65.0,
-              suggestedCategory: 'Dairy & Bakery',
-              barcode: '616110123456',
-            },
-            {
-              rawDescription: 'BROOKSIDE NATURAL PLAIN YOGURT 500G TUB',
-              extractedItemName: 'Brookside Plain Yogurt 500g Tub',
-              packSize: '500g',
-              quantityReceived: 24,
-              unitCost: 95.0,
-              totalCost: 2280.0,
-              taxRatePercent: 16,
-              matchedProductId: '',
-              isNewProduct: false,
-              suggestedSellingPrice: 130.0,
-              suggestedCategory: 'Dairy & Bakery',
-              barcode: '616110772211',
-            },
-            {
-              rawDescription: 'BROOKSIDE SALTED DAIRY BUTTER 250G FOIL',
-              extractedItemName: 'Brookside Salted Butter 250g',
-              packSize: '250g',
-              quantityReceived: 20,
-              unitCost: 220.0,
-              totalCost: 4400.0,
-              taxRatePercent: 16,
-              matchedProductId: '',
-              isNewProduct: true,
-              suggestedSellingPrice: 285.0,
-              suggestedCategory: 'Dairy & Bakery',
-              barcode: '616110883344',
-            },
-          ],
-        };
+      if (!parsedData || !Array.isArray(parsedData.lineItems) || parsedData.lineItems.length === 0) {
+        return res.status(500).json({
+          error:
+            lastError?.message ||
+            'Gemini Vision AI could not extract line items from the uploaded invoice. Please ensure the photo/PDF is clear and legible.',
+        });
       }
 
       return res.json({ success: true, data: parsedData });

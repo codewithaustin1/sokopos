@@ -71,7 +71,7 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
   } = usePos();
   const audio = soundFx || directSoundFx;
 
-  const [activeTab, setActiveTab] = useState<'upload' | 'camera' | 'samples'>('samples');
+  const [activeTab, setActiveTab] = useState<'upload' | 'camera' | 'samples'>('upload');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -103,9 +103,9 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
       }
     } catch (err: any) {
       console.warn('Camera access error:', err);
-      showToast('Could not access device camera. Please upload an image or select a sample invoice.', 'error');
+      showToast('Could not access device camera. Please upload an image or PDF document.', 'error');
       setCameraActive(false);
-      setActiveTab('samples');
+      setActiveTab('upload');
     }
   };
 
@@ -133,7 +133,7 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
     setParsedInvoice(null);
     setSelectedFile(null);
     setImagePreview(null);
-    setActiveTab('samples');
+    setActiveTab('upload');
   };
 
   const handleCaptureFromCamera = () => {
@@ -226,9 +226,7 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
       showToast(`Extracted ${parsed.lineItems.length} line items from ${parsed.supplierName}!`, 'success');
     } catch (err: any) {
       console.error('Invoice AI error:', err);
-      showToast(err.message || 'Invoice parsing encountered an issue. Using sample fallback.', 'error');
-      // Graceful fallback to first sample
-      handleSelectSample(SAMPLE_INVOICE_PRESETS[0]);
+      showToast(err.message || 'Invoice AI parsing encountered an issue. Please try another image or document.', 'error');
     } finally {
       setIsAnalyzing(false);
     }
@@ -700,21 +698,6 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
                     type="button"
                     onClick={() => {
                       handleStopCamera();
-                      setActiveTab('samples');
-                    }}
-                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl transition cursor-pointer ${
-                      activeTab === 'samples'
-                        ? 'bg-white text-blue-700 shadow-xs font-black'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    <FileText className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Demo Presets (Instant)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleStopCamera();
                       setActiveTab('upload');
                     }}
                     className={`flex items-center gap-1.5 px-4 py-2 rounded-xl transition cursor-pointer ${
@@ -737,6 +720,21 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
                   >
                     <Camera className="w-3.5 h-3.5 text-emerald-600" />
                     <span>Live Device Camera</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleStopCamera();
+                      setActiveTab('samples');
+                    }}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl transition cursor-pointer ${
+                      activeTab === 'samples'
+                        ? 'bg-white text-blue-700 shadow-xs font-black'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Demo Presets</span>
                   </button>
                 </div>
               </div>
