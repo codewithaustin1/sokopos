@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import {
   Monitor,
   ArrowRight,
-  Sparkles,
 } from 'lucide-react';
 import { AppLogo } from './common/AppLogo';
+import { AppFooter } from './common/AppFooter';
+import { MobileHeaderNav } from './common/MobileHeaderNav';
 import { WhatsAppFloatingButton } from './landing/WhatsAppFloatingButton';
 import { usePos } from '../context/PosContext';
 
@@ -209,28 +210,29 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
   return (
     <div
       id="pricing-page"
-      className="min-h-full w-full flex flex-col justify-between relative selection:bg-emerald-600 selection:text-white"
+      className="min-h-full w-full flex flex-col justify-between relative selection:bg-[#1565d8] selection:text-white"
       style={{
-        backgroundColor: 'var(--bg, #0F1613)',
-        color: 'var(--ink, #EAF1EC)',
+        backgroundColor: '#f4f7f6',
+        color: '#0e1a2b',
         fontFamily: 'var(--body, Figtree, system-ui, sans-serif)',
       }}
     >
-      {/* Scoped CSS for exact pixel-perfect fidelity matching user HTML */}
+      {/* Scoped CSS for light mode fidelity matching landing page */}
       <style>{`
         #pricing-page {
-          --bg: #0F1613;
-          --surface: #17211C;
-          --ink: #EAF1EC;
-          --muted: #9FB2A7;
-          --line: #2B3A32;
-          --accent: #4CC38A;
-          --on-accent: #0A1A11;
-          --mark: #F2B84B;
-          --mark-soft: #2E2713;
-          --mark-ink: #F5D48E;
+          --bg: #f4f7f6;
+          --surface: #ffffff;
+          --ink: #0e1a2b;
+          --muted: #4c5a6b;
+          --line: #d9e1e6;
+          --accent: #0a7d46;
+          --on-accent: #ffffff;
+          --mark: #d98e04;
+          --mark-soft: #fbf0d6;
+          --mark-ink: #6b4500;
           --display: "Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
           --body: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+          color-scheme: light;
         }
         .sp-display {
           font-family: var(--display);
@@ -439,26 +441,22 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
         <div className="fixed inset-0 bg-[#0F1613]/70 backdrop-blur-[1px] pointer-events-none -z-5" />
       )}
 
-      {/* Top Navigation Bar: Brand, Solutions Navigation, and Actions (Matching SignInView) */}
+      {/* Top Navigation Bar: Light mode matching landing page */}
       <header
-        className={`px-4 sm:px-8 py-3.5 border-b flex items-center justify-between shrink-0 sticky top-0 z-50 ${
-          loginBgGraphic
-            ? 'border-white/10 bg-[#0F1613]/95 backdrop-blur-md shadow-md shadow-black/30'
-            : 'border-[#2B3A32] bg-[#0F1613]/95 backdrop-blur-md shadow-md shadow-black/30'
-        }`}
+        className="px-4 sm:px-8 py-3.5 border-b border-[#d9e1e6] bg-[#f4f7f6]/95 backdrop-blur-md shadow-xs flex items-center justify-between shrink-0 sticky top-0 z-50 transition-colors"
       >
         {/* Brand */}
-        <AppLogo theme="dark" size="md" onClick={onBackToLogin} />
+        <AppLogo theme="light" size="md" onClick={onBackToLogin} />
 
         {/* Quick Nav Anchors for Desktop Visitors */}
-        <nav className="hidden lg:flex items-center gap-6 text-xs font-semibold text-[#9FB2A7]">
+        <nav className="hidden lg:flex items-center gap-6 text-xs font-semibold text-[#4c5a6b]">
           <a
             href="#industry-solutions"
             onClick={(e) => {
               e.preventDefault();
               navigateToSection('industry-solutions');
             }}
-            className="hover:text-[#4CC38A] transition"
+            className="hover:text-[#1565d8] transition"
           >
             Solutions
           </a>
@@ -468,9 +466,9 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
               e.preventDefault();
               navigateToSection('kenya-payments');
             }}
-            className="hover:text-[#4CC38A] transition"
+            className="hover:text-[#1565d8] transition"
           >
-            M-Pesa & eTIMS
+            M-Pesa &amp; eTIMS
           </a>
           <a
             href="#hardware-guide"
@@ -478,7 +476,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
               e.preventDefault();
               navigateToSection('hardware-guide');
             }}
-            className="hover:text-[#4CC38A] transition"
+            className="hover:text-[#1565d8] transition"
           >
             Hardware Freedom
           </a>
@@ -488,23 +486,24 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
               e.preventDefault();
               navigateToSection('pricing-comparison');
             }}
-            className="hover:text-[#4CC38A] transition"
+            className="hover:text-[#1565d8] transition"
           >
             Why SokoPoS
           </a>
         </nav>
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2.5">
+        {/* Action Buttons & Mobile Hamburger Menu */}
+        <div className="flex items-center gap-2 sm:gap-2.5">
           {currentUser ? (
             <button
               type="button"
               id="pricing-top-nav-pos-terminal-btn"
               onClick={onBackToLogin}
-              className="px-3.5 py-1.5 rounded-xl bg-[#4CC38A] hover:bg-[#3db079] active:bg-[#349b6a] text-[#0A1A11] font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition cursor-pointer"
+              className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition cursor-pointer"
             >
               <Monitor className="w-3.5 h-3.5" />
-              <span>Enter POS Terminal</span>
+              <span className="hidden sm:inline">Enter POS Terminal</span>
+              <span className="sm:hidden">Terminal</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           ) : (
@@ -514,14 +513,14 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
                 type="button"
                 id="pricing-mobile-nav-account-btn"
                 onClick={onBackToLogin}
-                className="sm:hidden w-9 h-9 rounded-full bg-[#17211C] hover:bg-[#202d26] border border-[#2B3A32] flex items-center justify-center transition cursor-pointer active:scale-95 shadow-sm group"
+                className="sm:hidden w-9 h-9 rounded-full bg-white hover:bg-slate-100 border border-[#d9e1e6] flex items-center justify-center transition cursor-pointer active:scale-95 shadow-xs group"
                 title="Account Login"
                 aria-label="Account Login"
               >
                 <img
                   src="/assets/aistudio/icons8-account-50_6ea01032.png"
                   alt="Account"
-                  className="w-5 h-5 object-contain invert opacity-90 group-hover:opacity-100 transition-opacity"
+                  className="w-5 h-5 object-contain opacity-80 group-hover:opacity-100 transition-opacity"
                 />
               </button>
 
@@ -530,27 +529,33 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
                 type="button"
                 id="pricing-top-nav-login-btn"
                 onClick={onBackToLogin}
-                className="hidden sm:inline-flex items-center px-4 py-1.5 rounded-xl bg-[#4CC38A] hover:bg-[#3db079] text-[#0A1A11] font-bold text-xs shadow-md shadow-emerald-500/20 transition cursor-pointer"
+                className="hidden sm:inline-flex items-center px-4 py-1.5 rounded-xl bg-[#1565d8] hover:bg-[#1255b5] text-white font-bold text-xs shadow-md shadow-blue-500/20 transition cursor-pointer"
               >
                 Login
               </button>
             </>
           )}
+
+          {/* Mobile Hamburger Menu with animated 2-bar toggle icon */}
+          <MobileHeaderNav
+            onNavigateSection={navigateToSection}
+            onNavigatePricing={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            onAuthAction={onBackToLogin}
+            isLoggedIn={Boolean(currentUser)}
+            currentPage="pricing"
+            theme="light"
+          />
         </div>
       </header>
 
-      {/* Adopted UI Design: Main Pricing Section */}
+      {/* Main Pricing Section */}
       <main className="max-w-[1200px] mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 sm:py-14 flex-1">
         {/* Header Title & Lede */}
         <div className="mb-8">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-[#4CC38A]/10 text-[#4CC38A] border border-[#4CC38A]/20 mb-3">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>M-Pesa Checkout & KRA eTIMS Ready</span>
-          </div>
-          <h1 className="sp-display text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-[#EAF1EC] mb-3 max-w-[16ch] leading-[1.05]">
+          <h1 className="sp-display text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-[#0e1a2b] mb-3 max-w-[16ch] leading-[1.05]">
             Pricing that grows with your shop
           </h1>
-          <p className="text-base sm:text-lg text-[#9FB2A7] max-w-[52ch] leading-relaxed mb-8">
+          <p className="text-base sm:text-lg text-[#4c5a6b] max-w-[52ch] leading-relaxed mb-8">
             Start free, add branches when you’re ready. All prices are in Kenyan shillings, with M-Pesa checkout built in.
           </p>
         </div>
@@ -559,7 +564,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
         <div className="flex flex-wrap gap-5 sm:gap-10 items-end mb-2">
           {/* Billing selector */}
           <div className="flex flex-col gap-2" role="group" aria-labelledby="billing-label">
-            <span id="billing-label" className="text-sm font-semibold text-[#EAF1EC]">
+            <span id="billing-label" className="text-sm font-semibold text-[#0e1a2b]">
               Billing
             </span>
             <div className="sp-seg" id="billing">
@@ -585,7 +590,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
 
           {/* How many branches do you run? */}
           <div className="flex flex-col gap-2" role="group" aria-labelledby="branches-label">
-            <span id="branches-label" className="text-sm font-semibold text-[#EAF1EC]">
+            <span id="branches-label" className="text-sm font-semibold text-[#0e1a2b]">
               How many branches do you run?
             </span>
             <div className="sp-seg" id="branches">
@@ -618,7 +623,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
         </div>
 
         {/* Dynamic Branch Recommendation Hint */}
-        <p className="min-h-[1.6em] my-3 sm:mb-7 text-sm sm:text-[0.95rem] text-[#9FB2A7]" aria-live="polite">
+        <p className="min-h-[1.6em] my-3 sm:mb-7 text-sm sm:text-[0.95rem] text-[#4c5a6b]" aria-live="polite">
           {statusMessage || 'Choose your branch count and we’ll point you to the right plan.'}
         </p>
 
@@ -662,24 +667,24 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
                 </div>
 
                 {/* Plan Header */}
-                <h2 id={`h-${t.id}`} className="sp-display text-2xl font-bold text-[#EAF1EC] m-0 leading-tight">
+                <h2 id={`h-${t.id}`} className="sp-display text-2xl font-bold text-[#0e1a2b] m-0 leading-tight">
                   {t.name}
                 </h2>
-                <p className="text-[#9FB2A7] text-[0.95rem] mt-0.5 mb-4">{t.alias}</p>
+                <p className="text-[#4c5a6b] text-[0.95rem] mt-0.5 mb-4">{t.alias}</p>
 
                 {/* Pricing amount */}
                 <div className="flex items-baseline gap-1.5 flex-wrap">
-                  <span className="sp-display font-bold text-[2.4rem] leading-none tracking-tight text-[#EAF1EC]">
+                  <span className="sp-display font-bold text-[2.4rem] leading-none tracking-tight text-[#0e1a2b]">
                     Ksh {fmt.format(big)}
                   </span>
-                  <span className="text-[#9FB2A7] text-[0.95rem]">{per}</span>
+                  <span className="text-[#4c5a6b] text-[0.95rem]">{per}</span>
                 </div>
 
                 {/* Subtext description */}
-                <p className="text-[#9FB2A7] text-sm my-1.5 mb-3.5 min-h-[2.8em] leading-snug">{sub}</p>
+                <p className="text-[#4c5a6b] text-sm my-1.5 mb-3.5 min-h-[2.8em] leading-snug">{sub}</p>
 
                 {/* Tagline */}
-                <p className="text-[0.95rem] text-[#EAF1EC] mb-4 leading-normal">{t.tagline}</p>
+                <p className="text-[0.95rem] text-[#0e1a2b] mb-4 leading-normal">{t.tagline}</p>
 
                 {/* 2-Column Stats (Branches & Staff Logins) */}
                 <div className="sp-stats">
@@ -719,7 +724,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
         </section>
 
         {/* Explanatory Footnote */}
-        <p className="mt-7 text-[#9FB2A7] text-sm max-w-[70ch] leading-relaxed">
+        <p className="mt-7 text-[#4c5a6b] text-sm max-w-[70ch] leading-relaxed">
           Yearly billing covers ten months instead of twelve. The free plan has no monthly fee; the one-time setup session is paid once.
         </p>
       </main>
@@ -727,71 +732,15 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
       {/* Floating WhatsApp Action Button for Kenya Retailers */}
       <WhatsAppFloatingButton phoneNumber="+254740463021" />
 
-      {/* Footer System Disclaimer with Legal & FAQ Links (Matching SignInView) */}
-      <footer
-        className={`px-6 pt-6 pb-24 sm:pb-7 border-t text-center text-xs text-[#9FB2A7] shrink-0 relative z-10 ${
-          loginBgGraphic
-            ? 'border-white/10 bg-[#0F1613]/70 backdrop-blur-md'
-            : 'border-[#2B3A32] bg-[#0F1613]'
-        }`}
-      >
-        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] sm:pr-72">
-          {/* Brand Logo & Copyright statement */}
-          <div className="flex items-center gap-2.5 flex-wrap justify-center text-[#9FB2A7]">
-            <AppLogo theme="dark" size="sm" onClick={onBackToLogin} />
-            <span className="hidden sm:inline text-[#2B3A32]">•</span>
-            <span>© 2026 SokoPoS Enterprise Platform</span>
-          </div>
-
-          {/* Legal & Pricing Navigation Links */}
-          <div className="flex items-center gap-2.5 sm:gap-4 flex-wrap justify-center font-medium">
-            <button
-              type="button"
-              id="pricing-footer-pricing-btn"
-              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-              className="text-[#9FB2A7] hover:text-[#4CC38A] transition cursor-pointer"
-            >
-              Pricing
-            </button>
-            <span className="text-[#2B3A32]">•</span>
-            <button
-              type="button"
-              id="pricing-footer-terms-btn"
-              onClick={() => navigateToLegal('terms')}
-              className="text-[#9FB2A7] hover:text-[#4CC38A] transition cursor-pointer"
-            >
-              Terms of Service
-            </button>
-            <span className="text-[#2B3A32]">•</span>
-            <button
-              type="button"
-              id="pricing-footer-privacy-btn"
-              onClick={() => navigateToLegal('privacy')}
-              className="text-[#9FB2A7] hover:text-[#4CC38A] transition cursor-pointer"
-            >
-              Privacy Policy
-            </button>
-            <span className="text-[#2B3A32]">•</span>
-            <button
-              type="button"
-              id="pricing-footer-faq-btn"
-              onClick={() => navigateToLegal('faq')}
-              className="text-[#9FB2A7] hover:text-[#4CC38A] transition cursor-pointer"
-            >
-              FAQs
-            </button>
-            <span className="text-[#2B3A32]">•</span>
-            <button
-              type="button"
-              id="pricing-footer-legal-notice-btn"
-              onClick={() => navigateToLegal('ownership')}
-              className="text-[#9FB2A7] hover:text-[#4CC38A] transition cursor-pointer"
-            >
-              Legal & IP
-            </button>
-          </div>
-        </div>
-      </footer>
+      {/* Benchmark Footer in Light Mode */}
+      <AppFooter
+        onBackToLogin={onBackToLogin}
+        onNavigatePricing={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        onNavigateLegal={navigateToLegal}
+        activePage="pricing"
+        idPrefix="pricing-footer"
+        theme="light"
+      />
     </div>
   );
 };

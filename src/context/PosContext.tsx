@@ -6383,15 +6383,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
   }, [activeBusinessId, currentBusiness, isOnline, showToast]);
 
-  // Display & Dark Theme State for Dim Retail Environments
+  // Display & Dark Theme State: SokoPoS defaults primarily to High-Contrast Light Mode
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.DARK_MODE);
     if (saved !== null) {
       return saved === 'true';
     }
-    if (typeof window !== 'undefined' && window.matchMedia) {
-      return window.matchMedia('(prefers-color-scheme: dark)').matches;
-    }
+    // SokoPoS is primarily availed in Light mode by default
     return false;
   });
 
@@ -6399,10 +6397,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     localStorage.setItem(STORAGE_KEYS.DARK_MODE, String(isDarkMode));
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
+      document.documentElement.classList.remove('light');
       document.documentElement.setAttribute('data-theme', 'dark');
     } else {
       document.documentElement.classList.remove('dark');
-      document.documentElement.removeAttribute('data-theme');
+      document.documentElement.classList.add('light');
+      document.documentElement.setAttribute('data-theme', 'light');
     }
   }, [isDarkMode]);
 

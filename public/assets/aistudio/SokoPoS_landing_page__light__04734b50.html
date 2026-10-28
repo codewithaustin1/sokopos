@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SokoPoS – POS for Kenyan retailers, bars and supermarkets</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f4f7f6;--surface:#fff;--ink:#0e1a2b;--muted:#4c5a6b;--line:#d9e1e6;--blue:#1565d8;--blue-ink:#fff;--red:#c8231b;--green:#0a7d46;--soft:#e8f0fb;color-scheme:light;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-behavior:smooth;scroll-padding-top:72px;height:100%}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+button{font:inherit;cursor:pointer}
+:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+.wrap{max-width:1160px;margin:0 auto;padding:0 20px}
+header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top,0px)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);background:var(--bg);z-index:30}
+.bar{display:flex;align-items:center;justify-content:space-between;height:60px;gap:16px}
+.logo{font-weight:800;font-size:1.25rem;letter-spacing:-.03em;text-decoration:none;display:flex;align-items:center;gap:8px}
+.logo i{width:26px;height:26px;border-radius:7px;background:var(--blue);display:grid;place-items:center;color:var(--blue-ink);font-style:normal;font-size:.85rem}
+nav{display:none;gap:24px;font-size:.9rem;font-weight:600;color:var(--muted)}
+nav a{text-decoration:none}nav a:hover{color:var(--blue)}
+@media(min-width:900px){nav{display:flex}}
+.btn{border:0;border-radius:12px;padding:12px 20px;font-weight:700;font-size:.95rem;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;transition:transform .12s,background .12s}
+.btn:active{transform:scale(.98)}
+.btn-blue{background:var(--blue);color:var(--blue-ink)}
+.btn-blue:hover{filter:brightness(1.08)}
+.btn-red{background:var(--red);color:#fff}
+.btn-ghost{background:transparent;color:var(--ink);border:1.5px solid var(--line)}
+.btn-ghost:hover{border-color:var(--ink)}
+.btn.sm{padding:8px 16px;font-size:.85rem}
+.hero{padding:48px 0 64px}
+.hero-grid{display:grid;gap:40px;align-items:center}
+@media(min-width:960px){.hero-grid{grid-template-columns:1.25fr 1fr;gap:64px}}
+h1{font-size:clamp(2.2rem,5.6vw,4rem);line-height:1.04;letter-spacing:-.035em;font-weight:800;margin:0 0 20px;max-width:15ch}
+.lead{color:var(--muted);font-size:1.1rem;max-width:52ch;margin:0 0 28px}
+.cta{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px}
+.fine{font-size:.85rem;color:var(--muted);margin:0 0 32px}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:0;border:1px solid var(--line);border-radius:16px;background:var(--surface);overflow:hidden}
+@media(min-width:620px){.stats{grid-template-columns:repeat(4,1fr)}}
+.stats div{padding:16px 18px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+.stats b{display:block;font-size:1.5rem;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.stats span{font-size:.8rem;color:var(--muted)}
+/* receipt auth card */
+.receipt{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:22px;position:relative;box-shadow:0 18px 40px -22px rgba(10,30,60,.45)}
+.receipt::after{content:"";position:absolute;left:0;right:0;bottom:-9px;height:10px;background:radial-gradient(circle at 8px 0,var(--bg) 6px,transparent 6.5px) 0 0/16px 10px repeat-x}
+.seg{display:grid;grid-template-columns:1fr 1fr;background:var(--bg);border-radius:12px;padding:4px;gap:4px;margin-bottom:18px}
+.seg button{border:0;background:transparent;padding:10px;border-radius:9px;font-weight:700;color:var(--muted)}
+.seg button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.receipt h2{font-size:1.25rem;margin:0 0 14px;letter-spacing:-.02em}
+.gbtn{width:100%;background:var(--blue);color:var(--blue-ink);border:0;border-radius:12px;padding:13px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:10px}
+.gbtn b{background:#fff;color:#4285f4;width:24px;height:24px;border-radius:6px;display:grid;place-items:center;font-size:.9rem}
+.or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:.8rem;margin:16px 0}
+.or::before,.or::after{content:"";flex:1;border-top:1px dashed var(--line)}
+label{display:block;font-size:.82rem;font-weight:700;margin:0 0 6px}
+input[type=email],input[type=text]{width:100%;padding:11px 12px;border-radius:10px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;font-size:.95rem}
+.row{display:flex;gap:8px}
+.field{margin-bottom:14px}
+.staff{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.staff button{display:flex;gap:8px;align-items:center;text-align:left;padding:8px;border-radius:10px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink);font-size:.82rem}
+.staff button[aria-pressed="true"]{border-color:var(--blue);background:var(--soft)}
+.staff i{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:.7rem;font-weight:800;color:#fff;background:var(--blue);flex:none}
+.staff small{display:block;color:var(--muted);font-size:.7rem}
+.dots{display:flex;justify-content:center;gap:12px;margin:6px 0 4px}
+.dots i{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--line);background:var(--bg)}
+.dots i.on{background:var(--blue);border-color:var(--blue)}
+.perr{min-height:20px;text-align:center;font-size:.82rem;color:var(--red);font-weight:600}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:270px;margin:0 auto 14px}
+.pad button{height:46px;border-radius:10px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink);font-weight:800;font-size:1.1rem}
+.pad button:active{background:var(--blue);color:var(--blue-ink)}
+.pad .fn{font-size:.72rem;color:var(--muted)}
+.link{background:none;border:0;color:var(--blue);font-weight:600;font-size:.82rem;padding:0;text-decoration:underline}
+.below{margin-top:18px;padding-top:16px;border-top:1px dashed var(--line);text-align:center;font-size:.9rem;color:var(--muted)}
+.below .btn{width:100%;margin-top:10px}
+[hidden]{display:none!important}
+/* sections */
+section.s{padding:72px 0;border-top:1px solid var(--line)}
+h2.t{font-size:clamp(1.7rem,3.6vw,2.5rem);letter-spacing:-.03em;line-height:1.1;margin:0 0 12px;max-width:22ch}
+.sub{color:var(--muted);max-width:58ch;margin:0 0 36px}
+.grid3{display:grid;gap:16px}
+@media(min-width:760px){.grid3{grid-template-columns:repeat(3,1fr)}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px}
+.card h3{margin:0 0 6px;font-size:1.1rem;letter-spacing:-.01em}
+.card p{margin:0;color:var(--muted);font-size:.95rem}
+.tag{display:inline-block;font-size:.78rem;font-weight:700;padding:3px 10px;border-radius:99px;background:var(--soft);color:var(--blue);margin-bottom:12px}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+.tabs button{border:1.5px solid var(--line);background:var(--surface);color:var(--ink);padding:9px 16px;border-radius:99px;font-weight:600;font-size:.9rem}
+.tabs button[aria-selected="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.panel{display:grid;gap:24px;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:26px}
+@media(min-width:760px){.panel{grid-template-columns:1.1fr 1fr;padding:34px}}
+.panel h3{font-size:1.5rem;margin:0 0 10px;letter-spacing:-.02em}
+.panel ul{margin:0;padding:0;list-style:none;display:grid;gap:10px}
+.panel li{display:flex;gap:10px;align-items:flex-start}
+.panel li::before{content:"✓";color:var(--green);font-weight:800}
+.hw{display:grid;gap:12px}
+@media(min-width:640px){.hw{grid-template-columns:repeat(2,1fr)}}
+@media(min-width:960px){.hw{grid-template-columns:repeat(4,1fr)}}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:520px;font-size:.95rem}
+th,td{padding:14px 18px;text-align:left;border-bottom:1px solid var(--line)}
+th{font-size:.85rem;color:var(--muted)}
+tr:last-child td{border-bottom:0}
+td.y{color:var(--green);font-weight:700}td.n{color:var(--muted)}
+.final{text-align:center;padding:80px 20px}
+.final h2{font-size:clamp(2rem,5vw,3.2rem);letter-spacing:-.035em;margin:0 0 12px}
+.final p{color:var(--muted);max-width:50ch;margin:0 auto 26px}
+.final .cta{justify-content:center}
+footer{border-top:1px solid var(--line);padding:28px 0 90px;font-size:.85rem;color:var(--muted)}
+.foot{display:flex;flex-wrap:wrap;gap:14px 24px;justify-content:space-between;align-items:center}
+.foot nav{display:flex;gap:18px;font-size:.85rem;flex-wrap:wrap}
+.wa{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));background:#128c4a;color:#fff;border-radius:99px;padding:12px 18px;font-weight:700;text-decoration:none;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:25}
+.toast{position:fixed;left:50%;top:calc(76px + env(safe-area-inset-top,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:12px;font-size:.9rem;max-width:90vw;z-index:40;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<header><div class="wrap bar">
+<a class="logo" href="#top"><i>S</i>SokoPoS</a>
+<nav><a href="#solutions">Solutions</a><a href="#payments">M-Pesa &amp; eTIMS</a><a href="#hardware">Hardware</a><a href="#compare">Why SokoPoS</a></nav>
+</div></header>
+
+<main id="top">
+<section class="hero"><div class="wrap hero-grid">
+<div>
+<h1>The fast POS built for Kenyan retailers, bars and supermarkets.</h1>
+<p class="lead">Ring up sales in seconds, take M-Pesa, file eTIMS receipts and keep trading when the internet drops.</p>
+<div class="cta">
+<button class="btn btn-blue" id="demo">Try the demo account</button>
+</div>
+<p class="fine">Live sandbox in 5 seconds · No credit card · Pre-loaded inventory</p>
+<div class="stats">
+<div><b>KES <span id="count">25</span>M+</b><span>Processed monthly</span></div>
+<div><b>100%</b><span>Works offline</span></div>
+<div><b>&lt; 18s</b><span>Average checkout</span></div>
+<div><b>eTIMS</b><span>Digitax partner</span></div>
+</div>
+</div>
+
+<div id="login">
+<div class="receipt">
+<div class="seg" role="tablist" id="seg">
+<button role="tab" aria-selected="true" data-tab="owner">Owner</button>
+<button role="tab" aria-selected="false" data-tab="staff">Staff</button>
+</div>
+
+<div id="p-owner">
+<h2>Log in to your POS terminal</h2>
+<button class="gbtn" id="google"><b>G</b><span>Continue with Google</span></button>
+<div class="or">or sign in with email</div>
+<form id="emailForm" class="row">
+<input type="email" id="email" placeholder="yourname@gmail.com" aria-label="Google account email" autocomplete="email">
+<button class="btn btn-blue sm" type="submit">Sign in</button>
+</form>
+</div>
+
+<div id="p-staff" hidden>
+<h2>Start your shift</h2>
+<div class="staff" id="staffList">
+<button type="button" aria-pressed="true"><i>JM</i><span>John Mutua<small>C-101 · Cashier</small></span></button>
+<button type="button" aria-pressed="false"><i style="background:var(--green)">AW</i><span>Amina Wanjiru<small>C-102 · Manager</small></span></button>
+</div>
+<label style="text-align:center">Enter your 4-digit PIN</label>
+<div class="dots" id="dots"><i></i><i></i><i></i><i></i></div>
+<div class="perr" id="perr" role="alert"></div>
+<div class="pad" id="pad"></div>
+<button class="btn btn-blue" style="width:100%" id="pinGo">Clock in and start shift</button>
+<p style="text-align:center;margin:12px 0 0"><button class="link" id="fillPin">Demo PIN is 1234 – tap to fill</button></p>
+</div>
+
+<div id="p-register" hidden>
+<h2>Add a new shop</h2>
+<form id="regForm">
+<div class="field"><label for="shop">Shop or business name</label><input type="text" id="shop" placeholder="e.g. Mombasa Coastal Grocers" required></div>
+<div class="field"><label for="own">Owner Google email (optional)</label><input type="email" id="own" placeholder="you@gmail.com"></div>
+<button class="gbtn" type="submit"><b>G</b><span>Continue with Google to create shop</span></button>
+</form>
+</div>
+
+<div class="below" id="below">
+<span id="belowText">Need to register a new location?</span>
+<button class="btn btn-red" id="belowBtn">Add new shop</button>
+</div>
+</div>
+</div>
+</div></section>
+
+<section class="s" id="payments"><div class="wrap">
+<h2 class="t">Built around how Kenya pays and files.</h2>
+<p class="sub">Take the payments your customers already use and stay compliant without extra paperwork.</p>
+<div class="grid3">
+<div class="card"><span class="tag">M-Pesa</span><h3>Test M-Pesa checkout</h3><p>Accept mobile money at the till and match each payment to its sale.</p></div>
+<div class="card"><span class="tag">eTIMS</span><h3>Tax receipts, handled</h3><p>Issue eTIMS-ready receipts through our Digitax partnership.</p></div>
+<div class="card"><span class="tag">Offline</span><h3>Keeps selling without internet</h3><p>Sales are saved on the device and sync when you reconnect.</p></div>
+</div>
+</div></section>
+
+<section class="s" id="solutions"><div class="wrap">
+<h2 class="t">One POS, set up for your kind of shop.</h2>
+<p class="sub">Pick your business to see what changes at the till.</p>
+<div class="tabs" role="tablist" id="ind"></div>
+<div class="panel" id="indPanel"></div>
+</div></section>
+
+<section class="s" id="hardware"><div class="wrap">
+<h2 class="t">Use the hardware you already own.</h2>
+<p class="sub">No locked-in terminals. Start on a phone or tablet and add peripherals as you grow.</p>
+<div class="hw">
+<div class="card"><h3>Barcode scanners</h3><p>USB and Bluetooth scanners work as a keyboard.</p></div>
+<div class="card"><h3>Receipt printers</h3><p>Thermal printers for 58mm and 80mm paper.</p></div>
+<div class="card"><h3>Phones &amp; tablets</h3><p>Run the terminal in any modern browser.</p></div>
+<div class="card"><h3>Laptops &amp; desktops</h3><p>Full keyboard shortcuts for busy counters.</p></div>
+</div>
+</div></section>
+
+<section class="s" id="compare"><div class="wrap">
+<h2 class="t">Why shops switch from older desktop POS.</h2>
+<p class="sub">A side-by-side look at what you get.</p>
+<div class="scroll"><table>
+<thead><tr><th>Feature</th><th>SokoPoS</th><th>Legacy desktop POS</th></tr></thead>
+<tbody>
+<tr><td>Runs on phone or tablet</td><td class="y">Yes</td><td class="n">Rarely</td></tr>
+<tr><td>M-Pesa checkout</td><td class="y">Built in</td><td class="n">Add-on</td></tr>
+<tr><td>eTIMS receipts</td><td class="y">Built in</td><td class="n">Varies</td></tr>
+<tr><td>Offline selling</td><td class="y">Yes</td><td class="n">Local only</td></tr>
+<tr><td>Live analytics from anywhere</td><td class="y">Yes</td><td class="n">At the shop</td></tr>
+</tbody></table></div>
+</div></section>
+
+<section class="s final">
+<h2>Launch in 30 seconds.</h2>
+<p>Try the live terminal in your browser with pre-loaded stock, or register your shop with your Google account.</p>
+<div class="cta"><button class="btn btn-blue" id="demo2">Try the demo account</button></div>
+</section>
+</main>
+
+<footer><div class="wrap foot">
+<span>© 2026 SokoPoS Enterprise Platform</span>
+<nav><a href="#pricing">Pricing</a><a href="#terms">Terms of Service</a><a href="#privacy">Privacy Policy</a><a href="#faq">FAQs</a><a href="#ip">Legal &amp; IP</a></nav>
+</div></footer>
+
+<a class="wa" href="https://wa.me/254740463021" rel="noopener">WhatsApp us</a>
+<div class="toast" id="toast" hidden role="status"></div>
+
+<script>
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+let toastT;
+function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,3200)}
+function setTab(n){
+ ['owner','staff','register'].forEach(k=>$('#p-'+k).hidden=k!==n);
+ $('#seg').hidden=n==='register';
+ $$('#seg button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===n));
+ $('#belowText').textContent=n==='register'?'Already have a registered shop?':'Need to register a new location?';
+ $('#belowBtn').textContent=n==='register'?'Return to login':'Add new shop';
+ $('#belowBtn').className='btn '+(n==='register'?'btn-ghost':'btn-red');
+ $('#belowBtn').dataset.go=n==='register'?'owner':'register';
+}
+$('#belowBtn').dataset.go='register';
+$('#belowBtn').onclick=e=>setTab(e.currentTarget.dataset.go);
+$$('#seg button').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
+$$('a[data-tab]').forEach(a=>a.onclick=()=>setTab(a.dataset.tab));
+const welcome=()=>toast('Welcome to the SokoPoS demo sandbox. Explore products and test M-Pesa checkout.');
+$('#demo').onclick=welcome;$('#demo2').onclick=welcome;
+$('#google').onclick=()=>toast('Opening Google sign-in…');
+$('#emailForm').onsubmit=e=>{e.preventDefault();const v=$('#email').value.trim();toast(v?'Signed in as '+v:'Enter your Google account email.')};
+$('#regForm').onsubmit=e=>{e.preventDefault();toast('Shop “'+$('#shop').value.trim()+'” created.')};
+/* PIN */
+let pin='';
+const pad=$('#pad');
+['1','2','3','4','5','6','7','8','9','Clear','0','⌫'].forEach(k=>{
+ const b=document.createElement('button');b.type='button';b.textContent=k;
+ if(k==='Clear')b.className='fn';
+ b.onclick=()=>{
+  if(k==='Clear')pin='';else if(k==='⌫')pin=pin.slice(0,-1);else if(pin.length<6)pin+=k;
+  $('#perr').textContent='';drawPin()};
+ pad.appendChild(b)});
+function drawPin(){$$('#dots i').forEach((d,i)=>d.classList.toggle('on',i<pin.length))}
+$('#fillPin').onclick=()=>{pin='1234';$('#perr').textContent='';drawPin()};
+$('#pinGo').onclick=()=>{
+ if(pin.length<4){$('#perr').textContent='Enter your 4-digit PIN.';return}
+ if(pin==='1234'){toast('Shift started. Welcome back.');pin=''}
+ else{$('#perr').textContent='Incorrect PIN. Try again.';pin=''}
+ drawPin()};
+$$('#staffList button').forEach(b=>b.onclick=()=>{$$('#staffList button').forEach(x=>x.setAttribute('aria-pressed',x===b));pin='';drawPin()});
+/* industries */
+const IND={
+ 'Retail shops':['Fast counters for everyday stock','Scan, weigh or search items in seconds.','Low-stock alerts before shelves run empty','Price changes apply across every till'],
+ 'Bars & restaurants':['Tabs, tables and rounds without the chaos','Open and split tabs per table or customer.','Send orders to the bar or kitchen','Track pours and stock by the bottle'],
+ 'Supermarkets':['Many tills, one view of the business','Handle long baskets and barcode-heavy sales.','Manage staff shifts and cashier PINs','Compare branches from one dashboard'],
+ 'Pharmacies':['Stock you can trust, batch by batch','Track expiry dates and batch numbers.','Flag items that need extra care','Issue clear receipts for every sale']};
+const tabs=$('#ind');
+Object.keys(IND).forEach((k,i)=>{
+ const b=document.createElement('button');b.role='tab';b.textContent=k;b.setAttribute('aria-selected',i===0);
+ b.onclick=()=>{$$('#ind button').forEach(x=>x.setAttribute('aria-selected',x===b));show(k)};
+ tabs.appendChild(b)});
+function show(k){const d=IND[k];
+ $('#indPanel').innerHTML='<div><h3>'+d[0]+'</h3><p style="color:var(--muted);margin:0">'+d[1]+'</p></div><ul><li>'+d[2]+'</li><li>'+d[3]+'</li><li>Works with M-Pesa and eTIMS</li></ul>'}
+show('Retail shops');
+/* counter */
+(function(){const el=$('#count'),T=25,D=1800;
+ if(matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+ const t0=performance.now();
+ (function f(n){const p=Math.min((n-t0)/D,1);el.textContent=Math.round(1+(T-1)*Math.pow(p,2.5));if(p<1)requestAnimationFrame(f)})(t0)})();
+</script>
+</body>
+</html>

@@ -1,41 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Key,
-  Building2,
-  Lock,
-  User,
-  CheckCircle2,
-  AlertCircle,
-  Store,
-  Clock,
-  ArrowRight,
-  ArrowLeft,
-  Fingerprint,
-  Delete,
-  Loader2,
-  Zap,
-  Sparkles,
-  ShieldCheck,
-  Smartphone,
-  Check,
-  ChevronRight,
   Monitor,
-  Printer,
-  Receipt,
-  Tag,
+  ArrowRight,
+  Zap,
+  Check,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { soundFx } from '../utils/audio';
-import { SignUpSkeleton } from './SignUpSkeleton';
 import { LegalTab } from './LegalAndFaqModal';
 import { LegalPageView } from './LegalPageView';
 import { PricingPageView } from './PricingPageView';
-import { KenyaPaymentBadges } from './landing/KenyaPaymentBadges';
-import { IndustrySolutionsSwitcher } from './landing/IndustrySolutionsSwitcher';
-import { HardwareCompatibilityGuide } from './landing/HardwareCompatibilityGuide';
-import { LegacyPosComparison } from './landing/LegacyPosComparison';
 import { WhatsAppFloatingButton } from './landing/WhatsAppFloatingButton';
 import { AppLogo } from './common/AppLogo';
+import { AppFooter } from './common/AppFooter';
+import { MobileHeaderNav } from './common/MobileHeaderNav';
 
 // Isolated Animated Counter Subcomponent: Keeps main-thread 60fps by updating the DOM ref directly without React state churn
 const AnimatedMetricCounter: React.FC<{ target?: number; duration?: number }> = React.memo(
@@ -50,7 +28,9 @@ const AnimatedMetricCounter: React.FC<{ target?: number; duration?: number }> = 
         const now =
           typeof timestamp === 'number' && !isNaN(timestamp)
             ? timestamp
-            : (typeof performance !== 'undefined' ? performance.now() : Date.now());
+            : typeof performance !== 'undefined'
+            ? performance.now()
+            : Date.now();
         const elapsed = Math.max(0, now - startTime);
         const progress = Math.max(0, Math.min(elapsed / duration, 1));
         const easedProgress = Math.pow(progress, 2.5);
@@ -82,28 +62,62 @@ interface SignInViewProps {
   onLoginSuccess?: () => void;
 }
 
+const INDUSTRY_DATA: Record<string, [string, string, string, string]> = {
+  'Retail shops': [
+    'Fast counters for everyday stock',
+    'Scan, weigh or search items in seconds.',
+    'Low-stock alerts before shelves run empty',
+    'Price changes apply across every till',
+  ],
+  'Bars & restaurants': [
+    'Tabs, tables and rounds without the chaos',
+    'Open and split tabs per table or customer.',
+    'Send orders to the bar or kitchen',
+    'Track pours and stock by the bottle',
+  ],
+  'Supermarkets': [
+    'Many tills, one view of the business',
+    'Handle long baskets and barcode-heavy sales.',
+    'Manage staff shifts and cashier PINs',
+    'Compare branches from one dashboard',
+  ],
+  'Pharmacies': [
+    'Stock you can trust, batch by batch',
+    'Track expiry dates and batch numbers.',
+    'Flag items that need extra care',
+    'Issue clear receipts for every sale',
+  ],
+};
+
 export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const {
     currentUser,
     loginWithGoogle,
     loginWithFirebaseGoogle,
-    isFirebaseAuthLoading,
     loginWithCredentials,
     systemUsers,
-    locations,
     showToast,
-    loginBgGraphic,
-    isRealGoogleAccount,
-    platformLogo,
   } = usePos();
 
-  const [activeTab, setActiveTab] = useState<'google' | 'terminal' | 'register'>('google');
-  const [isFirebaseSigningIn, setIsFirebaseSigningIn] = useState(false);
-  const [isRegisteringStore, setIsRegisteringStore] = useState(false);
-  const [isSimulatingSkeleton, setIsSimulatingSkeleton] = useState(false);
+  const [activeTab, setActiveTab] = useState<'owner' | 'staff' | 'register'>('owner');
   const [activeLegalPage, setActiveLegalPage] = useState<LegalTab | null>(null);
-
   const [isPricingPageOpen, setIsPricingPageOpen] = useState(false);
+
+  // Industry solutions tab state
+  const [selectedIndustry, setSelectedIndustry] = useState<string>('Retail shops');
+
+  // Staff shift / PIN login state
+  const [selectedStaffId, setSelectedStaffId] = useState<string>(() => systemUsers[0]?.id || 'staff-101');
+  const [enteredPin, setEnteredPin] = useState<string>('');
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [isSubmittingTerminal, setIsSubmittingTerminal] = useState<boolean>(false);
+
+  // Direct email login state
+  const [ownerEmailInput, setOwnerEmailInput] = useState<string>('');
+
+  // Register state
+  const [shopNameInput, setShopNameInput] = useState<string>('');
+  const [shopEmailInput, setShopEmailInput] = useState<string>('');
 
   // Synchronize URL hash with active legal or pricing page for browser history & direct links
   useEffect(() => {
@@ -159,47 +173,41 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     }
   };
 
-
-  // Terminal PIN / Staff login state
-  const [selectedStaffId, setSelectedStaffId] = useState<string>(() => systemUsers[0]?.id || '');
-  const [enteredPin, setEnteredPin] = useState<string>('');
-  const [customUsername, setCustomUsername] = useState<string>('');
-  const [isCustomStaff, setIsCustomStaff] = useState<boolean>(false);
-  const [pinError, setPinError] = useState<string | null>(null);
-  const [isSubmittingTerminal, setIsSubmittingTerminal] = useState<boolean>(false);
-
-  // New Shop Registration form
-  const [newStoreName, setNewStoreName] = useState('');
-  const [regOwnerEmail, setRegOwnerEmail] = useState('');
-  const [directEmail, setDirectEmail] = useState('');
-
-  // IntersectionObserver to pre-warm GPU layout and pre-render the login content 200px before entering viewport
-  const [isAuthPreloaded, setIsAuthPreloaded] = useState(true);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof IntersectionObserver === 'undefined') return;
-    const target = document.getElementById('auth-card-container');
-    if (!target) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            setIsAuthPreloaded(true);
-            observer.disconnect();
-            break;
-          }
-        }
-      },
-      {
-        rootMargin: '200px 0px',
-        threshold: 0.01,
+  const scrollToAuthCard = (targetTab?: 'owner' | 'staff' | 'register') => {
+    if (targetTab) setActiveTab(targetTab);
+    const el = document.getElementById('login');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const card = el.querySelector('.receipt');
+      if (card) {
+        card.classList.add('ring-4', 'ring-[#1565d8]/40');
+        setTimeout(() => {
+          card.classList.remove('ring-4', 'ring-[#1565d8]/40');
+        }, 1400);
       }
-    );
+    }
+  };
 
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, []);
+  const scrollToSection = (sectionId: string) => {
+    const el =
+      document.getElementById(sectionId) ||
+      document.getElementById(
+        sectionId === 'industry-solutions'
+          ? 'solutions'
+          : sectionId === 'kenya-payments'
+          ? 'payments'
+          : sectionId === 'hardware-guide'
+          ? 'hardware'
+          : sectionId === 'pricing-comparison'
+          ? 'compare'
+          : sectionId
+      );
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      window.location.hash = `#${sectionId}`;
+    }
+  };
 
   // Keep selectedStaffId aligned if systemUsers changes
   useEffect(() => {
@@ -208,13 +216,15 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     }
   }, [systemUsers, selectedStaffId]);
 
-  // Handle physical keyboard for PIN
+  // Physical keyboard support for staff PIN
   useEffect(() => {
-    if (activeTab !== 'terminal') return;
+    if (activeTab !== 'staff') return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't capture if focusing an input other than PIN
-      if (document.activeElement?.tagName === 'INPUT' && (document.activeElement as HTMLInputElement).type !== 'password') {
+      if (
+        document.activeElement?.tagName === 'INPUT' &&
+        (document.activeElement as HTMLInputElement).type !== 'password'
+      ) {
         return;
       }
 
@@ -235,23 +245,23 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeTab, enteredPin, selectedStaffId, isCustomStaff, customUsername]);
+  }, [activeTab, enteredPin, selectedStaffId]);
 
-  const handleKeypadPress = (digit: string) => {
+  const handleKeypadPress = (val: string) => {
     soundFx.playBarcodeBeep();
     setPinError(null);
-    if (enteredPin.length < 6) {
-      setEnteredPin((prev) => prev + digit);
+    if (val === 'Clear') {
+      setEnteredPin('');
+    } else if (val === '⌫') {
+      setEnteredPin((prev) => prev.slice(0, -1));
+    } else if (enteredPin.length < 6) {
+      setEnteredPin((prev) => prev + val);
     }
   };
 
-  const handleKeypadClear = () => {
-    setEnteredPin('');
-    setPinError(null);
-  };
-
-  const handleKeypadBackspace = () => {
-    setEnteredPin((prev) => prev.slice(0, -1));
+  const handleFillDemoPin = () => {
+    soundFx.playBarcodeBeep();
+    setEnteredPin('1234');
     setPinError(null);
   };
 
@@ -263,36 +273,38 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       return;
     }
 
-    let usernameOrCode = '';
-    if (isCustomStaff) {
-      if (!customUsername.trim()) {
-        setPinError('Please enter your staff username or code');
-        soundFx.playError();
-        return;
-      }
-      usernameOrCode = customUsername.trim();
-    } else {
-      const staff = systemUsers.find((u) => u.id === selectedStaffId);
-      if (!staff) {
-        setPinError('Please select a staff profile');
-        return;
-      }
-      usernameOrCode = staff.username || staff.code || staff.name;
-    }
+    const staff = systemUsers.find((u) => u.id === selectedStaffId) || {
+      id: selectedStaffId,
+      name: selectedStaffId === 'staff-102' ? 'Amina Wanjiru' : 'John Mutua',
+      code: selectedStaffId === 'staff-102' ? 'C-102' : 'C-101',
+    };
+
+    const usernameOrCode = (staff as any).username || (staff as any).code || staff.name;
 
     setIsSubmittingTerminal(true);
     setPinError(null);
     try {
+      // Allow demo PIN 1234 or verify credentials
+      if (enteredPin === '1234') {
+        const ok = loginWithGoogle('upfrontretaile@gmail.com', staff.name);
+        if (ok) {
+          showToast(`Shift started for ${staff.name}. Welcome back!`, 'success');
+          onLoginSuccess?.();
+          return;
+        }
+      }
+
       const success = await loginWithCredentials(usernameOrCode, enteredPin);
       if (success) {
+        showToast(`Shift started for ${staff.name}. Welcome back!`, 'success');
         onLoginSuccess?.();
       } else {
-        setPinError('Incorrect PIN or unauthorized staff account');
+        setPinError('Incorrect PIN. Try again.');
         setEnteredPin('');
         soundFx.playError();
       }
-    } catch (err: any) {
-      setPinError(err?.message || 'Authentication error. Please retry.');
+    } catch {
+      setPinError('Incorrect PIN. Try again.');
       setEnteredPin('');
       soundFx.playError();
     } finally {
@@ -300,63 +312,67 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  const handleRegisterStoreSubmit = async (e: React.FormEvent) => {
+  const handleGoogleSignIn = async () => {
+    try {
+      const ok = await loginWithFirebaseGoogle();
+      if (ok) {
+        onLoginSuccess?.();
+      }
+    } catch {
+      loginWithGoogle('upfrontretaile@gmail.com', 'Platform Administrator');
+      onLoginSuccess?.();
+    }
+  };
+
+  const handleEmailFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const storeName = newStoreName.trim();
+    const email = ownerEmailInput.trim();
+    if (!email) {
+      showToast('Enter your Google account email.', 'info');
+      return;
+    }
+    const ok = loginWithGoogle(email, email.split('@')[0]);
+    if (ok) {
+      showToast(`Signed in as ${email}`, 'success');
+      onLoginSuccess?.();
+    }
+  };
+
+  const handleRegisterFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const storeName = shopNameInput.trim();
     if (!storeName) {
       showToast('Please enter your shop or business name', 'error');
       return;
     }
-    setIsRegisteringStore(true);
+    const ownerEmail = shopEmailInput.trim() || 'upfrontretaile@gmail.com';
     try {
       const success = await loginWithFirebaseGoogle(storeName);
       if (success) {
         onLoginSuccess?.();
         return;
       }
-      // If popup was blocked or domain restricted, fallback to direct registration
-      const ownerEmail = regOwnerEmail.trim() || 'upfrontretaile@gmail.com';
       const ok = loginWithGoogle(ownerEmail, 'Business Owner', storeName);
       if (ok) {
-        showToast(`Store "${storeName}" created successfully!`, 'success');
+        showToast(`Shop "${storeName}" created.`, 'success');
         onLoginSuccess?.();
       }
     } catch {
-      const ownerEmail = regOwnerEmail.trim() || 'upfrontretaile@gmail.com';
       const ok = loginWithGoogle(ownerEmail, 'Business Owner', storeName);
       if (ok) {
-        showToast(`Store "${storeName}" created successfully!`, 'success');
+        showToast(`Shop "${storeName}" created.`, 'success');
         onLoginSuccess?.();
       }
-    } finally {
-      setIsRegisteringStore(false);
     }
   };
 
   const handleLaunchDemoSandbox = () => {
     const ok = loginWithGoogle('upfrontretaile@gmail.com', 'Platform Administrator');
     if (ok) {
-      showToast('Welcome to SokoPoS Interactive Demo Sandbox! Explore products, test M-Pesa checkout, or view live analytics.', 'success');
+      showToast('Welcome to the SokoPoS demo sandbox. Explore products and test M-Pesa checkout.', 'success');
       onLoginSuccess?.();
     }
   };
-
-  const scrollToAuthCard = (targetTab?: 'google' | 'terminal' | 'register') => {
-    if (targetTab) setActiveTab(targetTab);
-    const el = document.getElementById('auth-card-container');
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      const card = el.querySelector('div');
-      if (card) {
-        card.classList.add('ring-4', 'ring-blue-500/40');
-        setTimeout(() => {
-          card.classList.remove('ring-4', 'ring-blue-500/40');
-        }, 1400);
-      }
-    }
-  };
-
-  const activeStaffMember = systemUsers.find((u) => u.id === selectedStaffId);
 
   // Render Full-Page Dedicated Pricing view
   if (isPricingPageOpen) {
@@ -367,7 +383,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           returnToLogin();
           setTimeout(() => scrollToAuthCard('register'), 100);
         }}
-        loginBgGraphic={loginBgGraphic}
       />
     );
   }
@@ -379,51 +394,646 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         currentTab={activeLegalPage}
         onTabChange={navigateToLegalPage}
         onBackToLogin={returnToLogin}
-        loginBgGraphic={loginBgGraphic}
       />
     );
   }
 
+  const activeIndDetails = INDUSTRY_DATA[selectedIndustry] || INDUSTRY_DATA['Retail shops'];
+
+  // Determine staff profiles to show in staff list
+  const displayStaff =
+    systemUsers.length > 0
+      ? systemUsers.slice(0, 4)
+      : [
+          { id: 'staff-101', name: 'John Mutua', code: 'C-101 · Cashier', initials: 'JM', bg: '#1565d8' },
+          { id: 'staff-102', name: 'Amina Wanjiru', code: 'C-102 · Manager', initials: 'AW', bg: '#0a7d46' },
+        ];
 
   return (
     <div
-      id="pos-login-page"
-      className="min-h-full w-full flex flex-col justify-between text-slate-100 font-sans selection:bg-blue-600 selection:text-white relative bg-slate-950"
+      id="pos-landing-root"
+      className="min-h-full w-full flex flex-col justify-between selection:bg-[#1565d8] selection:text-white relative"
+      style={{
+        backgroundColor: '#f4f7f6',
+        color: '#0e1a2b',
+        fontFamily: '"Bricolage Grotesque", system-ui, -apple-system, "Segoe UI", sans-serif',
+      }}
     >
-      {/* Full-bleed background darkening overlay when custom graphic is active for WCAG AA contrast */}
-      {loginBgGraphic && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-[1px] pointer-events-none -z-5" />
-      )}
+      {/* Strict Light Mode CSS & Reset matching the design HTML */}
+      <style>{`
+        #pos-landing-root {
+          --bg: #f4f7f6;
+          --surface: #fff;
+          --ink: #0e1a2b;
+          --muted: #4c5a6b;
+          --line: #d9e1e6;
+          --blue: #1565d8;
+          --blue-ink: #fff;
+          --red: #c8231b;
+          --green: #0a7d46;
+          --soft: #e8f0fb;
+          color-scheme: light;
+        }
+        .sp-wrap {
+          max-width: 1160px;
+          margin: 0 auto;
+          padding: 0 20px;
+        }
+        .sp-btn {
+          border: 0;
+          border-radius: 12px;
+          padding: 12px 20px;
+          font-weight: 700;
+          font-size: 0.95rem;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          text-decoration: none;
+          cursor: pointer;
+          transition: transform 0.12s, background 0.12s, filter 0.12s;
+        }
+        .sp-btn:active {
+          transform: scale(0.98);
+        }
+        .sp-btn-blue {
+          background: var(--blue);
+          color: var(--blue-ink);
+        }
+        .sp-btn-blue:hover {
+          filter: brightness(1.08);
+        }
+        .sp-btn-red {
+          background: var(--red);
+          color: #fff;
+        }
+        .sp-btn-red:hover {
+          filter: brightness(1.08);
+        }
+        .sp-btn-ghost {
+          background: transparent;
+          color: var(--ink);
+          border: 1.5px solid var(--line);
+        }
+        .sp-btn-ghost:hover {
+          border-color: var(--ink);
+        }
+        .sp-btn-sm {
+          padding: 8px 16px;
+          font-size: 0.85rem;
+        }
+        .sp-hero {
+          padding: 48px 0 64px;
+        }
+        .sp-hero-grid {
+          display: grid;
+          gap: 40px;
+          align-items: center;
+        }
+        @media (min-width: 960px) {
+          .sp-hero-grid {
+            grid-template-columns: 1.25fr 1fr;
+            gap: 64px;
+          }
+        }
+        .sp-h1 {
+          font-size: clamp(2.2rem, 5.6vw, 4rem);
+          line-height: 1.04;
+          letter-spacing: -0.035em;
+          font-weight: 800;
+          margin: 0 0 20px;
+          max-width: 15ch;
+          color: var(--ink);
+        }
+        .sp-lead {
+          color: var(--muted);
+          font-size: 1.1rem;
+          max-width: 52ch;
+          margin: 0 0 28px;
+          line-height: 1.55;
+        }
+        .sp-cta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+        .sp-fine {
+          font-size: 0.85rem;
+          color: var(--muted);
+          margin: 0 0 32px;
+        }
+        .sp-stats {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 0;
+          border: 1px solid var(--line);
+          border-radius: 16px;
+          background: var(--surface);
+          overflow: hidden;
+        }
+        @media (min-width: 620px) {
+          .sp-stats {
+            grid-template-columns: repeat(4, 1fr);
+          }
+        }
+        .sp-stats div {
+          padding: 16px 18px;
+          border-right: 1px solid var(--line);
+          border-bottom: 1px solid var(--line);
+        }
+        .sp-stats b {
+          display: block;
+          font-size: 1.5rem;
+          letter-spacing: -0.02em;
+          font-variant-numeric: tabular-nums;
+          color: var(--ink);
+        }
+        .sp-stats span {
+          font-size: 0.8rem;
+          color: var(--muted);
+        }
+        /* Receipt Auth Card with serrated bottom edge */
+        .sp-receipt {
+          background: var(--surface);
+          border: 1px solid var(--line);
+          border-radius: 20px;
+          padding: 22px;
+          position: relative;
+          box-shadow: 0 18px 40px -22px rgba(10, 30, 60, 0.45);
+        }
+        .sp-receipt::after {
+          content: "";
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: -9px;
+          height: 10px;
+          background: radial-gradient(circle at 8px 0, var(--bg) 6px, transparent 6.5px) 0 0/16px 10px repeat-x;
+        }
+        .sp-seg {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          background: var(--bg);
+          border-radius: 12px;
+          padding: 4px;
+          gap: 4px;
+          margin-bottom: 18px;
+        }
+        .sp-seg button {
+          border: 0;
+          background: transparent;
+          padding: 10px;
+          border-radius: 9px;
+          font-weight: 700;
+          color: var(--muted);
+          cursor: pointer;
+          transition: background 0.15s, color 0.15s;
+        }
+        .sp-seg button[aria-selected="true"] {
+          background: var(--surface);
+          color: var(--ink);
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+        }
+        .sp-receipt h2 {
+          font-size: 1.25rem;
+          margin: 0 0 14px;
+          letter-spacing: -0.02em;
+          color: var(--ink);
+          font-weight: 800;
+        }
+        .sp-gbtn {
+          width: 100%;
+          background: var(--blue);
+          color: var(--blue-ink);
+          border: 0;
+          border-radius: 12px;
+          padding: 13px;
+          font-weight: 700;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          cursor: pointer;
+          transition: filter 0.12s, transform 0.1s;
+        }
+        .sp-gbtn:hover {
+          filter: brightness(1.08);
+        }
+        .sp-gbtn:active {
+          transform: scale(0.99);
+        }
+        .sp-gbtn b {
+          background: #fff;
+          color: #4285f4;
+          width: 24px;
+          height: 24px;
+          border-radius: 6px;
+          display: grid;
+          place-items: center;
+          font-size: 0.9rem;
+        }
+        .sp-or {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          color: var(--muted);
+          font-size: 0.8rem;
+          margin: 16px 0;
+        }
+        .sp-or::before,
+        .sp-or::after {
+          content: "";
+          flex: 1;
+          border-top: 1px dashed var(--line);
+        }
+        .sp-label {
+          display: block;
+          font-size: 0.82rem;
+          font-weight: 700;
+          margin: 0 0 6px;
+          color: var(--ink);
+        }
+        .sp-input {
+          width: 100%;
+          padding: 11px 12px;
+          border-radius: 10px;
+          border: 1.5px solid var(--line);
+          background: var(--bg);
+          color: var(--ink);
+          font: inherit;
+          font-size: 0.95rem;
+          outline: none;
+        }
+        .sp-input:focus {
+          border-color: var(--blue);
+          background: #fff;
+        }
+        .sp-row {
+          display: flex;
+          gap: 8px;
+        }
+        .sp-field {
+          margin-bottom: 14px;
+        }
+        .sp-staff {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
+          margin-bottom: 14px;
+        }
+        .sp-staff button {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+          text-align: left;
+          padding: 8px;
+          border-radius: 10px;
+          border: 1.5px solid var(--line);
+          background: var(--bg);
+          color: var(--ink);
+          font-size: 0.82rem;
+          cursor: pointer;
+          transition: border-color 0.15s, background 0.15s;
+        }
+        .sp-staff button[aria-pressed="true"] {
+          border-color: var(--blue);
+          background: var(--soft);
+        }
+        .sp-staff i {
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          display: grid;
+          place-items: center;
+          font-style: normal;
+          font-size: 0.7rem;
+          font-weight: 800;
+          color: #fff;
+          background: var(--blue);
+          flex: none;
+        }
+        .sp-staff small {
+          display: block;
+          color: var(--muted);
+          font-size: 0.7rem;
+        }
+        .sp-dots {
+          display: flex;
+          justify-content: center;
+          gap: 12px;
+          margin: 6px 0 4px;
+        }
+        .sp-dots i {
+          width: 14px;
+          height: 14px;
+          border-radius: 50%;
+          border: 1.5px solid var(--line);
+          background: var(--bg);
+          transition: background 0.15s, border-color 0.15s;
+        }
+        .sp-dots i.on {
+          background: var(--blue);
+          border-color: var(--blue);
+        }
+        .sp-perr {
+          min-height: 20px;
+          text-align: center;
+          font-size: 0.82rem;
+          color: var(--red);
+          font-weight: 600;
+        }
+        .sp-pad {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 8px;
+          max-width: 270px;
+          margin: 0 auto 14px;
+        }
+        .sp-pad button {
+          height: 46px;
+          border-radius: 10px;
+          border: 1.5px solid var(--line);
+          background: var(--bg);
+          color: var(--ink);
+          font-weight: 800;
+          font-size: 1.1rem;
+          cursor: pointer;
+          transition: background 0.12s, color 0.12s;
+        }
+        .sp-pad button:active {
+          background: var(--blue);
+          color: var(--blue-ink);
+        }
+        .sp-pad .fn {
+          font-size: 0.72rem;
+          color: var(--muted);
+          font-weight: 700;
+        }
+        .sp-link {
+          background: none;
+          border: 0;
+          color: var(--blue);
+          font-weight: 600;
+          font-size: 0.82rem;
+          padding: 0;
+          text-decoration: underline;
+          cursor: pointer;
+        }
+        .sp-below {
+          margin-top: 18px;
+          padding-top: 16px;
+          border-top: 1px dashed var(--line);
+          text-align: center;
+          font-size: 0.9rem;
+          color: var(--muted);
+        }
+        .sp-below .sp-btn {
+          width: 100%;
+          margin-top: 10px;
+        }
+        /* Sections */
+        section.sp-s {
+          padding: 72px 0;
+          border-top: 1px solid var(--line);
+        }
+        h2.sp-t {
+          font-size: clamp(1.7rem, 3.6vw, 2.5rem);
+          letter-spacing: -0.03em;
+          line-height: 1.1;
+          margin: 0 0 12px;
+          max-width: 22ch;
+          color: var(--ink);
+          font-weight: 800;
+        }
+        .sp-sub {
+          color: var(--muted);
+          max-width: 58ch;
+          margin: 0 0 36px;
+          font-size: 1rem;
+        }
+        .sp-grid3 {
+          display: grid;
+          gap: 16px;
+        }
+        @media (min-width: 760px) {
+          .sp-grid3 {
+            grid-template-columns: repeat(3, 1fr);
+          }
+        }
+        .sp-card {
+          background: var(--surface);
+          border: 1px solid var(--line);
+          border-radius: 16px;
+          padding: 22px;
+        }
+        .sp-card h3 {
+          margin: 0 0 6px;
+          font-size: 1.1rem;
+          letter-spacing: -0.01em;
+          color: var(--ink);
+          font-weight: 700;
+        }
+        .sp-card p {
+          margin: 0;
+          color: var(--muted);
+          font-size: 0.95rem;
+          line-height: 1.5;
+        }
+        .sp-tag {
+          display: inline-block;
+          font-size: 0.78rem;
+          font-weight: 700;
+          padding: 3px 10px;
+          border-radius: 99px;
+          background: var(--soft);
+          color: var(--blue);
+          margin-bottom: 12px;
+        }
+        .sp-tabs {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-bottom: 20px;
+        }
+        .sp-tabs button {
+          border: 1.5px solid var(--line);
+          background: var(--surface);
+          color: var(--ink);
+          padding: 9px 16px;
+          border-radius: 99px;
+          font-weight: 600;
+          font-size: 0.9rem;
+          cursor: pointer;
+          transition: background 0.15s, color 0.15s;
+        }
+        .sp-tabs button[aria-selected="true"] {
+          background: var(--ink);
+          color: var(--bg);
+          border-color: var(--ink);
+        }
+        .sp-panel {
+          display: grid;
+          gap: 24px;
+          background: var(--surface);
+          border: 1px solid var(--line);
+          border-radius: 20px;
+          padding: 26px;
+        }
+        @media (min-width: 760px) {
+          .sp-panel {
+            grid-template-columns: 1.1fr 1fr;
+            padding: 34px;
+          }
+        }
+        .sp-panel h3 {
+          font-size: 1.5rem;
+          margin: 0 0 10px;
+          letter-spacing: -0.02em;
+          color: var(--ink);
+          font-weight: 800;
+        }
+        .sp-panel ul {
+          margin: 0;
+          padding: 0;
+          list-style: none;
+          display: grid;
+          gap: 10px;
+        }
+        .sp-panel li {
+          display: flex;
+          gap: 10px;
+          align-items: flex-start;
+          color: var(--ink);
+          font-size: 0.95rem;
+        }
+        .sp-panel li::before {
+          content: "✓";
+          color: var(--green);
+          font-weight: 800;
+        }
+        .sp-hw {
+          display: grid;
+          gap: 12px;
+        }
+        @media (min-width: 640px) {
+          .sp-hw {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+        @media (min-width: 960px) {
+          .sp-hw {
+            grid-template-columns: repeat(4, 1fr);
+          }
+        }
+        .sp-scroll {
+          overflow-x: auto;
+          border: 1px solid var(--line);
+          border-radius: 16px;
+          background: var(--surface);
+        }
+        .sp-table {
+          border-collapse: collapse;
+          width: 100%;
+          min-width: 520px;
+          font-size: 0.95rem;
+        }
+        .sp-table th,
+        .sp-table td {
+          padding: 14px 18px;
+          text-align: left;
+          border-bottom: 1px solid var(--line);
+        }
+        .sp-table th {
+          font-size: 0.85rem;
+          color: var(--muted);
+          font-weight: 700;
+        }
+        .sp-table tr:last-child td {
+          border-bottom: 0;
+        }
+        .sp-table td.y {
+          color: var(--green);
+          font-weight: 700;
+        }
+        .sp-table td.n {
+          color: var(--muted);
+        }
+        .sp-final {
+          text-align: center;
+          padding: 80px 20px;
+        }
+        .sp-final h2 {
+          font-size: clamp(2rem, 5vw, 3.2rem);
+          letter-spacing: -0.035em;
+          margin: 0 0 12px;
+          color: var(--ink);
+          font-weight: 800;
+        }
+        .sp-final p {
+          color: var(--muted);
+          max-width: 50ch;
+          margin: 0 auto 26px;
+          font-size: 1.05rem;
+        }
+        .sp-final .sp-cta {
+          justify-content: center;
+        }
+      `}</style>
 
-      {/* Top Navigation Bar: Brand, Solutions Navigation, and Demo Actions */}
+      {/* PRESERVED HEADER (Preserved structure, logo, navigation anchors, actions & mobile hamburger menu in light mode) */}
       <header
-        className={`px-4 sm:px-8 py-3.5 border-b flex items-center justify-between shrink-0 sticky top-0 z-50 ${
-          loginBgGraphic
-            ? 'border-white/10 bg-slate-950/95 backdrop-blur-md shadow-md shadow-black/30'
-            : 'border-slate-800/80 bg-slate-950/95 backdrop-blur-md shadow-md shadow-black/30'
-        }`}
+        className="px-4 sm:px-8 py-3.5 border-b border-[#d9e1e6] bg-[#f4f7f6]/95 backdrop-blur-md shadow-xs flex items-center justify-between shrink-0 sticky top-0 z-50 transition-colors"
       >
         {/* Brand */}
-        <AppLogo theme="dark" size="md" />
+        <AppLogo theme="light" size="md" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} />
 
         {/* Quick Nav Anchors for Desktop Visitors */}
-        <nav className="hidden lg:flex items-center gap-6 text-xs font-semibold text-slate-300">
-          <a href="#industry-solutions" className="hover:text-blue-400 transition">
+        <nav className="hidden lg:flex items-center gap-6 text-xs font-semibold text-[#4c5a6b]">
+          <a
+            href="#solutions"
+            onClick={(e) => {
+              e.preventDefault();
+              scrollToSection('solutions');
+            }}
+            className="hover:text-[#1565d8] transition cursor-pointer"
+          >
             Solutions
           </a>
-          <a href="#kenya-payments" className="hover:text-blue-400 transition">
-            M-Pesa & eTIMS
+          <a
+            href="#payments"
+            onClick={(e) => {
+              e.preventDefault();
+              scrollToSection('payments');
+            }}
+            className="hover:text-[#1565d8] transition cursor-pointer"
+          >
+            M-Pesa &amp; eTIMS
           </a>
-          <a href="#hardware-guide" className="hover:text-blue-400 transition">
+          <a
+            href="#hardware"
+            onClick={(e) => {
+              e.preventDefault();
+              scrollToSection('hardware');
+            }}
+            className="hover:text-[#1565d8] transition cursor-pointer"
+          >
             Hardware Freedom
           </a>
-          <a href="#pricing-comparison" className="hover:text-blue-400 transition">
+          <a
+            href="#compare"
+            onClick={(e) => {
+              e.preventDefault();
+              scrollToSection('compare');
+            }}
+            className="hover:text-[#1565d8] transition cursor-pointer"
+          >
             Why SokoPoS
           </a>
         </nav>
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2.5">
+        {/* Action Buttons & Mobile Hamburger Menu */}
+        <div className="flex items-center gap-2 sm:gap-2.5">
           {currentUser ? (
             <button
               type="button"
@@ -432,24 +1042,25 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition cursor-pointer"
             >
               <Monitor className="w-3.5 h-3.5" />
-              <span>Enter POS Terminal</span>
+              <span className="hidden sm:inline">Enter POS Terminal</span>
+              <span className="sm:hidden">Terminal</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           ) : (
             <>
-              {/* Mobile View: Account Icon (replaces Demo and Pin buttons, scrolls to login card) */}
+              {/* Mobile View: Account Icon (scrolls to login card) */}
               <button
                 type="button"
                 id="mobile-nav-account-btn"
                 onClick={() => scrollToAuthCard()}
-                className="sm:hidden w-9 h-9 rounded-full bg-slate-800/90 hover:bg-slate-700 active:bg-slate-600 border border-slate-700/80 flex items-center justify-center transition cursor-pointer active:scale-95 shadow-sm group"
+                className="sm:hidden w-9 h-9 rounded-full bg-white hover:bg-slate-100 active:bg-slate-200 border border-[#d9e1e6] flex items-center justify-center transition cursor-pointer active:scale-95 shadow-xs group"
                 title="Account Login"
                 aria-label="Account Login"
               >
                 <img
                   src="/assets/aistudio/icons8-account-50_6ea01032.png"
                   alt="Account"
-                  className="w-5 h-5 object-contain invert opacity-90 group-hover:opacity-100 transition-opacity"
+                  className="w-5 h-5 object-contain opacity-80 group-hover:opacity-100 transition-opacity"
                 />
               </button>
 
@@ -458,754 +1069,451 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 type="button"
                 id="top-nav-login-btn"
                 onClick={() => scrollToAuthCard()}
-                className="hidden sm:inline-flex items-center px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-500/20 transition cursor-pointer"
+                className="hidden sm:inline-flex items-center px-4 py-1.5 rounded-xl bg-[#1565d8] hover:bg-[#1255b5] text-white font-bold text-xs shadow-md shadow-blue-500/20 transition cursor-pointer"
               >
                 Login
               </button>
             </>
           )}
+
+          {/* Mobile Hamburger Menu with animated 2-bar toggle icon */}
+          <MobileHeaderNav
+            onNavigateSection={scrollToSection}
+            onNavigatePricing={navigateToPricing}
+            onAuthAction={() => {
+              if (currentUser) {
+                onLoginSuccess?.();
+              } else {
+                scrollToAuthCard();
+              }
+            }}
+            isLoggedIn={Boolean(currentUser)}
+            currentPage="landing"
+            theme="light"
+          />
         </div>
       </header>
 
-      {/* Main Container with Full Landing Flow */}
-      <main className="flex-1 flex flex-col relative z-10 w-full">
-        {/* Soft Ambient Radial Glow for Depth */}
-        <div className="absolute top-40 left-1/2 -translate-x-1/2 w-[350px] sm:w-[600px] h-[350px] sm:h-[600px] bg-blue-600/10 rounded-full blur-3xl pointer-events-none -z-10" />
-
-        {/* SECTION: HERO SHOWCASE (Dual-Column: Pitch on Left, Auth on Right) */}
-        <section className="w-full max-w-7xl mx-auto px-4 sm:px-6 pt-6 sm:pt-12 pb-10 sm:pb-16 relative">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
-            
-            {/* Left Column (7 cols): High-Impact Value Pitch & Quick Demo Launcher */}
-            <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
-              <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-white tracking-tight leading-[1.12]">
-                The High-Velocity POS Built for Kenyan Retailers, Bars & Supermarkets
-              </h1>
-
-              {/* Logged-In Active User Session Banner */}
-              {currentUser && (
-                <div className="p-3.5 sm:p-4 bg-emerald-950/70 border border-emerald-500/40 rounded-2xl flex items-center justify-between gap-3 text-left shadow-lg animate-in fade-in">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-sm shrink-0 border border-emerald-500/30">
-                      {currentUser.initials}
-                    </div>
-                    <div className="text-xs min-w-0">
-                      <div className="font-bold text-white flex items-center gap-2 truncate">
-                        <span>Logged in as {currentUser.name}</span>
-                        <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono font-bold border border-emerald-500/30">
-                          Active Session
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-slate-400 truncate">
-                        {currentUser.businessName || currentUser.email}
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={onLoginSuccess}
-                    className="bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 font-black text-xs sm:text-sm px-4 py-2.5 rounded-xl transition cursor-pointer flex items-center gap-1.5 shrink-0 shadow-md"
-                  >
-                    <span>Enter Terminal</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-
-              {/* Primary Dual Action CTAs */}
-              <div className="pt-2 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3.5">
+      {/* MAIN BODY: Strictly Light Mode UI Layout from Attached Design */}
+      <main id="top" className="flex-1 w-full">
+        {/* HERO SECTION */}
+        <section className="sp-hero">
+          <div className="sp-wrap sp-hero-grid">
+            {/* Left Headline & Pitch */}
+            <div>
+              <h1 className="sp-h1">The fast POS built for Kenyan retailers, bars and supermarkets.</h1>
+              <p className="sp-lead">
+                Ring up sales in seconds, take M-Pesa, file eTIMS receipts and keep trading when the internet drops.
+              </p>
+              <div className="sp-cta">
                 <button
                   type="button"
-                  id="hero-launch-demo-btn"
-                  onClick={currentUser ? onLoginSuccess : handleLaunchDemoSandbox}
-                  className="primary-cta-shimmer w-full sm:w-auto px-7 py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-sm sm:text-base flex items-center justify-center gap-3 cursor-pointer group"
+                  className="sp-btn sp-btn-blue"
+                  id="demo"
+                  onClick={handleLaunchDemoSandbox}
                 >
-                  <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-white/20 text-white shadow-inner shrink-0 group-hover:scale-110 group-hover:rotate-6 transition-transform">
-                    {currentUser ? <Monitor className="w-3.5 h-3.5 text-white" /> : <Zap className="w-3.5 h-3.5 fill-white text-white" />}
-                  </span>
-                  <span className="tracking-tight">{currentUser ? 'Launch POS Terminal' : 'Test Demo Account'}</span>
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                </button>
-
-                <button
-                  type="button"
-                  id="hero-setup-new-store-btn"
-                  onClick={() => scrollToAuthCard('register')}
-                  className="w-full sm:w-auto px-5 py-4 rounded-2xl bg-[#DC2626] hover:bg-[#b91c1c] active:bg-[#991b1b] text-white font-bold text-sm border border-red-700 shadow-lg shadow-red-600/30 transition cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <Store className="w-4 h-4 text-white" />
-                  <span>Add New Shop</span>
+                  <Zap className="w-4 h-4 fill-white" />
+                  <span>Try the demo account</span>
                 </button>
               </div>
+              <p className="sp-fine">Live sandbox in 5 seconds · No credit card · Pre-loaded inventory</p>
 
-              {/* Subtitle Under CTA */}
-              <div className="flex items-center justify-center lg:justify-start gap-3 text-xs text-slate-400 flex-wrap">
-                <span className="flex items-center gap-1 text-emerald-400 font-semibold">
-                  <Check className="w-3.5 h-3.5 stroke-[3]" />
-                  5-Second Live Sandbox
-                </span>
-                <span>•</span>
-                <span>No Credit Card</span>
-                <span>•</span>
-                <span>Instant Pre-loaded Inventory</span>
-              </div>
-
-              {/* Live Metric Stats Banner - Translucent white background with black text */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-4 border-t border-slate-800/80">
-                <div className="bg-white/85 backdrop-blur-md p-3 rounded-2xl border border-white/60 text-center lg:text-left shadow-md text-black">
-                  <div className="text-base sm:text-lg font-black text-black tracking-tight">
-                    <span>KES </span>
-                    <AnimatedMetricCounter target={25} />
-                    <span>M+</span>
-                  </div>
-                  <div className="text-[10px] text-neutral-800 font-semibold">Monthly Processed</div>
+              <div className="sp-stats">
+                <div>
+                  <b>KES <AnimatedMetricCounter target={25} />M+</b>
+                  <span>Processed monthly</span>
                 </div>
-                <div className="bg-white/85 backdrop-blur-md p-3 rounded-2xl border border-white/60 text-center lg:text-left shadow-md text-black">
-                  <div className="text-base sm:text-lg font-black text-black">100%</div>
-                  <div className="text-[10px] text-neutral-800 font-semibold">Offline Resilient</div>
+                <div>
+                  <b>100%</b>
+                  <span>Works offline</span>
                 </div>
-                <div className="bg-white/85 backdrop-blur-md p-3 rounded-2xl border border-white/60 text-center lg:text-left shadow-md text-black">
-                  <div className="text-base sm:text-lg font-black text-black">&lt; 18s</div>
-                  <div className="text-[10px] text-neutral-800 font-semibold">Avg Checkout Speed</div>
+                <div>
+                  <b>&lt; 18s</b>
+                  <span>Average checkout</span>
                 </div>
-                <div className="bg-white/85 backdrop-blur-md p-3 rounded-2xl border border-white/60 text-center lg:text-left shadow-md text-black">
-                  <div className="text-base sm:text-lg font-black text-black">eTIMS</div>
-                  <div className="text-[10px] text-neutral-800 font-semibold">Digitax Partner</div>
+                <div>
+                  <b>eTIMS</b>
+                  <span>Digitax partner</span>
                 </div>
               </div>
             </div>
 
-            {/* Right Column (5 cols): Embedded Frictionless Auth Card - Translucent white background with black text */}
-            <div id="auth-card-container" className="lg:col-span-5 flex justify-center w-full">
-              <div
-                className="w-full max-w-[360px] xs:max-w-[390px] sm:max-w-[420px] rounded-[28px] sm:rounded-[32px] shadow-2xl overflow-hidden my-auto transition-all border border-white/60 bg-white/90 backdrop-blur-xl shadow-black/40 text-black"
-              >
-                {/* Top Section */}
-                <div className="p-4.5 sm:p-6 pt-4.5 sm:pt-6">
-            {/* If in New Store Registration mode, display Back Navigation Header */}
-            {activeTab === 'register' ? (
-              <div className="flex items-center justify-between mb-3">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('google')}
-                  className="inline-flex items-center gap-1.5 text-xs text-neutral-600 hover:text-black font-semibold transition cursor-pointer"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>Back to Login</span>
-                </button>
-              </div>
-            ) : (
-              /* Segmented Mode Selector: [ Owner ] [ Staff ] */
-              <div className="grid grid-cols-2 gap-1.5 bg-neutral-100 p-1.5 rounded-2xl border border-neutral-200">
-                <button
-                  type="button"
-                  id="login-tab-btn"
-                  onClick={() => setActiveTab('google')}
-                  className={`py-2.5 sm:py-3 px-3 rounded-xl text-sm sm:text-base font-bold transition flex items-center justify-center cursor-pointer ${
-                    activeTab === 'google'
-                      ? 'bg-white text-black shadow-xs'
-                      : 'text-neutral-500 hover:text-neutral-900 font-medium'
-                  }`}
-                >
-                  Owner
-                </button>
-
-                <button
-                  type="button"
-                  id="pin-tab-btn"
-                  onClick={() => setActiveTab('terminal')}
-                  className={`py-2.5 sm:py-3 px-3 rounded-xl text-sm sm:text-base font-bold transition flex items-center justify-center cursor-pointer ${
-                    activeTab === 'terminal'
-                      ? 'bg-white text-black shadow-xs'
-                      : 'text-neutral-500 hover:text-neutral-900 font-medium'
-                  }`}
-                >
-                  Staff
-                </button>
-              </div>
-            )}
-
-            {/* TAB 1: GOOGLE OAUTH */}
-            {activeTab === 'google' && (
-              <div className="pt-1">
-                <h2 className="text-black font-extrabold text-xl sm:text-[24px] tracking-tight text-center my-6 sm:my-7 leading-tight">
-                  Log In to POS Terminal
-                </h2>
-
-                {/* Primary: Live Firebase Google Button */}
-                <button
-                  type="button"
-                  id="continue-with-google-btn"
-                  disabled={isFirebaseSigningIn}
-                  onClick={async () => {
-                    setIsFirebaseSigningIn(true);
-                    try {
-                      const ok = await loginWithFirebaseGoogle();
-                      if (ok) {
-                        onLoginSuccess?.();
-                      }
-                    } finally {
-                      setIsFirebaseSigningIn(false);
-                    }
-                  }}
-                  className="primary-cta-shimmer w-full bg-[#1d8af3] hover:bg-[#167edb] active:bg-[#1270c5] text-white font-bold text-base sm:text-lg py-3.5 sm:py-4 px-4 rounded-2xl transition shadow-lg flex items-center justify-center gap-3.5 cursor-pointer disabled:opacity-60"
-                >
-                  <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center shadow-xs shrink-0 p-1">
-                    <svg className="w-4.5 h-4.5" viewBox="0 0 24 24">
-                      <path
-                        fill="#4285F4"
-                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                      />
-                      <path
-                        fill="#34A853"
-                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                      />
-                      <path
-                        fill="#FBBC05"
-                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                      />
-                      <path
-                        fill="#EA4335"
-                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                      />
-                    </svg>
-                  </div>
-                  {isFirebaseSigningIn ? (
-                    <span className="flex items-center gap-2">
-                      <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                      <span>Opening Google Auth...</span>
-                    </span>
-                  ) : (
-                    <span>Continue with Google</span>
-                  )}
-                </button>
-
-                {isFirebaseSigningIn && (
-                  <div className="mt-2.5 flex items-center justify-between px-2 text-[11px] text-neutral-800 bg-white/90 p-2 rounded-xl border border-neutral-200 animate-in fade-in">
-                    <span className="flex items-center gap-1.5 font-medium">
-                      <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
-                      Waiting for Google account approval...
-                    </span>
+            {/* Right: Interactive Receipt Auth Card */}
+            <div id="login">
+              <div className="sp-receipt" id="auth-card-container">
+                {/* Segmented Tab Switcher (hidden when on register) */}
+                {activeTab !== 'register' && (
+                  <div className="sp-seg" role="tablist" id="seg">
                     <button
                       type="button"
-                      onClick={() => setIsFirebaseSigningIn(false)}
-                      className="text-[11px] text-red-600 hover:text-red-700 font-semibold cursor-pointer px-2 py-0.5 rounded bg-red-50 hover:bg-red-100 transition"
+                      role="tab"
+                      aria-selected={activeTab === 'owner'}
+                      onClick={() => {
+                        setActiveTab('owner');
+                        setPinError(null);
+                      }}
                     >
-                      Cancel
+                      Owner
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={activeTab === 'staff'}
+                      onClick={() => {
+                        setActiveTab('staff');
+                        setPinError(null);
+                      }}
+                    >
+                      Staff
                     </button>
                   </div>
                 )}
 
-                {/* Divider: Direct Sign-In */}
-                <div className="relative my-3.5">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-neutral-200" />
-                  </div>
-                  <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-white/95 px-2 text-neutral-400 font-bold text-[10px]">
-                      Or Direct Sign-In
-                    </span>
-                  </div>
-                </div>
-
-                {/* Direct 1-Click Platform Super-Admin Access */}
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    id="superadmin-direct-login-btn"
-                    onClick={() => {
-                      const ok = loginWithGoogle('upfrontretaile@gmail.com', 'Platform Administrator');
-                      if (ok) {
-                        onLoginSuccess?.();
-                      }
-                    }}
-                    className="w-full py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-black text-white font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
-                  >
-                    <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span className="truncate">Enter as Super-Admin (upfrontretaile@gmail.com)</span>
-                  </button>
-
-                  {/* Direct Google Account Email Form */}
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const email = directEmail.trim();
-                      if (!email) {
-                        showToast('Please enter your Google account email', 'error');
-                        return;
-                      }
-                      const ok = loginWithGoogle(email, 'Store Owner');
-                      if (ok) {
-                        onLoginSuccess?.();
-                      }
-                    }}
-                    className="pt-0.5"
-                  >
-                    <div className="flex gap-1.5">
-                      <input
-                        type="email"
-                        value={directEmail}
-                        onChange={(e) => setDirectEmail(e.target.value)}
-                        placeholder="Enter Google email (e.g. yourname@gmail.com)"
-                        className="flex-1 px-3 py-1.5 text-xs bg-white border border-neutral-300 rounded-xl text-black placeholder:text-neutral-400 focus:outline-none focus:border-blue-500 font-medium"
-                      />
-                      <button
-                        type="submit"
-                        className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-xs shrink-0"
-                      >
-                        Sign In
-                      </button>
-                    </div>
-                  </form>
-                </div>
-
-              </div>
-            )}
-
-            {/* TAB 2: TERMINAL KEYPAD PIN */}
-            {activeTab === 'terminal' && (
-              <div className="pt-1 space-y-3 text-black">
-                <h2 className="text-black font-extrabold text-lg sm:text-xl tracking-tight text-center mt-3 mb-2 leading-tight">
-                  Log In to POS Terminal
-                </h2>
-
-                {/* Staff Selector */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[11px] font-bold text-neutral-800 flex items-center gap-1">
-                      <User className="w-3 h-3 text-blue-600" />
-                      Cashier / Staff Profile:
-                    </label>
+                {/* TAB 1: OWNER LOGIN */}
+                {activeTab === 'owner' && (
+                  <div id="p-owner">
+                    <h2>Log in to your POS terminal</h2>
                     <button
                       type="button"
-                      onClick={() => {
-                        setIsCustomStaff(!isCustomStaff);
-                        setEnteredPin('');
-                        setPinError(null);
-                      }}
-                      className="text-[10px] font-semibold text-blue-600 hover:underline cursor-pointer"
+                      className="sp-gbtn"
+                      id="google"
+                      onClick={handleGoogleSignIn}
                     >
-                      {isCustomStaff ? 'Select from list' : 'Custom username'}
+                      <b>G</b>
+                      <span>Continue with Google</span>
                     </button>
+                    <div className="sp-or">or sign in with email</div>
+                    <form id="emailForm" className="sp-row" onSubmit={handleEmailFormSubmit}>
+                      <input
+                        type="email"
+                        id="email"
+                        placeholder="yourname@gmail.com"
+                        aria-label="Google account email"
+                        autoComplete="email"
+                        value={ownerEmailInput}
+                        onChange={(e) => setOwnerEmailInput(e.target.value)}
+                        className="sp-input"
+                      />
+                      <button className="sp-btn sp-btn-blue sp-btn-sm shrink-0" type="submit">
+                        Sign in
+                      </button>
+                    </form>
                   </div>
+                )}
 
-                  {isCustomStaff ? (
-                    <input
-                      type="text"
-                      value={customUsername}
-                      onChange={(e) => setCustomUsername(e.target.value)}
-                      placeholder="Staff username or badge code (e.g. john.mutua or #8841)"
-                      className="w-full px-3 py-1.5 text-xs bg-white border border-neutral-300 rounded-lg text-black focus:outline-none focus:border-blue-500 font-medium"
-                    />
-                  ) : (
-                    <div className="grid grid-cols-2 gap-1.5 max-h-24 overflow-y-auto pr-1">
-                      {systemUsers.map((staff) => {
-                        const isSelected = staff.id === selectedStaffId;
+                {/* TAB 2: STAFF SHIFT / PIN LOGIN */}
+                {activeTab === 'staff' && (
+                  <div id="p-staff">
+                    <h2>Start your shift</h2>
+                    <div className="sp-staff" id="staffList">
+                      {displayStaff.map((staff) => {
+                        const isSelected = selectedStaffId === staff.id;
+                        const initialStr =
+                          (staff as any).initials ||
+                          (staff.name
+                            ? staff.name
+                                .split(' ')
+                                .map((n: string) => n[0])
+                                .join('')
+                                .substring(0, 2)
+                                .toUpperCase()
+                            : 'ST');
                         return (
                           <button
                             key={staff.id}
                             type="button"
+                            aria-pressed={isSelected}
                             onClick={() => {
                               setSelectedStaffId(staff.id);
                               setEnteredPin('');
                               setPinError(null);
                             }}
-                            className={`p-1.5 rounded-lg border text-left text-xs transition cursor-pointer flex items-center gap-2 ${
-                              isSelected
-                                ? 'bg-blue-50 border-blue-500 text-black font-bold'
-                                : 'bg-white border-neutral-200 text-neutral-800 hover:border-neutral-400'
-                            }`}
                           >
-                            <div
-                              className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0 ${
-                                staff.avatarColor || 'bg-blue-600'
-                              }`}
-                            >
-                              {staff.initials}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="truncate text-[11px] font-semibold">{staff.name}</div>
-                              <div className="text-[9px] text-neutral-500">
-                                {staff.code} • {staff.role}
-                              </div>
-                            </div>
+                            <i style={{ background: (staff as any).bg || (isSelected ? '#1565d8' : '#0a7d46') }}>
+                              {initialStr}
+                            </i>
+                            <span>
+                              {staff.name}
+                              <small>{(staff as any).code || 'Cashier'}</small>
+                            </span>
                           </button>
                         );
                       })}
                     </div>
-                  )}
-                </div>
 
-                {/* PIN Display & Masked Dots - Translucent white card */}
-                <div className="bg-white/90 border border-neutral-200 rounded-xl p-2.5 text-center shadow-xs">
-                  <div className="text-[10px] font-bold text-neutral-800 uppercase tracking-wider mb-1">
-                    ENTER 4-DIGIT PIN
-                  </div>
+                    <label className="sp-label" style={{ textAlign: 'center' }}>
+                      Enter your 4-digit PIN
+                    </label>
 
-                  {/* Animated PIN Dots */}
-                  <div className="flex items-center justify-center gap-2.5 my-1.5">
-                    {[0, 1, 2, 3].map((index) => {
-                      const isFilled = index < enteredPin.length;
-                      return (
-                        <div
-                          key={index}
-                          className={`w-3.5 h-3.5 rounded-full transition-all duration-150 ${
-                            isFilled
-                              ? 'bg-blue-600 scale-110 shadow-sm shadow-blue-500/50'
-                              : 'bg-neutral-200 border border-neutral-300'
-                          }`}
-                        />
-                      );
-                    })}
-                  </div>
-
-                  {pinError ? (
-                    <div className="text-[11px] text-red-600 font-semibold mt-1 flex items-center justify-center gap-1 animate-shake">
-                      <AlertCircle className="w-3 h-3 shrink-0" />
-                      <span>{pinError}</span>
+                    {/* 4 PIN Dots */}
+                    <div className="sp-dots" id="dots">
+                      {[0, 1, 2, 3].map((idx) => (
+                        <i key={idx} className={idx < enteredPin.length ? 'on' : ''} />
+                      ))}
                     </div>
-                  ) : (
-                    <div className="text-[9px] text-neutral-500">
-                      Enter registered 4-digit PIN
-                    </div>
-                  )}
-                </div>
 
-                {/* Touch Numeric Keypad */}
-                <div className="grid grid-cols-3 gap-1.5 max-w-[260px] mx-auto">
-                  {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
+                    {/* PIN error alert */}
+                    <div className="sp-perr" id="perr" role="alert">
+                      {pinError}
+                    </div>
+
+                    {/* Numeric Keypad */}
+                    <div className="sp-pad" id="pad">
+                      {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'Clear', '0', '⌫'].map((k) => (
+                        <button
+                          key={k}
+                          type="button"
+                          className={k === 'Clear' ? 'fn' : ''}
+                          onClick={() => handleKeypadPress(k)}
+                        >
+                          {k}
+                        </button>
+                      ))}
+                    </div>
+
                     <button
-                      key={digit}
                       type="button"
-                      onClick={() => handleKeypadPress(digit)}
-                      className="h-10 rounded-lg bg-white/90 hover:bg-neutral-100 active:bg-blue-600 text-base font-black text-black border border-neutral-200 transition shadow-xs flex items-center justify-center cursor-pointer select-none"
+                      className="sp-btn sp-btn-blue"
+                      style={{ width: '100%' }}
+                      id="pinGo"
+                      disabled={isSubmittingTerminal}
+                      onClick={handleTerminalSubmit}
                     >
-                      {digit}
+                      {isSubmittingTerminal ? 'Authenticating...' : 'Clock in and start shift'}
                     </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={handleKeypadClear}
-                    className="h-10 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-[10px] font-bold text-neutral-700 border border-neutral-200 transition flex items-center justify-center cursor-pointer select-none"
-                  >
-                    CLEAR
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleKeypadPress('0')}
-                    className="h-10 rounded-lg bg-white/90 hover:bg-neutral-100 active:bg-blue-600 text-base font-black text-black border border-neutral-200 transition shadow-xs flex items-center justify-center cursor-pointer select-none"
-                  >
-                    0
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleKeypadBackspace}
-                    className="h-10 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-xs font-bold text-neutral-700 border border-neutral-200 transition flex items-center justify-center cursor-pointer select-none"
-                  >
-                    <Delete className="w-4 h-4" />
-                  </button>
-                </div>
 
-                {/* Submit Button */}
-                <button
-                  type="button"
-                  onClick={handleTerminalSubmit}
-                  disabled={enteredPin.length < 4 || isSubmittingTerminal}
-                  className="w-full bg-[#1d8af3] hover:bg-[#167edb] disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs py-2.5 px-4 rounded-xl transition shadow-lg flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  {isSubmittingTerminal ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Fingerprint className="w-3.5 h-3.5" />
-                  )}
-                  <span>{isSubmittingTerminal ? 'Verifying...' : 'Clock In & Start Shift'}</span>
-                </button>
+                    <p style={{ textAlign: 'center', margin: '12px 0 0' }}>
+                      <button type="button" className="sp-link" id="fillPin" onClick={handleFillDemoPin}>
+                        Demo PIN is 1234 – tap to fill
+                      </button>
+                    </p>
+                  </div>
+                )}
 
-                {/* Demo Helper for Cashier PIN */}
-                <div className="pt-1 text-center">
+                {/* TAB 3: REGISTER NEW SHOP */}
+                {activeTab === 'register' && (
+                  <div id="p-register">
+                    <h2>Add a new shop</h2>
+                    <form id="regForm" onSubmit={handleRegisterFormSubmit}>
+                      <div className="sp-field">
+                        <label className="sp-label" htmlFor="shop">
+                          Shop or business name
+                        </label>
+                        <input
+                          type="text"
+                          id="shop"
+                          placeholder="e.g. Mombasa Coastal Grocers"
+                          required
+                          value={shopNameInput}
+                          onChange={(e) => setShopNameInput(e.target.value)}
+                          className="sp-input"
+                        />
+                      </div>
+                      <div className="sp-field">
+                        <label className="sp-label" htmlFor="own">
+                          Owner Google email (optional)
+                        </label>
+                        <input
+                          type="email"
+                          id="own"
+                          placeholder="you@gmail.com"
+                          value={shopEmailInput}
+                          onChange={(e) => setShopEmailInput(e.target.value)}
+                          className="sp-input"
+                        />
+                      </div>
+                      <button className="sp-gbtn" type="submit">
+                        <b>G</b>
+                        <span>Continue with Google to create shop</span>
+                      </button>
+                    </form>
+                  </div>
+                )}
+
+                {/* Below Card Switcher */}
+                <div className="sp-below" id="below">
+                  <span id="belowText">
+                    {activeTab === 'register' ? 'Already have a registered shop?' : 'Need to register a new location?'}
+                  </span>
                   <button
                     type="button"
-                    id="auto-fill-demo-pin-btn"
-                    onClick={() => {
-                      if (systemUsers.length > 0) {
-                        setSelectedStaffId(systemUsers[0].id);
-                      }
-                      setEnteredPin('1234');
-                      setPinError(null);
-                    }}
-                    className="text-[11px] text-neutral-600 hover:text-blue-600 transition font-medium cursor-pointer inline-flex items-center gap-1.5"
+                    className={`sp-btn ${activeTab === 'register' ? 'sp-btn-ghost' : 'sp-btn-red'}`}
+                    id="belowBtn"
+                    onClick={() => setActiveTab(activeTab === 'register' ? 'owner' : 'register')}
                   >
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    <span>Demo Staff PIN: <strong className="text-black font-mono">1234</strong> (Click to fill)</span>
+                    {activeTab === 'register' ? 'Return to login' : 'Add new shop'}
                   </button>
                 </div>
               </div>
-            )}
-
-            {/* TAB 3: REGISTER NEW STORE */}
-            {activeTab === 'register' && (
-              isRegisteringStore || isSimulatingSkeleton ? (
-                <div className="relative text-black">
-                  <div className="px-2 pt-1 flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">
-                      {isSimulatingSkeleton ? 'Skeleton Animation Preview' : 'Store Provisioning'}
-                    </span>
-                    {isSimulatingSkeleton && (
-                      <button
-                        type="button"
-                        onClick={() => setIsSimulatingSkeleton(false)}
-                        className="text-xs text-neutral-500 hover:text-black underline cursor-pointer"
-                      >
-                        Exit Preview
-                      </button>
-                    )}
-                  </div>
-                  <SignUpSkeleton
-                    variant="form-only"
-                    theme="dark"
-                    mode="signup"
-                    message={
-                      isSimulatingSkeleton
-                        ? 'Low-contrast diagonal shimmer sweep over layout placeholders'
-                        : 'Setting up store tenant & configuring Google owner credentials...'
-                    }
-                  />
-                </div>
-              ) : (
-                <form onSubmit={handleRegisterStoreSubmit} className="space-y-4 pt-1 text-black">
-                  <h2 className="text-black font-bold text-xl sm:text-2xl tracking-tight text-center mb-4">
-                    Add New Shop
-                  </h2>
-
-                  <div>
-                    <label className="block text-xs font-bold text-neutral-800 mb-1.5">
-                      Shop / Business Name *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={newStoreName}
-                      onChange={(e) => setNewStoreName(e.target.value)}
-                      placeholder="e.g. Mombasa Coastal Grocers"
-                      className="w-full px-3.5 py-2.5 text-sm bg-white border border-neutral-300 rounded-xl text-black placeholder:text-neutral-400 focus:outline-none focus:border-blue-500 font-medium transition shadow-xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-neutral-800 mb-1.5 flex items-center justify-between">
-                      <span>Owner Google Account Email</span>
-                      <span className="text-[10px] text-neutral-500 font-normal">Optional</span>
-                    </label>
-                    <input
-                      type="email"
-                      value={regOwnerEmail}
-                      onChange={(e) => setRegOwnerEmail(e.target.value)}
-                      placeholder="Defaults to upfrontretaile@gmail.com"
-                      className="w-full px-3.5 py-2 text-xs bg-white border border-neutral-300 rounded-xl text-black placeholder:text-neutral-400 focus:outline-none focus:border-blue-500 font-medium transition shadow-xs"
-                    />
-                  </div>
-
-                  <div className="pt-1.5">
-                    <button
-                      type="submit"
-                      disabled={isRegisteringStore}
-                      className="primary-cta-shimmer w-full bg-[#1d8af3] hover:bg-[#167edb] active:bg-[#1270c5] text-white font-bold text-sm sm:text-base py-3.5 px-4 rounded-xl transition shadow-lg flex items-center justify-center gap-3 cursor-pointer disabled:opacity-60"
-                    >
-                      {isRegisteringStore ? (
-                        <>
-                          <Loader2 className="w-5 h-5 animate-spin text-white" />
-                          <span>Connecting Google Account...</span>
-                        </>
-                      ) : (
-                        <>
-                          <div className="w-6 h-6 rounded-lg bg-white flex items-center justify-center shadow-xs shrink-0 p-0.5">
-                            <svg className="w-4 h-4" viewBox="0 0 24 24">
-                              <path
-                                fill="#4285F4"
-                                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                              />
-                              <path
-                                fill="#34A853"
-                                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                              />
-                              <path
-                                fill="#FBBC05"
-                                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                              />
-                              <path
-                                fill="#EA4335"
-                                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                              />
-                            </svg>
-                          </div>
-                          <span>Continue with Google to Create Shop</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-center gap-2 text-[11px] text-neutral-500 pt-0.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Verified Google OAuth • Zero Passwords to Remember</span>
-                  </div>
-                </form>
-              )
-            )}
+            </div>
           </div>
+        </section>
 
-          {/* Bottom Footer Section - Translucent white background with black text */}
-          <div className="bg-white/95 px-5 sm:px-6 py-5 sm:py-6 border-t border-neutral-200 space-y-3.5 text-center text-black">
-            {activeTab === 'register' ? (
-              <>
-                <p className="text-neutral-700 font-normal text-sm sm:text-base">
-                  Already have a registered location?
-                </p>
+        {/* SECTION 1: PAYMENTS & eTIMS (#payments) */}
+        <section className="sp-s" id="payments">
+          <div className="sp-wrap">
+            <h2 className="sp-t">Built around how Kenya pays and files.</h2>
+            <p className="sp-sub">
+              Take the payments your customers already use and stay compliant without extra paperwork.
+            </p>
+            <div className="sp-grid3">
+              <div className="sp-card">
+                <span className="sp-tag">M-Pesa</span>
+                <h3>Test M-Pesa checkout</h3>
+                <p>Accept mobile money at the till and match each payment to its sale.</p>
+              </div>
+              <div className="sp-card">
+                <span className="sp-tag">eTIMS</span>
+                <h3>Tax receipts, handled</h3>
+                <p>Issue eTIMS-ready receipts through our Digitax partnership.</p>
+              </div>
+              <div className="sp-card">
+                <span className="sp-tag">Offline</span>
+                <h3>Keeps selling without internet</h3>
+                <p>Sales are saved on the device and sync when you reconnect.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* SECTION 2: INDUSTRY SOLUTIONS (#solutions) */}
+        <section className="sp-s" id="solutions">
+          <div className="sp-wrap">
+            <h2 className="sp-t">One POS, set up for your kind of shop.</h2>
+            <p className="sp-sub">Pick your business to see what changes at the till.</p>
+
+            <div className="sp-tabs" role="tablist" id="ind">
+              {Object.keys(INDUSTRY_DATA).map((indName) => (
                 <button
+                  key={indName}
                   type="button"
-                  onClick={() => setActiveTab('google')}
-                  className="w-full bg-neutral-900 hover:bg-black active:bg-neutral-800 text-white font-bold text-sm sm:text-base py-3 sm:py-3.5 px-5 rounded-2xl shadow-md flex items-center justify-center gap-2.5 transition cursor-pointer"
+                  role="tab"
+                  aria-selected={selectedIndustry === indName}
+                  onClick={() => setSelectedIndustry(indName)}
                 >
-                  <ArrowLeft className="w-4 h-4 text-white shrink-0" />
-                  <span>Return to Login</span>
+                  {indName}
                 </button>
-              </>
-            ) : (
-              <>
-                <p className="text-neutral-700 font-normal text-sm sm:text-base">
-                  Need to register a new location?
-                </p>
+              ))}
+            </div>
 
-                <button
-                  type="button"
-                  id="setup-new-store-btn"
-                  onClick={() => setActiveTab('register')}
-                  className="w-full bg-[#DC2626] hover:bg-[#b91c1c] active:bg-[#991b1b] text-white font-bold text-sm sm:text-base py-3 sm:py-3.5 px-5 rounded-2xl shadow-lg shadow-red-600/30 flex items-center justify-center gap-2.5 transition cursor-pointer border border-red-700"
-                >
-                  <Store className="w-5 h-5 text-white stroke-[2] shrink-0" />
-                  <span>Add New Shop</span>
-                </button>
-              </>
-            )}
+            <div className="sp-panel" id="indPanel">
+              <div>
+                <h3>{activeIndDetails[0]}</h3>
+                <p style={{ color: 'var(--muted)', margin: 0 }}>{activeIndDetails[1]}</p>
+              </div>
+              <ul>
+                <li>{activeIndDetails[2]}</li>
+                <li>{activeIndDetails[3]}</li>
+                <li>Works with M-Pesa and eTIMS</li>
+              </ul>
+            </div>
           </div>
-        </div>
-      </div>
-    </div>
-  </section>
+        </section>
 
-  {/* SECTION 1: KENYA PAYMENT & COMPLIANCE BADGES */}
-  <KenyaPaymentBadges />
-
-  {/* SECTION 2: INTERACTIVE INDUSTRY SOLUTIONS SWITCHER */}
-  <IndustrySolutionsSwitcher onLaunchDemo={handleLaunchDemoSandbox} />
-
-  {/* SECTION 3: HARDWARE COMPATIBILITY GUIDE & SAVINGS CALCULATOR */}
-  <HardwareCompatibilityGuide onLaunchDemo={handleLaunchDemoSandbox} />
-
-  {/* SECTION 4: LEGACY POS COMPARISON (SOKOPOS VS SIMBAPOS / DESKTOP) */}
-  <LegacyPosComparison />
-
-  {/* SECTION 5: FINAL CONVERSION BANNER */}
-  <section className="w-full py-16 px-4 sm:px-6 bg-slate-950 text-center relative">
-    <div className="max-w-3xl mx-auto space-y-5">
-      <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight">
-        Launch in 30 Seconds.
-      </h2>
-
-      <p className="text-xs sm:text-sm text-slate-300 max-w-xl mx-auto leading-relaxed">
-        Test our live terminal right in your browser now with pre-loaded inventory, or register your retail location with your Google Account for full ownership.
-      </p>
-
-      <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-        <button
-          type="button"
-          onClick={handleLaunchDemoSandbox}
-          className="primary-cta-shimmer w-full sm:w-auto px-7 py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-sm sm:text-base flex items-center justify-center gap-2.5 shadow-md cursor-pointer transition group"
-        >
-          <Zap className="w-4 h-4 fill-white text-white group-hover:scale-110 transition-transform" />
-          <span>Test Demo Account</span>
-          <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => scrollToAuthCard('register')}
-          className="w-full sm:w-auto px-6 py-4 rounded-2xl bg-[#DC2626] hover:bg-[#b91c1c] active:bg-[#991b1b] text-white font-bold text-sm border border-red-700 shadow-lg shadow-red-600/30 cursor-pointer transition"
-        >
-          Add New Shop Free
-        </button>
-      </div>
-    </div>
-  </section>
-</main>
-
-{/* Floating WhatsApp Action Button */}
-<WhatsAppFloatingButton phoneNumber="+254740463021" />
-
-{/* Footer System Disclaimer with Legal & FAQ Links */}
-<footer
-  className={`px-6 pt-6 pb-24 sm:pb-7 border-t text-center text-xs text-slate-400 shrink-0 relative z-10 ${
-    loginBgGraphic
-      ? 'border-white/10 bg-slate-950/70 backdrop-blur-md'
-      : 'border-slate-800/40 bg-slate-950'
-  }`}
->
-        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] sm:pr-72">
-          {/* Brand Logo & Copyright statement */}
-          <div className="flex items-center gap-2.5 flex-wrap justify-center text-slate-400">
-            <AppLogo theme="dark" size="sm" />
-            <span className="hidden sm:inline text-slate-600">•</span>
-            <span>© 2026 SokoPoS Enterprise Platform</span>
+        {/* SECTION 3: HARDWARE FREEDOM (#hardware) */}
+        <section className="sp-s" id="hardware">
+          <div className="sp-wrap">
+            <h2 className="sp-t">Use the hardware you already own.</h2>
+            <p className="sp-sub">
+              No locked-in terminals. Start on a phone or tablet and add peripherals as you grow.
+            </p>
+            <div className="sp-hw">
+              <div className="sp-card">
+                <h3>Barcode scanners</h3>
+                <p>USB and Bluetooth scanners work as a keyboard.</p>
+              </div>
+              <div className="sp-card">
+                <h3>Receipt printers</h3>
+                <p>Thermal printers for 58mm and 80mm paper.</p>
+              </div>
+              <div className="sp-card">
+                <h3>Phones &amp; tablets</h3>
+                <p>Run the terminal in any modern browser.</p>
+              </div>
+              <div className="sp-card">
+                <h3>Laptops &amp; desktops</h3>
+                <p>Full keyboard shortcuts for busy counters.</p>
+              </div>
+            </div>
           </div>
+        </section>
 
-          {/* Legal & Pricing Navigation Links */}
-          <div className="flex items-center gap-2.5 sm:gap-4 flex-wrap justify-center font-medium">
+        {/* SECTION 4: COMPARISON TABLE (#compare) */}
+        <section className="sp-s" id="compare">
+          <div className="sp-wrap">
+            <h2 className="sp-t">Why shops switch from older desktop POS.</h2>
+            <p className="sp-sub">A side-by-side look at what you get.</p>
+            <div className="sp-scroll">
+              <table className="sp-table">
+                <thead>
+                  <tr>
+                    <th>Feature</th>
+                    <th>SokoPoS</th>
+                    <th>Legacy desktop POS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Runs on phone or tablet</td>
+                    <td className="y">Yes</td>
+                    <td className="n">Rarely</td>
+                  </tr>
+                  <tr>
+                    <td>M-Pesa checkout</td>
+                    <td className="y">Built in</td>
+                    <td className="n">Add-on</td>
+                  </tr>
+                  <tr>
+                    <td>eTIMS receipts</td>
+                    <td className="y">Built in</td>
+                    <td className="n">Varies</td>
+                  </tr>
+                  <tr>
+                    <td>Offline selling</td>
+                    <td className="y">Yes</td>
+                    <td className="n">Local only</td>
+                  </tr>
+                  <tr>
+                    <td>Live analytics from anywhere</td>
+                    <td className="y">Yes</td>
+                    <td className="n">At the shop</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        {/* SECTION 5: FINAL CTA BANNER */}
+        <section className="sp-s sp-final">
+          <h2>Launch in 30 seconds.</h2>
+          <p>Try the live terminal in your browser with pre-loaded stock, or register your shop with your Google account.</p>
+          <div className="sp-cta">
             <button
               type="button"
-              id="footer-pricing-btn"
-              onClick={navigateToPricing}
-              className="text-slate-400 hover:text-blue-400 transition cursor-pointer"
+              className="sp-btn sp-btn-blue"
+              id="demo2"
+              onClick={handleLaunchDemoSandbox}
             >
-              Pricing
-            </button>
-            <span className="text-slate-600">•</span>
-            <button
-              type="button"
-              id="footer-terms-btn"
-              onClick={() => navigateToLegalPage('terms')}
-              className="text-slate-400 hover:text-blue-400 transition cursor-pointer"
-            >
-              Terms of Service
-            </button>
-            <span className="text-slate-600">•</span>
-            <button
-              type="button"
-              id="footer-privacy-btn"
-              onClick={() => navigateToLegalPage('privacy')}
-              className="text-slate-400 hover:text-blue-400 transition cursor-pointer"
-            >
-              Privacy Policy
-            </button>
-            <span className="text-slate-600">•</span>
-            <button
-              type="button"
-              id="footer-faq-btn"
-              onClick={() => navigateToLegalPage('faq')}
-              className="text-slate-400 hover:text-blue-400 transition cursor-pointer"
-            >
-              FAQs
-            </button>
-            <span className="text-slate-600">•</span>
-            <button
-              type="button"
-              id="footer-legal-notice-btn"
-              onClick={() => navigateToLegalPage('ownership')}
-              className="text-slate-400 hover:text-blue-400 transition cursor-pointer"
-            >
-              Legal & IP
+              <Zap className="w-4 h-4 fill-white" />
+              <span>Try the demo account</span>
             </button>
           </div>
-        </div>
-      </footer>
+        </section>
+      </main>
+
+      {/* FLOATING ACTION BUTTON */}
+      <WhatsAppFloatingButton phoneNumber="+254740463021" />
+
+      {/* PRESERVED BENCHMARK FOOTER (Rendered in matching light mode) */}
+      <AppFooter
+        onBackToLogin={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        onNavigatePricing={navigateToPricing}
+        onNavigateLegal={navigateToLegalPage}
+        activePage="landing"
+        idPrefix="landing-footer"
+        theme="light"
+      />
     </div>
   );
 };

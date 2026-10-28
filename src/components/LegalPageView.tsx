@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { LegalTab } from './LegalAndFaqModal';
 import { AppLogo } from './common/AppLogo';
+import { AppFooter } from './common/AppFooter';
+import { MobileHeaderNav } from './common/MobileHeaderNav';
 
 interface LegalPageViewProps {
   currentTab: LegalTab;
@@ -204,40 +206,56 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
   return (
     <div
       id="legal-page-body"
-      className={`min-h-screen w-full flex flex-col justify-between font-sans selection:bg-blue-600 selection:text-white ${
-        loginBgGraphic ? 'bg-slate-950/70 backdrop-blur-md' : 'bg-slate-950 text-slate-100'
-      }`}
+      className="min-h-screen w-full flex flex-col justify-between font-sans selection:bg-[#1565d8] selection:text-white bg-[#f4f7f6] text-[#0e1a2b]"
     >
-      {/* Top Navigation Bar */}
-      <header className="fixed top-0 left-0 right-0 z-30 w-full border-b border-slate-800 bg-slate-950/95 backdrop-blur-md px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4">
+      {/* Top Navigation Bar: Light mode */}
+      <header className="fixed top-0 left-0 right-0 z-30 w-full border-b border-[#d9e1e6] bg-[#f4f7f6]/95 backdrop-blur-md px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4 shadow-xs">
         <div className="flex items-center gap-3 sm:gap-4">
           <button
             type="button"
             id="back-to-terminal-btn"
             onClick={onBackToLogin}
-            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 hover:text-white text-xs font-bold border border-slate-700/80 transition cursor-pointer shadow-xs"
+            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-[#0e1a2b] text-xs font-bold border border-[#d9e1e6] transition cursor-pointer shadow-xs"
           >
-            <ArrowLeft className="w-4 h-4 text-blue-400" />
+            <ArrowLeft className="w-4 h-4 text-[#1565d8]" />
             <span className="hidden sm:inline">Back to POS Terminal</span>
             <span className="sm:hidden">Back</span>
           </button>
 
-          <div className="h-5 w-px bg-slate-800 hidden sm:block" />
+          <div className="h-5 w-px bg-[#d9e1e6] hidden sm:block" />
 
           {/* Logo Brand */}
-          <AppLogo theme="dark" size="md" onClick={onBackToLogin} />
+          <AppLogo theme="light" size="md" onClick={onBackToLogin} />
         </div>
 
-        {/* Secondary Header Actions */}
+        {/* Secondary Header Actions & Mobile Hamburger Menu */}
         <div className="flex items-center gap-2 sm:gap-3">
           <button
             type="button"
             onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold border border-slate-800 transition cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-[#0e1a2b] text-xs font-semibold border border-[#d9e1e6] transition cursor-pointer shadow-xs"
           >
-            <Printer className="w-3.5 h-3.5 text-slate-400" />
+            <Printer className="w-3.5 h-3.5 text-[#4c5a6b]" />
             <span className="hidden sm:inline">Print Document</span>
           </button>
+
+          <MobileHeaderNav
+            onNavigateSection={(sectionId) => {
+              onBackToLogin();
+              setTimeout(() => {
+                window.location.hash = `#${sectionId}`;
+                const el = document.getElementById(sectionId);
+                el?.scrollIntoView({ behavior: 'smooth' });
+              }, 80);
+            }}
+            onNavigatePricing={() => {
+              window.location.hash = '#pricing';
+            }}
+            onAuthAction={onBackToLogin}
+            isLoggedIn={false}
+            currentPage="landing"
+            theme="light"
+          />
         </div>
       </header>
 
@@ -245,22 +263,22 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-8 sm:pb-12">
         {/* Navigation Breadcrumb & Tab Pills */}
         <div className="mb-6">
-          <div className="flex items-center gap-2 text-xs text-slate-400 mb-3">
+          <div className="flex items-center gap-2 text-xs text-[#4c5a6b] mb-3">
             <button
               type="button"
               onClick={onBackToLogin}
-              className="hover:text-blue-400 transition cursor-pointer"
+              className="hover:text-[#1565d8] transition cursor-pointer"
             >
               Home
             </button>
-            <span className="text-slate-600">/</span>
-            <span className="text-white font-semibold">{currentInfo.title}</span>
+            <span className="text-[#d9e1e6]">/</span>
+            <span className="text-[#0e1a2b] font-semibold">{currentInfo.title}</span>
           </div>
 
           {/* Tab Selector Buttons */}
           <nav
             aria-label="Legal Sections Navigation"
-            className="flex items-center gap-1.5 p-1.5 bg-slate-900/90 rounded-2xl border border-slate-800 overflow-x-auto scrollbar-none"
+            className="flex items-center gap-1.5 p-1.5 bg-white rounded-2xl border border-[#d9e1e6] shadow-xs overflow-x-auto scrollbar-none"
           >
             <button
               type="button"
@@ -268,8 +286,8 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
               onClick={() => onTabChange('terms')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                 currentTab === 'terms'
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                  ? 'bg-[#1565d8] text-white shadow-md shadow-blue-600/30'
+                  : 'text-[#4c5a6b] hover:text-[#0e1a2b] hover:bg-slate-100'
               }`}
             >
               <FileText className="w-3.5 h-3.5" />
@@ -282,8 +300,8 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
               onClick={() => onTabChange('privacy')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                 currentTab === 'privacy'
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                  ? 'bg-[#1565d8] text-white shadow-md shadow-blue-600/30'
+                  : 'text-[#4c5a6b] hover:text-[#0e1a2b] hover:bg-slate-100'
               }`}
             >
               <Shield className="w-3.5 h-3.5" />
@@ -296,8 +314,8 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
               onClick={() => onTabChange('faq')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                 currentTab === 'faq'
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                  ? 'bg-[#1565d8] text-white shadow-md shadow-blue-600/30'
+                  : 'text-[#4c5a6b] hover:text-[#0e1a2b] hover:bg-slate-100'
               }`}
             >
               <HelpCircle className="w-3.5 h-3.5" />
@@ -310,12 +328,12 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
               onClick={() => onTabChange('ownership')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                 currentTab === 'ownership'
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                  ? 'bg-[#1565d8] text-white shadow-md shadow-blue-600/30'
+                  : 'text-[#4c5a6b] hover:text-[#0e1a2b] hover:bg-slate-100'
               }`}
             >
               <Building className="w-3.5 h-3.5" />
-              <span>Ownership & Legal Notice</span>
+              <span>Ownership &amp; Legal Notice</span>
             </button>
 
             <button
@@ -324,8 +342,8 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
               onClick={() => onTabChange('compliance')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                 currentTab === 'compliance'
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                  ? 'bg-[#1565d8] text-white shadow-md shadow-blue-600/30'
+                  : 'text-[#4c5a6b] hover:text-[#0e1a2b] hover:bg-slate-100'
               }`}
             >
               <ShieldCheck className="w-3.5 h-3.5" />
@@ -336,25 +354,17 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
 
         {/* Page Header Card - Translucent white background with black text */}
         <div className="bg-white/95 backdrop-blur-md rounded-3xl border border-white/60 p-6 sm:p-8 mb-8 shadow-xl text-black">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-start gap-4">
-              <div className="p-3 rounded-2xl bg-slate-100 border border-slate-200 shrink-0">
-                {currentInfo.icon}
-              </div>
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-black text-black tracking-tight leading-tight">
-                  {currentInfo.title}
-                </h1>
-                <p className="text-xs sm:text-sm text-neutral-600 mt-1 font-medium">
-                  {currentInfo.subtitle}
-                </p>
-              </div>
+          <div className="flex items-center gap-4">
+            <div className="p-3 rounded-2xl bg-slate-100 border border-slate-200 shrink-0">
+              {currentInfo.icon}
             </div>
-
-            <div className="shrink-0 flex items-center gap-2">
-              <span className="text-[11px] font-bold px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 border border-slate-200">
-                Operated by Sokoplus Horizon
-              </span>
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-black text-black tracking-tight leading-tight">
+                {currentInfo.title}
+              </h1>
+              <p className="text-xs sm:text-sm text-neutral-600 mt-1 font-medium">
+                {currentInfo.subtitle}
+              </p>
             </div>
           </div>
         </div>
@@ -896,101 +906,37 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
         )}
 
         {/* Back to Login Action Bar at bottom of document */}
-        <div className="mt-10 pt-6 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="mt-10 pt-6 border-t border-[#d9e1e6] flex flex-col sm:flex-row items-center justify-between gap-4">
           <button
             type="button"
             onClick={onBackToLogin}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold border border-slate-700 transition cursor-pointer"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-[#0e1a2b] text-xs font-bold border border-[#d9e1e6] transition cursor-pointer shadow-xs"
           >
-            <ArrowLeft className="w-4 h-4 text-blue-400" />
+            <ArrowLeft className="w-4 h-4 text-[#1565d8]" />
             <span>Return to POS Terminal Login</span>
           </button>
 
           <button
             type="button"
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="text-xs text-slate-400 hover:text-slate-200 transition cursor-pointer font-medium"
+            className="text-xs text-[#4c5a6b] hover:text-[#0e1a2b] transition cursor-pointer font-medium"
           >
             Scroll to Top ↑
           </button>
         </div>
       </main>
 
-      {/* Footer with working navigation links */}
-      <footer
-        className={`px-6 py-5 border-t text-center text-xs text-slate-400 shrink-0 relative z-10 ${
-          loginBgGraphic
-            ? 'border-white/10 bg-slate-950/70 backdrop-blur-md'
-            : 'border-slate-800/80 bg-slate-950/90'
-        }`}
-      >
-        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px]">
-          {/* Brand Logo & Copyright statement */}
-          <div className="flex items-center gap-2.5 flex-wrap justify-center text-slate-400">
-            <AppLogo theme="dark" size="sm" onClick={onBackToLogin} />
-            <span className="hidden sm:inline text-slate-600">•</span>
-            <span>© 2026 SokoPoS Enterprise Platform • Sokoplus Horizon</span>
-          </div>
-
-          {/* Working Legal & Pricing Navigation Links */}
-          <div className="flex items-center gap-2.5 sm:gap-4 flex-wrap justify-center font-medium">
-            <button
-              type="button"
-              id="legal-page-footer-pricing-btn"
-              onClick={() => {
-                window.location.hash = '#pricing';
-              }}
-              className="text-amber-400 hover:text-amber-300 font-bold transition cursor-pointer"
-            >
-              Pricing & Plans
-            </button>
-            <span className="text-slate-600">•</span>
-            <button
-              type="button"
-              id="legal-page-footer-terms-btn"
-              onClick={() => onTabChange('terms')}
-              className={`transition cursor-pointer ${
-                currentTab === 'terms' ? 'text-blue-400 font-bold' : 'text-slate-400 hover:text-blue-400'
-              }`}
-            >
-              Terms of Service
-            </button>
-            <span className="text-slate-600">•</span>
-            <button
-              type="button"
-              id="legal-page-footer-privacy-btn"
-              onClick={() => onTabChange('privacy')}
-              className={`transition cursor-pointer ${
-                currentTab === 'privacy' ? 'text-blue-400 font-bold' : 'text-slate-400 hover:text-blue-400'
-              }`}
-            >
-              Privacy Policy
-            </button>
-            <span className="text-slate-600">•</span>
-            <button
-              type="button"
-              id="legal-page-footer-faq-btn"
-              onClick={() => onTabChange('faq')}
-              className={`transition cursor-pointer ${
-                currentTab === 'faq' ? 'text-blue-400 font-bold' : 'text-slate-400 hover:text-blue-400'
-              }`}
-            >
-              FAQ
-            </button>
-            <span className="text-slate-600">•</span>
-            <button
-              type="button"
-              id="legal-page-footer-legal-notice-btn"
-              onClick={() => onTabChange('ownership')}
-              className={`transition cursor-pointer ${
-                currentTab === 'ownership' ? 'text-blue-400 font-bold' : 'text-slate-400 hover:text-blue-400'
-              }`}
-            >
-              Legal & IP
-            </button>
-          </div>
-        </div>
-      </footer>
+      {/* Benchmark System Footer in Light Mode */}
+      <AppFooter
+        onBackToLogin={onBackToLogin}
+        onNavigatePricing={() => {
+          window.location.hash = '#pricing';
+        }}
+        onNavigateLegal={onTabChange}
+        activePage={currentTab}
+        idPrefix="legal-page-footer"
+        theme="light"
+      />
     </div>
   );
 };
