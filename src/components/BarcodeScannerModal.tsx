@@ -18,6 +18,9 @@ import {
   Sparkles,
   Volume2,
   Keyboard,
+  Clock,
+  Trash2,
+  ArrowRight,
 } from 'lucide-react';
 import {
   BrowserMultiFormatReader,
@@ -33,6 +36,15 @@ import { simulateHardwareBarcodeBurst } from '../utils/backgroundScanner';
 interface BarcodeScannerModalProps {
   isOpen: boolean;
   onClose: () => void;
+}
+
+export interface RecentScanItem {
+  id: string;
+  scanNumber: number;
+  product: Product;
+  barcode: string;
+  timestamp: string;
+  timeMs: number;
 }
 
 interface ScanHistoryItem {
@@ -55,7 +67,9 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [scanSuccessFeedback, setScanSuccessFeedback] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'camera' | 'test-lab'>('camera');
+  const [activeTab, setActiveTab] = useState<'camera' | 'history' | 'test-lab'>('camera');
+  const [recentScans, setRecentScans] = useState<RecentScanItem[]>([]);
+  const totalScansCounterRef = useRef<number>(0);
   const [scanHistory, setScanHistory] = useState<ScanHistoryItem[]>([]);
   const [lastScannedResult, setLastScannedResult] = useState<{
     product: Product;
@@ -312,6 +326,18 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
         time: timeStr,
       });
 
+      // Update the last 5 successfully scanned items during the current session
+      totalScansCounterRef.current += 1;
+      const newRecentScan: RecentScanItem = {
+        id: `recent-scan-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        scanNumber: totalScansCounterRef.current,
+        product,
+        barcode: trimmed,
+        timestamp: timeStr,
+        timeMs: Date.now(),
+      };
+      setRecentScans((prev) => [newRecentScan, ...prev].slice(0, 5));
+
       // Update in-modal session scan history
       setScanHistory((prev) => {
         const existingIdx = prev.findIndex((item) => item.product.id === product.id);
@@ -411,19 +437,20 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
           </div>
         </div>
 
-        {/* Navigation Tabs: Camera vs Interactive Test Lab */}
-        <div className="flex items-center bg-slate-100 px-4 sm:px-6 border-b border-slate-200 shrink-0">
+        {/* Navigation Tabs: Camera vs History vs Interactive Test Lab */}
+        <div className="flex items-center overflow-x-auto bg-slate-100 px-4 sm:px-6 border-b border-slate-200 shrink-0 gap-1">
           <button
             type="button"
+            id="tab-camera-btn"
             onClick={() => setActiveTab('camera')}
-            className={`flex items-center gap-2 py-2.5 px-3 sm:px-4 text-xs font-bold border-b-2 transition cursor-pointer ${
+            className={`flex items-center gap-2 py-2.5 px-3 sm:px-4 text-xs font-bold border-b-2 transition cursor-pointer whitespace-nowrap ${
               activeTab === 'camera'
                 ? 'border-blue-600 text-blue-700 bg-white shadow-2xs rounded-t-lg'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
             <Camera className="w-4 h-4 text-blue-600" />
-            <span>Live Camera Scanner</span>
+            <span>Live Camera</span>
             {isCameraActive && (
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
             )}
@@ -431,15 +458,39 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
 
           <button
             type="button"
+            id="tab-history-btn"
+            onClick={() => setActiveTab('history')}
+            className={`flex items-center gap-2 py-2.5 px-3 sm:px-4 text-xs font-bold border-b-2 transition cursor-pointer whitespace-nowrap ${
+              activeTab === 'history'
+                ? 'border-emerald-600 text-emerald-700 bg-white shadow-2xs rounded-t-lg'
+                : 'border-transparent text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <History className="w-4 h-4 text-emerald-600" />
+            <span>History</span>
+            <span
+              className={`text-[10px] font-black px-1.5 py-0.2 rounded-full transition ${
+                recentScans.length > 0
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  : 'bg-slate-200 text-slate-600'
+              }`}
+            >
+              {recentScans.length}/5
+            </span>
+          </button>
+
+          <button
+            type="button"
+            id="tab-testlab-btn"
             onClick={() => setActiveTab('test-lab')}
-            className={`flex items-center gap-2 py-2.5 px-3 sm:px-4 text-xs font-bold border-b-2 transition cursor-pointer ${
+            className={`flex items-center gap-2 py-2.5 px-3 sm:px-4 text-xs font-bold border-b-2 transition cursor-pointer whitespace-nowrap ${
               activeTab === 'test-lab'
                 ? 'border-blue-600 text-blue-700 bg-white shadow-2xs rounded-t-lg'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
             <BarcodeIcon className="w-4 h-4 text-purple-600" />
-            <span>Interactive Barcode Simulator & Verifier</span>
+            <span>Simulator</span>
             <span className="bg-purple-100 text-purple-700 text-[10px] font-black px-1.5 py-0.2 rounded-full">
               {storeProducts.length} Items
             </span>
@@ -448,6 +499,26 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
 
         {/* Modal Scrollable Body */}
         <div className="p-4 sm:p-6 overflow-y-auto space-y-4 sm:space-y-5 flex-1">
+          {/* Subtle Keyframes Animation for History List Items */}
+          <style>{`
+            @keyframes scanItemSlideIn {
+              0% {
+                opacity: 0;
+                transform: translateY(-8px) scale(0.98);
+                background-color: #ecfdf5;
+              }
+              50% {
+                background-color: #d1fae5;
+              }
+              100% {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+              }
+            }
+            .animate-scan-item-entry {
+              animation: scanItemSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+            }
+          `}</style>
           {/* CAMERA TAB */}
           {activeTab === 'camera' && (
             <div className="space-y-4">
@@ -599,6 +670,193 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
             </div>
           )}
 
+          {/* HISTORY TAB: LAST 5 SCANNED ITEMS WITH SUBTLE ENTRY ANIMATION */}
+          {activeTab === 'history' && (
+            <div className="space-y-4">
+              {/* Header Info Banner */}
+              <div className="p-3.5 sm:p-4 bg-emerald-50/80 border border-emerald-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <History className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-xs font-black text-emerald-950 uppercase tracking-wider">
+                        Recent Scan History (Last 5 Items)
+                      </h4>
+                      <span className="bg-emerald-200 text-emerald-900 text-[10px] font-black px-2 py-0.5 rounded-full">
+                        {recentScans.length} of 5
+                      </span>
+                    </div>
+                    <p className="text-xs text-emerald-800 mt-0.5">
+                      Real-time cashier feed for instant visual verification without checking the main cart.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                  {recentScans.length > 0 && (
+                    <button
+                      type="button"
+                      id="clear-recent-scans-btn"
+                      onClick={() => setRecentScans([])}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-600 hover:text-red-700 bg-white hover:bg-red-50 border border-red-200 rounded-xl transition cursor-pointer shadow-2xs"
+                      title="Clear the recent scans list"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Clear History</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Scanned Items List or Empty State */}
+              {recentScans.length === 0 ? (
+                <div className="p-8 sm:p-12 text-center bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl space-y-3">
+                  <div className="w-14 h-14 mx-auto rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 shadow-2xs">
+                    <Scan className="w-7 h-7 text-slate-400" />
+                  </div>
+                  <div className="max-w-md mx-auto">
+                    <h5 className="font-bold text-sm text-slate-800">No Items Scanned Yet in This Session</h5>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Start scanning barcodes with the live optical camera, your handheld barcode scanner gun, or the
+                      interactive simulator. Your last 5 scans will appear here with subtle entry animations for quick
+                      verification.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('camera')}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                    >
+                      <Camera className="w-3.5 h-3.5" /> Scan with Camera
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('test-lab')}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                    >
+                      <BarcodeIcon className="w-3.5 h-3.5" /> Open Simulator
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-1 flex items-center justify-between">
+                    <span>Session Stream (Newest First)</span>
+                    <span>Max 5 items kept in buffer</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {recentScans.map((item, index) => {
+                      const isLatest = index === 0;
+                      return (
+                        <div
+                          key={item.id}
+                          className={`animate-scan-item-entry p-3.5 rounded-2xl transition-all duration-200 border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                            isLatest
+                              ? 'bg-emerald-50/70 border-emerald-300 ring-2 ring-emerald-500/20 shadow-xs'
+                              : 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs'
+                          }`}
+                        >
+                          <div className="flex items-start sm:items-center gap-3 min-w-0">
+                            {/* Sequence number / status icon */}
+                            <div
+                              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-mono font-bold text-xs ${
+                                isLatest
+                                  ? 'bg-emerald-600 text-white shadow-xs'
+                                  : 'bg-slate-100 text-slate-700 border border-slate-200'
+                              }`}
+                            >
+                              {isLatest ? (
+                                <Check className="w-5 h-5 stroke-[2.5]" />
+                              ) : (
+                                <span>#{item.scanNumber}</span>
+                              )}
+                            </div>
+
+                            <div className="min-w-0 space-y-0.5">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-bold text-xs sm:text-sm text-slate-900 truncate">
+                                  {item.product.name}
+                                </span>
+                                {isLatest && (
+                                  <span className="inline-flex items-center gap-1 bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-2xs uppercase tracking-wider">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                                    Latest Scan
+                                  </span>
+                                )}
+                                <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.2 rounded-full">
+                                  +1 Added to Cart
+                                </span>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                                <span className="font-medium text-slate-600">{item.product.category}</span>
+                                <span>•</span>
+                                <span className="font-mono bg-slate-100 px-1.5 py-0.2 rounded text-slate-700 font-semibold">
+                                  {item.barcode}
+                                </span>
+                                <span>•</span>
+                                <span className="font-mono text-slate-400">SKU: {item.product.sku}</span>
+                                <span>•</span>
+                                <span className="inline-flex items-center gap-1 text-slate-400 font-mono">
+                                  <Clock className="w-3 h-3 text-slate-400" />
+                                  {item.timestamp}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                            <div className="text-right">
+                              <div className="text-xs sm:text-sm font-black text-slate-900">
+                                {currentLocation.currency} {item.product.sellingPrice.toLocaleString()}
+                              </div>
+                              <div className="text-[10px] text-slate-400">Unit Price</div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => onBarcodeDetected(item.barcode)}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200 hover:border-blue-600 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer"
+                              title={`Scan another ${item.product.name}`}
+                            >
+                              <Zap className="w-3 h-3" />
+                              <span>+1 Scan Again</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Batch Summary Card */}
+                  <div className="mt-3 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span className="font-medium text-slate-700">
+                        Recent 5 Scans Subtotal:{' '}
+                        <strong className="text-slate-900">
+                          {currentLocation.currency}{' '}
+                          {recentScans
+                            .reduce((sum, item) => sum + item.product.sellingPrice, 0)
+                            .toLocaleString()}
+                        </strong>
+                      </span>
+                    </div>
+
+                    <div className="text-slate-500 font-mono text-[11px]">
+                      Session scans: <strong>{totalScansCounterRef.current}</strong> • Current cart items:{' '}
+                      <strong>{cart.reduce((sum, item) => sum + item.quantity, 0)}</strong>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* INTERACTIVE TEST LAB TAB */}
           {activeTab === 'test-lab' && (
             <div className="space-y-4">
@@ -703,6 +961,15 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
               <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                 <button
                   type="button"
+                  id="scanner-banner-view-history-btn"
+                  onClick={() => setActiveTab('history')}
+                  className="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                >
+                  <History className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>View History ({recentScans.length})</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => onBarcodeDetected(lastScannedResult.barcode)}
                   className="px-3 py-1.5 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition cursor-pointer"
                 >
@@ -743,8 +1010,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
             </div>
           </form>
 
-          {/* Session Scan History */}
-          {scanHistory.length > 0 && (
+          {/* Session Scan History (Bottom Summary on Camera & Simulator Tabs) */}
+          {activeTab !== 'history' && scanHistory.length > 0 && (
             <div className="border border-slate-200 rounded-2xl overflow-hidden">
               <div className="bg-slate-50 px-4 py-2.5 flex items-center justify-between border-b border-slate-200">
                 <div className="flex items-center gap-2">
@@ -753,13 +1020,23 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
                     Session Scan Activity ({totalSessionScansCount} items)
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setScanHistory([])}
-                  className="text-[10px] font-bold text-slate-400 hover:text-slate-600 cursor-pointer"
-                >
-                  Clear History
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('history')}
+                    className="text-[10px] font-bold text-blue-600 hover:text-blue-700 cursor-pointer flex items-center gap-1"
+                  >
+                    <span>View Last 5 Stream</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setScanHistory([])}
+                    className="text-[10px] font-bold text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                </div>
               </div>
               <div className="divide-y divide-slate-100 max-h-36 overflow-y-auto">
                 {scanHistory.map((item) => (

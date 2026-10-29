@@ -168,6 +168,10 @@ interface PosContextType {
   isSubscriptionModalOpen: boolean;
   setIsSubscriptionModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
   activateBusinessSubscription: (businessId: string, plan: BusinessPlanTier, voucherCode?: string) => Promise<{ success: boolean; message: string }>;
+  isPricingPageOpen: boolean;
+  setIsPricingPageOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  openPricingPage: () => void;
+  closePricingPage: () => void;
 
   // Loyalty Program Settings
   loyaltySettings: BusinessLoyaltySettings;
@@ -6421,6 +6425,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const openBusinessSettings = (initialTab: 'profile' | 'branches' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset' = 'profile') => {
+    if (initialTab === 'pricing') {
+      openPricingPage();
+      return;
+    }
     setBusinessSettingsDefaultTab(initialTab);
     setIsBusinessSettingsOpen(true);
   };
@@ -6656,6 +6664,46 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Package Subscription & Activation State
   const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState<boolean>(false);
 
+  // Dedicated Full-Page Pricing State (Seamless access across logged-in and public views)
+  const [isPricingPageOpen, setIsPricingPageOpen] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash.replace('#', '').toLowerCase();
+      return hash === 'pricing' || hash === 'plans' || hash === 'price';
+    }
+    return false;
+  });
+
+  const openPricingPage = useCallback(() => {
+    setIsBusinessSettingsOpen(false);
+    setIsPricingPageOpen(true);
+    if (typeof window !== 'undefined') {
+      window.location.hash = '#pricing';
+    }
+  }, []);
+
+  const closePricingPage = useCallback(() => {
+    setIsPricingPageOpen(false);
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash.replace('#', '').toLowerCase();
+      if (hash === 'pricing' || hash === 'plans' || hash === 'price') {
+        window.history.pushState(null, '', window.location.pathname);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleHash = () => {
+      if (typeof window === 'undefined') return;
+      const hash = window.location.hash.replace('#', '').toLowerCase();
+      if (hash === 'pricing' || hash === 'plans' || hash === 'price') {
+        setIsPricingPageOpen(true);
+      }
+    };
+    handleHash();
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
+
   const isSubscriptionActive = useMemo(() => {
     if (isSuperAdmin) return true;
     if (!currentBusiness) return false;
@@ -6733,6 +6781,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         isSubscriptionModalOpen,
         setIsSubscriptionModalOpen,
         activateBusinessSubscription,
+        isPricingPageOpen,
+        setIsPricingPageOpen,
+        openPricingPage,
+        closePricingPage,
 
         loyaltySettings,
         updateLoyaltySettings,

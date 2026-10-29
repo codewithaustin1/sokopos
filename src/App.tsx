@@ -37,6 +37,7 @@ import { useBackgroundScanner } from './hooks/useBackgroundScanner';
 import { ScannerInterceptHUD } from './components/ScannerInterceptHUD';
 import { InventoryQuickCheckHUD } from './components/InventoryQuickCheckHUD';
 import { DynamicSitemapModal } from './components/DynamicSitemapModal';
+import { PricingPageView } from './components/PricingPageView';
 import { getSystemPaths, generateSitemapJson } from './utils/sitemapManifest';
 import { isSuperAdminEmail } from './data/initialData';
 
@@ -73,6 +74,9 @@ function PosAppContent() {
     isSubscriptionActive,
     isSubscriptionModalOpen,
     setIsSubscriptionModalOpen,
+    isPricingPageOpen,
+    openPricingPage,
+    closePricingPage,
   } = usePos();
 
   // URL Path Routing: Ensure root URL ('/') always routes to landing page, not logged-in dashboard
@@ -456,6 +460,74 @@ function PosAppContent() {
     soundFx,
   ]);
 
+  // Dedicated Full-Page Pricing View:
+  // Directly accessible in both logged-in and public state (seamless return back to active POS session)
+  if (isPricingPageOpen) {
+    return (
+      <div
+        id="pos-pricing-page-container"
+        className="h-screen w-screen overflow-y-auto scroll-smooth font-sans relative"
+      >
+        {/* Toast Notification Alert */}
+        {toastMessage && (
+          <div className="fixed top-6 right-6 z-[120] animate-in slide-in-from-top-3 fade-in duration-200">
+            <div
+              className={`px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5 text-xs font-bold border ${
+                toastMessage.type === 'error'
+                  ? 'bg-red-50 text-red-800 border-red-200'
+                  : toastMessage.type === 'info'
+                  ? 'bg-blue-50 text-blue-800 border-blue-200'
+                  : 'bg-emerald-50 text-emerald-900 border-emerald-200'
+              }`}
+            >
+              {toastMessage.type === 'error' ? (
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+              ) : toastMessage.type === 'info' ? (
+                <Info className="w-4 h-4 text-blue-600 shrink-0" />
+              ) : (
+                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+              )}
+              <span>{toastMessage.text}</span>
+            </div>
+          </div>
+        )}
+
+        <PricingPageView
+          onBackToLogin={() => {
+            closePricingPage();
+          }}
+          onSelectPlan={(_planId) => {
+            if (currentUser) {
+              setIsSubscriptionModalOpen(true);
+            } else {
+              closePricingPage();
+              setTimeout(() => {
+                const regBtn = document.getElementById('auth-register-tab-btn');
+                regBtn?.click();
+              }, 120);
+            }
+          }}
+        />
+
+        {/* Global Subscription Activation Modal */}
+        <SubscriptionActivationModal
+          isOpen={isSubscriptionModalOpen}
+          onClose={() => setIsSubscriptionModalOpen(false)}
+          onSuccess={() => {
+            setIsSubscriptionModalOpen(false);
+            closePricingPage();
+          }}
+        />
+
+        {/* Hidden Dynamic Sitemap View triggered by console command */}
+        <DynamicSitemapModal
+          isOpen={isSitemapOpen}
+          onClose={() => setIsSitemapOpen(false)}
+        />
+      </div>
+    );
+  }
+
   // Path-based routing: Root URL ('/') routes to Landing Page.
   // POS terminal is accessible at '/pos' or '/app' when authenticated.
   const isAtLandingPage = currentPath === '/' || !currentUser;
@@ -463,6 +535,7 @@ function PosAppContent() {
   if (isAtLandingPage) {
     return (
       <div
+        id="pos-landing-viewport"
         className="h-screen w-screen overflow-y-auto scroll-smooth dark-scrollbar font-sans bg-slate-950 relative"
       >
         {loginBgGraphic && (

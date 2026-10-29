@@ -22,6 +22,7 @@ import { LegalTab } from './LegalAndFaqModal';
 import { AppLogo } from './common/AppLogo';
 import { AppFooter } from './common/AppFooter';
 import { MobileHeaderNav } from './common/MobileHeaderNav';
+import { scrollToTop } from '../utils/scrollUtils';
 
 interface LegalPageViewProps {
   currentTab: LegalTab;
@@ -150,7 +151,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
 
   // Scroll to top when tab changes
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollToTop(true);
   }, [currentTab]);
 
   const categories = [
@@ -918,8 +919,10 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
 
           <button
             type="button"
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="text-xs text-[#4c5a6b] hover:text-[#0e1a2b] transition cursor-pointer font-medium"
+            id="legal-scroll-to-top-btn"
+            onClick={() => scrollToTop(true)}
+            className="text-xs text-[#4c5a6b] hover:text-[#0e1a2b] transition cursor-pointer font-medium select-none"
+            aria-label="Scroll to top of page"
           >
             Scroll to Top ↑
           </button>

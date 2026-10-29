@@ -1,6 +1,7 @@
 import React from 'react';
 import { AppLogo } from './AppLogo';
 import { usePos } from '../../context/PosContext';
+import { scrollToTop } from '../../utils/scrollUtils';
 
 export interface AppFooterProps {
   onBackToLogin?: () => void;
@@ -28,12 +29,12 @@ export const AppFooter: React.FC<AppFooterProps> = ({
 
   const handlePricingClick = () => {
     if (activePage === 'pricing') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollToTop(true);
     } else if (onNavigatePricing) {
       onNavigatePricing();
     } else {
       window.location.hash = '#pricing';
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollToTop(true);
     }
   };
 
@@ -42,7 +43,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
       onNavigateLegal(tab);
     } else {
       window.location.hash = `#${tab}`;
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollToTop(true);
     }
   };
 
@@ -51,7 +52,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
       onBackToLogin();
     } else {
       window.location.hash = '';
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollToTop(true);
     }
   };
 
@@ -140,6 +141,18 @@ export const AppFooter: React.FC<AppFooterProps> = ({
             }`}
           >
             Legal & IP
+          </button>
+          <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
+          <button
+            type="button"
+            id={`${idPrefix}-scroll-to-top-btn`}
+            onClick={() => scrollToTop(true)}
+            className={`transition cursor-pointer font-medium ${
+              isLight ? 'text-[#4c5a6b] hover:text-[#1565d8]' : 'text-[#9FB2A7] hover:text-[#4CC38A]'
+            }`}
+            aria-label="Scroll to top of page"
+          >
+            Scroll to Top ↑
           </button>
         </div>
       </div>

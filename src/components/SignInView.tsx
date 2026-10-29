@@ -14,6 +14,7 @@ import { WhatsAppFloatingButton } from './landing/WhatsAppFloatingButton';
 import { AppLogo } from './common/AppLogo';
 import { AppFooter } from './common/AppFooter';
 import { MobileHeaderNav } from './common/MobileHeaderNav';
+import { scrollToTop } from '../utils/scrollUtils';
 
 // Isolated Animated Counter Subcomponent: Keeps main-thread 60fps by updating the DOM ref directly without React state churn
 const AnimatedMetricCounter: React.FC<{ target?: number; duration?: number }> = React.memo(
@@ -97,6 +98,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     loginWithCredentials,
     systemUsers,
     showToast,
+    openPricingPage,
+    closePricingPage,
   } = usePos();
 
   const [activeTab, setActiveTab] = useState<'owner' | 'staff' | 'register'>('owner');
@@ -161,16 +164,14 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const navigateToPricing = () => {
     setActiveLegalPage(null);
     setIsPricingPageOpen(true);
-    window.location.hash = '#pricing';
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    openPricingPage();
+    scrollToTop(false);
   };
 
   const returnToLogin = () => {
     setActiveLegalPage(null);
     setIsPricingPageOpen(false);
-    if (window.location.hash) {
-      window.history.pushState(null, '', window.location.pathname + window.location.search);
-    }
+    closePricingPage();
   };
 
   const scrollToAuthCard = (targetTab?: 'owner' | 'staff' | 'register') => {
@@ -986,7 +987,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         className="px-4 sm:px-8 py-3.5 border-b border-[#d9e1e6] bg-[#f4f7f6]/95 backdrop-blur-md shadow-xs flex items-center justify-between shrink-0 sticky top-0 z-50 transition-colors"
       >
         {/* Brand */}
-        <AppLogo theme="light" size="md" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} />
+        <AppLogo theme="light" size="md" onClick={() => scrollToTop(true)} />
 
         {/* Quick Nav Anchors for Desktop Visitors */}
         <nav className="hidden lg:flex items-center gap-6 text-xs font-semibold text-[#4c5a6b]">
@@ -1503,11 +1504,15 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       </main>
 
       {/* FLOATING ACTION BUTTON */}
-      <WhatsAppFloatingButton phoneNumber="+254740463021" />
+      <WhatsAppFloatingButton
+        phoneNumber="+254740463021"
+        delayEntranceMs={2000}
+        playEntranceSound={true}
+      />
 
       {/* PRESERVED BENCHMARK FOOTER (Rendered in matching light mode) */}
       <AppFooter
-        onBackToLogin={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        onBackToLogin={() => scrollToTop(true)}
         onNavigatePricing={navigateToPricing}
         onNavigateLegal={navigateToLegalPage}
         activePage="landing"

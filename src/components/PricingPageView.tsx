@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import {
   Monitor,
   ArrowRight,
+  ArrowLeft,
 } from 'lucide-react';
 import { AppLogo } from './common/AppLogo';
 import { AppFooter } from './common/AppFooter';
 import { MobileHeaderNav } from './common/MobileHeaderNav';
 import { WhatsAppFloatingButton } from './landing/WhatsAppFloatingButton';
 import { usePos } from '../context/PosContext';
+import { scrollToTop } from '../utils/scrollUtils';
 
 interface PricingPageViewProps {
   onBackToLogin: () => void;
@@ -539,7 +541,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
           {/* Mobile Hamburger Menu with animated 2-bar toggle icon */}
           <MobileHeaderNav
             onNavigateSection={navigateToSection}
-            onNavigatePricing={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            onNavigatePricing={() => scrollToTop(true)}
             onAuthAction={onBackToLogin}
             isLoggedIn={Boolean(currentUser)}
             currentPage="pricing"
@@ -727,6 +729,28 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
         <p className="mt-7 text-[#4c5a6b] text-sm max-w-[70ch] leading-relaxed">
           Yearly billing covers ten months instead of twelve. The free plan has no monthly fee; the one-time setup session is paid once.
         </p>
+
+        {/* Action Bar at bottom of document */}
+        <div className="mt-10 pt-6 border-t border-[#d9e1e6] flex flex-col sm:flex-row items-center justify-between gap-4">
+          <button
+            type="button"
+            onClick={onBackToLogin}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-[#0e1a2b] text-xs font-bold border border-[#d9e1e6] transition cursor-pointer shadow-xs"
+          >
+            <ArrowLeft className="w-4 h-4 text-[#1565d8]" />
+            <span>{currentUser ? 'Return to Active POS Register' : 'Return to POS Terminal Login'}</span>
+          </button>
+
+          <button
+            type="button"
+            id="pricing-scroll-to-top-btn"
+            onClick={() => scrollToTop(true)}
+            className="text-xs text-[#4c5a6b] hover:text-[#0e1a2b] transition cursor-pointer font-medium select-none"
+            aria-label="Scroll to top of page"
+          >
+            Scroll to Top ↑
+          </button>
+        </div>
       </main>
 
       {/* Floating WhatsApp Action Button for Kenya Retailers */}
@@ -735,7 +759,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
       {/* Benchmark Footer in Light Mode */}
       <AppFooter
         onBackToLogin={onBackToLogin}
-        onNavigatePricing={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        onNavigatePricing={() => scrollToTop(true)}
         onNavigateLegal={navigateToLegal}
         activePage="pricing"
         idPrefix="pricing-footer"

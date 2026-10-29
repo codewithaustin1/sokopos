@@ -10,6 +10,7 @@ import {
   User,
   ChevronRight,
 } from 'lucide-react';
+import { scrollToTop } from '../../utils/scrollUtils';
 
 export interface MobileHeaderNavProps {
   onNavigateSection: (sectionId: string) => void;
@@ -71,7 +72,7 @@ export const MobileHeaderNav: React.FC<MobileHeaderNavProps> = ({
   const handlePricingClick = () => {
     setIsOpen(false);
     if (currentPage === 'pricing') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollToTop(true);
     } else if (onNavigatePricing) {
       onNavigatePricing();
     } else {

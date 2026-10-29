@@ -62,6 +62,7 @@ export const Header: React.FC<HeaderProps> = ({
     platformLogo,
     isSubscriptionActive,
     setIsSubscriptionModalOpen,
+    openPricingPage,
   } = usePos();
 
   const [isLocationMenuOpen, setIsLocationMenuOpen] = useState(false);
@@ -342,16 +343,12 @@ export const Header: React.FC<HeaderProps> = ({
                     </span>
                   </button>
 
-                  {/* POS Packages & Subscription */}
+                  {/* POS Packages & Subscription: Linked directly to dedicated Pricing Page */}
                   <button
                     id="user-menu-pricing-plans-btn"
                     onClick={() => {
                       setIsUserMenuOpen(false);
-                      if (!isSubscriptionActive && !isSuperAdmin) {
-                        setIsSubscriptionModalOpen(true);
-                      } else {
-                        openBusinessSettings('pricing');
-                      }
+                      openPricingPage();
                     }}
                     className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer"
                   >

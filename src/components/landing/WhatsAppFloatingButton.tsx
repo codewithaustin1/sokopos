@@ -20,6 +20,8 @@ import { soundFx } from '../../utils/audio';
 
 interface WhatsAppFloatingButtonProps {
   phoneNumber?: string; // e.g. +254740463021
+  delayEntranceMs?: number; // default: 2000ms
+  playEntranceSound?: boolean; // default: true
 }
 
 interface ChatMessage {
@@ -32,6 +34,8 @@ interface ChatMessage {
 
 export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
   phoneNumber = '+254740463021',
+  delayEntranceMs = 2000,
+  playEntranceSound = true,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -40,6 +44,7 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
   const [isExiting, setIsExiting] = useState(false);
   const [isShaking, setIsShaking] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [hasEntered, setHasEntered] = useState(false);
   const [unreadCount, setUnreadCount] = useState(1);
 
   // Chat message state & input
@@ -61,9 +66,35 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
   // Clean phone number to digits only for wa.me URL
   const cleanPhone = (phoneNumber || '254740463021').replace(/[^0-9]/g, '');
 
+  // Entrance timer: Triggers entrance animation and sound effect exactly after delayEntranceMs (2s)
   useEffect(() => {
     setIsMounted(true);
-  }, []);
+
+    const entranceTimer = setTimeout(() => {
+      setHasEntered(true);
+      if (playEntranceSound) {
+        soundFx.playBubblePop();
+      }
+    }, delayEntranceMs);
+
+    return () => clearTimeout(entranceTimer);
+  }, [delayEntranceMs, playEntranceSound]);
+
+  // Unlock Web Audio context on user gesture if browser has suspended it
+  useEffect(() => {
+    if (!playEntranceSound) return;
+    const unlockAudio = () => {
+      soundFx.playBeep(0, 0.001);
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
+    window.addEventListener('pointerdown', unlockAudio, { once: true });
+    window.addEventListener('keydown', unlockAudio, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
+  }, [playEntranceSound]);
 
   // Auto-scroll chat stream to latest message
   useEffect(() => {
@@ -72,9 +103,9 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
     }
   }, [messages, isTyping, isOpen, isMinimized]);
 
-  // Proactive Beacon Callout: Shakes button at 18s, pops tooltip at 19s for 7s
+  // Proactive Beacon Callout: Shakes button at 18s after entry, pops tooltip at 19s for 7s
   useEffect(() => {
-    if (isOpen || isTooltipDismissed) return;
+    if (!hasEntered || isOpen || isTooltipDismissed) return;
 
     const shakeTimer = setTimeout(() => {
       setIsShaking(true);
@@ -100,7 +131,7 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
       clearTimeout(shakeTimer);
       clearTimeout(showTimer);
     };
-  }, [isOpen, isTooltipDismissed]);
+  }, [hasEntered, isOpen, isTooltipDismissed]);
 
   const quickChips = [
     {
@@ -242,7 +273,7 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
     setIsMinimized(false);
   };
 
-  if (!isMounted || typeof document === 'undefined') {
+  if (!isMounted || typeof document === 'undefined' || !hasEntered) {
     return null;
   }
 
@@ -310,8 +341,12 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
           <div className="px-4 py-3 bg-gradient-to-r from-slate-900 via-emerald-950/60 to-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="relative">
-                <div className="w-9 h-9 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shadow-inner">
-                  <WhatsAppLogo className="w-5 h-5" />
+                <div className="w-9 h-9 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center p-1 text-emerald-400 shadow-inner">
+                  <img
+                    src="/assets/aistudio/icons8-messages-96_71cfa6af.png"
+                    alt="Messages"
+                    className="w-6 h-6 object-contain rounded-lg"
+                  />
                 </div>
                 <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-slate-950 animate-pulse" />
               </div>
@@ -487,32 +522,41 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
         </div>
       )}
 
-      {/* Floating Action Button (FAB) Pill */}
+      {/* Floating Action Button (FAB) Bubble - using attached icon with no accompanying text */}
       <button
         type="button"
         id="whatsapp-landing-fab"
         onClick={handleToggleOpen}
-        className={`group flex items-center gap-2.5 sm:gap-3 px-4.5 py-2.5 sm:px-5 sm:py-3 rounded-full bg-gradient-to-r from-[#00A859] via-[#00924D] to-[#008043] hover:from-[#00b862] hover:to-[#00924D] text-white font-bold text-xs sm:text-sm shadow-2xl shadow-black/60 hover:shadow-emerald-900/60 transition-all duration-200 border border-emerald-300/40 hover:scale-[1.03] active:scale-[0.98] cursor-pointer select-none relative ${
+        className={`group relative flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-2xl sm:rounded-3xl transition-transform duration-200 hover:scale-110 active:scale-95 cursor-pointer select-none filter drop-shadow-xl hover:drop-shadow-2xl whatsapp-bubble-enter ${
           isShaking ? 'whatsapp-button-shake' : ''
         }`}
-        aria-label="Talk to a POS Specialist on WhatsApp"
+        aria-label={isOpen ? 'Close Chat' : 'Chat with POS Specialist on WhatsApp'}
+        title={isOpen ? 'Close Chat' : 'Chat with POS Specialist on WhatsApp'}
       >
-        <div className="relative shrink-0">
-          <WhatsAppLogo className="w-6 h-6 sm:w-7 sm:h-7" />
-          <span className="absolute -top-1 -right-1 flex h-3 w-3">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75" />
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-400 border-2 border-emerald-900" />
-          </span>
-        </div>
+        <img
+          src="/assets/aistudio/icons8-messages-96_71cfa6af.png"
+          alt="WhatsApp / Messages"
+          className="w-full h-full object-contain rounded-2xl sm:rounded-3xl transition-transform duration-200 group-hover:scale-105"
+        />
 
-        <span className="font-bold tracking-tight whitespace-nowrap">
-          {isOpen ? 'Close Assistant' : 'Talk to POS Specialist'}
-        </span>
-
-        {unreadCount > 0 && !isOpen && (
-          <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 font-black text-[10px] shadow-sm animate-bounce">
-            {unreadCount}
+        {isOpen ? (
+          <span className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-slate-900 text-white flex items-center justify-center border-2 border-white shadow-md">
+            <X className="w-3.5 h-3.5" />
           </span>
+        ) : (
+          <>
+            {/* Live presence indicator */}
+            <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border-2 border-white shadow-xs" />
+            </span>
+
+            {unreadCount > 0 && (
+              <span className="absolute -bottom-1 -left-1 px-1.5 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-[10px] shadow-md animate-bounce border border-white">
+                {unreadCount}
+              </span>
+            )}
+          </>
         )}
       </button>
     </div>,
