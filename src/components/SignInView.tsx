@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Monitor,
   ArrowRight,
   Zap,
   Check,
+  X,
+  User,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { soundFx } from '../utils/audio';
@@ -174,20 +177,114 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     closePricingPage();
   };
 
-  const scrollToAuthCard = (targetTab?: 'owner' | 'staff' | 'register') => {
-    if (targetTab) setActiveTab(targetTab);
-    const el = document.getElementById('login');
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      const card = el.querySelector('.receipt');
-      if (card) {
-        card.classList.add('ring-4', 'ring-[#1565d8]/40');
-        setTimeout(() => {
-          card.classList.remove('ring-4', 'ring-[#1565d8]/40');
-        }, 1400);
-      }
-    }
+  // Modal version of the Sign-In card
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+  const emailInputRef = useRef<HTMLInputElement>(null);
+  const shopNameInputRef = useRef<HTMLInputElement>(null);
+  const modalCardRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  const openAuthModal = (targetTab: 'owner' | 'staff' | 'register' = 'owner') => {
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    setActiveTab(targetTab);
+    setPinError(null);
+    setIsAuthModalOpen(true);
   };
+
+  const closeAuthModal = () => {
+    setIsAuthModalOpen(false);
+    setPinError(null);
+    setEnteredPin('');
+    setTimeout(() => {
+      previousFocusRef.current?.focus();
+    }, 50);
+  };
+
+  const scrollToAuthCard = (targetTab?: 'owner' | 'staff' | 'register') => {
+    openAuthModal(targetTab || 'owner');
+  };
+
+  // Prevent background scrolling and lock body/viewport when modal is open
+  useEffect(() => {
+    if (!isAuthModalOpen) return;
+
+    const originalBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const viewport = document.getElementById('pos-landing-viewport');
+    const originalViewportOverflow = viewport ? viewport.style.overflow : '';
+    if (viewport) {
+      viewport.style.overflow = 'hidden';
+    }
+
+    return () => {
+      document.body.style.overflow = originalBodyOverflow;
+      if (viewport) {
+        viewport.style.overflow = originalViewportOverflow;
+      }
+    };
+  }, [isAuthModalOpen]);
+
+  // Auto-focus first input field upon modal opening
+  useEffect(() => {
+    if (!isAuthModalOpen) return;
+
+    const timer = setTimeout(() => {
+      if (activeTab === 'owner') {
+        emailInputRef.current?.focus();
+      } else if (activeTab === 'register') {
+        shopNameInputRef.current?.focus();
+      } else if (activeTab === 'staff') {
+        const firstFocusable = modalCardRef.current?.querySelector<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        firstFocusable?.focus();
+      }
+    }, 60);
+
+    return () => clearTimeout(timer);
+  }, [isAuthModalOpen, activeTab]);
+
+  // Dismiss on Escape key and trap keyboard focus within modal
+  useEffect(() => {
+    if (!isAuthModalOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeAuthModal();
+        return;
+      }
+
+      if (e.key === 'Tab') {
+        const modal = modalCardRef.current;
+        if (!modal) return;
+
+        const focusable = modal.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        );
+        if (!focusable.length) return;
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first || !modal.contains(document.activeElement)) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last || !modal.contains(document.activeElement)) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isAuthModalOpen]);
 
   const scrollToSection = (sectionId: string) => {
     const el =
@@ -217,9 +314,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     }
   }, [systemUsers, selectedStaffId]);
 
-  // Physical keyboard support for staff PIN
+  // Physical keyboard support for staff PIN (only active when modal is open on staff tab)
   useEffect(() => {
-    if (activeTab !== 'staff') return;
+    if (!isAuthModalOpen || activeTab !== 'staff') return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
@@ -246,7 +343,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeTab, enteredPin, selectedStaffId]);
+  }, [isAuthModalOpen, activeTab, enteredPin, selectedStaffId]);
 
   const handleKeypadPress = (val: string) => {
     soundFx.playBarcodeBeep();
@@ -290,6 +387,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         const ok = loginWithGoogle('upfrontretaile@gmail.com', staff.name);
         if (ok) {
           showToast(`Shift started for ${staff.name}. Welcome back!`, 'success');
+          setIsAuthModalOpen(false);
           onLoginSuccess?.();
           return;
         }
@@ -298,6 +396,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       const success = await loginWithCredentials(usernameOrCode, enteredPin);
       if (success) {
         showToast(`Shift started for ${staff.name}. Welcome back!`, 'success');
+        setIsAuthModalOpen(false);
         onLoginSuccess?.();
       } else {
         setPinError('Incorrect PIN. Try again.');
@@ -317,10 +416,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     try {
       const ok = await loginWithFirebaseGoogle();
       if (ok) {
+        setIsAuthModalOpen(false);
         onLoginSuccess?.();
       }
     } catch {
       loginWithGoogle('upfrontretaile@gmail.com', 'Platform Administrator');
+      setIsAuthModalOpen(false);
       onLoginSuccess?.();
     }
   };
@@ -335,6 +436,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     const ok = loginWithGoogle(email, email.split('@')[0]);
     if (ok) {
       showToast(`Signed in as ${email}`, 'success');
+      setIsAuthModalOpen(false);
       onLoginSuccess?.();
     }
   };
@@ -350,18 +452,21 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     try {
       const success = await loginWithFirebaseGoogle(storeName);
       if (success) {
+        setIsAuthModalOpen(false);
         onLoginSuccess?.();
         return;
       }
       const ok = loginWithGoogle(ownerEmail, 'Business Owner', storeName);
       if (ok) {
         showToast(`Shop "${storeName}" created.`, 'success');
+        setIsAuthModalOpen(false);
         onLoginSuccess?.();
       }
     } catch {
       const ok = loginWithGoogle(ownerEmail, 'Business Owner', storeName);
       if (ok) {
         showToast(`Shop "${storeName}" created.`, 'success');
+        setIsAuthModalOpen(false);
         onLoginSuccess?.();
       }
     }
@@ -371,6 +476,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     const ok = loginWithGoogle('upfrontretaile@gmail.com', 'Platform Administrator');
     if (ok) {
       showToast('Welcome to the SokoPoS demo sandbox. Explore products and test M-Pesa checkout.', 'success');
+      setIsAuthModalOpen(false);
       onLoginSuccess?.();
     }
   };
@@ -484,45 +590,39 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           font-size: 0.85rem;
         }
         .sp-hero {
-          padding: 48px 0 64px;
-        }
-        .sp-hero-grid {
-          display: grid;
-          gap: 40px;
-          align-items: center;
-        }
-        @media (min-width: 960px) {
-          .sp-hero-grid {
-            grid-template-columns: 1.25fr 1fr;
-            gap: 64px;
-          }
+          padding: 56px 0 72px;
+          text-align: center;
         }
         .sp-h1 {
-          font-size: clamp(2.2rem, 5.6vw, 4rem);
-          line-height: 1.04;
+          font-size: clamp(2.2rem, 5.6vw, 3.8rem);
+          line-height: 1.06;
           letter-spacing: -0.035em;
           font-weight: 800;
-          margin: 0 0 20px;
-          max-width: 15ch;
+          margin: 0 auto 20px;
+          max-width: 22ch;
           color: var(--ink);
+          text-align: center;
         }
         .sp-lead {
           color: var(--muted);
-          font-size: 1.1rem;
-          max-width: 52ch;
-          margin: 0 0 28px;
+          font-size: 1.15rem;
+          max-width: 48ch;
+          margin: 0 auto 28px;
           line-height: 1.55;
+          text-align: center;
         }
         .sp-cta {
           display: flex;
           flex-wrap: wrap;
+          justify-content: center;
           gap: 12px;
           margin-bottom: 16px;
         }
         .sp-fine {
           font-size: 0.85rem;
           color: var(--muted);
-          margin: 0 0 32px;
+          margin: 0 auto 36px;
+          text-align: center;
         }
         .sp-stats {
           display: grid;
@@ -532,6 +632,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           border-radius: 16px;
           background: var(--surface);
           overflow: hidden;
+          max-width: 760px;
+          margin: 0 auto;
+          width: 100%;
         }
         @media (min-width: 620px) {
           .sp-stats {
@@ -1049,11 +1152,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             </button>
           ) : (
             <>
-              {/* Mobile View: Account Icon (scrolls to login card) */}
+              {/* Mobile View: Account Icon (opens modal) */}
               <button
                 type="button"
                 id="mobile-nav-account-btn"
-                onClick={() => scrollToAuthCard()}
+                onClick={() => openAuthModal('owner')}
                 className="sm:hidden w-9 h-9 rounded-full bg-white hover:bg-slate-100 active:bg-slate-200 border border-[#d9e1e6] flex items-center justify-center transition cursor-pointer active:scale-95 shadow-xs group"
                 title="Account Login"
                 aria-label="Account Login"
@@ -1065,11 +1168,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 />
               </button>
 
-              {/* Desktop View: Text Login Button in header (scrolls to login card) */}
+              {/* Desktop View: Text Login Button in header (opens modal) */}
               <button
                 type="button"
                 id="top-nav-login-btn"
-                onClick={() => scrollToAuthCard()}
+                onClick={() => openAuthModal('owner')}
                 className="hidden sm:inline-flex items-center px-4 py-1.5 rounded-xl bg-[#1565d8] hover:bg-[#1255b5] text-white font-bold text-xs shadow-md shadow-blue-500/20 transition cursor-pointer"
               >
                 Login
@@ -1085,7 +1188,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               if (currentUser) {
                 onLoginSuccess?.();
               } else {
-                scrollToAuthCard();
+                openAuthModal('owner');
               }
             }}
             isLoggedIn={Boolean(currentUser)}
@@ -1097,11 +1200,10 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
       {/* MAIN BODY: Strictly Light Mode UI Layout from Attached Design */}
       <main id="top" className="flex-1 w-full">
-        {/* HERO SECTION */}
+        {/* HERO SECTION (Centered content, preview card removed per user request) */}
         <section className="sp-hero">
-          <div className="sp-wrap sp-hero-grid">
-            {/* Left Headline & Pitch */}
-            <div>
+          <div className="sp-wrap">
+            <div className="max-w-3xl mx-auto flex flex-col items-center text-center">
               <h1 className="sp-h1">The fast POS built for Kenyan retailers, bars and supermarkets.</h1>
               <p className="sp-lead">
                 Ring up sales in seconds, take M-Pesa, file eTIMS receipts and keep trading when the internet drops.
@@ -1135,215 +1237,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 <div>
                   <b>eTIMS</b>
                   <span>Digitax partner</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Right: Interactive Receipt Auth Card */}
-            <div id="login">
-              <div className="sp-receipt" id="auth-card-container">
-                {/* Segmented Tab Switcher (hidden when on register) */}
-                {activeTab !== 'register' && (
-                  <div className="sp-seg" role="tablist" id="seg">
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={activeTab === 'owner'}
-                      onClick={() => {
-                        setActiveTab('owner');
-                        setPinError(null);
-                      }}
-                    >
-                      Owner
-                    </button>
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={activeTab === 'staff'}
-                      onClick={() => {
-                        setActiveTab('staff');
-                        setPinError(null);
-                      }}
-                    >
-                      Staff
-                    </button>
-                  </div>
-                )}
-
-                {/* TAB 1: OWNER LOGIN */}
-                {activeTab === 'owner' && (
-                  <div id="p-owner">
-                    <h2>Log in to your POS terminal</h2>
-                    <button
-                      type="button"
-                      className="sp-gbtn"
-                      id="google"
-                      onClick={handleGoogleSignIn}
-                    >
-                      <b>G</b>
-                      <span>Continue with Google</span>
-                    </button>
-                    <div className="sp-or">or sign in with email</div>
-                    <form id="emailForm" className="sp-row" onSubmit={handleEmailFormSubmit}>
-                      <input
-                        type="email"
-                        id="email"
-                        placeholder="yourname@gmail.com"
-                        aria-label="Google account email"
-                        autoComplete="email"
-                        value={ownerEmailInput}
-                        onChange={(e) => setOwnerEmailInput(e.target.value)}
-                        className="sp-input"
-                      />
-                      <button className="sp-btn sp-btn-blue sp-btn-sm shrink-0" type="submit">
-                        Sign in
-                      </button>
-                    </form>
-                  </div>
-                )}
-
-                {/* TAB 2: STAFF SHIFT / PIN LOGIN */}
-                {activeTab === 'staff' && (
-                  <div id="p-staff">
-                    <h2>Start your shift</h2>
-                    <div className="sp-staff" id="staffList">
-                      {displayStaff.map((staff) => {
-                        const isSelected = selectedStaffId === staff.id;
-                        const initialStr =
-                          (staff as any).initials ||
-                          (staff.name
-                            ? staff.name
-                                .split(' ')
-                                .map((n: string) => n[0])
-                                .join('')
-                                .substring(0, 2)
-                                .toUpperCase()
-                            : 'ST');
-                        return (
-                          <button
-                            key={staff.id}
-                            type="button"
-                            aria-pressed={isSelected}
-                            onClick={() => {
-                              setSelectedStaffId(staff.id);
-                              setEnteredPin('');
-                              setPinError(null);
-                            }}
-                          >
-                            <i style={{ background: (staff as any).bg || (isSelected ? '#1565d8' : '#0a7d46') }}>
-                              {initialStr}
-                            </i>
-                            <span>
-                              {staff.name}
-                              <small>{(staff as any).code || 'Cashier'}</small>
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <label className="sp-label" style={{ textAlign: 'center' }}>
-                      Enter your 4-digit PIN
-                    </label>
-
-                    {/* 4 PIN Dots */}
-                    <div className="sp-dots" id="dots">
-                      {[0, 1, 2, 3].map((idx) => (
-                        <i key={idx} className={idx < enteredPin.length ? 'on' : ''} />
-                      ))}
-                    </div>
-
-                    {/* PIN error alert */}
-                    <div className="sp-perr" id="perr" role="alert">
-                      {pinError}
-                    </div>
-
-                    {/* Numeric Keypad */}
-                    <div className="sp-pad" id="pad">
-                      {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'Clear', '0', '⌫'].map((k) => (
-                        <button
-                          key={k}
-                          type="button"
-                          className={k === 'Clear' ? 'fn' : ''}
-                          onClick={() => handleKeypadPress(k)}
-                        >
-                          {k}
-                        </button>
-                      ))}
-                    </div>
-
-                    <button
-                      type="button"
-                      className="sp-btn sp-btn-blue"
-                      style={{ width: '100%' }}
-                      id="pinGo"
-                      disabled={isSubmittingTerminal}
-                      onClick={handleTerminalSubmit}
-                    >
-                      {isSubmittingTerminal ? 'Authenticating...' : 'Clock in and start shift'}
-                    </button>
-
-                    <p style={{ textAlign: 'center', margin: '12px 0 0' }}>
-                      <button type="button" className="sp-link" id="fillPin" onClick={handleFillDemoPin}>
-                        Demo PIN is 1234 – tap to fill
-                      </button>
-                    </p>
-                  </div>
-                )}
-
-                {/* TAB 3: REGISTER NEW SHOP */}
-                {activeTab === 'register' && (
-                  <div id="p-register">
-                    <h2>Add a new shop</h2>
-                    <form id="regForm" onSubmit={handleRegisterFormSubmit}>
-                      <div className="sp-field">
-                        <label className="sp-label" htmlFor="shop">
-                          Shop or business name
-                        </label>
-                        <input
-                          type="text"
-                          id="shop"
-                          placeholder="e.g. Mombasa Coastal Grocers"
-                          required
-                          value={shopNameInput}
-                          onChange={(e) => setShopNameInput(e.target.value)}
-                          className="sp-input"
-                        />
-                      </div>
-                      <div className="sp-field">
-                        <label className="sp-label" htmlFor="own">
-                          Owner Google email (optional)
-                        </label>
-                        <input
-                          type="email"
-                          id="own"
-                          placeholder="you@gmail.com"
-                          value={shopEmailInput}
-                          onChange={(e) => setShopEmailInput(e.target.value)}
-                          className="sp-input"
-                        />
-                      </div>
-                      <button className="sp-gbtn" type="submit">
-                        <b>G</b>
-                        <span>Continue with Google to create shop</span>
-                      </button>
-                    </form>
-                  </div>
-                )}
-
-                {/* Below Card Switcher */}
-                <div className="sp-below" id="below">
-                  <span id="belowText">
-                    {activeTab === 'register' ? 'Already have a registered shop?' : 'Need to register a new location?'}
-                  </span>
-                  <button
-                    type="button"
-                    className={`sp-btn ${activeTab === 'register' ? 'sp-btn-ghost' : 'sp-btn-red'}`}
-                    id="belowBtn"
-                    onClick={() => setActiveTab(activeTab === 'register' ? 'owner' : 'register')}
-                  >
-                    {activeTab === 'register' ? 'Return to login' : 'Add new shop'}
-                  </button>
                 </div>
               </div>
             </div>
@@ -1519,6 +1412,325 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         idPrefix="landing-footer"
         theme="light"
       />
+
+      {/* SIGN-IN MODAL DIALOG (Exact same card design, keyboard trapped, auto-focus, Esc / Backdrop / X dismissal) */}
+      {isAuthModalOpen && typeof document !== 'undefined' && createPortal(
+        <div
+          id="auth-modal-overlay"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              closeAuthModal();
+            }
+          }}
+          className="fixed inset-0 z-[100] bg-slate-950/60 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200"
+        >
+          <div
+            ref={modalCardRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="auth-modal-title"
+            id="auth-modal-card"
+            style={{
+              fontFamily: '"Bricolage Grotesque", system-ui, -apple-system, "Segoe UI", sans-serif',
+            }}
+            className="relative w-full max-w-[420px] bg-white rounded-3xl border border-[#d9e1e6] p-6 sm:p-7 shadow-2xl shadow-slate-950/25 my-auto animate-in zoom-in-95 fade-in duration-200"
+          >
+            {/* Dismissal X Button */}
+            <button
+              type="button"
+              id="auth-modal-close-btn"
+              onClick={closeAuthModal}
+              aria-label="Close dialog"
+              className="absolute top-4 right-4 p-2 rounded-xl text-[#4c5a6b] hover:text-[#0e1a2b] hover:bg-slate-100 transition cursor-pointer z-10"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Segmented Tab Switcher (Owner vs Staff, matching attached design image_d64c8152.png) */}
+            {activeTab !== 'register' && (
+              <div className="bg-[#f0f3f6] p-1 rounded-xl grid grid-cols-2 gap-1 mb-5" role="tablist" id="seg">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === 'owner'}
+                  onClick={() => {
+                    setActiveTab('owner');
+                    setPinError(null);
+                  }}
+                  className={`py-2 px-4 rounded-lg font-bold text-sm sm:text-base transition-all cursor-pointer flex items-center justify-center ${
+                    activeTab === 'owner'
+                      ? 'bg-white text-[#0e1a2b] shadow-xs'
+                      : 'bg-transparent text-[#4c5a6b] hover:text-[#0e1a2b]'
+                  }`}
+                >
+                  Owner
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === 'staff'}
+                  onClick={() => {
+                    setActiveTab('staff');
+                    setPinError(null);
+                  }}
+                  className={`py-2 px-4 rounded-lg font-bold text-sm sm:text-base transition-all cursor-pointer flex items-center justify-center ${
+                    activeTab === 'staff'
+                      ? 'bg-white text-[#0e1a2b] shadow-xs'
+                      : 'bg-transparent text-[#4c5a6b] hover:text-[#0e1a2b]'
+                  }`}
+                >
+                  Staff
+                </button>
+              </div>
+            )}
+
+            {/* TAB 1: OWNER LOGIN (Directly matches image_d64c8152.png) */}
+            {activeTab === 'owner' && (
+              <div id="p-owner">
+                <h2
+                  id="auth-modal-title"
+                  className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-4 text-left"
+                >
+                  Log in to your POS terminal
+                </h2>
+
+                <button
+                  type="button"
+                  id="google"
+                  onClick={handleGoogleSignIn}
+                  className="w-full h-12 bg-[#1565d8] hover:bg-[#1255b5] active:scale-[0.99] text-white rounded-xl font-bold text-sm sm:text-[15px] flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-xs"
+                >
+                  <span className="w-6 h-6 rounded-md bg-white text-[#1565d8] font-black text-xs flex items-center justify-center shrink-0 shadow-2xs">
+                    G
+                  </span>
+                  <span>Continue with Google</span>
+                </button>
+
+                {/* Subtle dashed divider with centered text */}
+                <div className="relative my-4 flex items-center justify-center">
+                  <div className="w-full border-t border-dashed border-[#d9e1e6]"></div>
+                  <span className="absolute px-3 bg-white text-xs text-[#556375] font-medium">
+                    or sign in with email
+                  </span>
+                </div>
+
+                {/* Email row with matching inputs and blue Sign in button */}
+                <form id="emailForm" onSubmit={handleEmailFormSubmit} className="flex items-center gap-2 mb-4">
+                  <input
+                    ref={emailInputRef}
+                    type="email"
+                    id="email"
+                    placeholder="yourname@gmail.com"
+                    aria-label="Google account email"
+                    autoComplete="email"
+                    value={ownerEmailInput}
+                    onChange={(e) => setOwnerEmailInput(e.target.value)}
+                    className="flex-1 h-11 px-3.5 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#1565d8] focus:outline-none transition-colors"
+                  />
+                  <button
+                    type="submit"
+                    className="h-11 px-5 bg-[#1565d8] hover:bg-[#1255b5] active:scale-[0.98] text-white font-bold text-sm rounded-xl shrink-0 transition-all cursor-pointer shadow-xs"
+                  >
+                    Sign in
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {/* TAB 2: STAFF SHIFT / PIN LOGIN */}
+            {activeTab === 'staff' && (
+              <div id="p-staff">
+                <h2
+                  id="auth-modal-title"
+                  className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-3 text-left"
+                >
+                  Start your shift
+                </h2>
+                <div className="grid grid-cols-2 gap-2 mb-3" id="staffList">
+                  {displayStaff.map((staff) => {
+                    const isSelected = selectedStaffId === staff.id;
+                    const initialStr =
+                      (staff as any).initials ||
+                      (staff.name
+                        ? staff.name
+                            .split(' ')
+                            .map((n: string) => n[0])
+                            .join('')
+                            .substring(0, 2)
+                            .toUpperCase()
+                        : 'ST');
+                    return (
+                      <button
+                        key={staff.id}
+                        type="button"
+                        aria-pressed={isSelected}
+                        onClick={() => {
+                          setSelectedStaffId(staff.id);
+                          setEnteredPin('');
+                          setPinError(null);
+                        }}
+                        className={`flex items-center gap-2 p-2 rounded-xl border text-left transition-all cursor-pointer ${
+                          isSelected
+                            ? 'border-[#1565d8] bg-blue-50/60 shadow-2xs'
+                            : 'border-[#d9e1e6] bg-[#f4f7f6] hover:bg-slate-100'
+                        }`}
+                      >
+                        <i
+                          className="w-7 h-7 rounded-full flex items-center justify-center not-italic text-[11px] font-extrabold text-white shrink-0 shadow-2xs"
+                          style={{ background: (staff as any).bg || (isSelected ? '#1565d8' : '#0a7d46') }}
+                        >
+                          {initialStr}
+                        </i>
+                        <span className="min-w-0">
+                          <span className="block text-xs font-bold text-[#0e1a2b] truncate">{staff.name}</span>
+                          <small className="block text-[10px] text-[#4c5a6b] truncate">{(staff as any).code || 'Cashier'}</small>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <label className="block text-xs font-bold text-[#0e1a2b] text-center mb-1.5">
+                  Enter your 4-digit PIN
+                </label>
+
+                {/* 4 PIN Dots */}
+                <div className="flex justify-center gap-3 my-2" id="dots">
+                  {[0, 1, 2, 3].map((idx) => (
+                    <i
+                      key={idx}
+                      className={`w-3.5 h-3.5 rounded-full border transition-all ${
+                        idx < enteredPin.length
+                          ? 'bg-[#1565d8] border-[#1565d8] scale-110'
+                          : 'bg-[#f4f7f6] border-[#d9e1e6]'
+                      }`}
+                    />
+                  ))}
+                </div>
+
+                {/* PIN error alert */}
+                <div className="min-h-[20px] text-center text-xs text-[#c8231b] font-medium" id="perr" role="alert">
+                  {pinError}
+                </div>
+
+                {/* Numeric Keypad */}
+                <div className="grid grid-cols-3 gap-2 my-2.5" id="pad">
+                  {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'Clear', '0', '⌫'].map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      className={`h-10 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] font-bold text-sm transition-all cursor-pointer hover:bg-slate-200 active:bg-[#1565d8] active:text-white ${
+                        k === 'Clear' ? 'text-xs text-[#4c5a6b]' : ''
+                      }`}
+                      onClick={() => handleKeypadPress(k)}
+                    >
+                      {k}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  className="w-full h-11 bg-[#1565d8] hover:bg-[#1255b5] active:scale-[0.99] text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                  id="pinGo"
+                  disabled={isSubmittingTerminal}
+                  onClick={handleTerminalSubmit}
+                >
+                  {isSubmittingTerminal ? 'Authenticating...' : 'Clock in and start shift'}
+                </button>
+
+                <p className="text-center mt-2.5 mb-1">
+                  <button
+                    type="button"
+                    className="text-xs text-[#1565d8] hover:underline font-semibold cursor-pointer"
+                    id="fillPin"
+                    onClick={handleFillDemoPin}
+                  >
+                    Demo PIN is 1234 – tap to fill
+                  </button>
+                </p>
+              </div>
+            )}
+
+            {/* TAB 3: REGISTER NEW SHOP */}
+            {activeTab === 'register' && (
+              <div id="p-register">
+                <h2
+                  id="auth-modal-title"
+                  className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-3 text-left"
+                >
+                  Add a new shop
+                </h2>
+                <form id="regForm" onSubmit={handleRegisterFormSubmit} className="space-y-3 mb-4">
+                  <div>
+                    <label className="block text-xs font-bold text-[#0e1a2b] mb-1.5" htmlFor="shop">
+                      Shop or business name
+                    </label>
+                    <input
+                      ref={shopNameInputRef}
+                      type="text"
+                      id="shop"
+                      placeholder="e.g. Mombasa Coastal Grocers"
+                      required
+                      value={shopNameInput}
+                      onChange={(e) => setShopNameInput(e.target.value)}
+                      className="w-full h-11 px-3.5 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#1565d8] focus:outline-none transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-[#0e1a2b] mb-1.5" htmlFor="own">
+                      Owner Google email (optional)
+                    </label>
+                    <input
+                      type="email"
+                      id="own"
+                      placeholder="you@gmail.com"
+                      value={shopEmailInput}
+                      onChange={(e) => setShopEmailInput(e.target.value)}
+                      className="w-full h-11 px-3.5 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#1565d8] focus:outline-none transition-colors"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full h-12 bg-[#1565d8] hover:bg-[#1255b5] active:scale-[0.99] text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-xs mt-2"
+                  >
+                    <span className="w-6 h-6 rounded-md bg-white text-[#1565d8] font-black text-xs flex items-center justify-center shrink-0 shadow-2xs">
+                      G
+                    </span>
+                    <span>Continue with Google to create shop</span>
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {/* Below Card Switcher: Dashed divider, question & red Add new shop button matching image_d64c8152.png */}
+            <div className="border-t border-dashed border-[#d9e1e6] pt-4 text-center" id="below">
+              <p className="text-xs sm:text-[13px] text-[#4c5a6b] font-medium mb-2.5" id="belowText">
+                {activeTab === 'register' ? 'Already have a registered shop?' : 'Need to register a new location?'}
+              </p>
+              <button
+                type="button"
+                id="belowBtn"
+                onClick={() => {
+                  const nextTab = activeTab === 'register' ? 'owner' : 'register';
+                  setActiveTab(nextTab);
+                  setPinError(null);
+                }}
+                className={`w-full h-11 rounded-xl font-bold text-sm sm:text-[15px] flex items-center justify-center transition-all cursor-pointer ${
+                  activeTab === 'register'
+                    ? 'bg-transparent text-[#0e1a2b] border border-[#d9e1e6] hover:bg-slate-50'
+                    : 'bg-[#c8231b] hover:bg-[#b01e17] active:scale-[0.99] text-white shadow-xs'
+                }`}
+              >
+                {activeTab === 'register' ? 'Return to login' : 'Add new shop'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };
+

@@ -5,7 +5,6 @@ import {
   X,
   ArrowRight,
   Send,
-  Sparkles,
   MessageSquare,
   Bot,
   User,
@@ -39,13 +38,8 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
-  const [showTooltip, setShowTooltip] = useState(false);
-  const [isTooltipDismissed, setIsTooltipDismissed] = useState(false);
-  const [isExiting, setIsExiting] = useState(false);
-  const [isShaking, setIsShaking] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [hasEntered, setHasEntered] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(1);
 
   // Chat message state & input
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -103,35 +97,7 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
     }
   }, [messages, isTyping, isOpen, isMinimized]);
 
-  // Proactive Beacon Callout: Shakes button at 18s after entry, pops tooltip at 19s for 7s
-  useEffect(() => {
-    if (!hasEntered || isOpen || isTooltipDismissed) return;
 
-    const shakeTimer = setTimeout(() => {
-      setIsShaking(true);
-    }, 18000);
-
-    const showTimer = setTimeout(() => {
-      setIsShaking(false);
-      setShowTooltip(true);
-      setIsExiting(false);
-
-      const dismissTimer = setTimeout(() => {
-        setIsExiting(true);
-        const removeTimer = setTimeout(() => {
-          setShowTooltip(false);
-        }, 400);
-        return () => clearTimeout(removeTimer);
-      }, 7000);
-
-      return () => clearTimeout(dismissTimer);
-    }, 19000);
-
-    return () => {
-      clearTimeout(shakeTimer);
-      clearTimeout(showTimer);
-    };
-  }, [hasEntered, isOpen, isTooltipDismissed]);
 
   const quickChips = [
     {
@@ -243,34 +209,11 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
   };
 
   const handleToggleOpen = () => {
-    setIsShaking(false);
-    if (showTooltip) {
-      setShowTooltip(false);
-      setIsTooltipDismissed(true);
-    }
     if (!isOpen) {
       soundFx.playBeep(520, 0.1);
-      setUnreadCount(0);
       setIsMinimized(false);
     }
     setIsOpen(!isOpen);
-  };
-
-  const handleDismissTooltip = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsExiting(true);
-    setTimeout(() => {
-      setShowTooltip(false);
-      setIsTooltipDismissed(true);
-    }, 300);
-  };
-
-  const handleTooltipClick = () => {
-    setShowTooltip(false);
-    setIsTooltipDismissed(true);
-    setUnreadCount(0);
-    setIsOpen(true);
-    setIsMinimized(false);
   };
 
   if (!isMounted || typeof document === 'undefined' || !hasEntered) {
@@ -283,53 +226,6 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
       className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-[9999] flex flex-col items-end pointer-events-auto select-none"
       style={{ isolation: 'isolate' }}
     >
-      {/* Proactive Callout Banner Tooltip */}
-      {showTooltip && !isOpen && (
-        <div
-          role="status"
-          aria-live="polite"
-          onClick={handleTooltipClick}
-          className={`${
-            isExiting ? 'whatsapp-tooltip-exit' : 'whatsapp-tooltip-enter'
-          } mb-3 mr-1 max-w-[290px] sm:max-w-[330px] bg-slate-900/95 backdrop-blur-xl text-white border border-emerald-500/50 rounded-2xl p-3.5 shadow-2xl shadow-black/80 cursor-pointer hover:border-emerald-400 transition-all group relative`}
-        >
-          {/* Arrow pointing down to the FAB */}
-          <div className="absolute -bottom-1.5 right-6 w-3 h-3 bg-slate-900 border-r border-b border-emerald-500/50 rotate-45" />
-
-          <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0 mt-0.5">
-              <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" />
-              </span>
-            </div>
-
-            <div className="flex-1 min-w-0 pr-4">
-              <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-0.5">
-                <Sparkles className="w-3 h-3" />
-                <span>Nairobi Support Specialist</span>
-              </div>
-              <p className="text-xs font-bold text-slate-100 leading-snug group-hover:text-white transition-colors">
-                Need help setting up your Kenya store or M-Pesa till? Chat live with us!
-              </p>
-              <div className="mt-2 flex items-center gap-1 text-[11px] text-emerald-300 font-extrabold">
-                <span>Start Interactive Chat</span>
-                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleDismissTooltip}
-              aria-label="Dismiss message"
-              className="absolute top-2.5 right-2.5 p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Modern In-App Chat Assistant Window */}
       {isOpen && (
         <div
@@ -527,9 +423,7 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
         type="button"
         id="whatsapp-landing-fab"
         onClick={handleToggleOpen}
-        className={`group relative flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-2xl sm:rounded-3xl transition-transform duration-200 hover:scale-110 active:scale-95 cursor-pointer select-none filter drop-shadow-xl hover:drop-shadow-2xl whatsapp-bubble-enter ${
-          isShaking ? 'whatsapp-button-shake' : ''
-        }`}
+        className="group relative flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-2xl sm:rounded-3xl transition-transform duration-200 hover:scale-105 active:scale-95 cursor-pointer select-none filter drop-shadow-xl hover:drop-shadow-2xl whatsapp-bubble-enter"
         aria-label={isOpen ? 'Close Chat' : 'Chat with POS Specialist on WhatsApp'}
         title={isOpen ? 'Close Chat' : 'Chat with POS Specialist on WhatsApp'}
       >
@@ -539,24 +433,10 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
           className="w-full h-full object-contain rounded-2xl sm:rounded-3xl transition-transform duration-200 group-hover:scale-105"
         />
 
-        {isOpen ? (
+        {isOpen && (
           <span className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-slate-900 text-white flex items-center justify-center border-2 border-white shadow-md">
             <X className="w-3.5 h-3.5" />
           </span>
-        ) : (
-          <>
-            {/* Live presence indicator */}
-            <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border-2 border-white shadow-xs" />
-            </span>
-
-            {unreadCount > 0 && (
-              <span className="absolute -bottom-1 -left-1 px-1.5 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-[10px] shadow-md animate-bounce border border-white">
-                {unreadCount}
-              </span>
-            )}
-          </>
         )}
       </button>
     </div>,
