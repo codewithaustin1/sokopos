@@ -61,8 +61,27 @@ if (typeof window !== 'undefined' && typeof console !== 'undefined') {
   };
 }
 
+// Determine active auth domain:
+// When accessed via a verified custom domain (e.g. sokoplus.co.ke), Firebase Hosting
+// automatically proxies /__/auth/handler. Using the custom domain as the authDomain ensures
+// the Google OAuth popup displays "to continue to sokoplus.co.ke" instead of ".firebaseapp.com".
+const resolvedAuthDomain = (() => {
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host === 'sokoplus.co.ke' || host === 'www.sokoplus.co.ke' || host.endsWith('.sokoplus.co.ke')) {
+      return host;
+    }
+  }
+  return (import.meta as any).env?.VITE_FIREBASE_AUTH_DOMAIN || (firebaseConfig as any).authDomain || 'gen-lang-client-0820403611.firebaseapp.com';
+})();
+
+const effectiveFirebaseConfig = {
+  ...firebaseConfig,
+  authDomain: resolvedAuthDomain,
+};
+
 // Initialize Firebase App
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+const app = !getApps().length ? initializeApp(effectiveFirebaseConfig) : getApp();
 
 // Auth Instance
 export const auth = getAuth(app);
