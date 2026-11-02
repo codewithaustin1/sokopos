@@ -38,12 +38,10 @@ export const VoidModal: React.FC<VoidModalProps> = ({
     verifyManagerOverridePin,
     recordVoid,
     showToast,
+    can,
   } = usePos();
 
-  const isDirectlyAuthorized =
-    currentCashier.role === 'manager' ||
-    currentCashier.role === 'supervisor' ||
-    currentCashier.role === 'business_owner';
+  const isDirectlyAuthorized = can('voidTransactions');
 
   const [selectedReason, setSelectedReason] = useState<string>(COMMON_VOID_REASONS[0]);
   const [customReason, setCustomReason] = useState<string>('');
@@ -55,11 +53,7 @@ export const VoidModal: React.FC<VoidModalProps> = ({
   if (!isOpen) return null;
 
   const eligibleManagers = systemUsers.filter(
-    (u) =>
-      u.role === 'manager' ||
-      u.role === 'supervisor' ||
-      u.role === 'business_owner' ||
-      u.canApplyDiscount === true
+    (u) => can('voidTransactions', u.role)
   );
 
   const totalVoidAmount = itemsToVoid.reduce((sum, it) => {

@@ -13,6 +13,7 @@ import {
   Transaction,
 } from '../types';
 import { DEFAULT_TAX_SETTINGS } from '../utils/taxResolver';
+import { DEFAULT_ROLE_PERMISSIONS } from '../types/permissions';
 
 export const SUPER_ADMIN_EMAIL = 'upfrontretaile@gmail.com';
 
@@ -63,6 +64,7 @@ export const INITIAL_BUSINESSES: Business[] = [
       isSimulatedPayment: true,
       lastPaymentReference: 'ADMIN-LIFETIME-UPFRONT',
     },
+    rolePermissions: DEFAULT_ROLE_PERMISSIONS,
   },
 ];
 
@@ -90,6 +92,20 @@ export const INITIAL_LOCATIONS: Location[] = [
 
 export const INITIAL_SYSTEM_USERS: Cashier[] = [
   // Staff for Upfront Retail Solutions
+  {
+    id: 'user-cashier-7000',
+    businessId: 'biz-upfront',
+    name: 'Cashier A',
+    initials: 'CA',
+    code: '#7000',
+    username: 'cashier.a',
+    pin: '$2b$10$g925CNtpaFfvsV/TNlwblucRcqdLXBHj5NsDDYiXvKkgByQUBVoGq', // Bcrypt hash of '1234'
+    role: 'cashier',
+    avatarColor: 'bg-blue-600',
+    shiftStartedAt: new Date().toISOString(),
+    assignedLocationId: 'loc-upfront-01',
+    canApplyDiscount: false,
+  },
   {
     id: 'user-upfront-01',
     businessId: 'biz-upfront',

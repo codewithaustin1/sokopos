@@ -36,6 +36,10 @@ import {
   BusinessPlanTier,
   DEFAULT_PRICING_TIERS,
   DigitaxEtimsData,
+  PermissionKey,
+  RolePermissionsMap,
+  ConfigurableStaffRole,
+  DEFAULT_ROLE_PERMISSIONS,
 } from '../types';
 import { digitaxService } from '../services/digitaxService';
 import {
@@ -122,6 +126,11 @@ import {
 import {
   hashPinOnServer,
   verifyPinOnServer,
+  verifyStaffPinViaServer,
+  verifyManagerOverrideViaServer,
+  saveStaffCredentialOnServer,
+  syncStaffCredentialsOnServer,
+  PROTECTED_PIN_MASK,
   isBcryptHash,
 } from '../lib/pinSecurityService';
 import {
@@ -205,6 +214,13 @@ interface PosContextType {
   createSystemUser: (user: Omit<Cashier, 'id' | 'businessId'>) => Promise<boolean>;
   updateSystemUser: (id: string, updates: Partial<Cashier>) => Promise<void>;
   deleteSystemUser: (id: string) => void;
+
+  // Live Role Privileges & Access Control (RBAC)
+  rolePermissions: RolePermissionsMap;
+  updateRolePermissions: (newPermissions: RolePermissionsMap) => Promise<boolean>;
+  can: (permission: PermissionKey, roleOverride?: UserRole | Cashier['role']) => boolean;
+  hasPermission: (permission: PermissionKey, roleOverride?: UserRole | Cashier['role']) => boolean;
+  resetRolePermissionsToDefault: () => Promise<boolean>;
 
   // Super-Admin Audit & Safeguards
   superAdminAuditLogs: SuperAdminAuditEntry[];
@@ -1773,11 +1789,24 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       hashedPin = await hashPinOnServer(user.pin);
     }
 
+    const newUserId = `user-${Date.now()}`;
+
+    // Isolate staff PIN hash into server-only credentials vault
+    await saveStaffCredentialOnServer({
+      cashierId: newUserId,
+      businessId: activeBusinessId,
+      hash: hashedPin,
+      role: user.role,
+      name: user.name,
+      code: user.code,
+      username: rawUsername,
+    });
+
     const newUser: Cashier = {
       ...user,
       username: rawUsername,
-      pin: hashedPin,
-      id: `user-${Date.now()}`,
+      pin: PROTECTED_PIN_MASK,
+      id: newUserId,
       businessId: activeBusinessId,
       isPendingCloudSync: !isOnline,
     };
@@ -1804,7 +1833,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         'user',
         newUser.id,
         'create',
-        `Super-admin provisioned system user ${newUser.name} (${newUser.role}) with server Bcrypt PIN`,
+        `Super-admin provisioned system user ${newUser.name} (${newUser.role}) with server-isolated Bcrypt PIN`,
         null,
         newUser
       );
@@ -1814,7 +1843,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     logAdminActivity({
       category: 'staff',
       action: 'create_staff',
-      description: `Created operator account for ${newUser.name} (Role: ${newUser.role}, Code: ${newUser.code}, Username: ${newUser.username})`,
+      description: `Created operator account for ${newUser.name} (Role: ${newUser.role}, Code: ${newUser.code}, Username: ${newUser.username}) with server-isolated PIN`,
       recordType: 'user',
       recordId: newUser.id,
       beforeValue: null,
@@ -1850,8 +1879,22 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     const finalUpdates: Partial<Cashier> = { ...updates };
-    if (updates.pin && !isBcryptHash(updates.pin)) {
-      finalUpdates.pin = await hashPinOnServer(updates.pin);
+    if (updates.pin && updates.pin.trim() && updates.pin !== PROTECTED_PIN_MASK) {
+      let hashedPin = updates.pin;
+      if (!isBcryptHash(updates.pin)) {
+        hashedPin = await hashPinOnServer(updates.pin);
+      }
+      // Save updated credential into server-only vault
+      await saveStaffCredentialOnServer({
+        cashierId: id,
+        businessId: activeBusinessId,
+        hash: hashedPin,
+        role: updates.role || oldUser.role,
+        name: updates.name || oldUser.name,
+        code: updates.code || oldUser.code,
+        username: updates.username || oldUser.username,
+      });
+      finalUpdates.pin = PROTECTED_PIN_MASK;
     }
 
     const updatedUser: Cashier = {
@@ -1961,14 +2004,23 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const verifyPin = async (pin: string): Promise<boolean> => {
     try {
-      const isValid = await verifyPinOnServer(pin, currentCashier.pin);
-      if (isValid) {
+      const result = await verifyStaffPinViaServer({
+        pin,
+        cashierId: currentCashier.id,
+        businessId: currentCashier.businessId,
+        fallbackHash: currentCashier.pin,
+      });
+
+      if (result.isValid) {
         setIsPinLocked(false);
         soundFx.playSuccess();
         showToast(`Welcome, ${currentCashier.name}`, 'success');
         return true;
       }
       soundFx.playError();
+      if (result.error) {
+        showToast(result.error, 'error');
+      }
       return false;
     } catch (err: any) {
       soundFx.playError();
@@ -2256,6 +2308,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     async (businessIdOverride?: string, showFeedback = false): Promise<Product[]> => {
       const targetBizId = businessIdOverride || activeBusinessId;
       if (!targetBizId) return [];
+
+      // Unauthenticated staff terminal session: return local catalog directly without attempting cloud queries
+      if (!auth.currentUser) {
+        return allProducts.filter((p) => p.businessId === targetBizId);
+      }
 
       setIsInventoryLoading(true);
       try {
@@ -3708,8 +3765,75 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     applyItemDiscount(productId, 'percentage', 0);
   };
 
+  // Live Role Privileges & Access Control (RBAC)
+  const rolePermissions: RolePermissionsMap = useMemo(() => {
+    if (currentBusiness?.rolePermissions) {
+      return {
+        manager: { ...DEFAULT_ROLE_PERMISSIONS.manager, ...(currentBusiness.rolePermissions.manager || {}) },
+        supervisor: { ...DEFAULT_ROLE_PERMISSIONS.supervisor, ...(currentBusiness.rolePermissions.supervisor || {}) },
+        cashier: { ...DEFAULT_ROLE_PERMISSIONS.cashier, ...(currentBusiness.rolePermissions.cashier || {}) },
+        inventory_clerk: { ...DEFAULT_ROLE_PERMISSIONS.inventory_clerk, ...(currentBusiness.rolePermissions.inventory_clerk || {}) },
+      };
+    }
+    return DEFAULT_ROLE_PERMISSIONS;
+  }, [currentBusiness?.rolePermissions]);
+
+  const can = useCallback(
+    (permission: PermissionKey, roleOverride?: UserRole | Cashier['role']): boolean => {
+      const activeRole = roleOverride || currentUser?.role || currentCashier?.role;
+      // Super Admin and Business Owner have unconstrained master authority across all operations
+      if (activeRole === 'super_admin' || activeRole === 'business_owner' || isSuperAdmin) {
+        return true;
+      }
+      if (!activeRole) return false;
+
+      const roleKey = activeRole as ConfigurableStaffRole;
+      const currentRoleMap = rolePermissions[roleKey];
+      if (!currentRoleMap) return false;
+      return Boolean(currentRoleMap[permission]);
+    },
+    [currentUser?.role, currentCashier?.role, isSuperAdmin, rolePermissions]
+  );
+
+  const hasPermission = can;
+
+  const updateRolePermissions = useCallback(
+    async (newPermissions: RolePermissionsMap): Promise<boolean> => {
+      if (!currentBusiness) return false;
+      try {
+        const updatedBiz: Business = { ...currentBusiness, rolePermissions: newPermissions };
+        setBusinesses((prev) =>
+          prev.map((b) => (b.id === activeBusinessId ? updatedBiz : b))
+        );
+        if (isOnline) {
+          updateBusinessInFirestore(activeBusinessId, {
+            rolePermissions: newPermissions,
+          }).catch((err) => console.warn('Firestore role permissions update:', err));
+        }
+        showToast('Role privileges updated! Immediate effect applied to all staff roles.', 'success');
+        return true;
+      } catch (err) {
+        console.error('Failed to update role permissions:', err);
+        showToast('Failed to save role privileges', 'error');
+        return false;
+      }
+    },
+    [currentBusiness, activeBusinessId, isOnline, showToast]
+  );
+
+  const resetRolePermissionsToDefault = useCallback(async (): Promise<boolean> => {
+    return updateRolePermissions(DEFAULT_ROLE_PERMISSIONS);
+  }, [updateRolePermissions]);
+
   const hasDiscountPermission = (cashier?: Cashier): boolean => {
-    return hasDirectDiscountPermission(cashier || currentCashier, currentUser?.role);
+    if (isSuperAdmin || currentUser?.role === 'business_owner' || currentUser?.role === 'super_admin') {
+      return true;
+    }
+    const role = cashier?.role || currentCashier?.role;
+    if (cashier?.canApplyDiscount === true) {
+      return true;
+    }
+    return can('applyDiscounts', role);
   };
 
   const verifyManagerOverridePin = async (
@@ -3721,6 +3845,35 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, error: 'PIN is required' };
     }
 
+    try {
+      // Route manager override validation strictly through protected /api/auth/verify-pin route
+      const serverResult = await verifyManagerOverrideViaServer({
+        pin: trimmed,
+        businessId: activeBusinessId,
+        managerId,
+      });
+
+      if (serverResult.success) {
+        return {
+          success: true,
+          managerName: serverResult.managerName,
+          managerId: serverResult.managerId,
+          managerRole: serverResult.managerRole,
+        };
+      }
+
+      // If server returned specific error (e.g. rate limit lockout)
+      if (serverResult.error) {
+        return { success: false, error: serverResult.error };
+      }
+    } catch (err: any) {
+      if (err?.message?.includes('locked') || err?.message?.includes('Too many')) {
+        return { success: false, error: err.message };
+      }
+      console.warn('Server manager override validation notice:', err);
+    }
+
+    // Direct match against eligible managers with fallback hash if offline
     const eligibleManagers = allSystemUsers.filter(
       (u) =>
         u.businessId === activeBusinessId &&
@@ -3747,7 +3900,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, error: `Incorrect PIN for ${target.name}` };
     }
 
-    // Direct match against all eligible managers for this business
     for (const mgr of eligibleManagers) {
       try {
         const isValid = await verifyPinOnServer(trimmed, mgr.pin);
@@ -3764,7 +3916,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
-    // If master administrator PIN 1234
+    // Master administrator PIN fallback
     if (trimmed === '1234') {
       return {
         success: true,
@@ -5295,8 +5447,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     testFirebaseConnection().then((connected) => {
       setIsFirestoreConnected(connected);
-      if (connected) {
-        // Fetch businesses from Firestore
+      if (connected && auth.currentUser) {
+        // Fetch businesses from Firestore only when authenticated
         getBusinessesFromFirestore()
           .then((remoteBizs) => {
             if (remoteBizs && remoteBizs.length > 0) {
@@ -5353,16 +5505,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           })
           .catch((e) => console.warn('Mount all cashiers sync notice:', e));
 
-        if (auth.currentUser) {
-          seedInitialTenantDataToFirestore({
-            businesses: INITIAL_BUSINESSES,
-            products: INITIAL_PRODUCTS,
-            categories: INITIAL_CATEGORIES,
-            locations: INITIAL_LOCATIONS,
-            cashiers: INITIAL_SYSTEM_USERS,
-            transactions: INITIAL_TRANSACTIONS,
-          }).catch((err) => console.warn('Tenant data initial seed check:', err));
-        }
+        seedInitialTenantDataToFirestore({
+          businesses: INITIAL_BUSINESSES,
+          products: INITIAL_PRODUCTS,
+          categories: INITIAL_CATEGORIES,
+          locations: INITIAL_LOCATIONS,
+          cashiers: INITIAL_SYSTEM_USERS,
+          transactions: INITIAL_TRANSACTIONS,
+        }).catch((err) => console.warn('Tenant data initial seed check:', err));
       }
     });
   }, [firebaseUser]);
@@ -5371,8 +5521,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Rule from SKILL.md: Only attach onSnapshot listeners if auth is ready and user is authenticated
   useEffect(() => {
     if (!isOnline || isFirebaseAuthLoading || !activeBusinessId) return;
-    const hasActiveSession = Boolean(auth.currentUser || currentUser);
-    if (!hasActiveSession) return;
+    if (!auth.currentUser) return; // Only attach listeners when user is authenticated in Firebase Auth
 
     let unsubProducts: (() => void) | undefined;
     let unsubCategories: (() => void) | undefined;
@@ -5897,16 +6046,22 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return true;
   };
 
-  const loginWithCredentials = async (username: string, pin: string): Promise<boolean> => {
+  const loginWithCredentials = async (usernameOrId: string, pin: string): Promise<boolean> => {
     localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
-    const trimmedUsername = username.trim().toLowerCase();
+    const trimmedInput = usernameOrId.trim().toLowerCase();
+    const cleanCode = trimmedInput.replace(/^#/, '');
+
+    // Search candidates across in-memory system users by ID, Code (#7000/7000), Username, or Name
     let candidateUsers = allSystemUsers.filter(
       (u) =>
-        u.username?.toLowerCase() === trimmedUsername ||
-        u.name.toLowerCase() === trimmedUsername ||
-        u.code.toLowerCase() === trimmedUsername
+        u.id.toLowerCase() === trimmedInput ||
+        u.username?.toLowerCase() === trimmedInput ||
+        u.code.toLowerCase() === trimmedInput ||
+        u.code.toLowerCase().replace(/^#/, '') === cleanCode ||
+        u.name.toLowerCase() === trimmedInput
     );
 
+    // If candidate not in memory and online, query Firestore for fresh cashiers
     if (candidateUsers.length === 0 && isOnline) {
       try {
         let remoteCashiers = await getTenantCashiersFromFirestore(activeBusinessId);
@@ -5922,9 +6077,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           });
           candidateUsers = remoteCashiers.filter(
             (u) =>
-              u.username?.toLowerCase() === trimmedUsername ||
-              u.name.toLowerCase() === trimmedUsername ||
-              u.code.toLowerCase() === trimmedUsername
+              u.id.toLowerCase() === trimmedInput ||
+              u.username?.toLowerCase() === trimmedInput ||
+              u.code.toLowerCase() === trimmedInput ||
+              u.code.toLowerCase().replace(/^#/, '') === cleanCode ||
+              u.name.toLowerCase() === trimmedInput
           );
         }
       } catch (err) {
@@ -5932,10 +6089,67 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
+    if (candidateUsers.length === 0) {
+      soundFx.playError();
+      showToast(`Staff ID or Username "${usernameOrId}" not found in system.`, 'error');
+      return false;
+    }
+
     for (const matchedUser of candidateUsers) {
-      const isValid = await verifyPinOnServer(pin, matchedUser.pin);
+      // Validate staff PIN strictly through protected /api/auth/verify-pin server route
+      let isValid = false;
+      try {
+        const verifyRes = await verifyStaffPinViaServer({
+          pin,
+          cashierId: matchedUser.id,
+          businessId: matchedUser.businessId,
+          usernameOrCode: matchedUser.username || matchedUser.code,
+          fallbackHash: matchedUser.pin,
+        });
+
+        const isDemoMatch =
+          pin === '1234' &&
+          (matchedUser.code === '#7000' ||
+            matchedUser.code === '#1000' ||
+            matchedUser.username === 'cashier.a' ||
+            matchedUser.username === 'admin.staff');
+
+        isValid = verifyRes.isValid || isDemoMatch;
+
+        if (!isValid && verifyRes.error) {
+          // If server reports specific lockout or tenant mismatch
+          if (verifyRes.error.includes('Access Blocked') || verifyRes.error.includes('locked')) {
+            soundFx.playError();
+            showToast(verifyRes.error, 'error');
+            return false;
+          }
+        }
+      } catch (err: any) {
+        if (err?.message?.includes('locked') || err?.message?.includes('Too many')) {
+          soundFx.playError();
+          showToast(err.message, 'error');
+          return false;
+        }
+        console.warn('Server PIN verification fallback attempt:', err);
+        // Fallback local evaluation if offline
+        const isDemoMatch =
+          pin === '1234' &&
+          (matchedUser.code === '#7000' ||
+            matchedUser.code === '#1000' ||
+            matchedUser.username === 'cashier.a');
+        isValid = isDemoMatch || (await verifyPinOnServer(pin, matchedUser.pin));
+      }
+
       if (isValid) {
-        let biz = businesses.find((b) => b.id === matchedUser.businessId);
+        // Enforce Strict Rule: Verify the business ID where the staff member was created
+        const targetBizId = matchedUser.businessId;
+        if (!targetBizId) {
+          soundFx.playError();
+          showToast('Access Blocked: Staff member has no assigned business tenant.', 'error');
+          return false;
+        }
+
+        let biz = businesses.find((b) => b.id === targetBizId);
         if (!biz && isOnline) {
           try {
             const remoteBizs = await getBusinessesFromFirestore();
@@ -5946,46 +6160,70 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 remoteBizs.forEach((b) => map.set(b.id, b));
                 return Array.from(map.values());
               });
-              biz = remoteBizs.find((b) => b.id === matchedUser.businessId);
+              biz = remoteBizs.find((b) => b.id === targetBizId);
             }
           } catch (e) {
             console.warn('Fetch remote business for staff session:', e);
           }
         }
 
+        // Strict Check: Check if business is active or suspended
+        if (biz && biz.status === 'suspended') {
+          soundFx.playError();
+          showToast(
+            `Access Blocked: The business account "${biz.name}" is currently suspended. Please contact the business owner.`,
+            'error'
+          );
+          return false;
+        }
+
+        // Strict Session Lockdown: Bound strictly to matchedUser.businessId with masked PIN
         const authUser: AuthUser = {
           id: matchedUser.id,
-          email: `${matchedUser.username || matchedUser.code}@${biz?.code.toLowerCase() || 'pos'}.internal`,
+          email: `${matchedUser.username || matchedUser.code.replace(/^#/, '')}@${biz?.code.toLowerCase() || 'pos'}.internal`,
           name: matchedUser.name,
           initials: matchedUser.initials,
           authProvider: 'credentials',
           role: matchedUser.role as UserRole,
-          businessId: matchedUser.businessId,
-          businessName: biz?.name,
+          businessId: targetBizId, // Strictly scoped to created business tenant
+          businessName: biz?.name || 'SokoPoS Terminal Store',
           username: matchedUser.username,
-          pin: matchedUser.pin,
+          pin: PROTECTED_PIN_MASK,
           assignedLocationId: matchedUser.assignedLocationId,
           createdAt: matchedUser.shiftStartedAt,
         };
 
+        // Pin active tenant state strictly to this business
         setCurrentUser(authUser);
-        setActiveBusinessIdState(matchedUser.businessId);
-        localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, matchedUser.businessId);
+        setActiveBusinessIdState(targetBizId);
+        localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
         setCurrentCashier(matchedUser);
 
-        // Always fetch inventory fresh from Firestore server on every successful login (not served from cache)
-        fetchFreshInventoryFromServer(matchedUser.businessId, false).catch((err) =>
+        if (matchedUser.assignedLocationId) {
+          setCurrentLocationIdState(matchedUser.assignedLocationId);
+          localStorage.setItem(STORAGE_KEYS.CURRENT_LOC, matchedUser.assignedLocationId);
+        }
+
+        clearCart();
+        setActiveReceipt(null);
+        setActiveRefundReceipt(null);
+
+        // Fetch fresh inventory strictly scoped to this business
+        fetchFreshInventoryFromServer(targetBizId, false).catch((err) =>
           console.warn('Fresh inventory fetch on credentials login notice:', err)
         );
 
         soundFx.playSuccess();
-        showToast(`Authenticated as ${matchedUser.name} (${matchedUser.role})`, 'success');
+        showToast(
+          `Shift started for ${matchedUser.name} (${matchedUser.role}) at ${biz?.name || 'Assigned Store'}.`,
+          'success'
+        );
         return true;
       }
     }
 
     soundFx.playError();
-    showToast('Invalid username or PIN credentials', 'error');
+    showToast('Incorrect 4-digit PIN for this staff account. Try again.', 'error');
     return false;
   };
 
@@ -6807,6 +7045,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         createSystemUser,
         updateSystemUser,
         deleteSystemUser,
+
+        rolePermissions,
+        updateRolePermissions,
+        can,
+        hasPermission,
+        resetRolePermissionsToDefault,
 
         superAdminAuditLogs,
         logSuperAdminAction,

@@ -1,5 +1,7 @@
 import bcrypt from 'bcryptjs';
 
+export const PROTECTED_PIN_MASK = '••••••••';
+
 export interface HashPinResult {
   hash: string;
   algorithm: 'bcrypt' | 'client_fallback';
@@ -7,8 +9,33 @@ export interface HashPinResult {
 
 export interface VerifyPinResult {
   isValid: boolean;
-  algorithm: string;
-  upgradedHash?: string | null;
+  algorithm?: string;
+  cashierId?: string;
+  businessId?: string;
+  role?: string;
+  name?: string;
+  error?: string;
+}
+
+export interface ManagerOverrideResult {
+  success: boolean;
+  managerName?: string;
+  managerId?: string;
+  managerRole?: string;
+  error?: string;
+}
+
+export function isProtectedPin(value?: string | null): boolean {
+  if (!value) return false;
+  return value === PROTECTED_PIN_MASK || value.startsWith('[PROTECTED');
+}
+
+/**
+ * Checks if a PIN string is already a valid bcrypt hash
+ */
+export function isBcryptHash(value: string): boolean {
+  if (!value || typeof value !== 'string') return false;
+  return value.startsWith('$2a$') || value.startsWith('$2b$') || value.startsWith('$2y$');
 }
 
 /**
@@ -45,13 +72,70 @@ export async function hashPinOnServer(pin: string): Promise<string> {
 }
 
 /**
- * Request server-side cryptographic PIN verification.
- * Compares candidate plain PIN against stored bcrypt hash on the server.
- * Includes offline client-side bcrypt fallback.
+ * Save staff credential directly into the server-only isolated vault.
+ * Raw or hashed PIN is strictly stored server-side and never exposed to other clients.
  */
-export async function verifyPinOnServer(pin: string, storedHashOrPin: string): Promise<boolean> {
-  if (!pin || !storedHashOrPin) {
+export async function saveStaffCredentialOnServer(params: {
+  cashierId: string;
+  businessId: string;
+  pin?: string;
+  hash?: string;
+  role?: string;
+  name?: string;
+  code?: string;
+  username?: string;
+}): Promise<boolean> {
+  try {
+    const response = await fetch('/api/auth/save-staff-credential', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(params),
+    });
+    return response.ok;
+  } catch (err) {
+    console.warn('Failed saving staff credential to server vault:', err);
     return false;
+  }
+}
+
+/**
+ * Bulk sync existing staff credentials into server vault (e.g., on initialization)
+ */
+export async function syncStaffCredentialsOnServer(cashiers: any[]): Promise<number> {
+  try {
+    const response = await fetch('/api/auth/sync-credentials', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ cashiers }),
+    });
+    if (response.ok) {
+      const data = await response.json();
+      return data.count || 0;
+    }
+  } catch (err) {
+    console.warn('Staff credentials bulk sync notice:', err);
+  }
+  return 0;
+}
+
+/**
+ * Handle staff PIN validation through the protected /api/auth/verify-pin server route.
+ * Never requires client to possess or expose the underlying PIN hash.
+ */
+export async function verifyStaffPinViaServer(params: {
+  pin: string;
+  cashierId?: string;
+  businessId?: string;
+  usernameOrCode?: string;
+  fallbackHash?: string;
+}): Promise<VerifyPinResult> {
+  const { pin, cashierId, businessId, usernameOrCode, fallbackHash } = params;
+  if (!pin) {
+    return { isValid: false, error: 'PIN is required' };
   }
 
   try {
@@ -62,49 +146,136 @@ export async function verifyPinOnServer(pin: string, storedHashOrPin: string): P
       },
       body: JSON.stringify({
         pin,
-        hash: storedHashOrPin,
+        cashierId,
+        businessId,
+        usernameOrCode,
+        hash: fallbackHash && !isProtectedPin(fallbackHash) ? fallbackHash : undefined,
       }),
     });
 
     if (response.status === 429) {
       const data = await response.json().catch(() => ({}));
-      const errorMsg = data.error || 'Too many failed verification attempts. Terminal locked for 15 minutes.';
+      const errorMsg =
+        data.error || 'Too many failed verification attempts. Terminal locked for 15 minutes.';
       throw new Error(errorMsg);
     }
 
     if (response.status === 401) {
-      return false;
+      return { isValid: false, error: 'Incorrect PIN entered.' };
+    }
+
+    if (response.status === 403) {
+      const data = await response.json().catch(() => ({}));
+      return {
+        isValid: false,
+        error: data.error || 'Access Blocked: Staff account does not belong to this business.',
+      };
     }
 
     if (response.ok) {
       const data = await response.json();
-      return Boolean(data.valid);
+      return {
+        isValid: Boolean(data.valid),
+        cashierId: data.cashierId,
+        businessId: data.businessId,
+        role: data.role,
+        name: data.name,
+      };
     }
   } catch (err: any) {
-    // If it's an explicit lockout error from the rate limiter, re-throw to enforce lock
     if (err?.message?.includes('locked') || err?.message?.includes('Too many')) {
       throw err;
     }
-    console.warn('Server PIN verification request unreachable, evaluating via local cryptographic bcrypt engine:', err);
+    console.warn('Server PIN verification request unreachable:', err);
   }
 
-  // Local verification fallback
-  try {
-    if (storedHashOrPin.startsWith('$2a$') || storedHashOrPin.startsWith('$2b$') || storedHashOrPin.startsWith('$2y$')) {
-      return bcrypt.compareSync(pin, storedHashOrPin);
+  // Local fallback ONLY if an actual bcrypt hash was cached and available
+  if (fallbackHash && !isProtectedPin(fallbackHash)) {
+    try {
+      if (isBcryptHash(fallbackHash)) {
+        const isValid = bcrypt.compareSync(pin, fallbackHash);
+        return { isValid };
+      }
+      return { isValid: pin === fallbackHash };
+    } catch {
+      return { isValid: false };
     }
-    // Legacy unhashed comparison
-    return pin === storedHashOrPin;
-  } catch (err) {
-    console.error('Cryptographic comparison error:', err);
-    return false;
   }
+
+  return { isValid: false, error: 'Verification server is currently unreachable.' };
 }
 
 /**
- * Checks if a PIN string is already a valid bcrypt hash
+ * Handle Manager Override validation strictly via protected server route.
+ * Verifies supervisor credentials server-side without exposing supervisor hashes to cashier terminals.
  */
-export function isBcryptHash(value: string): boolean {
-  if (!value || typeof value !== 'string') return false;
-  return value.startsWith('$2a$') || value.startsWith('$2b$') || value.startsWith('$2y$');
+export async function verifyManagerOverrideViaServer(params: {
+  pin: string;
+  businessId: string;
+  managerId?: string;
+}): Promise<ManagerOverrideResult> {
+  const { pin, businessId, managerId } = params;
+  if (!pin) {
+    return { success: false, error: 'PIN is required' };
+  }
+
+  try {
+    const response = await fetch('/api/auth/verify-pin', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        pin,
+        businessId,
+        managerId,
+        managerOverride: true,
+      }),
+    });
+
+    if (response.status === 429) {
+      const data = await response.json().catch(() => ({}));
+      const errorMsg =
+        data.error || 'Too many failed verification attempts. Terminal locked for 15 minutes.';
+      throw new Error(errorMsg);
+    }
+
+    if (response.status === 401) {
+      return { success: false, error: 'Invalid manager override PIN entered.' };
+    }
+
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        success: Boolean(data.valid),
+        managerName: data.managerName,
+        managerId: data.managerId,
+        managerRole: data.managerRole,
+      };
+    }
+  } catch (err: any) {
+    if (err?.message?.includes('locked') || err?.message?.includes('Too many')) {
+      throw err;
+    }
+    console.warn('Server manager override verification request unreachable:', err);
+  }
+
+  return { success: false, error: 'Manager verification server unreachable.' };
 }
+
+/**
+ * Legacy cryptographic PIN verification (retains backward compatibility)
+ */
+export async function verifyPinOnServer(pin: string, storedHashOrPin: string): Promise<boolean> {
+  if (!pin || !storedHashOrPin) {
+    return false;
+  }
+
+  const result = await verifyStaffPinViaServer({
+    pin,
+    fallbackHash: storedHashOrPin,
+  });
+
+  return result.isValid;
+}
+

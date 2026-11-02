@@ -61,29 +61,107 @@ export async function onRequest(context: { request: Request; env: Record<string,
     }
   }
 
-  // 3. PIN Verification
+  // 3. PIN Verification & Isolated Staff Validation
   if (pathname === '/api/auth/verify-pin' && request.method === 'POST') {
     try {
       const body = (await request.json()) as any;
-      const { pin, hash } = body || {};
-      if (!pin || !hash) {
-        return jsonResponse({ error: 'Both pin and hash are required' }, 400);
-      }
-      const isBcrypt = typeof hash === 'string' && (hash.startsWith('$2a$') || hash.startsWith('$2b$') || hash.startsWith('$2y$'));
-      if (isBcrypt) {
-        const isValid = await bcrypt.compare(String(pin), hash);
-        if (!isValid) {
-          return jsonResponse({ valid: false, error: 'Invalid PIN entered.', algorithm: 'bcrypt' }, 401);
-        }
-        return jsonResponse({ valid: true, algorithm: 'bcrypt', isUpgraded: true });
+      const { pin, hash, cashierId, businessId, usernameOrCode, managerOverride, managerId } = body || {};
+      if (!pin) {
+        return jsonResponse({ error: 'PIN is required' }, 400);
       }
 
-      const isLegacyValid = String(pin) === String(hash);
-      if (!isLegacyValid) {
-        return jsonResponse({ valid: false, error: 'Invalid PIN entered.', algorithm: 'legacy_plain' }, 401);
+      // Demo/Fallback in-memory credentials map for Edge
+      const defaultHash = '$2b$10$g925CNtpaFfvsV/TNlwblucRcqdLXBHj5NsDDYiXvKkgByQUBVoGq';
+      const defaultCreds: Record<string, any> = {
+        'user-cashier-7000': {
+          cashierId: 'user-cashier-7000',
+          businessId: 'biz-upfront',
+          hash: defaultHash,
+          role: 'cashier',
+          name: 'Cashier A',
+          code: '#7000',
+          username: 'cashier.a',
+        },
+        'user-upfront-01': {
+          cashierId: 'user-upfront-01',
+          businessId: 'biz-upfront',
+          hash: defaultHash,
+          role: 'manager',
+          name: 'Administrator Staff',
+          code: '#1000',
+          username: 'admin.staff',
+        },
+      };
+
+      if (managerOverride) {
+        const candidates = Object.values(defaultCreds).filter(
+          (c) =>
+            (!businessId || c.businessId === businessId) &&
+            (c.role === 'manager' || c.role === 'supervisor' || c.role === 'business_owner')
+        );
+
+        for (const mgr of candidates) {
+          const isMatch = await bcrypt.compare(String(pin), mgr.hash).catch(() => false);
+          if (isMatch || String(pin) === mgr.hash) {
+            return jsonResponse({
+              valid: true,
+              managerId: mgr.cashierId,
+              managerName: mgr.name,
+              managerRole: mgr.role,
+            });
+          }
+        }
+        return jsonResponse({ valid: false, error: 'Invalid manager override PIN.' }, 401);
       }
-      const upgradedHash = await bcrypt.hash(String(pin), 10);
-      return jsonResponse({ valid: true, algorithm: 'legacy_plain', isUpgraded: false, upgradedHash });
+
+      let targetCred = cashierId ? defaultCreds[cashierId] : undefined;
+      if (!targetCred && usernameOrCode) {
+        const clean = String(usernameOrCode).trim().toLowerCase().replace(/^#/, '');
+        targetCred = Object.values(defaultCreds).find(
+          (c) =>
+            c.cashierId.toLowerCase() === clean ||
+            c.username?.toLowerCase() === clean ||
+            c.code?.toLowerCase().replace(/^#/, '') === clean ||
+            c.name?.toLowerCase() === clean
+        );
+      }
+
+      if (targetCred) {
+        const isBcrypt = targetCred.hash.startsWith('$2a$') || targetCred.hash.startsWith('$2b$') || targetCred.hash.startsWith('$2y$');
+        const isValid = isBcrypt ? await bcrypt.compare(String(pin), targetCred.hash) : String(pin) === targetCred.hash;
+        if (!isValid) {
+          return jsonResponse({ valid: false, error: 'Invalid PIN entered.' }, 401);
+        }
+        return jsonResponse({
+          valid: true,
+          cashierId: targetCred.cashierId,
+          businessId: targetCred.businessId,
+          name: targetCred.name,
+          role: targetCred.role,
+          code: targetCred.code,
+          username: targetCred.username,
+        });
+      }
+
+      if (hash) {
+        const isBcrypt = typeof hash === 'string' && (hash.startsWith('$2a$') || hash.startsWith('$2b$') || hash.startsWith('$2y$'));
+        if (isBcrypt) {
+          const isValid = await bcrypt.compare(String(pin), hash);
+          if (!isValid) {
+            return jsonResponse({ valid: false, error: 'Invalid PIN entered.', algorithm: 'bcrypt' }, 401);
+          }
+          return jsonResponse({ valid: true, algorithm: 'bcrypt', isUpgraded: true });
+        }
+
+        const isLegacyValid = String(pin) === String(hash);
+        if (!isLegacyValid) {
+          return jsonResponse({ valid: false, error: 'Invalid PIN entered.', algorithm: 'legacy_plain' }, 401);
+        }
+        const upgradedHash = await bcrypt.hash(String(pin), 10);
+        return jsonResponse({ valid: true, algorithm: 'legacy_plain', isUpgraded: false, upgradedHash });
+      }
+
+      return jsonResponse({ valid: false, error: 'Staff credential not found.' }, 404);
     } catch {
       return jsonResponse({ error: 'Cryptographic PIN verification failed' }, 500);
     }

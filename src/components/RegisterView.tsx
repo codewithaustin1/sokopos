@@ -328,7 +328,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
   }
 
   return (
-    <div id="register-pos-workspace" className="flex-1 flex flex-col md:flex-row overflow-hidden bg-slate-100 relative">
+    <div id="register-pos-workspace" className="flex-1 flex flex-col md:flex-row overflow-hidden bg-slate-100 relative min-h-0 h-full w-full">
       {/* Mobile Top Segmented View Switcher */}
       <div className="md:hidden bg-white border-b border-slate-200 px-3 py-2 flex items-center gap-2 shrink-0 z-20">
         <button
@@ -353,10 +353,11 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
           }`}
         >
-          <div className="relative">
+          <div className="flex items-center gap-1">
+            <ShoppingCart className="w-3.5 h-3.5" />
             <span>Cart ({totalCartCount})</span>
             {totalCartCount > 0 && (
-              <span className="ml-1 text-[10px] font-black text-emerald-600">
+              <span className={`text-[10px] font-black ml-1 ${mobileActiveView === 'cart' ? 'text-blue-100' : 'text-emerald-600'}`}>
                 • {currentLocation.currency} {cartTotal.toFixed(0)}
               </span>
             )}
@@ -366,7 +367,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
       {/* Products Workspace (Left / 62% on desktop, full screen on mobile catalog view) */}
       <div
-        className={`flex-1 md:w-[62%] p-3 sm:p-4 flex-col gap-2.5 sm:gap-3 border-r border-slate-200 bg-slate-50 overflow-hidden relative ${
+        className={`flex-1 md:w-[62%] p-3 sm:p-4 flex flex-col gap-2.5 sm:gap-3 border-r border-slate-200 bg-slate-50 overflow-hidden relative min-h-0 ${
           mobileActiveView === 'catalog' ? 'flex' : 'hidden md:flex'
         }`}
       >
@@ -625,57 +626,11 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             </div>
           )}
         </div>
-
-        {/* Mobile Floating Order Bottom Bar */}
-        {cart.length > 0 && (
-          <div className="md:hidden absolute bottom-2 inset-x-2 z-20 animate-in slide-in-from-bottom-2">
-            <div className="bg-slate-900 text-white px-3.5 py-2.5 rounded-2xl shadow-xl flex items-center justify-between border border-slate-800">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center font-black text-xs text-white shadow-xs">
-                  {totalCartCount}
-                </div>
-                <div>
-                  <div className="text-[10px] text-slate-400 font-bold uppercase">Order Total</div>
-                  <div className="text-sm font-black text-white">
-                    {currentLocation.currency} {cartTotal.toFixed(2)}
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setMobileActiveView('cart')}
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs px-2.5 py-2 rounded-xl transition cursor-pointer"
-                >
-                  View
-                </button>
-                <button
-                  type="button"
-                  onClick={() => settleExactCash()}
-                  disabled={cart.length === 0}
-                  className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white font-bold text-xs px-2.5 py-2 rounded-xl flex items-center gap-1 transition shadow-sm cursor-pointer disabled:cursor-not-allowed"
-                  title="Single-tap exact cash payment"
-                >
-                  <Banknote className="w-3.5 h-3.5" />
-                  <span>Exact</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={onProceedToPayment}
-                  className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition shadow-sm cursor-pointer"
-                >
-                  <span>Settle</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Cart & Checkout Sidebar (Right / 38% on desktop, full screen on mobile cart view) */}
       <div
-        className={`md:w-[38%] bg-white flex-col justify-between border-t md:border-t-0 md:border-l border-slate-200 shadow-lg md:shadow-none h-full overflow-hidden ${
+        className={`md:w-[38%] bg-white flex flex-col justify-between border-t md:border-t-0 md:border-l border-slate-200 shadow-lg md:shadow-none h-full min-h-0 overflow-hidden relative ${
           mobileActiveView === 'cart' ? 'flex flex-1' : 'hidden md:flex'
         }`}
       >
@@ -801,8 +756,8 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
           )}
         </div>
 
-        {/* Cart Item List */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-4 divide-y divide-slate-100">
+        {/* Cart Item List - Bounded scrolling container */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 divide-y divide-slate-100 overscroll-contain">
           {cart.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center p-8 text-center text-slate-400">
               <ShoppingBag className="w-10 h-10 mb-2 stroke-1 text-slate-300" />
@@ -835,8 +790,8 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
           )}
         </div>
 
-        {/* Totals & Checkout Box */}
-        <div className="p-3.5 sm:p-4 bg-slate-50 border-t border-slate-200 space-y-1.5 sm:space-y-2 shrink-0">
+        {/* Totals & Checkout Box - Permanently Sticky at Bottom */}
+        <div className="shrink-0 sticky bottom-0 z-20 bg-white border-t border-slate-200 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] p-3 sm:p-4 space-y-1.5 sm:space-y-2">
           {cartDiscount > 0 && (
             <div className="flex justify-between text-xs text-emerald-600 font-bold">
               <span className="flex items-center gap-1">
@@ -889,37 +844,38 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1 sm:mt-2">
+          <div className="flex items-center gap-2 mt-1 sm:mt-2">
             {/* Direct Exact Cash 1-tap checkout */}
             <button
               id="register-exact-cash-btn"
               type="button"
               disabled={cart.length === 0}
               onClick={() => settleExactCash()}
-              className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-slate-300 text-white font-black py-3 sm:py-3.5 px-3 rounded-xl shadow-md hover:shadow-lg transition text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed group"
+              className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-slate-300 text-white font-black py-3 sm:py-3.5 px-3 rounded-xl shadow-xs transition text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed shrink-0"
               title="Instant single-tap cash checkout with standard half-up rounding (Shortcut: F1)"
             >
-              <Banknote className="w-4 h-4 text-emerald-100 group-hover:scale-110 transition-transform shrink-0" />
-              <span className="truncate">
-                Exact Cash ({currentLocation.currency} {roundCashHalfUp(cartTotal).toFixed(2)})
-              </span>
+              <Banknote className="w-4 h-4 text-emerald-100 shrink-0" />
+              <span className="hidden sm:inline">Exact Cash</span>
+              <span className="sm:hidden">Cash</span>
               <kbd className="hidden xl:inline-block text-[10px] bg-emerald-700/80 border border-emerald-500/40 text-emerald-100 px-1.5 py-0.5 rounded font-mono font-bold shrink-0">
                 F1
               </kbd>
             </button>
 
-            {/* Settle button */}
+            {/* Prominent Sticky Pay Button */}
             <button
               id="register-settle-btn"
               type="button"
               disabled={cart.length === 0}
               onClick={onProceedToPayment}
-              className={`bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-slate-300 text-white font-black py-3 sm:py-3.5 px-4 rounded-xl shadow-md hover:shadow-lg transition text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed group ${
+              className={`flex-1 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-slate-300 text-white font-black py-3 sm:py-3.5 px-4 rounded-xl shadow-md hover:shadow-lg active:scale-[0.99] transition text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed group ${
                 cart.length > 0 ? 'primary-cta-shimmer' : ''
               }`}
-              title="Open full payment settlement options (Shortcuts: Space, Enter)"
+              title="Pay / Proceed to Checkout (Shortcuts: Space, Enter)"
             >
-              <span>Settle</span>
+              <span className="text-sm font-black truncate">
+                Pay {currentLocation.currency} {cartTotal.toFixed(2)}
+              </span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform shrink-0" />
               <kbd className="hidden xl:inline-block text-[10px] bg-blue-700/80 border border-blue-500/40 text-blue-100 px-1.5 py-0.5 rounded font-mono font-bold shrink-0">
                 ↵
@@ -1033,7 +989,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               </div>
             </button>
 
-            {/* Direct Pay / View Action Trigger */}
+            {/* Direct Pay Action Trigger */}
             <button
               type="button"
               onClick={() => {
@@ -1041,10 +997,10 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                 onProceedToPayment();
               }}
               className="bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-black text-xs px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 shadow-md active:scale-95 transition cursor-pointer shrink-0 ml-2"
-              title="Pay / Proceed to Checkout (Single-Thumb Shortcut)"
+              title="Pay / Proceed to Checkout"
             >
-              <span>Pay / View</span>
-              <span className="font-mono text-xs opacity-90">↵</span>
+              <span>Pay</span>
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
         </aside>

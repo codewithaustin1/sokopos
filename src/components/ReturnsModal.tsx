@@ -47,12 +47,10 @@ export const ReturnsModal: React.FC = () => {
     systemUsers,
     verifyManagerOverridePin,
     processRefund,
+    can,
   } = usePos();
 
-  const isDirectlyAuthorized =
-    currentCashier.role === 'manager' ||
-    currentCashier.role === 'supervisor' ||
-    currentCashier.role === 'business_owner';
+  const isDirectlyAuthorized = can('processRefunds');
 
   // Navigation within modal
   const [activeTx, setActiveTx] = useState<Transaction | null>(null);
@@ -926,7 +924,7 @@ export const ReturnsModal: React.FC = () => {
                 </p>
               </div>
 
-              {systemUsers.filter((u) => u.role === 'manager' || u.role === 'supervisor' || u.role === 'business_owner').length > 1 && (
+              {systemUsers.filter((u) => can('processRefunds', u.role)).length > 1 && (
                 <div>
                   <label className="block text-[10px] font-bold text-slate-600 mb-1">
                     Select Supervisor / Manager
@@ -938,7 +936,7 @@ export const ReturnsModal: React.FC = () => {
                   >
                     <option value="">Any Eligible Supervisor</option>
                     {systemUsers
-                      .filter((u) => u.role === 'manager' || u.role === 'supervisor' || u.role === 'business_owner')
+                      .filter((u) => can('processRefunds', u.role))
                       .map((m) => (
                         <option key={m.id} value={m.id}>
                           {m.name} ({m.role.replace('_', ' ')})

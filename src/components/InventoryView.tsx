@@ -44,6 +44,7 @@ export const InventoryView: React.FC = () => {
     isInventoryFreshFromServer,
     isInventoryLoading,
     inventoryLastFetchedAt,
+    can,
   } = usePos();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -541,7 +542,7 @@ export const InventoryView: React.FC = () => {
                         {currentLocation.currency} {p.sellingPrice.toFixed(2)}
                       </div>
                       <div className="text-[10px] text-slate-400 font-mono">
-                        Cost: {p.buyingPrice.toFixed(2)} ({margin}%)
+                        {can('viewCostPrice') ? `Cost: ${p.buyingPrice.toFixed(2)} (${margin}%)` : 'Cost: ••••'}
                       </div>
                     </div>
                   </div>
@@ -758,7 +759,7 @@ export const InventoryView: React.FC = () => {
 
                         {/* Buying Price */}
                         <td className="p-3 font-mono text-slate-500">
-                          {currentLocation.currency} {p.buyingPrice.toFixed(2)}
+                          {can('viewCostPrice') ? `${currentLocation.currency} ${p.buyingPrice.toFixed(2)}` : '••••'}
                         </td>
 
                         {/* Selling Price */}
@@ -768,7 +769,7 @@ export const InventoryView: React.FC = () => {
 
                         {/* Margin */}
                         <td className="p-3 font-mono text-[11px] font-bold text-emerald-700">
-                          {margin}%
+                          {can('viewCostPrice') ? `${margin}%` : '—'}
                         </td>
 
                         {/* Current Location Stock Level */}

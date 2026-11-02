@@ -1,80 +1,269 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // -------------------------------------------------------------------------
+    // Helper Functions: Authentication, Super-Admin & Multi-Tenant Access Control
+    // -------------------------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'upfrontretaile@gmail.com' ||
+        (request.auth.token.role != null && request.auth.token.role == 'super_admin')
+      );
+    }
+
+    function tokenBusinessId() {
+      return request.auth.token.businessId;
+    }
+
+    function isOwnerOf(bizId) {
+      return exists(/databases/$(database)/documents/businesses/$(bizId)) &&
+             get(/databases/$(database)/documents/businesses/$(bizId)).data.ownerEmail == request.auth.token.email;
+    }
+
+    function isMemberOf(bizId) {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.businessId == bizId;
+    }
+
+    function hasTenantAccess(bizId) {
+      return isSignedIn() && (
+        isSuperAdmin() ||
+        (tokenBusinessId() != null && tokenBusinessId() == bizId) ||
+        isOwnerOf(bizId) ||
+        isMemberOf(bizId)
+      );
+    }
+
     // Default Deny Catch-All
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Test connection endpoint - Read-only ping to verify network connectivity
+    // Test connection endpoint - Used on app boot to verify network connectivity
     match /test/{docId} {
       allow read: if true;
       allow write: if false;
     }
 
-    // Platform Settings & Login Branding (Public read for terminal login screen, write allowed)
+    // Platform Settings & Login Branding
     match /platform_settings/{settingId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isSuperAdmin();
     }
 
-    // Businesses collection - Stores & Tenants
-    match /businesses/{businessId} {
-      allow read, write: if true;
-    }
-
-    // Cashiers / Staff collection (Cross-device staff accounts & PIN auth)
-    match /cashiers/{cashierId} {
-      allow read, write: if true;
-    }
-
-    // Products collection (Cross-device catalog & stock sync)
-    match /products/{productId} {
-      allow read, write: if true;
-    }
-
-    // Categories collection
-    match /categories/{categoryId} {
-      allow read, write: if true;
-    }
-
-    // Locations collection (Store branches)
-    match /locations/{locationId} {
-      allow read, write: if true;
-    }
-
-    // Transactions collection (Real-time sales and orders across all terminals)
-    match /transactions/{transactionId} {
-      allow read, write: if true;
-    }
-
-    // Customers collection (Loyalty & Credit tracking)
-    match /customers/{customerId} {
-      allow read, write: if true;
-    }
-
-    // Suppliers collection
-    match /suppliers/{supplierId} {
-      allow read, write: if true;
-    }
-
-    // Stock Transfers collection
-    match /stock_transfers/{transferId} {
-      allow read, write: if true;
-    }
-
-    // Sync Logs collection
-    match /sync_logs/{syncLogId} {
-      allow read, write: if true;
-    }
-
-    // Purged Sales Backups collection
-    match /purged_sales_backups/{backupId} {
-      allow read, write: if true;
-    }
-
-    // Users collection
+    // Users Collection (Profile documents keyed by Firebase Auth UID)
     match /users/{userId} {
-      allow read, write: if true;
+      allow read: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin());
+      allow create, update: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin());
+      allow delete: if isSuperAdmin();
+    }
+
+    // Businesses Collection (Tenants)
+    match /businesses/{businessId} {
+      allow get: if isSignedIn() && (
+        isSuperAdmin() ||
+        resource.data.ownerEmail == request.auth.token.email ||
+        hasTenantAccess(businessId)
+      );
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        request.resource.data.ownerEmail == request.auth.token.email
+      );
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        resource.data.ownerEmail == request.auth.token.email
+      );
+      allow delete: if isSignedIn() && (
+        isSuperAdmin() ||
+        resource.data.ownerEmail == request.auth.token.email
+      );
+    }
+
+    // Products Collection (Tenant catalog items)
+    match /products/{productId} {
+      allow get: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (tokenBusinessId() != null && resource.data.businessId == tokenBusinessId()) ||
+        resource.data.businessId is string
+      );
+      allow create: if isSignedIn() &&
+        request.resource.data.businessId is string &&
+        hasTenantAccess(request.resource.data.businessId);
+      allow update: if isSignedIn() &&
+        resource.data.businessId == request.resource.data.businessId &&
+        hasTenantAccess(resource.data.businessId);
+      allow delete: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+    }
+
+    // Categories Collection (Tenant product categories)
+    match /categories/{categoryId} {
+      allow get: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (tokenBusinessId() != null && resource.data.businessId == tokenBusinessId()) ||
+        resource.data.businessId is string
+      );
+      allow create: if isSignedIn() &&
+        request.resource.data.businessId is string &&
+        hasTenantAccess(request.resource.data.businessId);
+      allow update: if isSignedIn() &&
+        resource.data.businessId == request.resource.data.businessId &&
+        hasTenantAccess(resource.data.businessId);
+      allow delete: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+    }
+
+    // Locations Collection (Tenant store branches & till registers)
+    match /locations/{locationId} {
+      allow get: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (tokenBusinessId() != null && resource.data.businessId == tokenBusinessId()) ||
+        resource.data.businessId is string
+      );
+      allow create: if isSignedIn() &&
+        request.resource.data.businessId is string &&
+        hasTenantAccess(request.resource.data.businessId);
+      allow update: if isSignedIn() &&
+        resource.data.businessId == request.resource.data.businessId &&
+        hasTenantAccess(resource.data.businessId);
+      allow delete: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+    }
+
+    // Cashiers / Staff Collection (Tenant cashiers & staff accounts)
+    match /cashiers/{cashierId} {
+      allow get: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (tokenBusinessId() != null && resource.data.businessId == tokenBusinessId()) ||
+        resource.data.businessId is string
+      );
+      allow create: if isSignedIn() &&
+        request.resource.data.businessId is string &&
+        hasTenantAccess(request.resource.data.businessId);
+      allow update: if isSignedIn() &&
+        resource.data.businessId == request.resource.data.businessId &&
+        hasTenantAccess(resource.data.businessId);
+      allow delete: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+
+      // Private Server-Only Credentials Subcollection:
+      // Isolates staff PIN hashes away from tenant client reads
+      match /private/{docId} {
+        allow read, write: if isSuperAdmin();
+      }
+    }
+
+    // Dedicated server-only staff credentials collection
+    match /staff_credentials/{credId} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    // Transactions Collection (Tenant checkout receipts & sales)
+    match /transactions/{transactionId} {
+      allow get: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (tokenBusinessId() != null && resource.data.businessId == tokenBusinessId()) ||
+        resource.data.businessId is string
+      );
+      allow create: if isSignedIn() &&
+        request.resource.data.businessId is string &&
+        hasTenantAccess(request.resource.data.businessId);
+      allow update: if isSignedIn() &&
+        resource.data.businessId == request.resource.data.businessId &&
+        hasTenantAccess(resource.data.businessId);
+      allow delete: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+    }
+
+    // Customers Collection (Tenant customer credit & loyalty)
+    match /customers/{customerId} {
+      allow get: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (tokenBusinessId() != null && resource.data.businessId == tokenBusinessId()) ||
+        resource.data.businessId is string
+      );
+      allow create: if isSignedIn() &&
+        request.resource.data.businessId is string &&
+        hasTenantAccess(request.resource.data.businessId);
+      allow update: if isSignedIn() &&
+        resource.data.businessId == request.resource.data.businessId &&
+        hasTenantAccess(resource.data.businessId);
+      allow delete: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+    }
+
+    // Suppliers Collection (Tenant vendor directory & purchasing)
+    match /suppliers/{supplierId} {
+      allow get: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (tokenBusinessId() != null && resource.data.businessId == tokenBusinessId()) ||
+        resource.data.businessId is string
+      );
+      allow create: if isSignedIn() &&
+        request.resource.data.businessId is string &&
+        hasTenantAccess(request.resource.data.businessId);
+      allow update: if isSignedIn() &&
+        resource.data.businessId == request.resource.data.businessId &&
+        hasTenantAccess(resource.data.businessId);
+      allow delete: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+    }
+
+    // Stock Transfers Collection (Inter-branch inventory movements)
+    match /stock_transfers/{transferId} {
+      allow get: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (tokenBusinessId() != null && resource.data.businessId == tokenBusinessId()) ||
+        resource.data.businessId is string
+      );
+      allow create: if isSignedIn() &&
+        request.resource.data.businessId is string &&
+        hasTenantAccess(request.resource.data.businessId);
+      allow update: if isSignedIn() &&
+        resource.data.businessId == request.resource.data.businessId &&
+        hasTenantAccess(resource.data.businessId);
+      allow delete: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+    }
+
+    // Sync Logs Collection (Tenant audit events & replication history)
+    match /sync_logs/{syncLogId} {
+      allow get: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (tokenBusinessId() != null && resource.data.businessId == tokenBusinessId()) ||
+        resource.data.businessId is string
+      );
+      allow create: if isSignedIn() &&
+        request.resource.data.businessId is string &&
+        hasTenantAccess(request.resource.data.businessId);
+      allow update: if isSignedIn() &&
+        resource.data.businessId == request.resource.data.businessId &&
+        hasTenantAccess(resource.data.businessId);
+      allow delete: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+    }
+
+    // Purged Sales Backups Collection (Tenant pre-reset snapshot archives)
+    match /purged_sales_backups/{backupId} {
+      allow get: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (tokenBusinessId() != null && resource.data.businessId == tokenBusinessId()) ||
+        resource.data.businessId is string
+      );
+      allow create: if isSignedIn() &&
+        request.resource.data.businessId is string &&
+        hasTenantAccess(request.resource.data.businessId);
+      allow update: if isSignedIn() &&
+        resource.data.businessId == request.resource.data.businessId &&
+        hasTenantAccess(resource.data.businessId);
+      allow delete: if isSignedIn() && hasTenantAccess(resource.data.businessId);
     }
   }
 }

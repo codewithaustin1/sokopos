@@ -708,7 +708,7 @@ function PosAppContent() {
             </div>
           </main>
         ) : (
-          <main className="flex-1 flex overflow-hidden relative pb-14 lg:pb-0 min-w-0">
+          <main className="flex-1 flex overflow-hidden relative pb-14 lg:pb-0 min-w-0 min-h-0">
             {currentTab === 'register' && (
               <RegisterView
                 onProceedToPayment={() => handleOpenPayment('cash')}

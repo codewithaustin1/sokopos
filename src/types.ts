@@ -136,6 +136,7 @@ export interface Business {
   retailTheme?: RetailTheme;
   taxSettings?: BusinessTaxSettings;
   loyaltySettings?: BusinessLoyaltySettings;
+  rolePermissions?: import('./types/permissions').RolePermissionsMap;
   subscription?: {
     status?: 'active' | 'expired' | 'trial' | 'grace_period';
     expiresAt?: string;
@@ -150,6 +151,7 @@ export interface Business {
 }
 
 export * from './types/pricing';
+export * from './types/permissions';
 
 export interface AuthUser {
   id: string;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Monitor,
@@ -7,6 +7,7 @@ import {
   Check,
   X,
   User,
+  Delete,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { soundFx } from '../utils/audio';
@@ -100,6 +101,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     loginWithFirebaseGoogle,
     loginWithCredentials,
     systemUsers,
+    allSystemUsers,
+    businesses,
     showToast,
     openPricingPage,
     closePricingPage,
@@ -112,11 +115,53 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   // Industry solutions tab state
   const [selectedIndustry, setSelectedIndustry] = useState<string>('Retail shops');
 
-  // Staff shift / PIN login state
-  const [selectedStaffId, setSelectedStaffId] = useState<string>(() => systemUsers[0]?.id || 'staff-101');
+  // Staff credentials / ID and PIN login state (matching attached card design image_78146b8a.png)
+  const [staffCredentialInput, setStaffCredentialInput] = useState<string>('#7000');
+  const [isEditingStaffId, setIsEditingStaffId] = useState<boolean>(false);
   const [enteredPin, setEnteredPin] = useState<string>('');
   const [pinError, setPinError] = useState<string | null>(null);
   const [isSubmittingTerminal, setIsSubmittingTerminal] = useState<boolean>(false);
+
+  // Active staff user resolved from credentials / ID
+  const matchedStaff = useMemo(() => {
+    const raw = (staffCredentialInput || '').trim();
+    if (!raw) return null;
+    const clean = raw.toLowerCase();
+    const withoutHash = clean.replace(/^#/, '');
+
+    const found = allSystemUsers.find(
+      (u) =>
+        u.id.toLowerCase() === clean ||
+        u.code.toLowerCase() === clean ||
+        u.code.toLowerCase().replace(/^#/, '') === withoutHash ||
+        u.username?.toLowerCase() === clean ||
+        u.name.toLowerCase() === clean
+    );
+    if (found) {
+      const biz = businesses.find((b) => b.id === found.businessId);
+      return {
+        ...found,
+        businessName: biz?.name,
+      };
+    }
+
+    // Default seeded fallback for Cashier A (#7000) matching design screenshot
+    if (withoutHash === '7000' || clean === 'cashier a') {
+      return {
+        id: 'user-cashier-7000',
+        businessId: 'biz-upfront',
+        name: 'Cashier A',
+        initials: 'CA',
+        code: '#7000',
+        username: 'cashier.a',
+        role: 'cashier' as const,
+        avatarColor: 'bg-blue-600',
+        businessName: 'Upfront Retail Solutions',
+      };
+    }
+
+    return null;
+  }, [staffCredentialInput, allSystemUsers, businesses]);
 
   // Direct email login state
   const [ownerEmailInput, setOwnerEmailInput] = useState<string>('');
@@ -307,13 +352,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  // Keep selectedStaffId aligned if systemUsers changes
-  useEffect(() => {
-    if (!selectedStaffId && systemUsers.length > 0) {
-      setSelectedStaffId(systemUsers[0].id);
-    }
-  }, [systemUsers, selectedStaffId]);
-
   // Physical keyboard support for staff PIN (only active when modal is open on staff tab)
   useEffect(() => {
     if (!isAuthModalOpen || activeTab !== 'staff') return;
@@ -329,21 +367,33 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       if (e.key >= '0' && e.key <= '9') {
         e.preventDefault();
         soundFx.playBarcodeBeep();
-        setEnteredPin((prev) => (prev.length < 6 ? prev + e.key : prev));
         setPinError(null);
+        setEnteredPin((prev) => {
+          if (prev.length < 4) {
+            const next = prev + e.key;
+            if (next.length === 4) {
+              setTimeout(() => {
+                submitStaffLogin(next);
+              }, 120);
+            }
+            return next;
+          }
+          return prev;
+        });
       } else if (e.key === 'Backspace') {
         e.preventDefault();
+        soundFx.playBarcodeBeep();
         setEnteredPin((prev) => prev.slice(0, -1));
         setPinError(null);
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        handleTerminalSubmit();
+        submitStaffLogin();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isAuthModalOpen, activeTab, enteredPin, selectedStaffId]);
+  }, [isAuthModalOpen, activeTab, enteredPin, staffCredentialInput, matchedStaff]);
 
   const handleKeypadPress = (val: string) => {
     soundFx.playBarcodeBeep();
@@ -352,8 +402,14 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       setEnteredPin('');
     } else if (val === '⌫') {
       setEnteredPin((prev) => prev.slice(0, -1));
-    } else if (enteredPin.length < 6) {
-      setEnteredPin((prev) => prev + val);
+    } else if (enteredPin.length < 4) {
+      const nextPin = enteredPin + val;
+      setEnteredPin(nextPin);
+      if (nextPin.length === 4) {
+        setTimeout(() => {
+          submitStaffLogin(nextPin);
+        }, 120);
+      }
     }
   };
 
@@ -361,55 +417,46 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     soundFx.playBarcodeBeep();
     setEnteredPin('1234');
     setPinError(null);
+    setTimeout(() => {
+      submitStaffLogin('1234');
+    }, 150);
   };
 
-  const handleTerminalSubmit = async () => {
+  const submitStaffLogin = async (pinOverride?: string) => {
+    const pin = pinOverride || enteredPin;
     if (isSubmittingTerminal) return;
-    if (!enteredPin) {
+    if (!pin || pin.length < 4) {
       setPinError('Please enter your 4-digit PIN');
       soundFx.playError();
       return;
     }
 
-    const staff = systemUsers.find((u) => u.id === selectedStaffId) || {
-      id: selectedStaffId,
-      name: selectedStaffId === 'staff-102' ? 'Amina Wanjiru' : 'John Mutua',
-      code: selectedStaffId === 'staff-102' ? 'C-102' : 'C-101',
-    };
-
-    const usernameOrCode = (staff as any).username || (staff as any).code || staff.name;
+    const credential = staffCredentialInput.trim() || matchedStaff?.code || '#7000';
 
     setIsSubmittingTerminal(true);
     setPinError(null);
     try {
-      // Allow demo PIN 1234 or verify credentials
-      if (enteredPin === '1234') {
-        const ok = loginWithGoogle('upfrontretaile@gmail.com', staff.name);
-        if (ok) {
-          showToast(`Shift started for ${staff.name}. Welcome back!`, 'success');
-          setIsAuthModalOpen(false);
-          onLoginSuccess?.();
-          return;
-        }
-      }
-
-      const success = await loginWithCredentials(usernameOrCode, enteredPin);
+      // Authenticate with credentials and PIN — strictly locked to staff member's business ID and permissions
+      const success = await loginWithCredentials(credential, pin);
       if (success) {
-        showToast(`Shift started for ${staff.name}. Welcome back!`, 'success');
         setIsAuthModalOpen(false);
         onLoginSuccess?.();
       } else {
-        setPinError('Incorrect PIN. Try again.');
+        setPinError('Incorrect 4-digit PIN. Try again.');
         setEnteredPin('');
         soundFx.playError();
       }
-    } catch {
-      setPinError('Incorrect PIN. Try again.');
+    } catch (err: any) {
+      setPinError(err?.message || 'Authentication failed. Please verify credentials.');
       setEnteredPin('');
       soundFx.playError();
     } finally {
       setIsSubmittingTerminal(false);
     }
+  };
+
+  const handleTerminalSubmit = () => {
+    submitStaffLogin();
   };
 
   const handleGoogleSignIn = async () => {
@@ -1538,118 +1585,191 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               </div>
             )}
 
-            {/* TAB 2: STAFF SHIFT / PIN LOGIN */}
+            {/* TAB 2: STAFF SHIFT / PIN LOGIN (Matches attached card design image_78146b8a.png with credentials input and business ID scoping) */}
             {activeTab === 'staff' && (
-              <div id="p-staff">
+              <div id="p-staff" className="space-y-3.5">
                 <h2
                   id="auth-modal-title"
-                  className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-3 text-left"
+                  className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight text-left"
                 >
                   Start your shift
                 </h2>
-                <div className="grid grid-cols-2 gap-2 mb-3" id="staffList">
-                  {displayStaff.map((staff) => {
-                    const isSelected = selectedStaffId === staff.id;
-                    const initialStr =
-                      (staff as any).initials ||
-                      (staff.name
-                        ? staff.name
-                            .split(' ')
-                            .map((n: string) => n[0])
-                            .join('')
-                            .substring(0, 2)
-                            .toUpperCase()
-                        : 'ST');
-                    return (
+
+                {/* STAFF CARD / CREDENTIALS INPUT */}
+                {!isEditingStaffId ? (
+                  <div
+                    className="border-2 border-[#1565d8] bg-white rounded-2xl p-3 flex items-center justify-between shadow-2xs transition-all hover:shadow-xs"
+                    id="selectedStaffCard"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className="w-10 h-10 rounded-full bg-[#1565d8] text-white font-extrabold text-sm flex items-center justify-center shrink-0 shadow-2xs"
+                        aria-hidden="true"
+                      >
+                        {matchedStaff?.initials ||
+                          (matchedStaff?.name
+                            ? matchedStaff.name
+                                .split(' ')
+                                .map((n: string) => n[0])
+                                .join('')
+                                .substring(0, 2)
+                                .toUpperCase()
+                            : 'CA')}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-base font-extrabold text-[#0e1a2b] truncate leading-tight">
+                          {matchedStaff?.name || 'Cashier A'}
+                        </div>
+                        <div className="text-xs text-[#556375] font-semibold truncate flex items-center gap-1.5 mt-0.5">
+                          <span>{matchedStaff?.code || staffCredentialInput || '#7000'}</span>
+                          {matchedStaff?.businessName && (
+                            <span className="text-[10px] text-[#0a7d46] bg-emerald-50 px-1.5 py-0.5 rounded font-bold border border-emerald-200">
+                              {matchedStaff.businessName}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingStaffId(true)}
+                      className="text-xs text-[#1565d8] hover:text-[#1255b5] font-bold px-2 py-1 rounded-lg hover:bg-blue-50 transition cursor-pointer shrink-0"
+                    >
+                      Change ID
+                    </button>
+                  </div>
+                ) : (
+                  <div className="border-2 border-[#1565d8] bg-white rounded-2xl p-3 space-y-2 shadow-2xs animate-in fade-in duration-150">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-[#0e1a2b]">Enter Staff ID, Code or Username</label>
                       <button
-                        key={staff.id}
                         type="button"
-                        aria-pressed={isSelected}
-                        onClick={() => {
-                          setSelectedStaffId(staff.id);
-                          setEnteredPin('');
+                        onClick={() => setIsEditingStaffId(false)}
+                        className="text-xs text-[#4c5a6b] hover:text-[#0e1a2b] font-semibold"
+                      >
+                        Done
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        autoFocus
+                        value={staffCredentialInput}
+                        onChange={(e) => {
+                          setStaffCredentialInput(e.target.value);
                           setPinError(null);
                         }}
-                        className={`flex items-center gap-2 p-2 rounded-xl border text-left transition-all cursor-pointer ${
-                          isSelected
-                            ? 'border-[#1565d8] bg-blue-50/60 shadow-2xs'
-                            : 'border-[#d9e1e6] bg-[#f4f7f6] hover:bg-slate-100'
-                        }`}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            setIsEditingStaffId(false);
+                          }
+                        }}
+                        placeholder="e.g. #7000, 1001, cashier.a"
+                        className="flex-1 h-10 px-3.5 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] font-bold text-sm focus:bg-white focus:border-[#1565d8] focus:outline-none transition-colors"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingStaffId(false)}
+                        className="h-10 px-3.5 bg-[#1565d8] hover:bg-[#1255b5] text-white rounded-xl text-xs font-bold transition cursor-pointer"
                       >
-                        <i
-                          className="w-7 h-7 rounded-full flex items-center justify-center not-italic text-[11px] font-extrabold text-white shrink-0 shadow-2xs"
-                          style={{ background: (staff as any).bg || (isSelected ? '#1565d8' : '#0a7d46') }}
-                        >
-                          {initialStr}
-                        </i>
-                        <span className="min-w-0">
-                          <span className="block text-xs font-bold text-[#0e1a2b] truncate">{staff.name}</span>
-                          <small className="block text-[10px] text-[#4c5a6b] truncate">{(staff as any).code || 'Cashier'}</small>
-                        </span>
+                        Confirm
                       </button>
-                    );
-                  })}
+                    </div>
+
+                    {/* Quick-pick suggestions for active business staff */}
+                    <div className="pt-1">
+                      <div className="text-[10px] text-[#556375] font-semibold mb-1">Registered staff credentials:</div>
+                      <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                        {allSystemUsers.slice(0, 6).map((u) => (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() => {
+                              setStaffCredentialInput(u.code || u.username || u.name);
+                              setIsEditingStaffId(false);
+                              setEnteredPin('');
+                              setPinError(null);
+                            }}
+                            className={`px-2 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer ${
+                              staffCredentialInput.toLowerCase() === (u.code || '').toLowerCase()
+                                ? 'bg-blue-50 border-[#1565d8] text-[#1565d8]'
+                                : 'bg-[#f8fafc] border-slate-200 text-[#4c5a6b] hover:bg-slate-100 hover:text-[#0e1a2b]'
+                            }`}
+                          >
+                            {u.code || u.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* PIN SECTION */}
+                <div className="pt-1 text-center">
+                  <label className="block text-sm font-bold text-[#0e1a2b] mb-2">
+                    Enter your 4-digit PIN
+                  </label>
+
+                  {/* 4 PIN Dots (Exact match to image_78146b8a.png) */}
+                  <div className="flex justify-center gap-3.5 my-2.5" id="dots">
+                    {[0, 1, 2, 3].map((idx) => {
+                      const isFilled = idx < enteredPin.length;
+                      return (
+                        <span
+                          key={idx}
+                          className={`w-4 h-4 rounded-full border-2 transition-all duration-150 ${
+                            isFilled
+                              ? 'bg-[#1565d8] border-[#1565d8] scale-110 shadow-2xs'
+                              : 'bg-[#f4f7f6] border-[#cbd5e1]'
+                          }`}
+                        />
+                      );
+                    })}
+                  </div>
+
+                  {/* PIN error alert */}
+                  <div className="min-h-[20px] text-center text-xs text-[#c8231b] font-semibold" id="perr" role="alert">
+                    {pinError}
+                  </div>
                 </div>
 
-                <label className="block text-xs font-bold text-[#0e1a2b] text-center mb-1.5">
-                  Enter your 4-digit PIN
-                </label>
-
-                {/* 4 PIN Dots */}
-                <div className="flex justify-center gap-3 my-2" id="dots">
-                  {[0, 1, 2, 3].map((idx) => (
-                    <i
-                      key={idx}
-                      className={`w-3.5 h-3.5 rounded-full border transition-all ${
-                        idx < enteredPin.length
-                          ? 'bg-[#1565d8] border-[#1565d8] scale-110'
-                          : 'bg-[#f4f7f6] border-[#d9e1e6]'
-                      }`}
-                    />
-                  ))}
-                </div>
-
-                {/* PIN error alert */}
-                <div className="min-h-[20px] text-center text-xs text-[#c8231b] font-medium" id="perr" role="alert">
-                  {pinError}
-                </div>
-
-                {/* Numeric Keypad */}
-                <div className="grid grid-cols-3 gap-2 my-2.5" id="pad">
+                {/* Numeric Keypad (Exact 3x4 layout matching image_78146b8a.png) */}
+                <div className="grid grid-cols-3 gap-2.5 my-1" id="pad">
                   {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'Clear', '0', '⌫'].map((k) => (
                     <button
                       key={k}
                       type="button"
-                      className={`h-10 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] font-bold text-sm transition-all cursor-pointer hover:bg-slate-200 active:bg-[#1565d8] active:text-white ${
-                        k === 'Clear' ? 'text-xs text-[#4c5a6b]' : ''
-                      }`}
+                      className="h-13 sm:h-14 rounded-2xl border border-[#d9e1e6] bg-[#f8fafc] hover:bg-[#edf2f7] active:bg-[#1565d8] active:text-white text-[#0e1a2b] font-bold text-lg sm:text-xl transition-all cursor-pointer shadow-2xs flex items-center justify-center select-none"
                       onClick={() => handleKeypadPress(k)}
                     >
-                      {k}
+                      {k === '⌫' ? (
+                        <Delete className="w-5 h-5 text-[#0e1a2b]" />
+                      ) : k === 'Clear' ? (
+                        <span className="text-xs sm:text-sm font-bold text-[#4c5a6b]">{k}</span>
+                      ) : (
+                        <span>{k}</span>
+                      )}
                     </button>
                   ))}
                 </div>
 
-                <button
-                  type="button"
-                  className="w-full h-11 bg-[#1565d8] hover:bg-[#1255b5] active:scale-[0.99] text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs disabled:opacity-50"
-                  id="pinGo"
-                  disabled={isSubmittingTerminal}
-                  onClick={handleTerminalSubmit}
-                >
-                  {isSubmittingTerminal ? 'Authenticating...' : 'Clock in and start shift'}
-                </button>
-
-                <p className="text-center mt-2.5 mb-1">
+                {/* Status / Demo hint footer */}
+                <div className="pt-2 flex items-center justify-between text-xs text-[#556375]">
                   <button
                     type="button"
-                    className="text-xs text-[#1565d8] hover:underline font-semibold cursor-pointer"
+                    className="text-[#1565d8] hover:underline font-bold cursor-pointer"
                     id="fillPin"
                     onClick={handleFillDemoPin}
                   >
-                    Demo PIN is 1234 – tap to fill
+                    Demo PIN: 1234
                   </button>
-                </p>
+                  <span className="text-[11px] text-[#718096]">
+                    {isSubmittingTerminal ? 'Authenticating shift...' : 'Auto-submits on 4 digits'}
+                  </span>
+                </div>
               </div>
             )}
 

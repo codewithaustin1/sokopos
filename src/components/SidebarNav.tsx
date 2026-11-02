@@ -33,6 +33,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
     currentUser,
     isSuperAdmin,
     openReturnsModal,
+    can,
   } = usePos();
 
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -40,7 +41,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
   const cartItemCount = cart.reduce((acc, item) => acc + item.quantity, 0);
   const isOwnerOrAdmin = currentUser?.role === 'business_owner' || isSuperAdmin;
 
-  const mainNavItems = [
+  const rawNavItems = [
     {
       id: 'register',
       tab: 'register' as const,
@@ -49,6 +50,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       badge: cartItemCount > 0 ? `${cartItemCount}` : null,
       badgeColor: 'bg-blue-500 text-white',
       activeBadgeColor: 'bg-white text-blue-600',
+      allowed: can('sell'),
     },
     {
       id: 'customers',
@@ -58,6 +60,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       badge: null,
       badgeColor: '',
       activeBadgeColor: '',
+      allowed: can('viewCustomers') || can('manageCustomers'),
     },
     {
       id: 'inventory',
@@ -67,6 +70,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       badge: null,
       badgeColor: '',
       activeBadgeColor: '',
+      allowed: can('viewInventory'),
     },
     {
       id: 'suppliers',
@@ -76,6 +80,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       badge: null,
       badgeColor: '',
       activeBadgeColor: '',
+      allowed: can('manageSuppliers'),
     },
     {
       id: 'shifts',
@@ -85,6 +90,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       badge: null,
       badgeColor: '',
       activeBadgeColor: '',
+      allowed: can('openShift') || can('viewShiftTotals'),
     },
     {
       id: 'analytics',
@@ -94,6 +100,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       badge: null,
       badgeColor: '',
       activeBadgeColor: '',
+      allowed: can('viewAnalytics'),
     },
     {
       id: 'reports',
@@ -103,6 +110,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       badge: null,
       badgeColor: '',
       activeBadgeColor: '',
+      allowed: can('viewReports'),
     },
     {
       id: 'cloud-sync',
@@ -112,8 +120,11 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       badge: pendingOfflineCount > 0 ? `${pendingOfflineCount}` : null,
       badgeColor: 'bg-amber-500 text-white',
       activeBadgeColor: 'bg-amber-400 text-slate-950 font-black',
+      allowed: true,
     },
   ];
+
+  const mainNavItems = rawNavItems.filter((it) => it.allowed);
 
   return (
     <aside

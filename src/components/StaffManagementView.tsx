@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { Cashier } from '../types';
+import { RolePrivilegesPanel } from './RolePrivilegesPanel';
 
 export const StaffManagementView: React.FC = () => {
   const {
@@ -31,6 +32,7 @@ export const StaffManagementView: React.FC = () => {
 
   const isOwnerOrAdmin = currentUser.role === 'business_owner' || isSuperAdmin;
 
+  const [activeStaffSubTab, setActiveStaffSubTab] = useState<'users' | 'privileges'>('users');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<Cashier | null>(null);
 
@@ -61,7 +63,7 @@ export const StaffManagementView: React.FC = () => {
     setName(user.name);
     setRole(user.role);
     setUsername(user.username || '');
-    setPin(user.pin.startsWith('$2') ? '' : user.pin);
+    setPin(user.pin.startsWith('$2') || user.pin.includes('•') || user.pin.startsWith('[') ? '' : user.pin);
     setCode(user.code);
     setAssignedLocationId(user.assignedLocationId || locations[0]?.id || '');
     setFormError(null);
@@ -158,37 +160,115 @@ export const StaffManagementView: React.FC = () => {
       <div className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 shrink-0 shadow-2xs">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-black text-slate-800">System Users & Staff Accounts</h2>
+            <h2 className="text-lg font-black text-slate-800">
+              {activeStaffSubTab === 'users' ? 'System Users & Staff Accounts' : 'Role Privileges & Access Control'}
+            </h2>
             <span className="bg-blue-100 text-blue-800 text-[11px] font-bold px-2 py-0.5 rounded-full">
               {currentBusiness.name}
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Assign credentials and branch permissions. System users are strictly scoped to this business tenant.
+            {activeStaffSubTab === 'users'
+              ? 'Assign credentials and branch permissions. System users are strictly scoped to this business tenant.'
+              : 'Configure granular live permissions for each staff role. Changes take immediate effect as soon as you click Save.'}
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => openBusinessSettings('profile')}
-            className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs px-3.5 py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer border border-slate-300 shadow-2xs"
-          >
-            <Building2 className="w-4 h-4 text-blue-600" />
-            <span>Business Profile & Branches</span>
-          </button>
-          <button
-            onClick={openAddModal}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>Provision System User</span>
-          </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {activeStaffSubTab === 'users' ? (
+            <>
+              <button
+                onClick={() => setActiveStaffSubTab('privileges')}
+                className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs px-3.5 py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer border border-indigo-200 shadow-2xs"
+                title="Manage Live Role Privileges"
+              >
+                <Shield className="w-4 h-4 text-indigo-600" />
+                <span>Manage Role Privileges</span>
+              </button>
+              <button
+                onClick={() => openBusinessSettings('profile')}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs px-3.5 py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer border border-slate-300 shadow-2xs"
+              >
+                <Building2 className="w-4 h-4 text-blue-600" />
+                <span>Business Profile & Branches</span>
+              </button>
+              <button
+                onClick={openAddModal}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>Provision System User</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setActiveStaffSubTab('users')}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs px-3.5 py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer border border-slate-300 shadow-2xs"
+              >
+                <Users className="w-4 h-4 text-blue-600" />
+                <span>Active Users ({systemUsers.length})</span>
+              </button>
+              <button
+                onClick={openAddModal}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>Provision System User</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="p-3.5 sm:p-6 space-y-4 sm:space-y-6 pb-20 md:pb-8">
-        {/* Users Container */}
+      {/* Sub-Navigation Navigation Tabs */}
+      <div className="bg-white border-b border-slate-200 px-6 py-2.5 flex items-center justify-between gap-3 shadow-2xs">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveStaffSubTab('users')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              activeStaffSubTab === 'users'
+                ? 'bg-blue-600 text-white shadow-2xs'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>Active System Users</span>
+            <span
+              className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+                activeStaffSubTab === 'users' ? 'bg-blue-700 text-white' : 'bg-slate-200 text-slate-700'
+              }`}
+            >
+              {systemUsers.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveStaffSubTab('privileges')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              activeStaffSubTab === 'privileges'
+                ? 'bg-blue-600 text-white shadow-2xs'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
+            }`}
+          >
+            <Shield className={`w-3.5 h-3.5 ${activeStaffSubTab === 'privileges' ? 'text-amber-300' : 'text-indigo-600'}`} />
+            <span>Role Privileges & Access Control</span>
+            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
+              Live Real-Time
+            </span>
+          </button>
+        </div>
+
+        <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span>Takes immediate effect on Save</span>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      {activeStaffSubTab === 'users' ? (
+        <div className="p-3.5 sm:p-6 space-y-4 sm:space-y-6 pb-20 md:pb-8">
+          {/* Users Container */}
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
           <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
             <h3 className="font-bold text-sm text-slate-800">
@@ -349,6 +429,11 @@ export const StaffManagementView: React.FC = () => {
           </div>
         </div>
       </div>
+    ) : (
+      <div className="p-3.5 sm:p-6 pb-20 md:pb-8">
+        <RolePrivilegesPanel />
+      </div>
+    )}
 
       {/* Add / Edit System User Modal */}
       {isAddModalOpen && (
