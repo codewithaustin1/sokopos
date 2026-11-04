@@ -1,19 +1,66 @@
 import React, { useRef, useState } from 'react';
-import { Printer, MessageSquare, Check, X, RotateCcw } from 'lucide-react';
+import { Printer, MessageSquare, Check, X, RotateCcw, Bluetooth } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { ReceiptShareModal } from './ReceiptShareModal';
 import { formatRefundVoucherText } from '../utils/receiptFormatter';
+import { bluetoothPrinterService } from '../services/bluetoothPrinterService';
 
 export const RefundReceiptModal: React.FC = () => {
-  const { activeRefundReceipt, setActiveRefundReceipt, currentLocation, currentBusiness, showToast } = usePos();
+  const {
+    activeRefundReceipt,
+    setActiveRefundReceipt,
+    currentLocation,
+    currentBusiness,
+    showToast,
+    printerType,
+    receiptFormat,
+  } = usePos();
   const receiptRef = useRef<HTMLDivElement | null>(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isBluetoothPrinting, setIsBluetoothPrinting] = useState(false);
 
   if (!activeRefundReceipt) return null;
 
   const { refund, originalTx } = activeRefundReceipt;
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
+    if (printerType === 'bluetooth') {
+      setIsBluetoothPrinting(true);
+      try {
+        // Map RefundRecord to a transaction-like structure for the printer service
+        // or add a dedicated method to the service. For now, we'll use printReceipt with custom logic.
+        // Actually, let's just use the system print for now or implement printRefund later if needed.
+        // But to be consistent, I'll use a simplified transaction object.
+        const mockTx: any = {
+          ...originalTx,
+          receiptNumber: refund.refundNumber,
+          timestamp: refund.timestamp,
+          items: refund.items.map(ri => ({
+            ...ri,
+            unitPrice: -ri.refundUnitAmount, // Show as refund
+          })),
+          total: -refund.totalRefund,
+          subtotal: -refund.subtotalRefund,
+          taxAmount: -refund.taxRefund,
+          paymentMethod: refund.refundMethod,
+          status: 'refunded',
+        };
+
+        await bluetoothPrinterService.printReceipt(mockTx, currentLocation, {
+          businessName: currentBusiness?.name,
+          format: receiptFormat === 'standard' ? '80mm' : receiptFormat,
+          headerNote: 'OFFICIAL CREDIT NOTE',
+        });
+        showToast('Credit note sent to Bluetooth printer', 'success');
+      } catch (err) {
+        console.warn('Bluetooth print error:', err);
+        showToast('Bluetooth print failed', 'error');
+      } finally {
+        setIsBluetoothPrinting(false);
+      }
+      return;
+    }
+
     document.body.classList.add('printing-thermal-receipt');
     try {
       window.print();
@@ -219,10 +266,22 @@ export const RefundReceiptModal: React.FC = () => {
         <div className="w-full max-w-[380px] mt-3 sm:mt-4 flex gap-2">
           <button
             onClick={handlePrint}
-            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
+            disabled={isBluetoothPrinting}
+            className={`flex-1 ${
+              isBluetoothPrinting ? 'bg-blue-800' : 'bg-blue-600 hover:bg-blue-700'
+            } text-white py-2.5 rounded-xl font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer`}
           >
-            <Printer className="w-4 h-4" />
-            <span>Print Credit Note</span>
+            {isBluetoothPrinting ? (
+              <>
+                <div className="w-3.5 h-3.5 border-2 border-blue-200 border-t-white rounded-full animate-spin" />
+                <span>Printing...</span>
+              </>
+            ) : (
+              <>
+                {printerType === 'bluetooth' ? <Bluetooth className="w-4 h-4" /> : <Printer className="w-4 h-4" />}
+                <span>{printerType === 'bluetooth' ? 'Print via Bluetooth' : 'Print Credit Note'}</span>
+              </>
+            )}
           </button>
           <button
             id="refund-share-voucher-btn"

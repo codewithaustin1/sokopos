@@ -13,12 +13,14 @@ import {
   ExternalLink,
   ShieldCheck,
   QrCode as QrIcon,
+  Bluetooth,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { usePos } from '../context/PosContext';
 import { getItemDiscountedUnitPrice, formatDiscountBadge } from '../utils/discountUtils';
 import { ReceiptShareModal } from './ReceiptShareModal';
 import { generateReceiptPdf } from '../utils/receiptPdfGenerator';
+import { bluetoothPrinterService } from '../services/bluetoothPrinterService';
 
 export const ReceiptModal: React.FC = () => {
   const {
@@ -31,10 +33,13 @@ export const ReceiptModal: React.FC = () => {
     autoPrintReceipt,
     toggleAutoPrintReceipt,
     receiptFormat,
+    printerType,
+    bluetoothPrinterId,
   } = usePos();
   const receiptRef = useRef<HTMLDivElement | null>(null);
   const hasAutoPrintedRef = useRef<string | null>(null);
   const [isAutoPrinting, setIsAutoPrinting] = useState<boolean>(false);
+  const [isBluetoothPrinting, setIsBluetoothPrinting] = useState<boolean>(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
 
@@ -63,8 +68,27 @@ export const ReceiptModal: React.FC = () => {
   }, [activeReceipt]);
 
   // Dedicated Thermal Receipt Print Handler:
-  // Adds print-isolation CSS class, invokes native window.print(), and cleans up
-  const handlePrintReceipt = () => {
+  // Adds print-isolation CSS class, invokes native window.print() or dispatches to Bluetooth, and cleans up
+  const handlePrintReceipt = async () => {
+    if (!activeReceipt) return;
+
+    if (printerType === 'bluetooth') {
+      setIsBluetoothPrinting(true);
+      try {
+        await bluetoothPrinterService.printReceipt(activeReceipt, currentLocation, {
+          businessName: currentBusiness?.name,
+          format: receiptFormat === 'standard' ? '80mm' : receiptFormat,
+        });
+        showToast('Receipt sent to Bluetooth printer', 'success');
+      } catch (err) {
+        console.warn('Bluetooth print error:', err);
+        showToast('Bluetooth print failed. Ensure printer is paired.', 'error');
+      } finally {
+        setIsBluetoothPrinting(false);
+      }
+      return;
+    }
+
     document.body.classList.add('printing-thermal-receipt');
 
     try {
@@ -226,10 +250,10 @@ export const ReceiptModal: React.FC = () => {
               <span className="text-[10px] text-slate-500 block leading-tight">
                 {isAutoPrinting ? (
                   <span className="text-blue-600 font-bold animate-pulse">
-                    Dispatching to printer dialog...
+                    {printerType === 'bluetooth' ? 'Direct Bluetooth thermal print dispatching...' : 'Dispatching to browser printer dialog...'}
                   </span>
                 ) : autoPrintReceipt ? (
-                  'Browser print dialog triggers automatically on sale'
+                  printerType === 'bluetooth' ? 'Direct Bluetooth thermal auto-print active' : 'Browser print dialog triggers automatically'
                 ) : (
                   'Manual printing mode active'
                 )}
@@ -668,11 +692,23 @@ export const ReceiptModal: React.FC = () => {
             id="print-receipt-btn"
             type="button"
             onClick={handlePrintReceipt}
-            className="primary-cta-shimmer w-full bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white py-3.5 px-4 rounded-xl font-black text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer group"
-            title="Print thermal receipt (Clean layout without browser chrome or page UI)"
+            disabled={isBluetoothPrinting}
+            className={`primary-cta-shimmer w-full py-3.5 px-4 rounded-xl font-black text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer group ${
+              isBluetoothPrinting ? 'bg-blue-800' : 'bg-blue-600 hover:bg-blue-500 active:bg-blue-700'
+            } text-white`}
+            title={printerType === 'bluetooth' ? 'Print via Bluetooth thermal printer' : 'Print thermal receipt (System dialog)'}
           >
-            <Printer className="w-4 h-4 text-blue-100 group-hover:scale-110 transition-transform" />
-            <span>Print Receipt</span>
+            {isBluetoothPrinting ? (
+              <>
+                <div className="w-4 h-4 border-2 border-blue-200 border-t-white rounded-full animate-spin" />
+                <span>Printing via Bluetooth...</span>
+              </>
+            ) : (
+              <>
+                {printerType === 'bluetooth' ? <Bluetooth className="w-4 h-4" /> : <Printer className="w-4 h-4 text-blue-100 group-hover:scale-110 transition-transform" />}
+                <span>{printerType === 'bluetooth' ? 'Print via Bluetooth' : 'Print Receipt'}</span>
+              </>
+            )}
           </button>
 
           {!isFullyRefunded && (

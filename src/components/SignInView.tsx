@@ -1251,9 +1251,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         <section className="sp-hero">
           <div className="sp-wrap">
             <div className="max-w-3xl mx-auto flex flex-col items-center text-center">
-              <h1 className="sp-h1">The fast POS built for Kenyan retailers, bars and supermarkets.</h1>
+              <h1 className="sp-h1">The ultimate POS built for retail, bars and supermarkets.</h1>
               <p className="sp-lead">
-                Ring up sales in seconds, take M-Pesa, file eTIMS receipts and keep trading when the internet drops.
+                Sales in seconds, instant M-Pesa, auto-eTIMS, and zero downtime when the network drops. Keep trading, keep winning.
               </p>
               <div className="sp-cta">
                 <button

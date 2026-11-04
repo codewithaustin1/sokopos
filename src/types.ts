@@ -47,6 +47,9 @@ export type UserRole =
 export interface BusinessHardwareSettings {
   autoPrintReceipt?: boolean;
   receiptFormat?: '80mm' | '58mm' | 'standard';
+  printerType?: 'system' | 'bluetooth';
+  bluetoothPrinterId?: string;
+  bluetoothPrinterName?: string;
   printerHeaderNote?: string;
   printerFooterNote?: string;
   updatedAt?: string;

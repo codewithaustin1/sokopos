@@ -237,11 +237,11 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
           <div className="px-4 py-3 bg-gradient-to-r from-slate-900 via-emerald-950/60 to-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="relative">
-                <div className="w-9 h-9 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center p-1 text-emerald-400 shadow-inner">
+                <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center overflow-hidden text-emerald-400 shadow-inner">
                   <img
-                    src="/assets/aistudio/icons8-messages-96_71cfa6af.png"
-                    alt="Messages"
-                    className="w-6 h-6 object-contain rounded-lg"
+                    src="/assets/aistudio/IMG_20261104_091006_253_1f889bfe.jpg"
+                    alt="Support Specialist"
+                    className="w-full h-full object-cover"
                   />
                 </div>
                 <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-slate-950 animate-pulse" />
@@ -250,13 +250,10 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <h3 className="text-xs font-black text-white truncate">SokoPoS Kenya Support</h3>
-                  <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold shrink-0">
-                    Live
-                  </span>
                 </div>
                 <p className="text-[10px] text-slate-400 flex items-center gap-1">
                   <ShieldCheck className="w-3 h-3 text-emerald-400 shrink-0" />
-                  <span className="truncate">Nairobi Specialist & AI Assistant</span>
+                  <span className="truncate">Support</span>
                 </p>
               </div>
             </div>
@@ -310,8 +307,12 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
                     }`}
                   >
                     {msg.sender === 'bot' && (
-                      <div className="w-7 h-7 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 text-xs shrink-0 mb-0.5">
-                        <Bot className="w-4 h-4" />
+                      <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center overflow-hidden text-emerald-400 text-xs shrink-0 mb-0.5 shadow-sm">
+                        <img
+                          src="/assets/aistudio/IMG_20261104_091006_253_1f889bfe.jpg"
+                          alt="Support"
+                          className="w-full h-full object-cover"
+                        />
                       </div>
                     )}
 
@@ -358,8 +359,12 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
                 {/* Simulated AI Typing Indicator */}
                 {isTyping && (
                   <div className="flex items-center gap-2 text-xs text-slate-400">
-                    <div className="w-7 h-7 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
-                      <Bot className="w-4 h-4" />
+                    <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center overflow-hidden text-emerald-400 shrink-0 shadow-sm">
+                      <img
+                        src="/assets/aistudio/IMG_20261104_091006_253_1f889bfe.jpg"
+                        alt="Support"
+                        className="w-full h-full object-cover"
+                      />
                     </div>
                     <div className="bg-slate-900 border border-slate-800 rounded-2xl px-3 py-2 flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce [animation-delay:-0.3s]" />

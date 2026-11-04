@@ -2,7 +2,8 @@
   "name": "SokoPoS Point of Sale",
   "description": "Multi-location Point of Sale system with integrated inventory management, barcode scanning, real-time sales analytics, and cloud synchronization.",
   "requestFramePermissions": [
-    "camera"
+    "camera",
+    "bluetooth"
   ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

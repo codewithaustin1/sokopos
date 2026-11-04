@@ -18,14 +18,16 @@ import {
   CreditCard,
   Keyboard,
   Globe,
+  Menu,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { ScannerStatusBadge } from './ScannerStatusBadge';
 import { AppLogo } from './common/AppLogo';
+import { MobileBentoMenuOverlay } from './common/MobileBentoMenuOverlay';
 
 interface HeaderProps {
-  currentTab?: 'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff';
-  setCurrentTab?: (tab: 'register' | 'inventory' | 'analytics' | 'cloud-sync' | 'staff') => void;
+  currentTab?: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers' | 'settings' | 'super-admin';
+  setCurrentTab?: (tab: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers' | 'settings' | 'super-admin') => void;
   openBarcodeScanner: () => void;
   openSuperAdminModal: (tab?: 'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding') => void;
   openSignOutModal?: () => void;
@@ -33,6 +35,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({
+  setCurrentTab,
   openBarcodeScanner,
   openSuperAdminModal,
   openSignOutModal,
@@ -67,12 +70,26 @@ export const Header: React.FC<HeaderProps> = ({
 
   const [isLocationMenuOpen, setIsLocationMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const { isMobileMenuOpen, toggleMobileMenu } = usePos();
 
   return (
     <header id="main-pos-header" className="bg-white border-b border-slate-200 h-14 sm:h-16 px-3 sm:px-4 md:px-6 flex items-center justify-between shrink-0 shadow-xs z-30 relative">
       {/* Brand & Business / Location Selector */}
       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+        {/* Mobile Hamburger Trigger for Full-Screen Immersive Bento Menu */}
+        <button
+          type="button"
+          id="header-mobile-hamburger-btn"
+          onClick={toggleMobileMenu}
+          aria-label="Toggle Mobile Bento Navigation Menu"
+          aria-expanded={isMobileMenuOpen}
+          className="lg:hidden p-1.5 rounded-xl text-slate-700 hover:bg-slate-100 active:scale-95 transition cursor-pointer flex items-center justify-center border border-slate-200"
+        >
+          <Menu className="w-5 h-5 text-slate-800" />
+        </button>
+
         <AppLogo
+
           theme="light"
           size="md"
           onClick={() => {
@@ -184,7 +201,7 @@ export const Header: React.FC<HeaderProps> = ({
             }
             openBarcodeScanner();
           }}
-          className="flex items-center justify-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 p-2 sm:px-3 sm:py-2 rounded-lg text-xs font-bold border border-blue-200 transition cursor-pointer min-w-[36px] min-h-[36px]"
+          className="hidden md:flex items-center justify-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 p-2 sm:px-3 sm:py-2 rounded-lg text-xs font-bold border border-blue-200 transition cursor-pointer min-w-[36px] min-h-[36px]"
           title="Open Barcode Scanner (F2)"
         >
           <Scan className="w-4 h-4 text-blue-600 shrink-0" />
@@ -195,7 +212,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           id="header-shift-management-btn"
           onClick={openShiftManagement}
-          className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-bold border transition cursor-pointer min-h-[36px] ${
+          className={`hidden md:flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-bold border transition cursor-pointer min-h-[36px] ${
             activeShift
               ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100'
               : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
@@ -213,7 +230,7 @@ export const Header: React.FC<HeaderProps> = ({
           id="header-theme-toggle-btn"
           type="button"
           onClick={toggleDarkMode}
-          className={`p-2 rounded-lg text-xs font-bold border transition cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center ${
+          className={`hidden sm:flex p-2 rounded-lg text-xs font-bold border transition cursor-pointer min-w-[36px] min-h-[36px] items-center justify-center ${
             isDarkMode
               ? 'bg-blue-950/70 border-blue-500/50 text-blue-300 hover:bg-blue-900/80 shadow-xs'
               : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
@@ -228,7 +245,7 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         {/* Cloud Sync & Online/Offline Pill */}
-        <div className="flex items-center bg-slate-100 rounded-lg p-0.5 sm:p-1 border border-slate-200">
+        <div className="hidden sm:flex items-center bg-slate-100 rounded-lg p-0.5 sm:p-1 border border-slate-200">
           <button
             id="header-cloud-sync-btn"
             onClick={triggerCloudSync}
@@ -470,6 +487,8 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
       </div>
+
     </header>
   );
 };
+

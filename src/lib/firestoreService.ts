@@ -59,8 +59,8 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
-      userId: auth.currentUser?.uid || 'staff-terminal-session',
-      email: auth.currentUser?.email || 'staff@internal.pos',
+      userId: auth.currentUser?.uid || null,
+      email: auth.currentUser?.email || null,
       emailVerified: auth.currentUser?.emailVerified ?? false,
       isAnonymous: auth.currentUser?.isAnonymous ?? false,
       tenantId: auth.currentUser?.tenantId,
@@ -951,7 +951,7 @@ export function subscribeToTenantCustomers(
   businessId: string,
   onUpdate: (customers: Customer[]) => void
 ): Unsubscribe {
-  if (!db) {
+  if (!db || !auth.currentUser) {
     return () => {};
   }
   const q = query(collection(db, 'customers'), where('businessId', '==', businessId));
@@ -969,7 +969,7 @@ export function subscribeToTenantCustomers(
 }
 
 export async function getTenantCustomersFromFirestore(businessId: string): Promise<Customer[]> {
-  if (!db) return [];
+  if (!db || !auth.currentUser) return [];
   const path = 'customers';
   try {
     const q = query(collection(db, 'customers'), where('businessId', '==', businessId));
@@ -987,7 +987,7 @@ export async function getTenantCustomersFromFirestore(businessId: string): Promi
 // Suppliers Management (Tenant Scoped)
 // -------------------------------------------------------------
 export async function saveSupplierToFirestore(supplier: Supplier): Promise<void> {
-  if (!db) return;
+  if (!db || !auth.currentUser) return;
   const path = `suppliers/${supplier.id}`;
   try {
     await setDoc(doc(db, 'suppliers', supplier.id), sanitizeForFirestore(supplier));
@@ -997,7 +997,7 @@ export async function saveSupplierToFirestore(supplier: Supplier): Promise<void>
 }
 
 export async function updateSupplierInFirestore(supplierId: string, updates: Partial<Supplier>): Promise<void> {
-  if (!db) return;
+  if (!db || !auth.currentUser) return;
   const path = `suppliers/${supplierId}`;
   try {
     await setDoc(
@@ -1014,7 +1014,7 @@ export async function updateSupplierInFirestore(supplierId: string, updates: Par
 }
 
 export async function deleteSupplierFromFirestore(supplierId: string): Promise<void> {
-  if (!db) return;
+  if (!db || !auth.currentUser) return;
   const path = `suppliers/${supplierId}`;
   try {
     await deleteDoc(doc(db, 'suppliers', supplierId));
@@ -1027,7 +1027,7 @@ export function subscribeToTenantSuppliers(
   businessId: string,
   onUpdate: (suppliers: Supplier[]) => void
 ): Unsubscribe {
-  if (!db) {
+  if (!db || !auth.currentUser) {
     return () => {};
   }
   const q = query(collection(db, 'suppliers'), where('businessId', '==', businessId));
@@ -1045,7 +1045,7 @@ export function subscribeToTenantSuppliers(
 }
 
 export async function getTenantSuppliersFromFirestore(businessId: string): Promise<Supplier[]> {
-  if (!db) return [];
+  if (!db || !auth.currentUser) return [];
   const path = 'suppliers';
   try {
     const q = query(collection(db, 'suppliers'), where('businessId', '==', businessId));

@@ -42,6 +42,7 @@ import {
   DEFAULT_ROLE_PERMISSIONS,
 } from '../types';
 import { digitaxService } from '../services/digitaxService';
+import { bluetoothPrinterService } from '../services/bluetoothPrinterService';
 import {
   resolveDynamicTaxRate,
   calculateCartTaxBreakdown,
@@ -192,6 +193,17 @@ interface PosContextType {
   toggleAutoPrintReceipt: () => void;
   receiptFormat: '80mm' | '58mm' | 'standard';
   setReceiptFormat: (format: '80mm' | '58mm' | 'standard') => void;
+  printerType: 'system' | 'bluetooth';
+  setPrinterType: (type: 'system' | 'bluetooth') => void;
+  bluetoothPrinterId: string | null;
+  bluetoothPrinterName: string | null;
+  connectBluetoothPrinter: () => Promise<boolean>;
+  setBluetoothPrinter: (id: string | null, name: string | null) => void;
+
+  // Mobile Navigation & Bento Menu State
+  isMobileMenuOpen: boolean;
+  setIsMobileMenuOpen: (open: boolean) => void;
+  toggleMobileMenu: () => void;
 
   // Store Clean Zero & Sales Purge
   storeSalesBackups: StoreSalesBackup[];
@@ -505,12 +517,18 @@ const STORAGE_KEYS = {
   PLATFORM_LOGO_NAME: 'sokopos_platform_logo_name_v1',
   PLATFORM_FAVICON: 'sokopos_platform_favicon_v1',
   PLATFORM_FAVICON_NAME: 'sokopos_platform_favicon_name_v1',
+  PRINTER_TYPE: 'sokopos_printer_type_v1',
+  BLUETOOTH_PRINTER_ID: 'sokopos_bt_printer_id_v1',
+  BLUETOOTH_PRINTER_NAME: 'sokopos_bt_printer_name_v1',
   RETAIL_THEME: 'sokopos_retail_theme_v2',
   CUSTOMERS: 'sokopos_customers_v1',
   SUPPLIERS: 'sokopos_suppliers_v1',
   PRICING_TIERS: 'sokopos_pricing_tiers_v2',
   getTenantAutoPrintKey: (bizId: string) => `sokopos_auto_print_receipt_${bizId || 'default'}_v2`,
   getTenantReceiptFormatKey: (bizId: string) => `sokopos_receipt_format_${bizId || 'default'}_v2`,
+  getTenantPrinterTypeKey: (bizId: string) => `sokopos_printer_type_${bizId || 'default'}_v1`,
+  getTenantBluetoothPrinterIdKey: (bizId: string) => `sokopos_bt_printer_id_${bizId || 'default'}_v1`,
+  getTenantBluetoothPrinterNameKey: (bizId: string) => `sokopos_bt_printer_name_${bizId || 'default'}_v1`,
   getTenantRetailThemeKey: (bizId: string) => `sokopos_retail_theme_${bizId || 'default'}_v2`,
   getTenantCustomersKey: (bizId: string) => `sokopos_customers_${bizId || 'default'}_v1`,
   getTenantSuppliersKey: (bizId: string) => `sokopos_suppliers_${bizId || 'default'}_v1`,
@@ -6527,6 +6545,42 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return '80mm';
   });
 
+  const [printerType, setPrinterTypeState] = useState<'system' | 'bluetooth'>(() => {
+    const tenantKey = STORAGE_KEYS.getTenantPrinterTypeKey(activeBusinessId);
+    const saved = localStorage.getItem(tenantKey);
+    if (saved === 'system' || saved === 'bluetooth') return saved;
+    if (currentBusiness?.hardwareSettings?.printerType) {
+      return currentBusiness.hardwareSettings.printerType;
+    }
+    return 'system';
+  });
+
+  const [bluetoothPrinterId, setBluetoothPrinterIdState] = useState<string | null>(() => {
+    const tenantKey = STORAGE_KEYS.getTenantBluetoothPrinterIdKey(activeBusinessId);
+    const saved = localStorage.getItem(tenantKey);
+    if (saved) return saved;
+    if (currentBusiness?.hardwareSettings?.bluetoothPrinterId) {
+      return currentBusiness.hardwareSettings.bluetoothPrinterId;
+    }
+    return null;
+  });
+
+  const [bluetoothPrinterName, setBluetoothPrinterNameState] = useState<string | null>(() => {
+    const tenantKey = STORAGE_KEYS.getTenantBluetoothPrinterNameKey(activeBusinessId);
+    const saved = localStorage.getItem(tenantKey);
+    if (saved) return saved;
+    if (currentBusiness?.hardwareSettings?.bluetoothPrinterName) {
+      return currentBusiness.hardwareSettings.bluetoothPrinterName;
+    }
+    return null;
+  });
+
+  // Mobile Navigation & Bento Menu State
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const toggleMobileMenu = useCallback(() => {
+    setIsMobileMenuOpen((prev) => !prev);
+  }, []);
+
   // Whenever activeBusinessId changes (e.g. switching tenants or logging in as another shop),
   // automatically synchronize hardware state to the active tenant's isolated settings
   useEffect(() => {
@@ -6549,11 +6603,40 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } else {
       setReceiptFormatState('80mm');
     }
+
+    const tenantPrinterTypeKey = STORAGE_KEYS.getTenantPrinterTypeKey(activeBusinessId);
+    const savedPrinterType = localStorage.getItem(tenantPrinterTypeKey);
+    if (savedPrinterType === 'system' || savedPrinterType === 'bluetooth') {
+      setPrinterTypeState(savedPrinterType);
+    } else if (currentBusiness?.hardwareSettings?.printerType) {
+      setPrinterTypeState(currentBusiness.hardwareSettings.printerType);
+    } else {
+      setPrinterTypeState('system');
+    }
+
+    const tenantBtIdKey = STORAGE_KEYS.getTenantBluetoothPrinterIdKey(activeBusinessId);
+    const savedBtId = localStorage.getItem(tenantBtIdKey);
+    if (savedBtId) {
+      setBluetoothPrinterIdState(savedBtId);
+    } else {
+      setBluetoothPrinterIdState(currentBusiness?.hardwareSettings?.bluetoothPrinterId || null);
+    }
+
+    const tenantBtNameKey = STORAGE_KEYS.getTenantBluetoothPrinterNameKey(activeBusinessId);
+    const savedBtName = localStorage.getItem(tenantBtNameKey);
+    if (savedBtName) {
+      setBluetoothPrinterNameState(savedBtName);
+    } else {
+      setBluetoothPrinterNameState(currentBusiness?.hardwareSettings?.bluetoothPrinterName || null);
+    }
   }, [
     activeBusinessId,
     currentBusiness?.id,
     currentBusiness?.hardwareSettings?.autoPrintReceipt,
     currentBusiness?.hardwareSettings?.receiptFormat,
+    currentBusiness?.hardwareSettings?.printerType,
+    currentBusiness?.hardwareSettings?.bluetoothPrinterId,
+    currentBusiness?.hardwareSettings?.bluetoothPrinterName,
   ]);
 
   const setAutoPrintReceipt = useCallback((enabled: boolean) => {
@@ -6624,6 +6707,79 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       'info'
     );
   }, [activeBusinessId, currentBusiness, isOnline, showToast]);
+
+  const setPrinterType = useCallback((type: 'system' | 'bluetooth') => {
+    setPrinterTypeState(type);
+    const tenantKey = STORAGE_KEYS.getTenantPrinterTypeKey(activeBusinessId);
+    localStorage.setItem(tenantKey, type);
+
+    if (currentBusiness) {
+      const updatedHardwareSettings = {
+        ...(currentBusiness.hardwareSettings || {}),
+        printerType: type,
+        updatedAt: new Date().toISOString(),
+      };
+      setBusinesses((prev) =>
+        prev.map((b) => (b.id === activeBusinessId ? { ...b, hardwareSettings: updatedHardwareSettings } : b))
+      );
+      if (isOnline) {
+        updateBusinessInFirestore(activeBusinessId, { hardwareSettings: updatedHardwareSettings }).catch((err) =>
+          console.warn('Firestore hardware settings sync error:', err)
+        );
+      }
+    }
+
+    showToast(`Printer type set to ${type === 'bluetooth' ? 'Direct Bluetooth Thermal' : 'System Print Dialog'}`, 'info');
+  }, [activeBusinessId, currentBusiness, isOnline, showToast]);
+
+  const setBluetoothPrinter = useCallback((id: string | null, name: string | null) => {
+    setBluetoothPrinterIdState(id);
+    setBluetoothPrinterNameState(name);
+    
+    const idKey = STORAGE_KEYS.getTenantBluetoothPrinterIdKey(activeBusinessId);
+    const nameKey = STORAGE_KEYS.getTenantBluetoothPrinterNameKey(activeBusinessId);
+    
+    if (id) localStorage.setItem(idKey, id); else localStorage.removeItem(idKey);
+    if (name) localStorage.setItem(nameKey, name); else localStorage.removeItem(nameKey);
+
+    if (currentBusiness) {
+      const updatedHardwareSettings = {
+        ...(currentBusiness.hardwareSettings || {}),
+        bluetoothPrinterId: id || undefined,
+        bluetoothPrinterName: name || undefined,
+        updatedAt: new Date().toISOString(),
+      };
+      setBusinesses((prev) =>
+        prev.map((b) => (b.id === activeBusinessId ? { ...b, hardwareSettings: updatedHardwareSettings } : b))
+      );
+      if (isOnline) {
+        updateBusinessInFirestore(activeBusinessId, { hardwareSettings: updatedHardwareSettings }).catch((err) =>
+          console.warn('Firestore hardware settings sync error:', err)
+        );
+      }
+    }
+  }, [activeBusinessId, currentBusiness, isOnline]);
+
+  const connectBluetoothPrinter = useCallback(async (): Promise<boolean> => {
+    try {
+      const printer = await bluetoothPrinterService.connect();
+      if (printer) {
+        setBluetoothPrinter(printer.device.id, printer.device.name || 'BT Printer');
+        showToast(`Connected to Bluetooth printer: ${printer.device.name || 'BT Printer'}`, 'success');
+        
+        // Also switch printer type to bluetooth automatically if not already
+        if (printerType !== 'bluetooth') {
+          setPrinterType('bluetooth');
+        }
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('Bluetooth Connect Error:', err);
+      showToast(err instanceof Error ? err.message : 'Failed to connect to Bluetooth printer', 'error');
+      return false;
+    }
+  }, [printerType, setPrinterType, setBluetoothPrinter, showToast]);
 
   // Display & Dark Theme State: SokoPoS defaults primarily to High-Contrast Light Mode
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -7039,6 +7195,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         toggleAutoPrintReceipt,
         receiptFormat,
         setReceiptFormat,
+        printerType,
+        setPrinterType,
+        bluetoothPrinterId,
+        bluetoothPrinterName,
+        connectBluetoothPrinter,
+        setBluetoothPrinter,
+        isMobileMenuOpen,
+        setIsMobileMenuOpen,
+        toggleMobileMenu,
 
         systemUsers,
         allSystemUsers,

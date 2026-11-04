@@ -30,7 +30,19 @@
         "taxNumber": { "type": "string" },
         "createdAt": { "type": "string" },
         "lastLoginAt": { "type": "string" },
-        "retailTheme": { "type": "string", "enum": ["classic", "emerald", "amber", "burgundy", "industrial"] }
+        "retailTheme": { "type": "string", "enum": ["classic", "emerald", "amber", "burgundy", "industrial"] },
+        "hardwareSettings": {
+          "type": "object",
+          "properties": {
+            "autoPrintReceipt": { "type": "boolean" },
+            "receiptFormat": { "type": "string", "enum": ["80mm", "58mm", "standard"] },
+            "printerType": { "type": "string", "enum": ["system", "bluetooth"] },
+            "bluetoothPrinterId": { "type": "string" },
+            "bluetoothPrinterName": { "type": "string" },
+            "printerHeaderNote": { "type": "string" },
+            "printerFooterNote": { "type": "string" }
+          }
+        }
       },
       "required": ["id", "name", "ownerEmail", "currency"]
     },

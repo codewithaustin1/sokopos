@@ -40,6 +40,7 @@ import { DynamicSitemapModal } from './components/DynamicSitemapModal';
 import { PricingPageView } from './components/PricingPageView';
 import { getSystemPaths, generateSitemapJson } from './utils/sitemapManifest';
 import { isSuperAdminEmail } from './data/initialData';
+import { MobileBentoMenuOverlay } from './components/common/MobileBentoMenuOverlay';
 
 function PosAppContent() {
   const {
@@ -77,6 +78,8 @@ function PosAppContent() {
     isPricingPageOpen,
     openPricingPage,
     closePricingPage,
+    isMobileMenuOpen,
+    setIsMobileMenuOpen,
   } = usePos();
 
   // URL Path Routing: Ensure root URL ('/') always routes to landing page, not logged-in dashboard
@@ -810,6 +813,17 @@ function PosAppContent() {
       <DynamicSitemapModal
         isOpen={isSitemapOpen}
         onClose={() => setIsSitemapOpen(false)}
+      />
+
+      {/* Single Immersive Bento Overlay (Managed globally) */}
+      <MobileBentoMenuOverlay
+        isOpen={isMobileMenuOpen}
+        onClose={() => setIsMobileMenuOpen(false)}
+        onNavigateTab={(tab) => {
+          setCurrentTab(tab);
+          setIsMobileMenuOpen(false);
+        }}
+        isLoggedIn={true}
       />
     </div>
   );

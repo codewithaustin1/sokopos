@@ -46,6 +46,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   Zap,
+  Bluetooth,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { UserRole, Location, Cashier, RetailTheme } from '../types';
@@ -94,6 +95,12 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
     toggleAutoPrintReceipt,
     receiptFormat,
     setReceiptFormat,
+    printerType,
+    setPrinterType,
+    bluetoothPrinterId,
+    bluetoothPrinterName,
+    connectBluetoothPrinter,
+    setBluetoothPrinter,
     transactions,
     storeSalesBackups,
     downloadSalesBackup,
@@ -2129,6 +2136,124 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                     </span>
                   </div>
                 </div>
+
+                {/* Printer Connection Architecture Selection */}
+                <div className="mt-6 space-y-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">
+                      Printer Connection Architecture
+                    </h4>
+                    <p className="text-xs text-slate-500">
+                      Choose how SokoPoS communicates with your receipt printer hardware.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div
+                      onClick={() => setPrinterType('system')}
+                      className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
+                        printerType === 'system'
+                          ? 'border-blue-600 bg-blue-50/40 shadow-xs'
+                          : 'border-slate-200 bg-white hover:border-slate-300'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs font-black text-slate-900">
+                            System Print Dialog
+                          </span>
+                          {printerType === 'system' && (
+                            <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-600">
+                          Standard browser flow. Works with all printers recognized by your device (AirPrint, Mopria, PDF).
+                        </p>
+                      </div>
+                      <span className="mt-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                        Universal Compatibility
+                      </span>
+                    </div>
+
+                    <div
+                      onClick={() => setPrinterType('bluetooth')}
+                      className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
+                        printerType === 'bluetooth'
+                          ? 'border-blue-600 bg-blue-50/40 shadow-xs'
+                          : 'border-slate-200 bg-white hover:border-slate-300'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs font-black text-slate-900">
+                            Direct Bluetooth (ESC/POS)
+                          </span>
+                          {printerType === 'bluetooth' && (
+                            <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-600">
+                          Direct communication with mini thermal printers. Faster, silent, and works without driver apps.
+                        </p>
+                      </div>
+                      <span className="mt-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                        Recommended for Mobile POS
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Direct Bluetooth Printer Pairing UI */}
+                {printerType === 'bluetooth' && (
+                  <div className="mt-5 p-4 sm:p-5 rounded-xl bg-blue-50/30 border border-blue-200 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Bluetooth className="w-4 h-4 text-blue-600" />
+                          <h4 className="text-sm font-bold text-slate-900">
+                            Bluetooth Printer Pairing
+                          </h4>
+                        </div>
+                        <p className="text-xs text-slate-600">
+                          Connect your handheld 58mm or 80mm Bluetooth thermal printer.
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        id="pair-bluetooth-printer-btn"
+                        onClick={() => connectBluetoothPrinter()}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs shadow-sm transition cursor-pointer shrink-0"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>{bluetoothPrinterId ? 'Change Printer' : 'Pair New Printer'}</span>
+                      </button>
+                    </div>
+
+                    {bluetoothPrinterName && (
+                      <div className="mt-3 flex items-center justify-between p-3 bg-white rounded-lg border border-blue-100 shadow-xs">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center">
+                            <Printer className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-slate-900">{bluetoothPrinterName}</div>
+                            <div className="text-[10px] text-slate-500 font-mono uppercase tracking-tight">
+                              Active Pairing • {receiptFormat === '58mm' ? '32 Columns' : '48 Columns'}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setBluetoothPrinter(null, null)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 transition"
+                          title="Unpair Printer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Thermal Receipt Paper Sizing Preference */}
                 <div className="mt-6 space-y-3">

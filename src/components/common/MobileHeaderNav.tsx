@@ -11,6 +11,8 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { scrollToTop } from '../../utils/scrollUtils';
+import { MobileBentoMenuOverlay } from './MobileBentoMenuOverlay';
+
 
 export interface MobileHeaderNavProps {
   onNavigateSection: (sectionId: string) => void;
@@ -182,164 +184,16 @@ export const MobileHeaderNav: React.FC<MobileHeaderNavProps> = ({
         />
       </button>
 
-      {/* Dropdown Menu Modal / Drawer */}
-      {isOpen && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-xs z-40 animate-in fade-in duration-200"
-            onClick={() => setIsOpen(false)}
-          />
+      {/* Option B: Full-Screen Immersive Bento Overlay */}
+      <MobileBentoMenuOverlay
+        isOpen={isOpen}
+        onClose={() => setIsOpen(false)}
+        onNavigateSection={handleItemClick}
+        onNavigatePricing={handlePricingClick}
+        onAuthAction={handleAuthClick}
+        isLoggedIn={isLoggedIn}
+      />
 
-          {/* Menu Drawer */}
-          <div
-            ref={menuRef}
-            id="mobile-nav-menu-drawer"
-            className={`fixed top-[62px] left-0 right-0 z-40 border-b shadow-2xl p-4 sm:p-6 max-h-[calc(100vh-70px)] overflow-y-auto animate-in slide-in-from-top-4 fade-in duration-200 ${
-              isForest
-                ? 'bg-[#0F1613]/98 border-[#2B3A32] text-[#EAF1EC]'
-                : isLight
-                ? 'bg-[#f4f7f6]/98 border-[#d9e1e6] text-[#0e1a2b]'
-                : 'bg-slate-950/98 border-slate-800 text-slate-100'
-            }`}
-          >
-            <div className="max-w-md mx-auto space-y-4">
-              {/* Header Label */}
-              <div
-                className={`flex items-center justify-between px-2 pt-1 pb-2 border-b ${
-                  isLight ? 'border-slate-200' : 'border-white/5'
-                }`}
-              >
-                <span
-                  className={`text-[11px] font-bold uppercase tracking-wider ${
-                    isLight ? 'text-slate-500' : 'text-slate-400'
-                  }`}
-                >
-                  Quick Navigation
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-                  Kenya Retail Suite
-                </span>
-              </div>
-
-              {/* Navigation Items from Attached Image */}
-              <div className="grid gap-2">
-                {navItems.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      id={`mobile-nav-link-${item.id}`}
-                      onClick={() => handleItemClick(item.id)}
-                      className={`w-full flex items-center justify-between p-3.5 rounded-xl border text-left transition-all cursor-pointer group active:scale-[0.99] ${
-                        isForest
-                          ? 'bg-[#17211C]/80 hover:bg-[#202d26] border-[#2B3A32] hover:border-[#4CC38A]/50'
-                          : isLight
-                          ? 'bg-white hover:bg-blue-50/60 border-[#d9e1e6] hover:border-[#1565d8]/50 shadow-xs'
-                          : 'bg-slate-900/80 hover:bg-slate-800 border-slate-800 hover:border-blue-500/50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
-                            isForest
-                              ? 'bg-[#4CC38A]/10 text-[#4CC38A] group-hover:bg-[#4CC38A] group-hover:text-[#0A1A11]'
-                              : isLight
-                              ? 'bg-[#e8f0fb] text-[#1565d8] group-hover:bg-[#1565d8] group-hover:text-white'
-                              : 'bg-blue-500/10 text-blue-400 group-hover:bg-blue-600 group-hover:text-white'
-                          }`}
-                        >
-                          <Icon className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <div className="text-sm font-bold flex items-center gap-2">
-                            <span>{item.label}</span>
-                          </div>
-                          <div
-                            className={`text-[11px] line-clamp-1 ${
-                              isLight ? 'text-slate-500' : 'text-slate-400'
-                            }`}
-                          >
-                            {item.description}
-                          </div>
-                        </div>
-                      </div>
-                      <ChevronRight
-                        className={`w-4 h-4 transition-all ${
-                          isForest
-                            ? 'text-slate-500 group-hover:text-[#4CC38A]'
-                            : isLight
-                            ? 'text-slate-400 group-hover:text-[#1565d8]'
-                            : 'text-slate-500 group-hover:text-blue-400'
-                        } group-hover:translate-x-0.5`}
-                      />
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Secondary Navigation: Pricing & Account Action */}
-              <div
-                className={`pt-2 border-t grid grid-cols-2 gap-2 ${
-                  isLight ? 'border-slate-200' : 'border-white/5'
-                }`}
-              >
-                <button
-                  type="button"
-                  id="mobile-nav-pricing-btn"
-                  onClick={handlePricingClick}
-                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                    currentPage === 'pricing'
-                      ? isForest
-                        ? 'bg-[#4CC38A]/20 border-[#4CC38A] text-[#4CC38A]'
-                        : isLight
-                        ? 'bg-[#1565d8]/10 border-[#1565d8] text-[#1565d8]'
-                        : 'bg-blue-500/20 border-blue-500 text-blue-400'
-                      : isForest
-                      ? 'bg-[#17211C] hover:bg-[#202d26] border-[#2B3A32] text-[#EAF1EC]'
-                      : isLight
-                      ? 'bg-white hover:bg-slate-100 border-[#d9e1e6] text-[#0e1a2b] shadow-xs'
-                      : 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-200'
-                  }`}
-                >
-                  <CreditCard className="w-3.5 h-3.5" />
-                  <span>Pricing Plans</span>
-                </button>
-
-                {isLoggedIn ? (
-                  <button
-                    type="button"
-                    id="mobile-nav-enter-terminal-btn"
-                    onClick={handleAuthClick}
-                    className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-500/20 transition-all cursor-pointer"
-                  >
-                    <Monitor className="w-3.5 h-3.5" />
-                    <span>POS Terminal</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    id="mobile-nav-login-cta-btn"
-                    onClick={handleAuthClick}
-                    className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer ${
-                      isForest
-                        ? 'bg-[#4CC38A] hover:bg-[#3db079] text-[#0A1A11]'
-                        : isLight
-                        ? 'bg-[#1565d8] hover:bg-[#1255b5] text-white shadow-[#1565d8]/20'
-                        : 'bg-blue-600 hover:bg-blue-500 text-white'
-                    }`}
-                  >
-                    <User className="w-3.5 h-3.5" />
-                    <span>Login / Register</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </>
-      )}
     </div>
   );
 };
