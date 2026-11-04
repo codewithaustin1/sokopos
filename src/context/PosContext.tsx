@@ -844,6 +844,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
           setCurrentUser(authUser);
           setActiveBusinessIdState(targetBizId);
+          localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
 
           saveUserProfileToFirestore({
             uid: fbUser.uid,
@@ -5484,27 +5485,38 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 });
 
                 const targetBiz = validRemote[0];
+
                 setActiveBusinessIdState((prev) => {
-                  if (!prev || prev === 'biz-upfront' || prev === 'biz-soko' || prev === 'biz-quickmart') {
-                    localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBiz.id);
-                    return targetBiz.id;
+                  // Never evict or overwrite the Super Admin's dedicated business
+                  const userEmail = (auth.currentUser?.email || '').toLowerCase().trim();
+                  if (userEmail === SUPER_ADMIN_EMAIL.toLowerCase() || prev === 'biz-upfront') {
+                    localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, 'biz-upfront');
+                    return 'biz-upfront';
+                  }
+                  if (!prev || prev === 'biz-soko' || prev === 'biz-quickmart') {
+                    if (targetBiz) {
+                      localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBiz.id);
+                      return targetBiz.id;
+                    }
                   }
                   return prev;
                 });
 
-                getTenantCashiersFromFirestore(targetBiz.id)
-                  .then((remoteCashiers) => {
-                    if (remoteCashiers && remoteCashiers.length > 0) {
-                      setAllSystemUsers((prev) => {
-                        const otherTenants = prev.filter((u) => u.businessId !== targetBiz.id);
-                        const map = new Map<string, Cashier>();
-                        prev.filter((u) => u.businessId === targetBiz.id).forEach((u) => map.set(u.id, u));
-                        remoteCashiers.forEach((r) => map.set(r.id, { ...r, isPendingCloudSync: false }));
-                        return [...Array.from(map.values()), ...otherTenants];
-                      });
-                    }
-                  })
-                  .catch((e) => console.warn('Mount cashiers sync notice:', e));
+                if (targetBiz) {
+                  getTenantCashiersFromFirestore(targetBiz.id)
+                    .then((remoteCashiers) => {
+                      if (remoteCashiers && remoteCashiers.length > 0) {
+                        setAllSystemUsers((prev) => {
+                          const otherTenants = prev.filter((u) => u.businessId !== targetBiz.id);
+                          const map = new Map<string, Cashier>();
+                          prev.filter((u) => u.businessId === targetBiz.id).forEach((u) => map.set(u.id, u));
+                          remoteCashiers.forEach((r) => map.set(r.id, { ...r, isPendingCloudSync: false }));
+                          return [...Array.from(map.values()), ...otherTenants];
+                        });
+                      }
+                    })
+                    .catch((e) => console.warn('Mount cashiers sync notice:', e));
+                }
               }
             }
           })
@@ -5803,6 +5815,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Set state immediately for zero-lag terminal transition
       setCurrentUser(authUser);
       setActiveBusinessIdState(targetBizId);
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
       setIsFirebaseAuthLoading(false);
 
       // Async background tasks: non-blocking profile save and inventory freshness warmup

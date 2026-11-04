@@ -51,6 +51,7 @@ import {
 import { usePos } from '../context/PosContext';
 import { UserRole, Location, Cashier, RetailTheme } from '../types';
 import { RETAIL_THEMES, RetailThemeConfig } from '../data/retailThemes';
+import { SUPER_ADMIN_EMAIL } from '../data/initialData';
 import { ResetStoreModal } from './ResetStoreModal';
 import { TaxManagementPanel } from './TaxManagementPanel';
 import { LoyaltySettingsPanel } from './LoyaltySettingsPanel';
@@ -67,6 +68,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
   const {
     currentBusiness,
     activeBusinessId,
+    setActiveBusinessId,
     updateBusinessProfile,
     locations,
     currentLocation,
@@ -381,6 +383,13 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
       l.city.toLowerCase().includes(branchSearch.toLowerCase())
   );
 
+  const isSuperAdminInspectingMerchant = Boolean(
+    isSuperAdmin &&
+    currentBusiness &&
+    currentBusiness.ownerEmail &&
+    currentBusiness.ownerEmail.toLowerCase().trim() !== (currentUser?.email || SUPER_ADMIN_EMAIL).toLowerCase().trim()
+  );
+
   return (
     <div
       id="business-profile-settings-view"
@@ -438,6 +447,35 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
           )}
         </div>
       </div>
+
+      {/* Super Admin Tenant Inspection Alert Bar */}
+      {isSuperAdminInspectingMerchant && (
+        <div
+          id="superadmin-merchant-inspection-bar"
+          className="bg-amber-50 border-b border-amber-200 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2.5 text-xs text-amber-900 shrink-0"
+        >
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+            <div>
+              <span className="font-bold text-amber-900">Tenant Inspection Mode:</span> You are viewing merchant store{' '}
+              <span className="font-semibold underline">{currentBusiness?.name}</span> (Owned by {currentBusiness?.ownerName || 'Merchant'} &lt;{currentBusiness?.ownerEmail}&gt;). You are authenticated as Super Admin{' '}
+              <span className="font-semibold">&lt;{currentUser?.email || SUPER_ADMIN_EMAIL}&gt;</span>.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveBusinessId('biz-upfront');
+              showToast('Switched active business to Upfront Retail Solutions', 'info');
+            }}
+            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs shadow-xs transition flex items-center gap-1.5 shrink-0 cursor-pointer"
+            title="Switch back to Upfront Retail Solutions"
+          >
+            <Building2 className="w-3.5 h-3.5" />
+            <span>Switch to Upfront Retail Solutions</span>
+          </button>
+        </div>
+      )}
 
       {/* Tab Selection Bar with Horizontal Scrollbar where necessary */}
       <div className="flex border-b border-slate-200 bg-white px-3 sm:px-6 gap-1 sm:gap-2 overflow-x-auto shrink-0 modal-scrollbar">
@@ -707,27 +745,58 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
 
                   {/* Owner & Account Details */}
                   <div className="pt-4 border-t border-slate-100">
-                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
-                      Registered Owner Account
-                    </h4>
-                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-sm">
-                          {currentBusiness?.ownerName ? currentBusiness.ownerName.substring(0, 2).toUpperCase() : 'BO'}
-                        </div>
-                        <div>
-                          <div className="text-sm font-semibold text-slate-900">
-                            {currentBusiness?.ownerName || 'Business Administrator'}
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                        {isSuperAdminInspectingMerchant ? 'Merchant Store Owner Account' : 'Registered Owner Account'}
+                      </h4>
+                      {isSuperAdminInspectingMerchant && (
+                        <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 rounded border border-amber-200">
+                          Tenant Owner (External Merchant)
+                        </span>
+                      )}
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-sm">
+                            {currentBusiness?.ownerName ? currentBusiness.ownerName.substring(0, 2).toUpperCase() : 'BO'}
                           </div>
-                          <div className="text-xs text-slate-500 font-mono">
-                            {currentBusiness?.ownerEmail || 'upfrontretaile@gmail.com'}
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900">
+                              {currentBusiness?.ownerName || 'Business Administrator'}
+                            </div>
+                            <div className="text-xs text-slate-500 font-mono">
+                              {currentBusiness?.ownerEmail || 'upfrontretaile@gmail.com'}
+                            </div>
                           </div>
                         </div>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 rounded-lg border border-emerald-200">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          Google OAuth Verified
+                        </span>
                       </div>
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 rounded-lg border border-emerald-200">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                        Google OAuth Verified
-                      </span>
+
+                      {isSuperAdminInspectingMerchant && (
+                        <div className="pt-2.5 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs bg-amber-500/10 p-2.5 rounded-lg border border-amber-300/40">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
+                            <span className="text-amber-900 font-medium">
+                              Active Super-Admin Session: <strong>{currentUser?.email || SUPER_ADMIN_EMAIL}</strong>
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveBusinessId('biz-upfront');
+                              showToast('Switched back to Upfront Retail Solutions', 'info');
+                            }}
+                            className="text-blue-700 hover:text-blue-800 font-bold hover:underline cursor-pointer flex items-center gap-1"
+                          >
+                            <span>Return to Upfront Retail Solutions</span>
+                            <ArrowRight className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 

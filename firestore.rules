@@ -12,6 +12,7 @@ service cloud.firestore {
     function isSuperAdmin() {
       return isSignedIn() && (
         request.auth.token.email == 'upfrontretaile@gmail.com' ||
+        request.auth.uid == 'ulGLrKgcsrWyqcGRJ6DzvHoEYY12' ||
         (request.auth.token.role != null && request.auth.token.role == 'super_admin')
       );
     }
@@ -21,21 +22,23 @@ service cloud.firestore {
     }
 
     function isOwnerOf(bizId) {
-      return exists(/databases/$(database)/documents/businesses/$(bizId)) &&
+      return bizId is string &&
+             exists(/databases/$(database)/documents/businesses/$(bizId)) &&
              get(/databases/$(database)/documents/businesses/$(bizId)).data.ownerEmail == request.auth.token.email;
     }
 
     function isMemberOf(bizId) {
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+      return bizId is string &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.businessId == bizId;
     }
 
     function hasTenantAccess(bizId) {
       return isSignedIn() && (
         isSuperAdmin() ||
-        (tokenBusinessId() != null && tokenBusinessId() == bizId) ||
-        isOwnerOf(bizId) ||
-        isMemberOf(bizId)
+        (bizId != null && tokenBusinessId() != null && tokenBusinessId() == bizId) ||
+        (bizId != null && isOwnerOf(bizId)) ||
+        (bizId != null && isMemberOf(bizId))
       );
     }
 
@@ -67,93 +70,121 @@ service cloud.firestore {
     match /businesses/{businessId} {
       allow get: if isSignedIn() && (
         isSuperAdmin() ||
-        resource.data.ownerEmail == request.auth.token.email ||
+        (resource.data.ownerEmail != null && resource.data.ownerEmail == request.auth.token.email) ||
         hasTenantAccess(businessId)
       );
       allow list: if isSignedIn();
       allow create: if isSignedIn() && (
         isSuperAdmin() ||
-        request.resource.data.ownerEmail == request.auth.token.email
+        (request.resource.data.ownerEmail != null && request.resource.data.ownerEmail == request.auth.token.email)
       );
       allow update: if isSignedIn() && (
         isSuperAdmin() ||
-        resource.data.ownerEmail == request.auth.token.email
+        (resource.data.ownerEmail != null && resource.data.ownerEmail == request.auth.token.email) ||
+        hasTenantAccess(businessId)
       );
       allow delete: if isSignedIn() && (
         isSuperAdmin() ||
-        resource.data.ownerEmail == request.auth.token.email
+        (resource.data.ownerEmail != null && resource.data.ownerEmail == request.auth.token.email)
       );
     }
 
     // Products Collection (Tenant catalog items)
     match /products/{productId} {
-      allow get: if isSignedIn() && hasTenantAccess(resource.data.businessId);
-      allow list: if isSignedIn() && (
+      allow get: if isSignedIn() && (
         isSuperAdmin() ||
-        (tokenBusinessId() != null && resource.data.businessId == tokenBusinessId()) ||
-        resource.data.businessId is string
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
       );
-      allow create: if isSignedIn() &&
-        request.resource.data.businessId is string &&
-        hasTenantAccess(request.resource.data.businessId);
-      allow update: if isSignedIn() &&
-        resource.data.businessId == request.resource.data.businessId &&
-        hasTenantAccess(resource.data.businessId);
-      allow delete: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        (request.resource.data.businessId is string && hasTenantAccess(request.resource.data.businessId))
+      );
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        (
+          (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
+          (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+        )
+      );
+      allow delete: if isSignedIn() && (
+        isSuperAdmin() ||
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+      );
     }
 
     // Categories Collection (Tenant product categories)
     match /categories/{categoryId} {
-      allow get: if isSignedIn() && hasTenantAccess(resource.data.businessId);
-      allow list: if isSignedIn() && (
+      allow get: if isSignedIn() && (
         isSuperAdmin() ||
-        (tokenBusinessId() != null && resource.data.businessId == tokenBusinessId()) ||
-        resource.data.businessId is string
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
       );
-      allow create: if isSignedIn() &&
-        request.resource.data.businessId is string &&
-        hasTenantAccess(request.resource.data.businessId);
-      allow update: if isSignedIn() &&
-        resource.data.businessId == request.resource.data.businessId &&
-        hasTenantAccess(resource.data.businessId);
-      allow delete: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        (request.resource.data.businessId is string && hasTenantAccess(request.resource.data.businessId))
+      );
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        (
+          (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
+          (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+        )
+      );
+      allow delete: if isSignedIn() && (
+        isSuperAdmin() ||
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+      );
     }
 
     // Locations Collection (Tenant store branches & till registers)
     match /locations/{locationId} {
-      allow get: if isSignedIn() && hasTenantAccess(resource.data.businessId);
-      allow list: if isSignedIn() && (
+      allow get: if isSignedIn() && (
         isSuperAdmin() ||
-        (tokenBusinessId() != null && resource.data.businessId == tokenBusinessId()) ||
-        resource.data.businessId is string
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
       );
-      allow create: if isSignedIn() &&
-        request.resource.data.businessId is string &&
-        hasTenantAccess(request.resource.data.businessId);
-      allow update: if isSignedIn() &&
-        resource.data.businessId == request.resource.data.businessId &&
-        hasTenantAccess(resource.data.businessId);
-      allow delete: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        (request.resource.data.businessId is string && hasTenantAccess(request.resource.data.businessId))
+      );
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        (
+          (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
+          (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+        )
+      );
+      allow delete: if isSignedIn() && (
+        isSuperAdmin() ||
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+      );
     }
 
     // Cashiers / Staff Collection (Tenant cashiers & staff accounts)
     match /cashiers/{cashierId} {
-      allow get: if isSignedIn() && hasTenantAccess(resource.data.businessId);
-      allow list: if isSignedIn() && (
+      allow get: if isSignedIn() && (
         isSuperAdmin() ||
-        (tokenBusinessId() != null && resource.data.businessId == tokenBusinessId()) ||
-        resource.data.businessId is string
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
       );
-      allow create: if isSignedIn() &&
-        request.resource.data.businessId is string &&
-        hasTenantAccess(request.resource.data.businessId);
-      allow update: if isSignedIn() &&
-        resource.data.businessId == request.resource.data.businessId &&
-        hasTenantAccess(resource.data.businessId);
-      allow delete: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        (request.resource.data.businessId is string && hasTenantAccess(request.resource.data.businessId))
+      );
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        (
+          (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
+          (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+        )
+      );
+      allow delete: if isSignedIn() && (
+        isSuperAdmin() ||
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+      );
 
       // Private Server-Only Credentials Subcollection:
-      // Isolates staff PIN hashes away from tenant client reads
       match /private/{docId} {
         allow read, write: if isSuperAdmin();
       }
@@ -166,104 +197,146 @@ service cloud.firestore {
 
     // Transactions Collection (Tenant checkout receipts & sales)
     match /transactions/{transactionId} {
-      allow get: if isSignedIn() && hasTenantAccess(resource.data.businessId);
-      allow list: if isSignedIn() && (
+      allow get: if isSignedIn() && (
         isSuperAdmin() ||
-        (tokenBusinessId() != null && resource.data.businessId == tokenBusinessId()) ||
-        resource.data.businessId is string
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
       );
-      allow create: if isSignedIn() &&
-        request.resource.data.businessId is string &&
-        hasTenantAccess(request.resource.data.businessId);
-      allow update: if isSignedIn() &&
-        resource.data.businessId == request.resource.data.businessId &&
-        hasTenantAccess(resource.data.businessId);
-      allow delete: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        (request.resource.data.businessId is string && hasTenantAccess(request.resource.data.businessId))
+      );
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        (
+          (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
+          (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+        )
+      );
+      allow delete: if isSignedIn() && (
+        isSuperAdmin() ||
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+      );
     }
 
     // Customers Collection (Tenant customer credit & loyalty)
     match /customers/{customerId} {
-      allow get: if isSignedIn() && hasTenantAccess(resource.data.businessId);
-      allow list: if isSignedIn() && (
+      allow get: if isSignedIn() && (
         isSuperAdmin() ||
-        (tokenBusinessId() != null && resource.data.businessId == tokenBusinessId()) ||
-        resource.data.businessId is string
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
       );
-      allow create: if isSignedIn() &&
-        request.resource.data.businessId is string &&
-        hasTenantAccess(request.resource.data.businessId);
-      allow update: if isSignedIn() &&
-        resource.data.businessId == request.resource.data.businessId &&
-        hasTenantAccess(resource.data.businessId);
-      allow delete: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        (request.resource.data.businessId is string && hasTenantAccess(request.resource.data.businessId))
+      );
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        (
+          (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
+          (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+        )
+      );
+      allow delete: if isSignedIn() && (
+        isSuperAdmin() ||
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+      );
     }
 
     // Suppliers Collection (Tenant vendor directory & purchasing)
     match /suppliers/{supplierId} {
-      allow get: if isSignedIn() && hasTenantAccess(resource.data.businessId);
-      allow list: if isSignedIn() && (
+      allow get: if isSignedIn() && (
         isSuperAdmin() ||
-        (tokenBusinessId() != null && resource.data.businessId == tokenBusinessId()) ||
-        resource.data.businessId is string
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
       );
-      allow create: if isSignedIn() &&
-        request.resource.data.businessId is string &&
-        hasTenantAccess(request.resource.data.businessId);
-      allow update: if isSignedIn() &&
-        resource.data.businessId == request.resource.data.businessId &&
-        hasTenantAccess(resource.data.businessId);
-      allow delete: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        (request.resource.data.businessId is string && hasTenantAccess(request.resource.data.businessId))
+      );
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        (
+          (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
+          (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+        )
+      );
+      allow delete: if isSignedIn() && (
+        isSuperAdmin() ||
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+      );
     }
 
     // Stock Transfers Collection (Inter-branch inventory movements)
     match /stock_transfers/{transferId} {
-      allow get: if isSignedIn() && hasTenantAccess(resource.data.businessId);
-      allow list: if isSignedIn() && (
+      allow get: if isSignedIn() && (
         isSuperAdmin() ||
-        (tokenBusinessId() != null && resource.data.businessId == tokenBusinessId()) ||
-        resource.data.businessId is string
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
       );
-      allow create: if isSignedIn() &&
-        request.resource.data.businessId is string &&
-        hasTenantAccess(request.resource.data.businessId);
-      allow update: if isSignedIn() &&
-        resource.data.businessId == request.resource.data.businessId &&
-        hasTenantAccess(resource.data.businessId);
-      allow delete: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        (request.resource.data.businessId is string && hasTenantAccess(request.resource.data.businessId))
+      );
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        (
+          (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
+          (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+        )
+      );
+      allow delete: if isSignedIn() && (
+        isSuperAdmin() ||
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+      );
     }
 
     // Sync Logs Collection (Tenant audit events & replication history)
     match /sync_logs/{syncLogId} {
-      allow get: if isSignedIn() && hasTenantAccess(resource.data.businessId);
-      allow list: if isSignedIn() && (
+      allow get: if isSignedIn() && (
         isSuperAdmin() ||
-        (tokenBusinessId() != null && resource.data.businessId == tokenBusinessId()) ||
-        resource.data.businessId is string
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
       );
-      allow create: if isSignedIn() &&
-        request.resource.data.businessId is string &&
-        hasTenantAccess(request.resource.data.businessId);
-      allow update: if isSignedIn() &&
-        resource.data.businessId == request.resource.data.businessId &&
-        hasTenantAccess(resource.data.businessId);
-      allow delete: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        (request.resource.data.businessId is string && hasTenantAccess(request.resource.data.businessId))
+      );
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        (
+          (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
+          (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+        )
+      );
+      allow delete: if isSignedIn() && (
+        isSuperAdmin() ||
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+      );
     }
 
     // Purged Sales Backups Collection (Tenant pre-reset snapshot archives)
     match /purged_sales_backups/{backupId} {
-      allow get: if isSignedIn() && hasTenantAccess(resource.data.businessId);
-      allow list: if isSignedIn() && (
+      allow get: if isSignedIn() && (
         isSuperAdmin() ||
-        (tokenBusinessId() != null && resource.data.businessId == tokenBusinessId()) ||
-        resource.data.businessId is string
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
       );
-      allow create: if isSignedIn() &&
-        request.resource.data.businessId is string &&
-        hasTenantAccess(request.resource.data.businessId);
-      allow update: if isSignedIn() &&
-        resource.data.businessId == request.resource.data.businessId &&
-        hasTenantAccess(resource.data.businessId);
-      allow delete: if isSignedIn() && hasTenantAccess(resource.data.businessId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        (request.resource.data.businessId is string && hasTenantAccess(request.resource.data.businessId))
+      );
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        (
+          (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
+          (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+        )
+      );
+      allow delete: if isSignedIn() && (
+        isSuperAdmin() ||
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+      );
     }
   }
 }

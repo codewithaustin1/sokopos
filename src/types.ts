@@ -140,6 +140,7 @@ export interface Business {
   taxSettings?: BusinessTaxSettings;
   loyaltySettings?: BusinessLoyaltySettings;
   rolePermissions?: import('./types/permissions').RolePermissionsMap;
+  appointedDemoCashierId?: string; // Appointed cashier profile for public try-demo routing
   subscription?: {
     status?: 'active' | 'expired' | 'trial' | 'grace_period';
     expiresAt?: string;
@@ -177,6 +178,7 @@ export interface AuthUser {
   firebaseUid?: string;
   tokenExpiresAt?: number;
   sessionStatus?: 'verified' | 'cached' | 'guest';
+  isDemoSession?: boolean; // Strictly sandboxed demo session isolated from production
 }
 
 export interface Location {
@@ -431,6 +433,7 @@ export interface Cashier {
   canApplyDiscount?: boolean; // Permission to apply discounts without manager override
   maxDiscountPercent?: number; // Optional limit (e.g. max 15%)
   maxDiscountAmount?: number; // Optional flat limit (e.g. max KES 100)
+  isAppointedDemo?: boolean; // Flag if appointed by super admin for public demo prefill
 }
 
 export interface SyncLogEvent {
