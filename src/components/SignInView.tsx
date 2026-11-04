@@ -1198,33 +1198,15 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           ) : (
-            <>
-              {/* Mobile View: Account Icon (opens modal) */}
-              <button
-                type="button"
-                id="mobile-nav-account-btn"
-                onClick={() => openAuthModal('owner')}
-                className="sm:hidden w-9 h-9 rounded-full bg-white hover:bg-slate-100 active:bg-slate-200 border border-[#d9e1e6] flex items-center justify-center transition cursor-pointer active:scale-95 shadow-xs group"
-                title="Account Login"
-                aria-label="Account Login"
-              >
-                <img
-                  src="/assets/aistudio/icons8-account-50_6ea01032.png"
-                  alt="Account"
-                  className="w-5 h-5 object-contain opacity-80 group-hover:opacity-100 transition-opacity"
-                />
-              </button>
-
-              {/* Desktop View: Text Login Button in header (opens modal) */}
-              <button
-                type="button"
-                id="top-nav-login-btn"
-                onClick={() => openAuthModal('owner')}
-                className="hidden sm:inline-flex items-center px-4 py-1.5 rounded-xl bg-[#1565d8] hover:bg-[#1255b5] text-white font-bold text-xs shadow-md shadow-blue-500/20 transition cursor-pointer"
-              >
-                Login
-              </button>
-            </>
+            /* Desktop View: Text Login Button in header (opens modal) */
+            <button
+              type="button"
+              id="top-nav-login-btn"
+              onClick={() => openAuthModal('owner')}
+              className="hidden sm:inline-flex items-center px-4 py-1.5 rounded-xl bg-[#1565d8] hover:bg-[#1255b5] text-white font-bold text-xs shadow-md shadow-blue-500/20 transition cursor-pointer"
+            >
+              Login
+            </button>
           )}
 
           {/* Mobile Hamburger Menu with animated 2-bar toggle icon */}

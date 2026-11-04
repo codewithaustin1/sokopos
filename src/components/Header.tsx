@@ -76,16 +76,21 @@ export const Header: React.FC<HeaderProps> = ({
     <header id="main-pos-header" className="bg-white border-b border-slate-200 h-14 sm:h-16 px-3 sm:px-4 md:px-6 flex items-center justify-between shrink-0 shadow-xs z-30 relative">
       {/* Brand & Business / Location Selector */}
       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-        {/* Mobile Hamburger Trigger for Full-Screen Immersive Bento Menu */}
+        {/* Mobile Hamburger Trigger for Accessible Slide-In Navigation Menu */}
         <button
           type="button"
           id="header-mobile-hamburger-btn"
           onClick={toggleMobileMenu}
-          aria-label="Toggle Mobile Bento Navigation Menu"
+          aria-label="Toggle navigation menu"
           aria-expanded={isMobileMenuOpen}
-          className="lg:hidden p-1.5 rounded-xl text-slate-700 hover:bg-slate-100 active:scale-95 transition cursor-pointer flex items-center justify-center border border-slate-200"
+          aria-controls="slide-menu"
+          className="lg:hidden relative inline-flex items-center justify-center p-2 rounded-lg text-slate-700 hover:text-blue-600 hover:bg-slate-100 focus:outline-none transition-colors border border-slate-200 cursor-pointer shadow-xs active:scale-95"
         >
-          <Menu className="w-5 h-5 text-slate-800" />
+          <div className="w-5 h-4 flex flex-col justify-between items-center pointer-events-none">
+            <span className="bar-top w-full h-0.5 bg-current rounded-full" />
+            <span className="bar-middle w-full h-0.5 bg-current rounded-full" />
+            <span className="bar-bottom w-full h-0.5 bg-current rounded-full" />
+          </div>
         </button>
 
         <AppLogo

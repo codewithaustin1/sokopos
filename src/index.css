@@ -810,4 +810,48 @@ html.dark .modal-scrollbar::-webkit-scrollbar-thumb:hover {
   animation: bento-cascade 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* =========================================================================
+   ACCESSIBLE SLIDE-IN HAMBURGER MENU DRAWER
+   Smooth transform transitions, backdrop fade, 3-line morphing hamburger,
+   and accessible focus rings.
+   ========================================================================= */
+
+/* Smooth transform transitions for high performance */
+.drawer-slide {
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Backdrop transition */
+.backdrop-fade {
+  transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+}
+
+/* Hamburger lines smooth morph animation */
+.bar-top, .bar-middle, .bar-bottom {
+  transition: transform 0.25s ease-in-out, opacity 0.2s ease-in-out;
+  transform-origin: center;
+}
+
+button[aria-expanded="true"] .bar-top {
+  transform: translateY(6px) rotate(45deg);
+}
+
+button[aria-expanded="true"] .bar-middle {
+  opacity: 0;
+  transform: scaleX(0);
+}
+
+button[aria-expanded="true"] .bar-bottom {
+  transform: translateY(-6px) rotate(-45deg);
+}
+
+/* Focus rings for key accessibility visual feedback */
+.drawer-item:focus-visible,
+#menu-close:focus-visible,
+#menu-toggle:focus-visible,
+#header-mobile-hamburger-btn:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
 

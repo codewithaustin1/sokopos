@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accessible Slide-In Hamburger Menu Demo</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f7ff',
+                            100: '#e0effe',
+                            500: '#2563eb',
+                            600: '#1d4ed8',
+                            700: '#1e40af',
+                            900: '#1e3a8a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Smooth transform transitions for high performance */
+        .drawer-slide {
+            transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        
+        /* Backdrop transition */
+        .backdrop-fade {
+            transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+        }
+
+        /* Hamburger lines smooth morph animation */
+        .bar-top, .bar-middle, .bar-bottom {
+            transition: transform 0.25s ease-in-out, opacity 0.2s ease-in-out;
+            transform-origin: center;
+        }
+
+        button[aria-expanded="true"] .bar-top {
+            transform: translateY(6px) rotate(45deg);
+        }
+
+        button[aria-expanded="true"] .bar-middle {
+            opacity: 0;
+            transform: scaleX(0);
+        }
+
+        button[aria-expanded="true"] .bar-bottom {
+            transform: translateY(-6px) rotate(-45deg);
+        }
+
+        /* Focus rings for key accessibility visual feedback */
+        a:focus-visible, button:focus-visible {
+            outline: 2px solid #2563eb;
+            outline-offset: 2px;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-full flex flex-col antialiased selection:bg-brand-500 selection:text-white">
+
+    <!-- Top Announcement Bar -->
+    <div class="bg-brand-900 text-slate-200 text-xs sm:text-sm py-2 px-4 text-center font-medium">
+        <span class="inline-block bg-brand-600 text-white px-2 py-0.5 rounded text-xs font-semibold mr-2">Accessibility Ready</span>
+        Test with Keyboard (<kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-xs border border-slate-700">Tab</kbd> & <kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-xs border border-slate-700">Esc</kbd>) or Screen Readers!
+    </div>
+
+    <!-- Main Header -->
+    <header class="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200 shadow-sm transition-all">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            
+            <!-- Brand Logo -->
+            <a href="#" class="flex items-center gap-2 text-xl font-bold text-slate-900 tracking-tight hover:text-brand-600 transition-colors">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-brand-500/20">
+                    <i class="fa-solid fa-layer-group text-lg"></i>
+                </div>
+                <span>ApexUI</span>
+            </a>
+
+            <!-- Desktop Menu Links (Hidden on mobile) -->
+            <nav class="hidden md:flex items-center gap-1 font-medium text-slate-600 text-sm">
+                <a href="#features" class="px-3.5 py-2 rounded-lg hover:text-brand-600 hover:bg-slate-100/80 transition-all">Features</a>
+                <a href="#services" class="px-3.5 py-2 rounded-lg hover:text-brand-600 hover:bg-slate-100/80 transition-all">Services</a>
+                <a href="#about" class="px-3.5 py-2 rounded-lg hover:text-brand-600 hover:bg-slate-100/80 transition-all">About Us</a>
+                <a href="#pricing" class="px-3.5 py-2 rounded-lg hover:text-brand-600 hover:bg-slate-100/80 transition-all">Pricing</a>
+                <a href="#contact" class="px-3.5 py-2 rounded-lg hover:text-brand-600 hover:bg-slate-100/80 transition-all">Contact</a>
+            </nav>
+
+            <!-- Desktop Action Button & Mobile Hamburger Trigger -->
+            <div class="flex items-center gap-3">
+                <a href="#contact" class="hidden sm:inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 shadow-sm shadow-brand-500/30 transition-all hover:shadow-md">
+                    Get Started
+                </a>
+
+                <!-- Hamburger Button (Mobile & Tablet) -->
+                <button 
+                    id="menu-toggle" 
+                    type="button"
+                    class="md:hidden relative inline-flex items-center justify-center p-2.5 rounded-lg text-slate-700 hover:text-brand-600 hover:bg-slate-100 focus:outline-none transition-colors"
+                    aria-expanded="false" 
+                    aria-controls="slide-menu" 
+                    aria-label="Toggle navigation menu">
+                    <div class="w-6 h-5 flex flex-col justify-between items-center">
+                        <span class="bar-top w-full h-0.5 bg-current rounded-full"></span>
+                        <span class="bar-middle w-full h-0.5 bg-current rounded-full"></span>
+                        <span class="bar-bottom w-full h-0.5 bg-current rounded-full"></span>
+                    </div>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Semi-Transparent Dark Backdrop -->
+    <div 
+        id="menu-backdrop" 
+        class="backdrop-fade fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-xs opacity-0 invisible"
+        aria-hidden="true">
+    </div>
+
+    <!-- Slide-In Drawer Navigation Menu -->
+    <aside 
+        id="slide-menu" 
+        class="drawer-slide fixed top-0 right-0 bottom-0 z-50 w-full max-w-xs bg-white shadow-2xl flex flex-col translate-x-full"
+        aria-hidden="true" 
+        tabindex="-1"
+        aria-label="Mobile Navigation Drawer">
+        
+        <!-- Drawer Header -->
+        <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+            <div class="flex items-center gap-2 text-slate-900 font-bold text-lg">
+                <div class="w-7 h-7 rounded-lg bg-brand-600 flex items-center justify-center text-white text-xs">
+                    <i class="fa-solid fa-layer-group"></i>
+                </div>
+                <span>Navigation</span>
+            </div>
+            
+            <!-- Close Button inside drawer -->
+            <button 
+                id="menu-close" 
+                type="button" 
+                class="inline-flex items-center justify-center w-9 h-9 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 focus:outline-none transition-all"
+                aria-label="Close menu">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+        </div>
+
+        <!-- Scrollable Navigation Items -->
+        <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+            <a href="#home" class="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-brand-50 hover:text-brand-600 transition-all">
+                <i class="fa-solid fa-house text-slate-400 w-5 text-center"></i>
+                <span>Home</span>
+            </a>
+            <a href="#features" class="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-brand-50 hover:text-brand-600 transition-all">
+                <i class="fa-solid fa-bolt text-slate-400 w-5 text-center"></i>
+                <span>Features</span>
+            </a>
+            <a href="#services" class="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-brand-50 hover:text-brand-600 transition-all">
+                <i class="fa-solid fa-cubes text-slate-400 w-5 text-center"></i>
+                <span>Services</span>
+            </a>
+            <a href="#about" class="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-brand-50 hover:text-brand-600 transition-all">
+                <i class="fa-solid fa-circle-info text-slate-400 w-5 text-center"></i>
+                <span>About Us</span>
+            </a>
+            <a href="#pricing" class="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-brand-50 hover:text-brand-600 transition-all">
+                <i class="fa-solid fa-tag text-slate-400 w-5 text-center"></i>
+                <span>Pricing</span>
+            </a>
+            <a href="#contact" class="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-brand-50 hover:text-brand-600 transition-all">
+                <i class="fa-solid fa-envelope text-slate-400 w-5 text-center"></i>
+                <span>Contact</span>
+            </a>
+        </nav>
+
+        <!-- Drawer Footer Call to Action -->
+        <div class="p-4 border-t border-slate-100 bg-slate-50/50 space-y-2">
+            <a href="#contact" class="drawer-item flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 shadow-sm transition-all">
+                <span>Get Started Now</span>
+                <i class="fa-solid fa-arrow-right text-xs"></i>
+            </a>
+            <div class="text-center text-xs text-slate-400 pt-1">
+                &copy; 2026 ApexUI Inc.
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content Section -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-16">
+        <div class="max-w-3xl mx-auto text-center space-y-6">
+            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-brand-50 text-brand-600 border border-brand-100">
+                <i class="fa-solid fa-universal-access"></i> Accessibility First Design
+            </span>
+            <h1 class="text-3xl sm:text-5xl font-extrabold text-slate-900 tracking-tight leading-tight">
+                Responsive Accessible Drawer Navigation
+            </h1>
+            <p class="text-base sm:text-lg text-slate-600 leading-relaxed">
+                Try opening the menu on smaller screen widths or using keyboard navigation. This implementation adheres strictly to WCAG specifications for off-canvas drawer menus.
+            </p>
+            <div class="pt-4 flex flex-wrap justify-center gap-4">
+                <button 
+                    onclick="document.getElementById('menu-toggle').click()" 
+                    class="px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm shadow-md transition-all flex items-center gap-2">
+                    <i class="fa-solid fa-bars"></i> Open Mobile Menu
+                </button>
+            </div>
+        </div>
+
+        <!-- Feature Grid to showcase background interaction state -->
+        <div class="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <!-- Card 1 -->
+            <div class="p-6 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition-shadow">
+                <div class="w-10 h-10 rounded-xl bg-blue-50 text-brand-600 flex items-center justify-center mb-4 text-lg">
+                    <i class="fa-solid fa-keyboard"></i>
+                </div>
+                <h2 class="text-lg font-bold text-slate-900 mb-2">Focus Trapping</h2>
+                <p class="text-slate-600 text-sm leading-relaxed">
+                    When open, pressing <kbd class="px-1 py-0.5 bg-slate-100 rounded border text-xs">Tab</kbd> wraps focus inside the drawer menu, keeping keyboard navigation predictable.
+                </p>
+            </div>
+
+            <!-- Card 2 -->
+            <div class="p-6 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition-shadow">
+                <div class="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-4 text-lg">
+                    <i class="fa-solid fa-eye"></i>
+                </div>
+                <h2 class="text-lg font-bold text-slate-900 mb-2">ARIA Compliant</h2>
+                <p class="text-slate-600 text-sm leading-relaxed">
+                    Dynamically toggles <code class="text-xs bg-slate-100 p-1 rounded">aria-expanded</code> and <code class="text-xs bg-slate-100 p-1 rounded">aria-hidden</code> states for screen reader compatibility.
+                </p>
+            </div>
+
+            <!-- Card 3 -->
+            <div class="p-6 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition-shadow">
+                <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4 text-lg">
+                    <i class="fa-solid fa-bolt"></i>
+                </div>
+                <h2 class="text-lg font-bold text-slate-900 mb-2">Keyboard Shortcuts</h2>
+                <p class="text-slate-600 text-sm leading-relaxed">
+                    Supports the <kbd class="px-1 py-0.5 bg-slate-100 rounded border text-xs">Escape</kbd> key to instantly dismiss the menu and return focus to the trigger button.
+                </p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="mt-auto border-t border-slate-200 bg-white py-6 text-center text-xs text-slate-500">
+        <p>Built with accessible HTML, CSS, and vanilla JavaScript.</p>
+    </footer>
+
+    <!-- JavaScript Implementation -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Element references
+            const menuToggle = document.getElementById('menu-toggle');
+            const menuClose = document.getElementById('menu-close');
+            const slideMenu = document.getElementById('slide-menu');
+            const backdrop = document.getElementById('menu-backdrop');
+            const drawerItems = slideMenu.querySelectorAll('.drawer-item');
+
+            let isMenuOpen = false;
+
+            // Get all focusable elements inside the drawer
+            function getFocusableElements() {
+                return slideMenu.querySelectorAll(
+                    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+                );
+            }
+
+            // Open Menu Function
+            function openMenu() {
+                if (isMenuOpen) return;
+                isMenuOpen = true;
+
+                // Update accessibility attributes
+                menuToggle.setAttribute('aria-expanded', 'true');
+                slideMenu.setAttribute('aria-hidden', 'false');
+                backdrop.setAttribute('aria-hidden', 'false');
+
+                // Visual updates
+                slideMenu.classList.remove('translate-x-full');
+                backdrop.classList.remove('opacity-0', 'invisible');
+                backdrop.classList.add('opacity-100');
+                document.body.classList.add('overflow-hidden'); // Prevent background body scroll
+
+                // Set focus to first focusable item inside drawer (close button)
+                setTimeout(() => {
+                    menuClose.focus();
+                }, 50);
+
+                // Add keyboard listeners for Escape and Focus Trap
+                document.addEventListener('keydown', handleKeyDown);
+            }
+
+            // Close Menu Function
+            function closeMenu() {
+                if (!isMenuOpen) return;
+                isMenuOpen = false;
+
+                // Update accessibility attributes
+                menuToggle.setAttribute('aria-expanded', 'false');
+                slideMenu.setAttribute('aria-hidden', 'true');
+                backdrop.setAttribute('aria-hidden', 'true');
+
+                // Visual updates
+                slideMenu.classList.add('translate-x-full');
+                backdrop.classList.remove('opacity-100');
+                backdrop.classList.add('opacity-0', 'invisible');
+                document.body.classList.remove('overflow-hidden');
+
+                // Return focus to the trigger toggle button
+                menuToggle.focus();
+
+                // Remove keyboard listener
+                document.removeEventListener('keydown', handleKeyDown);
+            }
+
+            // Keyboard navigation & trap handler
+            function handleKeyDown(e) {
+                // Close on 'Escape' key
+                if (e.key === 'Escape') {
+                    closeMenu();
+                    return;
+                }
+
+                // Focus trap logic
+                if (e.key === 'Tab') {
+                    const focusables = Array.from(getFocusableElements());
+                    if (focusables.length === 0) return;
+
+                    const firstElement = focusables[0];
+                    const lastElement = focusables[focusables.length - 1];
+
+                    if (e.shiftKey) {
+                        // Shift + Tab -> reverse navigation
+                        if (document.activeElement === firstElement) {
+                            e.preventDefault();
+                            lastElement.focus();
+                        }
+                    } else {
+                        // Tab -> forward navigation
+                        if (document.activeElement === lastElement) {
+                            e.preventDefault();
+                            firstElement.focus();
+                        }
+                    }
+                }
+            }
+
+            // Event Listeners
+            menuToggle.addEventListener('click', () => {
+                if (isMenuOpen) {
+                    closeMenu();
+                } else {
+                    openMenu();
+                }
+            });
+
+            menuClose.addEventListener('click', closeMenu);
+            backdrop.addEventListener('click', closeMenu);
+
+            // Close drawer when any internal navigation link is clicked
+            drawerItems.forEach(item => {
+                item.addEventListener('click', closeMenu);
+            });
+
+            // Ensure window resize automatically closes drawer if resized to desktop breakpoint
+            window.addEventListener('resize', () => {
+                if (window.innerWidth >= 768 && isMenuOpen) {
+                    closeMenu();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
