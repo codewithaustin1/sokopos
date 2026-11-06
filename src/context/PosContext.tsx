@@ -64,6 +64,8 @@ import {
   INITIAL_SUPPLIERS,
   DEFAULT_LOYALTY_SETTINGS,
   SUPER_ADMIN_EMAIL,
+  DEFAULT_APPOINTED_DEMO_CASHIER_ID,
+  INITIAL_DEMO_BUSINESS,
 } from '../data/initialData';
 import { soundFx } from '../utils/audio';
 import { Haptics } from '../utils/haptics';
@@ -153,8 +155,12 @@ interface PosContextType {
   activeBusinessId: string;
   setActiveBusinessId: (bizId: string) => void;
   isSuperAdmin: boolean;
+  appointedDemoCashierId: string;
+  appointedDemoCashier: Cashier | null;
+  appointDemoCashier: (cashierId: string) => void;
+  isDemoSession: boolean;
   loginWithGoogle: (email: string, name?: string, newBusinessName?: string) => boolean;
-  loginWithCredentials: (username: string, pin: string) => Promise<boolean>;
+  loginWithCredentials: (username: string, pin: string, isDemo?: boolean) => Promise<boolean>;
   logout: () => boolean;
   provisionBusiness: (name: string, ownerEmail: string, ownerName: string, plan: 'starter' | 'professional' | 'enterprise') => Business;
   updateBusinessProfile: (updates: Partial<Business>) => void;
@@ -524,6 +530,8 @@ const STORAGE_KEYS = {
   CUSTOMERS: 'sokopos_customers_v1',
   SUPPLIERS: 'sokopos_suppliers_v1',
   PRICING_TIERS: 'sokopos_pricing_tiers_v2',
+  APPOINTED_DEMO_CASHIER_ID: 'sokopos_appointed_demo_cashier_id_v1',
+  IS_DEMO_SESSION: 'sokopos_is_demo_session_v1',
   getTenantAutoPrintKey: (bizId: string) => `sokopos_auto_print_receipt_${bizId || 'default'}_v2`,
   getTenantReceiptFormatKey: (bizId: string) => `sokopos_receipt_format_${bizId || 'default'}_v2`,
   getTenantPrinterTypeKey: (bizId: string) => `sokopos_printer_type_${bizId || 'default'}_v1`,
@@ -879,12 +887,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     const unverifiedIds = new Set<string>();
     businesses.forEach((b) => {
-      if (!isRealGoogleAccount(b.ownerEmail) || b.id === 'biz-soko' || b.id === 'biz-quickmart') {
+      if (b.id !== 'biz-demo' && (!isRealGoogleAccount(b.ownerEmail) || b.id === 'biz-soko' || b.id === 'biz-quickmart')) {
         unverifiedIds.add(b.id);
       }
     });
     unverifiedIds.add('biz-soko');
     unverifiedIds.add('biz-quickmart');
+    unverifiedIds.delete('biz-demo');
 
     const validBusinesses = businesses.filter((b) => !unverifiedIds.has(b.id));
     const nextBizs = validBusinesses.length > 0 ? validBusinesses : INITIAL_BUSINESSES;
@@ -1012,6 +1021,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setToastMessage((prev) => (prev?.text === text ? null : prev));
     }, 3200);
   }, []);
+
+  // 4b. Appointed Public Demo Cashier State (Configured by Super Admin)
+  const [appointedDemoCashierId, setAppointedDemoCashierId] = useState<string>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.APPOINTED_DEMO_CASHIER_ID);
+    if (saved) return saved;
+    return currentBusiness?.appointedDemoCashierId || DEFAULT_APPOINTED_DEMO_CASHIER_ID;
+  });
+
+  const isDemoSession = Boolean(currentUser?.isDemoSession || activeBusinessId === 'biz-demo');
 
   // 5. Super-Admin Audit Log
   const [superAdminAuditLogs, setSuperAdminAuditLogs] = useState<SuperAdminAuditEntry[]>(() => {
@@ -1673,6 +1691,43 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const systemUsers = useMemo(() => {
     return allSystemUsers.filter((u) => u.businessId === activeBusinessId);
   }, [allSystemUsers, activeBusinessId]);
+
+  // Appointed Public Demo Cashier Profile (resolved from system users)
+  const appointedDemoCashier = useMemo<Cashier | null>(() => {
+    return (
+      allSystemUsers.find((u) => u.id === appointedDemoCashierId) ||
+      allSystemUsers.find((u) => u.code === '#7000') ||
+      allSystemUsers.find((u) => u.role === 'cashier') ||
+      INITIAL_SYSTEM_USERS[0] ||
+      null
+    );
+  }, [allSystemUsers, appointedDemoCashierId]);
+
+  const appointDemoCashier = useCallback(
+    (cashierId: string) => {
+      const target = allSystemUsers.find((u) => u.id === cashierId);
+      if (!target) return;
+      setAppointedDemoCashierId(cashierId);
+      localStorage.setItem(STORAGE_KEYS.APPOINTED_DEMO_CASHIER_ID, cashierId);
+
+      // Save to current business profile
+      setBusinesses((prev) =>
+        prev.map((b) => (b.id === activeBusinessId ? { ...b, appointedDemoCashierId: cashierId } : b))
+      );
+
+      // Tag in-memory system users
+      setAllSystemUsers((prev) =>
+        prev.map((u) => ({
+          ...u,
+          isAppointedDemo: u.id === cashierId,
+        }))
+      );
+
+      soundFx.playBarcodeBeep();
+      showToast(`"${target.name}" (${target.code}) appointed as the public demo cashier profile.`, 'success');
+    },
+    [allSystemUsers, activeBusinessId, showToast, soundFx]
+  );
 
   // Auto-upgrade any legacy unhashed staff PINs stored in localStorage to server Bcrypt hashes
   useEffect(() => {
@@ -4153,6 +4208,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const cleanNum = receiptNum.replace(/[^0-9]/g, '').slice(-4) || Math.floor(1000 + Math.random() * 9000).toString();
     const traderInvNum = receiptNum.startsWith('SOKO') ? receiptNum : `SOKO-${receiptNum}`;
+    const isSandboxEtims = Boolean(currentUser?.isDemoSession || activeBusinessId === 'biz-demo');
     const initialEtimsData: DigitaxEtimsData = {
       cuSerialNumber: 'KRARVS000000005',
       cuInvoiceNumber: Number(`1181${cleanNum}`),
@@ -4161,10 +4217,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       receiptSignature: 'QK2OPDK3TMLJ6BQ5',
       offlineUrl: `https://receipt.dg.tax/r/business_01M4WBVDC1WR8K1WYB8MKYMKG6/${traderInvNum}`,
       etimsUrl: `https://etims-sbx.kra.go.ke/common/link/etims/receipt/indexEtimsReceiptData?Data=P052100681P01QK2OPDK3TMLJ6BQ5`,
-      taxPin: currentBusiness?.taxSettings?.taxNumber || 'A011001890C',
+      taxPin: isSandboxEtims ? 'P099887766D' : (currentBusiness?.taxSettings?.taxNumber || 'A011001890C'),
       customerTin: customer?.kraPin || undefined,
       customerName: customer?.name || undefined,
-      status: 'PENDING',
+      status: isSandboxEtims ? 'COMPLETED' : 'PENDING',
       verifiedAt: new Date().toISOString(),
       isPartnerVerified: true,
     };
@@ -4232,8 +4288,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // Append to transactions
     setAllTransactions((prev) => [newTx, ...prev]);
 
-    // Asynchronously transmit to Digitax KRA eTIMS
-    if (isOnline) {
+    // Asynchronously transmit to Digitax KRA eTIMS (bypassed in sandbox mode)
+    if (isOnline && !isSandboxEtims) {
       (async () => {
         try {
           const payload = digitaxService.mapTransactionToEtims(
@@ -6077,7 +6133,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return true;
   };
 
-  const loginWithCredentials = async (usernameOrId: string, pin: string): Promise<boolean> => {
+  const loginWithCredentials = async (
+    usernameOrId: string,
+    pin: string,
+    isDemo?: boolean
+  ): Promise<boolean> => {
     localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
     const trimmedInput = usernameOrId.trim().toLowerCase();
     const cleanCode = trimmedInput.replace(/^#/, '');
@@ -6143,7 +6203,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           (matchedUser.code === '#7000' ||
             matchedUser.code === '#1000' ||
             matchedUser.username === 'cashier.a' ||
-            matchedUser.username === 'admin.staff');
+            matchedUser.username === 'admin.staff' ||
+            matchedUser.id === appointedDemoCashierId ||
+            matchedUser.isAppointedDemo);
 
         isValid = verifyRes.isValid || isDemoMatch;
 
@@ -6167,13 +6229,28 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           pin === '1234' &&
           (matchedUser.code === '#7000' ||
             matchedUser.code === '#1000' ||
-            matchedUser.username === 'cashier.a');
+            matchedUser.username === 'cashier.a' ||
+            matchedUser.id === appointedDemoCashierId ||
+            matchedUser.isAppointedDemo);
         isValid = isDemoMatch || (await verifyPinOnServer(pin, matchedUser.pin));
       }
 
       if (isValid) {
-        // Enforce Strict Rule: Verify the business ID where the staff member was created
-        const targetBizId = matchedUser.businessId;
+        // Evaluate if this session is an isolated demo sandbox session:
+        // - Routed explicitly via Try-Demo button (isDemo is true)
+        // - Or has demo intent flag in localStorage
+        // - Or PIN is 1234 on appointed cashier
+        // - Or matchedUser is explicitly assigned to biz-demo
+        const isDemoSessionActive =
+          Boolean(isDemo) ||
+          localStorage.getItem('sokopos_demo_intent') === 'true' ||
+          (pin === '1234' && (matchedUser.id === appointedDemoCashierId || matchedUser.code === '#7000' || matchedUser.isAppointedDemo)) ||
+          matchedUser.businessId === 'biz-demo';
+
+        // Isolate demo sessions strictly to biz-demo tenant and preloaded demo catalog
+        const targetBizId = isDemoSessionActive ? 'biz-demo' : matchedUser.businessId;
+        const targetLocationId = isDemoSessionActive ? 'loc-demo-01' : (matchedUser.assignedLocationId || locations[0]?.id);
+
         if (!targetBizId) {
           soundFx.playError();
           showToast('Access Blocked: Staff member has no assigned business tenant.', 'error');
@@ -6208,31 +6285,40 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           return false;
         }
 
-        // Strict Session Lockdown: Bound strictly to matchedUser.businessId with masked PIN
+        // Strict Session Lockdown: Bound strictly to targetBizId with masked PIN
         const authUser: AuthUser = {
           id: matchedUser.id,
-          email: `${matchedUser.username || matchedUser.code.replace(/^#/, '')}@${biz?.code.toLowerCase() || 'pos'}.internal`,
+          email: `${matchedUser.username || matchedUser.code.replace(/^#/, '')}@${isDemoSessionActive ? 'demo' : biz?.code.toLowerCase() || 'pos'}.internal`,
           name: matchedUser.name,
           initials: matchedUser.initials,
           authProvider: 'credentials',
           role: matchedUser.role as UserRole,
-          businessId: targetBizId, // Strictly scoped to created business tenant
-          businessName: biz?.name || 'SokoPoS Terminal Store',
+          businessId: targetBizId, // Strictly scoped: biz-demo for demo sessions, protecting super admin inventory
+          businessName: isDemoSessionActive ? 'SokoPoS Demo Mart (Sandbox)' : (biz?.name || 'SokoPoS Terminal Store'),
           username: matchedUser.username,
           pin: PROTECTED_PIN_MASK,
-          assignedLocationId: matchedUser.assignedLocationId,
+          assignedLocationId: targetLocationId,
           createdAt: matchedUser.shiftStartedAt,
+          isDemoSession: isDemoSessionActive,
         };
 
         // Pin active tenant state strictly to this business
         setCurrentUser(authUser);
         setActiveBusinessIdState(targetBizId);
         localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
+
+        if (isDemoSessionActive) {
+          localStorage.setItem(STORAGE_KEYS.IS_DEMO_SESSION, 'true');
+          localStorage.removeItem('sokopos_demo_intent');
+        } else {
+          localStorage.removeItem(STORAGE_KEYS.IS_DEMO_SESSION);
+        }
+
         setCurrentCashier(matchedUser);
 
-        if (matchedUser.assignedLocationId) {
-          setCurrentLocationIdState(matchedUser.assignedLocationId);
-          localStorage.setItem(STORAGE_KEYS.CURRENT_LOC, matchedUser.assignedLocationId);
+        if (targetLocationId) {
+          setCurrentLocationIdState(targetLocationId);
+          localStorage.setItem(STORAGE_KEYS.CURRENT_LOC, targetLocationId);
         }
 
         clearCart();
@@ -6283,6 +6369,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // 2. Mark session as explicitly signed out
     localStorage.setItem(STORAGE_KEYS.IS_LOGGED_OUT, 'true');
     localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+    localStorage.removeItem(STORAGE_KEYS.IS_DEMO_SESSION);
+    localStorage.removeItem('sokopos_demo_intent');
 
     // 3. Clear Firebase session if active
     try {
@@ -7165,6 +7253,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         activeBusinessId,
         setActiveBusinessId,
         isSuperAdmin,
+        appointedDemoCashierId,
+        appointedDemoCashier,
+        appointDemoCashier,
+        isDemoSession,
         loginWithGoogle,
         loginWithCredentials,
         logout,

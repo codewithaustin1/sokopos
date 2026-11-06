@@ -15,6 +15,7 @@ export const MobileHeaderNav: React.FC<MobileHeaderNavProps> = ({
   onNavigatePricing,
   onAuthAction,
   isLoggedIn = false,
+  currentPage = 'landing',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -55,6 +56,7 @@ export const MobileHeaderNav: React.FC<MobileHeaderNavProps> = ({
         onNavigatePricing={onNavigatePricing}
         onAuthAction={onAuthAction}
         isLoggedIn={isLoggedIn}
+        currentPage={currentPage}
         triggerButtonRef={buttonRef}
       />
     </div>

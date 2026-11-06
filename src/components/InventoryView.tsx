@@ -19,6 +19,7 @@ import {
   Truck,
   Printer,
   QrCode,
+  ArrowUp,
 } from 'lucide-react';
 import { Product } from '../types';
 import { usePos } from '../context/PosContext';
@@ -66,6 +67,18 @@ export const InventoryView: React.FC = () => {
   // Quick adjust inline state
   const [quickAdjustProductId, setQuickAdjustProductId] = useState<string | null>(null);
   const [adjustValue, setAdjustValue] = useState<string>('');
+
+  // Vertical scroller ref and scroll-to-top handler
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    setShowScrollTop(e.currentTarget.scrollTop > 140);
+  };
+
+  const scrollToTop = () => {
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Low stock counts
   const lowStockItems = useMemo(() => {
@@ -204,29 +217,26 @@ export const InventoryView: React.FC = () => {
   }, [singlePrintProduct, selectedProductIds, products]);
 
   return (
-    <div className="flex-1 flex flex-col bg-slate-100 overflow-hidden">
-      {/* Top Banner / Actions Bar */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 shrink-0 shadow-2xs">
+    <div
+      ref={scrollContainerRef}
+      onScroll={handleScroll}
+      className="flex-1 flex flex-col bg-slate-100 overflow-y-auto overflow-x-hidden min-h-0 relative inventory-vertical-scroller"
+      id="inventory-scroll-container"
+    >
+      {/* Top Banner / Actions Bar (Sticky Head) */}
+      <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 shrink-0 shadow-xs">
         <div>
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h2 className="text-lg font-black text-slate-800">Inventory & Stock Catalog</h2>
+          <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+            <h2 className="text-base sm:text-lg font-black text-slate-800">Inventory & Stock Catalog</h2>
             <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-0.5 rounded-full">
               {products.length} Products
             </span>
-            {isInventoryLoading ? (
+            {isInventoryLoading && (
               <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
                 <RefreshCw className="w-3 h-3 animate-spin text-blue-600" />
                 Fetching fresh from server...
               </span>
-            ) : isInventoryFreshFromServer ? (
-              <span
-                className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full"
-                title="Bypassed cache: direct fresh server snapshot"
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                Server Fresh
-              </span>
-            ) : null}
+            )}
           </div>
           <p className="text-xs text-slate-400 mt-0.5 flex flex-wrap items-center gap-1">
             <span>Directly synchronized with central cloud repository</span>
@@ -241,12 +251,12 @@ export const InventoryView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar py-0.5 -mx-1 px-1 sm:mx-0 sm:px-0 sm:flex-wrap shrink-0">
           {/* Thermal Barcode & QR Label Printing */}
           <button
             id="btn-print-labels-modal"
             onClick={handleOpenLabelModalForSelected}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-2 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0"
             title="Generate and print thermal barcode and QR labels"
           >
             <Printer className="w-3.5 h-3.5 text-white" />
@@ -262,7 +272,7 @@ export const InventoryView: React.FC = () => {
           <button
             id="btn-ai-invoice-onboarding"
             onClick={() => setIsInvoiceModalOpen(true)}
-            className="bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+            className="bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs px-3 py-2 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0"
             title="Digitize supplier paper delivery invoices with Gemini Multimodal Vision"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
@@ -272,7 +282,7 @@ export const InventoryView: React.FC = () => {
           <button
             id="btn-ai-package-scan"
             onClick={() => setIsPackageScannerOpen(true)}
-            className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs px-3 py-2 rounded-xl transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+            className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs px-2.5 sm:px-3 py-2 rounded-xl transition shadow-2xs flex items-center gap-1.5 cursor-pointer shrink-0"
             title="Parse brand, name, weight, and barcode from packaging via Vision AI"
           >
             <Camera className="w-3.5 h-3.5 text-indigo-600" />
@@ -283,7 +293,7 @@ export const InventoryView: React.FC = () => {
             id="btn-refresh-inventory-fresh"
             onClick={() => fetchFreshInventoryFromServer(undefined, true)}
             disabled={isInventoryLoading}
-            className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs px-3.5 py-2 rounded-xl transition shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs px-2.5 sm:px-3.5 py-2 rounded-xl transition shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
             title="Force fetch latest inventory directly from Firestore server (bypassing cache)"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-emerald-600 ${isInventoryLoading ? 'animate-spin' : ''}`} />
@@ -295,7 +305,7 @@ export const InventoryView: React.FC = () => {
               setTransferTargetProduct(null);
               setIsTransferModalOpen(true);
             }}
-            className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs px-3.5 py-2 rounded-xl transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+            className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs px-3 py-2 rounded-xl transition shadow-2xs flex items-center gap-1.5 cursor-pointer shrink-0"
           >
             <ArrowRightLeft className="w-3.5 h-3.5 text-blue-600" />
             <span>Branch Transfer</span>
@@ -304,7 +314,7 @@ export const InventoryView: React.FC = () => {
           <button
             id="btn-add-product"
             onClick={handleOpenAddModal}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3.5 sm:px-4 py-2 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer shrink-0"
           >
             <Plus className="w-4 h-4" />
             <span>Add Product</span>
@@ -313,7 +323,7 @@ export const InventoryView: React.FC = () => {
           <button
             id="btn-inventory-categories"
             onClick={() => setIsCategoryModalOpen(true)}
-            className="bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+            className="bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-3.5 sm:px-4 py-2 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer shrink-0"
             title="Manage shop product categories"
           >
             <Tag className="w-3.5 h-3.5 text-blue-400" />
@@ -323,7 +333,7 @@ export const InventoryView: React.FC = () => {
       </div>
 
       {/* Main Container */}
-      <div className="p-3 sm:p-6 flex-1 flex flex-col gap-3 sm:gap-4 overflow-hidden">
+      <div className="p-3 sm:p-6 flex flex-col gap-3 sm:gap-4 pb-24 md:pb-16 min-h-0">
         {/* Low Stock Warning Callout (if any) */}
         {lowStockItems.length > 0 && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 sm:p-3.5 flex items-center justify-between shrink-0">
@@ -490,7 +500,7 @@ export const InventoryView: React.FC = () => {
         </div>
 
         {/* Mobile View: Responsive Product Cards (< md) */}
-        <div className="md:hidden flex-1 overflow-y-auto space-y-2.5 pr-0.5 pb-16">
+        <div className="md:hidden space-y-2.5">
           {filteredProducts.length === 0 ? (
             <div className="p-8 text-center bg-white rounded-xl border border-slate-200 text-slate-400">
               <p className="text-sm font-bold text-slate-600">No products found</p>
@@ -649,10 +659,10 @@ export const InventoryView: React.FC = () => {
         </div>
 
         {/* Desktop View: Products Table (md and up) */}
-        <div className="hidden md:flex bg-white rounded-xl border border-slate-200 flex-1 overflow-hidden flex-col shadow-2xs">
-          <div className="overflow-x-auto overflow-y-auto flex-1">
+        <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+          <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[880px]">
-              <thead className="bg-slate-50/90 border-b border-slate-200 text-[10px] font-black text-slate-400 uppercase tracking-wider sticky top-0 z-10">
+              <thead className="bg-slate-50/95 backdrop-blur-xs border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider sticky top-[71px] z-10 shadow-2xs">
                 <tr>
                   <th className="p-3 pl-4 w-10 text-center">
                     <input
@@ -885,6 +895,19 @@ export const InventoryView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Quick Scroll Back To Top Button on the right */}
+      {showScrollTop && (
+        <button
+          type="button"
+          onClick={scrollToTop}
+          className="fixed sm:absolute bottom-20 sm:bottom-6 right-4 sm:right-6 z-30 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white p-3 rounded-full shadow-lg border border-blue-500/50 transition-all duration-200 animate-in fade-in slide-in-from-bottom-2 flex items-center justify-center cursor-pointer group"
+          title="Scroll back to top of inventory"
+          aria-label="Scroll to top"
+        >
+          <ArrowUp className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
+        </button>
+      )}
 
       {/* Modals */}
       <ProductLabelPrintModal

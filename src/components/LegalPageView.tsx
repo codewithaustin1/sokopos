@@ -244,9 +244,20 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
             onNavigateSection={(sectionId) => {
               onBackToLogin();
               setTimeout(() => {
-                window.location.hash = `#${sectionId}`;
-                const el = document.getElementById(sectionId);
-                el?.scrollIntoView({ behavior: 'smooth' });
+                if (sectionId === 'home' || sectionId === 'top' || !sectionId) {
+                  if (window.location.hash) {
+                    try {
+                      history.replaceState(null, '', window.location.pathname);
+                    } catch {
+                      window.location.hash = '';
+                    }
+                  }
+                  scrollToTop(true);
+                } else {
+                  window.location.hash = `#${sectionId}`;
+                  const el = document.getElementById(sectionId);
+                  el?.scrollIntoView({ behavior: 'smooth' });
+                }
               }, 80);
             }}
             onNavigatePricing={() => {

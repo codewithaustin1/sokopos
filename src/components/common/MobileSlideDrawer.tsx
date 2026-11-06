@@ -47,6 +47,7 @@ export interface MobileSlideDrawerProps {
       | 'super-admin'
   ) => void;
   isLoggedIn?: boolean;
+  currentPage?: 'landing' | 'pricing';
   triggerButtonRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
@@ -58,6 +59,7 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
   onAuthAction,
   onNavigateTab,
   isLoggedIn = false,
+  currentPage = 'landing',
   triggerButtonRef,
 }) => {
   const slideMenuRef = useRef<HTMLElement>(null);
@@ -72,6 +74,7 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
     posContext = null;
   }
   const isSuperAdmin = posContext?.isSuperAdmin ?? false;
+  const isCurrentlyPricing = currentPage === 'pricing' || Boolean(posContext?.isPricingPageOpen);
 
   // Manage accessibility, focus trap, escape key, and body scroll locking
   useEffect(() => {
@@ -156,7 +159,21 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
 
   const handleScrollHome = () => {
     handleItemClick(() => {
-      scrollToTop(true);
+      if (isCurrentlyPricing) {
+        if (onNavigateSection) {
+          onNavigateSection('home');
+        } else if (onAuthAction) {
+          onAuthAction();
+        }
+        posContext?.closePricingPage();
+        scrollToTop(true);
+      } else {
+        if (onNavigateSection) {
+          onNavigateSection('home');
+        } else {
+          scrollToTop(true);
+        }
+      }
     });
   };
 
@@ -165,6 +182,9 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
       if (onNavigateSection) {
         onNavigateSection(sectionId);
       } else {
+        if (isCurrentlyPricing) {
+          posContext?.closePricingPage();
+        }
         const el = document.getElementById(sectionId);
         if (el) {
           el.scrollIntoView({ behavior: 'smooth' });
@@ -177,9 +197,12 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
 
   const handlePricingNav = () => {
     handleItemClick(() => {
-      if (onNavigatePricing) {
+      if (isCurrentlyPricing) {
+        scrollToTop(true);
+      } else if (onNavigatePricing) {
         onNavigatePricing();
       } else {
+        posContext?.openPricingPage();
         window.location.hash = '#pricing';
       }
     });
@@ -203,6 +226,9 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
           onAuthAction();
         }
       } else {
+        if (isCurrentlyPricing) {
+          posContext?.closePricingPage();
+        }
         if (onAuthAction) {
           onAuthAction();
         } else {

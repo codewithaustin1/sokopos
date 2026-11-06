@@ -57,7 +57,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
     setSelectedCustomer,
     showToast,
     soundFx,
+    currentUser,
+    activeBusinessId,
   } = usePos();
+
+  const isDemoMode = Boolean(
+    currentUser?.isDemoSession ||
+    activeBusinessId === 'biz-demo' ||
+    currentBusiness?.id === 'biz-demo'
+  );
 
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>(initialMethod || 'cash');
   const [isCustomerSelectOpen, setIsCustomerSelectOpen] = useState(false);
@@ -290,10 +298,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
 
   const handleMpesaStkPush = async () => {
     setIsSendingMpesaPrompt(true);
-    // Simulate STK Push prompt to phone
-    await new Promise((res) => setTimeout(res, 1200));
+    // Simulate STK Push prompt to phone (Instant simulation in sandbox mode)
+    await new Promise((res) => setTimeout(res, 900));
     setIsSendingMpesaPrompt(false);
     setMpesaPromptSent(true);
+    if (isDemoMode) {
+      showToast('Sandbox M-Pesa Simulator: Test prompt dispatched. No actual Safaricom billing occurred.', 'info');
+    }
   };
 
   const handleCompletePayment = useCallback(async () => {
@@ -586,6 +597,23 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                   <div className="font-bold mb-0.5">Tendering Prohibited: No Active Shift</div>
                   <p className="text-[11px] leading-relaxed text-red-800">
                     Transactions cannot be settled or tendered without an active till shift. Please open a shift session with an opening float declaration to trade.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {isDemoMode && (
+              <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-3.5 flex items-start gap-3 shadow-2xs">
+                <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-950">
+                  <div className="font-bold flex items-center gap-1.5 mb-0.5">
+                    <span>DEMO SANDBOX SIMULATOR</span>
+                    <span className="bg-amber-200 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
+                      Isolated
+                    </span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-amber-800">
+                    Operating strictly in sandbox mode for both M-Pesa payments and KRA eTIMS. Transactions simulate instant approval without billing live accounts or altering production inventory.
                   </p>
                 </div>
               </div>
@@ -1005,9 +1033,16 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                             M-Pesa Express / STK Push
                           </h4>
                         </div>
-                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded">
-                          Till: {tillNumber}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {isDemoMode && (
+                            <span className="text-[10px] bg-amber-100 text-amber-900 border border-amber-300 font-bold px-2 py-0.5 rounded">
+                              SANDBOX SIMULATOR
+                            </span>
+                          )}
+                          <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded">
+                            Till: {tillNumber}
+                          </span>
+                        </div>
                       </div>
 
                       <div>
@@ -1041,13 +1076,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                           {isSendingMpesaPrompt ? (
                             <>
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              <span>Pinging Safaricom Gateway...</span>
+                              <span>{isDemoMode ? 'Simulating Safaricom Sandbox...' : 'Pinging Safaricom Gateway...'}</span>
                             </>
                           ) : (
                             <>
                               <Zap className="w-3.5 h-3.5" />
                               <span>
-                                Trigger STK Push Prompt ({currentLocation.currency} {cartTotal.toFixed(2)})
+                                {isDemoMode ? 'Trigger Sandbox STK Push' : 'Trigger STK Push Prompt'} ({currentLocation.currency} {cartTotal.toFixed(2)})
                               </span>
                             </>
                           )}
@@ -1056,9 +1091,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                         <div className="p-3 bg-emerald-100/70 border border-emerald-300 rounded-lg flex items-center gap-2.5 text-xs text-emerald-900 animate-in fade-in">
                           <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
                           <div>
-                            <div className="font-bold">STK Prompt Dispatched to +254 {mpesaPhone}</div>
+                            <div className="font-bold">
+                              {isDemoMode ? 'Sandbox STK Prompt Dispatched' : `STK Prompt Dispatched to +254 ${mpesaPhone}`}
+                            </div>
                             <div className="text-[11px] text-emerald-700">
-                              Customer PIN requested. Ready to finalize transaction.
+                              {isDemoMode ? 'Simulated PIN approval ready. Finalize payment below to complete.' : 'Customer PIN requested. Ready to finalize transaction.'}
                             </div>
                           </div>
                         </div>
@@ -1067,7 +1104,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                       <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2 text-[11px] text-amber-800">
                         <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
                         <span>
-                          The customer will enter their 4-digit secret M-Pesa PIN on their phone.
+                          {isDemoMode
+                            ? 'Sandbox Mode Active: No actual M-Pesa deduction will occur on Safaricom lines.'
+                            : 'The customer will enter their 4-digit secret M-Pesa PIN on their phone.'}
                         </span>
                       </div>
                     </div>

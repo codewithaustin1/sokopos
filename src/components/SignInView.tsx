@@ -10,6 +10,7 @@ import {
   Delete,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
+import { Cashier } from '../types';
 import { soundFx } from '../utils/audio';
 import { LegalTab } from './LegalAndFaqModal';
 import { LegalPageView } from './LegalPageView';
@@ -106,26 +107,40 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     showToast,
     openPricingPage,
     closePricingPage,
+    appointedDemoCashier,
+    appointedDemoCashierId,
   } = usePos();
 
   const [activeTab, setActiveTab] = useState<'owner' | 'staff' | 'register'>('owner');
   const [activeLegalPage, setActiveLegalPage] = useState<LegalTab | null>(null);
   const [isPricingPageOpen, setIsPricingPageOpen] = useState(false);
+  const [isDemoModeActive, setIsDemoModeActive] = useState<boolean>(() => {
+    return localStorage.getItem('sokopos_demo_intent') === 'true';
+  });
 
   // Industry solutions tab state
   const [selectedIndustry, setSelectedIndustry] = useState<string>('Retail shops');
 
   // Staff credentials / ID and PIN login state (matching attached card design image_78146b8a.png)
-  const [staffCredentialInput, setStaffCredentialInput] = useState<string>('#7000');
+  const [staffCredentialInput, setStaffCredentialInput] = useState<string>(() => {
+    return appointedDemoCashier?.code || '#7000';
+  });
   const [isEditingStaffId, setIsEditingStaffId] = useState<boolean>(false);
   const [enteredPin, setEnteredPin] = useState<string>('');
   const [pinError, setPinError] = useState<string | null>(null);
   const [isSubmittingTerminal, setIsSubmittingTerminal] = useState<boolean>(false);
+  const pinInputRef = useRef<HTMLInputElement>(null);
 
   // Active staff user resolved from credentials / ID
-  const matchedStaff = useMemo(() => {
+  const matchedStaff = useMemo<(Cashier & { businessName?: string }) | null>(() => {
     const raw = (staffCredentialInput || '').trim();
-    if (!raw) return null;
+    if (!raw) {
+      if (!appointedDemoCashier) return null;
+      return {
+        ...appointedDemoCashier,
+        businessName: isDemoModeActive ? 'SokoPoS Demo Mart (Sandbox)' : 'Upfront Retail Solutions',
+      };
+    }
     const clean = raw.toLowerCase();
     const withoutHash = clean.replace(/^#/, '');
 
@@ -141,7 +156,15 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       const biz = businesses.find((b) => b.id === found.businessId);
       return {
         ...found,
-        businessName: biz?.name,
+        businessName: isDemoModeActive ? 'SokoPoS Demo Mart (Sandbox)' : (biz?.name || 'Upfront Retail Solutions'),
+      };
+    }
+
+    // Default to appointed demo cashier if matched
+    if (appointedDemoCashier && (withoutHash === appointedDemoCashier.code.replace(/^#/, '').toLowerCase() || clean === appointedDemoCashier.name.toLowerCase())) {
+      return {
+        ...appointedDemoCashier,
+        businessName: 'SokoPoS Demo Mart (Sandbox)',
       };
     }
 
@@ -154,14 +177,17 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         initials: 'CA',
         code: '#7000',
         username: 'cashier.a',
+        pin: '1234',
         role: 'cashier' as const,
         avatarColor: 'bg-blue-600',
+        shiftStartedAt: new Date().toISOString(),
         businessName: 'Upfront Retail Solutions',
+        isAppointedDemo: true,
       };
     }
 
     return null;
-  }, [staffCredentialInput, allSystemUsers, businesses]);
+  }, [staffCredentialInput, allSystemUsers, businesses, appointedDemoCashier, isDemoModeActive]);
 
   // Direct email login state
   const [ownerEmailInput, setOwnerEmailInput] = useState<string>('');
@@ -332,6 +358,17 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   }, [isAuthModalOpen]);
 
   const scrollToSection = (sectionId: string) => {
+    if (sectionId === 'home' || sectionId === 'top' || sectionId === 'hero' || !sectionId) {
+      if (window.location.hash) {
+        try {
+          history.replaceState(null, '', window.location.pathname);
+        } catch {
+          window.location.hash = '';
+        }
+      }
+      scrollToTop(true);
+      return;
+    }
     const el =
       document.getElementById(sectionId) ||
       document.getElementById(
@@ -417,6 +454,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     soundFx.playBarcodeBeep();
     setEnteredPin('1234');
     setPinError(null);
+    setIsDemoModeActive(true);
+    localStorage.setItem('sokopos_demo_intent', 'true');
     setTimeout(() => {
       submitStaffLogin('1234');
     }, 150);
@@ -437,7 +476,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     setPinError(null);
     try {
       // Authenticate with credentials and PIN — strictly locked to staff member's business ID and permissions
-      const success = await loginWithCredentials(credential, pin);
+      const success = await loginWithCredentials(credential, pin, isDemoModeActive);
       if (success) {
         setIsAuthModalOpen(false);
         onLoginSuccess?.();
@@ -520,12 +559,26 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   };
 
   const handleLaunchDemoSandbox = () => {
-    const ok = loginWithGoogle('upfrontretaile@gmail.com', 'Platform Administrator');
-    if (ok) {
-      showToast('Welcome to the SokoPoS demo sandbox. Explore products and test M-Pesa checkout.', 'success');
-      setIsAuthModalOpen(false);
-      onLoginSuccess?.();
+    setIsDemoModeActive(true);
+    localStorage.setItem('sokopos_demo_intent', 'true');
+    setActiveTab('staff');
+
+    // Prefill the cashier profile appointed by the super admin from among cashiers created by admin
+    const targetCashier = appointedDemoCashier;
+    if (targetCashier) {
+      setStaffCredentialInput(targetCashier.code || targetCashier.username || targetCashier.name);
+    } else {
+      setStaffCredentialInput('#7000');
     }
+    setIsEditingStaffId(false);
+    setEnteredPin('');
+    setPinError(null);
+    setIsAuthModalOpen(true);
+    soundFx.playBarcodeBeep();
+
+    setTimeout(() => {
+      pinInputRef.current?.focus();
+    }, 120);
   };
 
   // Render Full-Page Dedicated Pricing view
@@ -1569,13 +1622,15 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
             {/* TAB 2: STAFF SHIFT / PIN LOGIN (Matches attached card design image_78146b8a.png with credentials input and business ID scoping) */}
             {activeTab === 'staff' && (
-              <div id="p-staff" className="space-y-3.5">
-                <h2
-                  id="auth-modal-title"
-                  className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight text-left"
-                >
-                  Start your shift
-                </h2>
+              <div id="p-staff" className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2
+                    id="auth-modal-title"
+                    className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight text-left"
+                  >
+                    Start your shift
+                  </h2>
+                </div>
 
                 {/* STAFF CARD / CREDENTIALS INPUT */}
                 {!isEditingStaffId ? (
@@ -1604,11 +1659,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         </div>
                         <div className="text-xs text-[#556375] font-semibold truncate flex items-center gap-1.5 mt-0.5">
                           <span>{matchedStaff?.code || staffCredentialInput || '#7000'}</span>
-                          {matchedStaff?.businessName && (
-                            <span className="text-[10px] text-[#0a7d46] bg-emerald-50 px-1.5 py-0.5 rounded font-bold border border-emerald-200">
-                              {matchedStaff.businessName}
-                            </span>
-                          )}
                         </div>
                       </div>
                     </div>
@@ -1691,18 +1741,44 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
                 {/* PIN SECTION */}
                 <div className="pt-1 text-center">
-                  <label className="block text-sm font-bold text-[#0e1a2b] mb-2">
+                  <label htmlFor="staff-pin-entry-input" className="block text-sm font-bold text-[#0e1a2b] mb-1.5">
                     Enter your 4-digit PIN
                   </label>
 
-                  {/* 4 PIN Dots (Exact match to image_78146b8a.png) */}
-                  <div className="flex justify-center gap-3.5 my-2.5" id="dots">
+                  {/* Standard Obscured PIN Input Field per secure-entry practice */}
+                  <div className="relative max-w-[200px] mx-auto mb-2">
+                    <input
+                      ref={pinInputRef}
+                      type="password"
+                      id="staff-pin-entry-input"
+                      name="staffPin"
+                      maxLength={4}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      autoComplete="current-password"
+                      value={enteredPin}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 4);
+                        setEnteredPin(val);
+                        setPinError(null);
+                        if (val.length === 4) {
+                          setTimeout(() => submitStaffLogin(val), 100);
+                        }
+                      }}
+                      placeholder="••••"
+                      aria-label="4-digit secure PIN"
+                      className="w-full h-11 text-center font-mono text-2xl tracking-[0.4em] rounded-xl border border-[#d9e1e6] bg-[#f8fafc] text-[#0e1a2b] font-black focus:bg-white focus:border-[#1565d8] focus:outline-none transition-colors shadow-2xs select-none"
+                    />
+                  </div>
+
+                  {/* 4 PIN Dots (Visual feedback matching image_78146b8a.png) */}
+                  <div className="flex justify-center gap-3.5 my-2" id="dots">
                     {[0, 1, 2, 3].map((idx) => {
                       const isFilled = idx < enteredPin.length;
                       return (
                         <span
                           key={idx}
-                          className={`w-4 h-4 rounded-full border-2 transition-all duration-150 ${
+                          className={`w-3.5 h-3.5 rounded-full border-2 transition-all duration-150 ${
                             isFilled
                               ? 'bg-[#1565d8] border-[#1565d8] scale-110 shadow-2xs'
                               : 'bg-[#f4f7f6] border-[#cbd5e1]'

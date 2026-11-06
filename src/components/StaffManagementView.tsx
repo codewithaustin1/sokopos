@@ -12,6 +12,8 @@ import {
   AlertCircle,
   X,
   Loader2,
+  Star,
+  Sparkles,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { Cashier } from '../types';
@@ -28,6 +30,8 @@ export const StaffManagementView: React.FC = () => {
     locations,
     isSuperAdmin,
     openBusinessSettings,
+    appointedDemoCashierId,
+    appointDemoCashier,
   } = usePos();
 
   const isOwnerOrAdmin = currentUser.role === 'business_owner' || isSuperAdmin;
@@ -253,9 +257,6 @@ export const StaffManagementView: React.FC = () => {
           >
             <Shield className={`w-3.5 h-3.5 ${activeStaffSubTab === 'privileges' ? 'text-amber-300' : 'text-indigo-600'}`} />
             <span>Role Privileges & Access Control</span>
-            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
-              Live Real-Time
-            </span>
           </button>
         </div>
 
@@ -268,6 +269,42 @@ export const StaffManagementView: React.FC = () => {
       {/* Main Content Area */}
       {activeStaffSubTab === 'users' ? (
         <div className="p-3.5 sm:p-6 space-y-4 sm:space-y-6 pb-20 md:pb-8">
+          {/* Appointed Public Demo Notice & Control Banner */}
+          <div className="bg-gradient-to-r from-amber-50 via-amber-50/60 to-orange-50 border border-amber-200/80 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <Star className="w-5 h-5 fill-white" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-bold text-xs sm:text-sm text-slate-800">
+                    Public Demo Appointed Profile
+                  </h4>
+                  <span className="bg-amber-200/80 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    Super Admin Managed
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                  When visitors launch "Try Live Demo", the staff login interface automatically prefills the cashier profile designated below. The demo session runs on an isolated sandbox dataset so real inventory and production accounts remain pristine.
+                </p>
+              </div>
+            </div>
+            {(() => {
+              const appointed = systemUsers.find((u) => u.id === appointedDemoCashierId);
+              return (
+                <div className="shrink-0 bg-white border border-amber-200 rounded-xl px-3 py-2 flex items-center gap-2.5 shadow-2xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <div className="text-left">
+                    <div className="text-[10px] uppercase font-bold text-slate-400">Current Appointed Profile</div>
+                    <div className="text-xs font-black text-slate-800">
+                      {appointed ? `${appointed.name} (${appointed.code || appointed.username})` : 'Default Cashier (#7000)'}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
           {/* Users Container */}
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
           <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
@@ -286,6 +323,7 @@ export const StaffManagementView: React.FC = () => {
             ) : (
               systemUsers.map((user) => {
                 const branch = locations.find((l) => l.id === user.assignedLocationId);
+                const isAppointed = user.id === appointedDemoCashierId;
                 return (
                   <div key={user.id} className="p-4 flex flex-col gap-3">
                     <div className="flex items-start justify-between gap-2">
@@ -302,17 +340,24 @@ export const StaffManagementView: React.FC = () => {
                           </div>
                         </div>
                       </div>
-                      <span
-                        className={`font-bold text-[10px] uppercase px-2 py-0.5 rounded-full shrink-0 ${
-                          user.role === 'manager'
-                            ? 'bg-purple-100 text-purple-800'
-                            : user.role === 'supervisor'
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-emerald-100 text-emerald-800'
-                        }`}
-                      >
-                        {user.role}
-                      </span>
+                      <div className="flex flex-col items-end gap-1">
+                        <span
+                          className={`font-bold text-[10px] uppercase px-2 py-0.5 rounded-full shrink-0 ${
+                            user.role === 'manager'
+                              ? 'bg-purple-100 text-purple-800'
+                              : user.role === 'supervisor'
+                              ? 'bg-blue-100 text-blue-800'
+                              : 'bg-emerald-100 text-emerald-800'
+                          }`}
+                        >
+                          {user.role}
+                        </span>
+                        {isAppointed && (
+                          <span className="flex items-center gap-1 text-[9px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded">
+                            <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500" /> Demo Appointed
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <div className="flex items-center justify-between text-xs bg-slate-50 p-2 rounded-lg text-slate-600">
@@ -323,6 +368,28 @@ export const StaffManagementView: React.FC = () => {
                         <Shield className="w-3 h-3" /> PIN Protected
                       </div>
                     </div>
+
+                    {/* Appointed demo profile toggle in mobile */}
+                    {isAppointed ? (
+                      <div className="flex items-center justify-between text-xs bg-amber-50/80 border border-amber-200 p-2 rounded-lg text-amber-900">
+                        <div className="flex items-center gap-1.5 font-bold">
+                          <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                          <span>Appointed Demo Profile</span>
+                        </div>
+                        <span className="text-[10px] bg-amber-200/80 text-amber-900 font-bold px-1.5 py-0.5 rounded">
+                          Active Prefill
+                        </span>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => appointDemoCashier(user.id)}
+                        className="w-full py-1.5 px-2 bg-slate-50 hover:bg-amber-50 text-slate-600 hover:text-amber-800 border border-slate-200 hover:border-amber-300 font-bold text-[11px] rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Star className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Appoint for Public Demo Prefill</span>
+                      </button>
+                    )}
 
                     <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100 text-xs">
                       <button
@@ -356,12 +423,14 @@ export const StaffManagementView: React.FC = () => {
                   <th className="py-3 px-4">Login Username</th>
                   <th className="py-3 px-4">Terminal PIN</th>
                   <th className="py-3 px-4">Assigned Branch</th>
+                  <th className="py-3 px-4 text-center">Demo Status</th>
                   <th className="py-3 px-6 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {systemUsers.map((user) => {
                   const branch = locations.find((l) => l.id === user.assignedLocationId);
+                  const isAppointed = user.id === appointedDemoCashierId;
                   return (
                     <tr key={user.id} className="hover:bg-slate-50/80 transition">
                       <td className="py-4 px-6">
@@ -394,16 +463,31 @@ export const StaffManagementView: React.FC = () => {
                         {user.username || user.code}
                       </td>
                       <td className="py-4 px-4 font-mono text-slate-500 text-xs">
-                        <div className="flex items-center gap-1.5">
-                          <span className="tracking-widest font-bold">••••</span>
-                          <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-medium">
-                            <Shield className="w-3 h-3 text-emerald-600" />
-                            Bcrypt
-                          </span>
-                        </div>
+                        <span className="tracking-widest font-bold">••••</span>
                       </td>
                       <td className="py-4 px-4 text-slate-700 font-medium">
                         {branch?.name || 'All Store Branches'}
+                      </td>
+                      <td className="py-4 px-4 text-center">
+                        {isAppointed ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs"
+                            title="This cashier profile is prefilled on the Try Live Demo login interface"
+                          >
+                            <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                            Appointed Demo Profile
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => appointDemoCashier(user.id)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold text-slate-500 hover:text-amber-800 hover:bg-amber-50 border border-slate-200 hover:border-amber-300 transition cursor-pointer"
+                            title="Appoint this cashier profile to be prefilled for public live demo visitors"
+                          >
+                            <Star className="w-3 h-3 text-slate-400" />
+                            Appoint for Demo
+                          </button>
+                        )}
                       </td>
                       <td className="py-4 px-6 text-right space-x-2">
                         <button

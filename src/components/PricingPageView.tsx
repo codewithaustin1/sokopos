@@ -194,9 +194,24 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
   const navigateToSection = (sectionId: string) => {
     onBackToLogin();
     setTimeout(() => {
-      window.location.hash = `#${sectionId}`;
-      const el = document.getElementById(sectionId);
-      el?.scrollIntoView({ behavior: 'smooth' });
+      if (sectionId === 'home' || sectionId === 'top' || !sectionId) {
+        if (window.location.hash) {
+          try {
+            history.replaceState(null, '', window.location.pathname);
+          } catch {
+            window.location.hash = '';
+          }
+        }
+        scrollToTop(true);
+        const root =
+          document.getElementById('pos-landing-root') ||
+          document.getElementById('pos-landing-viewport');
+        root?.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        window.location.hash = `#${sectionId}`;
+        const el = document.getElementById(sectionId);
+        el?.scrollIntoView({ behavior: 'smooth' });
+      }
     }, 60);
   };
 
