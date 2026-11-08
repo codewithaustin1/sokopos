@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1565d8" />
+      <stop offset="100%" stop-color="#0b4599" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#e2e8f0" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000" flood-opacity="0.25" />
+    </filter>
+  </defs>
+  <!-- Background with rounded squircles -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  
+  <!-- Subtle inner card border -->
+  <rect x="24" y="24" width="464" height="464" rx="92" fill="none" stroke="#ffffff" stroke-opacity="0.12" stroke-width="4" />
+  
+  <!-- Modern Geometric 'S' for SokoPoS with integrated POS terminal motif -->
+  <g filter="url(#shadow)">
+    <!-- Stylized S shape -->
+    <path d="M340 180 C340 146.86 304.18 120 256 120 C207.82 120 172 146.86 172 180 C172 220 216 236 280 252 C344 268 356 292 356 332 C356 365.14 320.18 392 272 392 C223.82 392 188 365.14 188 332" fill="none" stroke="url(#accentGrad)" stroke-width="48" stroke-linecap="round" />
+    
+    <!-- Dynamic high-speed lightning flash / terminal indicator -->
+    <circle cx="340" cy="180" r="16" fill="#10b981" />
+    <circle cx="188" cy="332" r="16" fill="#38bdf8" />
+  </g>
+</svg>

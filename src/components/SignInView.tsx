@@ -20,6 +20,8 @@ import { AppLogo } from './common/AppLogo';
 import { AppFooter } from './common/AppFooter';
 import { MobileHeaderNav } from './common/MobileHeaderNav';
 import { scrollToTop } from '../utils/scrollUtils';
+import { SUPER_ADMIN_EMAIL } from '../data/initialData';
+import { PWAInstallButton } from './PWAInstallButton';
 
 // Isolated Animated Counter Subcomponent: Keeps main-thread 60fps by updating the DOM ref directly without React state churn
 const AnimatedMetricCounter: React.FC<{ target?: number; duration?: number }> = React.memo(
@@ -98,6 +100,7 @@ const INDUSTRY_DATA: Record<string, [string, string, string, string]> = {
 export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const {
     currentUser,
+    currentBusiness,
     loginWithGoogle,
     loginWithFirebaseGoogle,
     loginWithCredentials,
@@ -114,32 +117,31 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const [activeTab, setActiveTab] = useState<'owner' | 'staff' | 'register'>('owner');
   const [activeLegalPage, setActiveLegalPage] = useState<LegalTab | null>(null);
   const [isPricingPageOpen, setIsPricingPageOpen] = useState(false);
-  const [isDemoModeActive, setIsDemoModeActive] = useState<boolean>(() => {
-    return localStorage.getItem('sokopos_demo_intent') === 'true';
-  });
+  const [isDemoModeActive, setIsDemoModeActive] = useState<boolean>(false);
 
   // Industry solutions tab state
   const [selectedIndustry, setSelectedIndustry] = useState<string>('Retail shops');
 
-  // Staff credentials / ID and PIN login state (matching attached card design image_78146b8a.png)
-  const [staffCredentialInput, setStaffCredentialInput] = useState<string>(() => {
-    return appointedDemoCashier?.code || '#7000';
-  });
+  // Staff credentials / ID and PIN login state
+  const [staffCredentialInput, setStaffCredentialInput] = useState<string>('');
   const [isEditingStaffId, setIsEditingStaffId] = useState<boolean>(false);
   const [enteredPin, setEnteredPin] = useState<string>('');
   const [pinError, setPinError] = useState<string | null>(null);
   const [isSubmittingTerminal, setIsSubmittingTerminal] = useState<boolean>(false);
   const pinInputRef = useRef<HTMLInputElement>(null);
+  const staffInputRef = useRef<HTMLInputElement>(null);
 
   // Active staff user resolved from credentials / ID
   const matchedStaff = useMemo<(Cashier & { businessName?: string }) | null>(() => {
     const raw = (staffCredentialInput || '').trim();
     if (!raw) {
-      if (!appointedDemoCashier) return null;
-      return {
-        ...appointedDemoCashier,
-        businessName: isDemoModeActive ? 'SokoPoS Demo Mart (Sandbox)' : 'Upfront Retail Solutions',
-      };
+      if (isDemoModeActive && appointedDemoCashier) {
+        return {
+          ...appointedDemoCashier,
+          businessName: 'SokoPoS Demo Mart (Sandbox)',
+        };
+      }
+      return null;
     }
     const clean = raw.toLowerCase();
     const withoutHash = clean.replace(/^#/, '');
@@ -160,16 +162,16 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       };
     }
 
-    // Default to appointed demo cashier if matched
-    if (appointedDemoCashier && (withoutHash === appointedDemoCashier.code.replace(/^#/, '').toLowerCase() || clean === appointedDemoCashier.name.toLowerCase())) {
+    // Default to appointed demo cashier if matched and in demo mode
+    if (isDemoModeActive && appointedDemoCashier && (withoutHash === appointedDemoCashier.code.replace(/^#/, '').toLowerCase() || clean === appointedDemoCashier.name.toLowerCase())) {
       return {
         ...appointedDemoCashier,
         businessName: 'SokoPoS Demo Mart (Sandbox)',
       };
     }
 
-    // Default seeded fallback for Cashier A (#7000) matching design screenshot
-    if (withoutHash === '7000' || clean === 'cashier a') {
+    // Default seeded fallback for Cashier A (#7000) only in demo mode
+    if (isDemoModeActive && (withoutHash === '7000' || clean === 'cashier a')) {
       return {
         id: 'user-cashier-7000',
         businessId: 'biz-upfront',
@@ -181,7 +183,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         role: 'cashier' as const,
         avatarColor: 'bg-blue-600',
         shiftStartedAt: new Date().toISOString(),
-        businessName: 'Upfront Retail Solutions',
+        businessName: 'SokoPoS Demo Mart (Sandbox)',
         isAppointedDemo: true,
       };
     }
@@ -257,8 +259,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
   const openAuthModal = (targetTab: 'owner' | 'staff' | 'register' = 'owner') => {
     previousFocusRef.current = document.activeElement as HTMLElement | null;
+    setIsDemoModeActive(false);
+    localStorage.removeItem('sokopos_demo_intent');
     setActiveTab(targetTab);
     setPinError(null);
+    setEnteredPin('');
+    setStaffCredentialInput('');
+    setIsEditingStaffId(false);
     setIsAuthModalOpen(true);
   };
 
@@ -266,6 +273,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     setIsAuthModalOpen(false);
     setPinError(null);
     setEnteredPin('');
+    setIsDemoModeActive(false);
+    localStorage.removeItem('sokopos_demo_intent');
     setTimeout(() => {
       previousFocusRef.current?.focus();
     }, 50);
@@ -306,15 +315,16 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       } else if (activeTab === 'register') {
         shopNameInputRef.current?.focus();
       } else if (activeTab === 'staff') {
-        const firstFocusable = modalCardRef.current?.querySelector<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        );
-        firstFocusable?.focus();
+        if (isDemoModeActive && !isEditingStaffId) {
+          pinInputRef.current?.focus();
+        } else {
+          staffInputRef.current?.focus();
+        }
       }
     }, 60);
 
     return () => clearTimeout(timer);
-  }, [isAuthModalOpen, activeTab]);
+  }, [isAuthModalOpen, activeTab, isDemoModeActive, isEditingStaffId]);
 
   // Dismiss on Escape key and trap keyboard focus within modal
   useEffect(() => {
@@ -402,6 +412,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       }
 
       if (e.key >= '0' && e.key <= '9') {
+        if (!isDemoModeActive && !staffCredentialInput.trim()) {
+          setPinError('Please enter your Staff ID or username first');
+          staffInputRef.current?.focus();
+          return;
+        }
         e.preventDefault();
         soundFx.playBarcodeBeep();
         setPinError(null);
@@ -430,7 +445,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isAuthModalOpen, activeTab, enteredPin, staffCredentialInput, matchedStaff]);
+  }, [isAuthModalOpen, activeTab, enteredPin, staffCredentialInput, matchedStaff, isDemoModeActive]);
 
   const handleKeypadPress = (val: string) => {
     soundFx.playBarcodeBeep();
@@ -440,6 +455,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     } else if (val === '⌫') {
       setEnteredPin((prev) => prev.slice(0, -1));
     } else if (enteredPin.length < 4) {
+      if (!isDemoModeActive && !staffCredentialInput.trim()) {
+        setPinError('Please enter your Staff ID or username first');
+        staffInputRef.current?.focus();
+        return;
+      }
       const nextPin = enteredPin + val;
       setEnteredPin(nextPin);
       if (nextPin.length === 4) {
@@ -464,13 +484,19 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const submitStaffLogin = async (pinOverride?: string) => {
     const pin = pinOverride || enteredPin;
     if (isSubmittingTerminal) return;
+    const credential = staffCredentialInput.trim();
+    if (!credential) {
+      setPinError('Please enter your Staff ID or username');
+      soundFx.playError();
+      staffInputRef.current?.focus();
+      return;
+    }
     if (!pin || pin.length < 4) {
       setPinError('Please enter your 4-digit PIN');
       soundFx.playError();
+      pinInputRef.current?.focus();
       return;
     }
-
-    const credential = staffCredentialInput.trim() || matchedStaff?.code || '#7000';
 
     setIsSubmittingTerminal(true);
     setPinError(null);
@@ -506,7 +532,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         onLoginSuccess?.();
       }
     } catch {
-      loginWithGoogle('upfrontretaile@gmail.com', 'Platform Administrator');
+      loginWithGoogle(SUPER_ADMIN_EMAIL, 'Platform Administrator');
       setIsAuthModalOpen(false);
       onLoginSuccess?.();
     }
@@ -1238,6 +1264,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
         {/* Action Buttons & Mobile Hamburger Menu */}
         <div className="flex items-center gap-2 sm:gap-2.5">
+          <PWAInstallButton variant="compact" />
+
           {currentUser ? (
             <button
               type="button"
@@ -1574,7 +1602,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   id="auth-modal-title"
                   className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-4 text-left"
                 >
-                  Log in to your POS terminal
+                  Welcome back!
                 </h2>
 
                 <button
@@ -1632,8 +1660,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   </h2>
                 </div>
 
-                {/* STAFF CARD / CREDENTIALS INPUT */}
-                {!isEditingStaffId ? (
+                {/* STAFF ID / USERNAME INPUT OR APPOINTED DEMO CASHIER CARD */}
+                {isDemoModeActive && !isEditingStaffId ? (
                   <div
                     className="border-2 border-[#1565d8] bg-white rounded-2xl p-3 flex items-center justify-between shadow-2xs transition-all hover:shadow-xs"
                     id="selectedStaffCard"
@@ -1672,22 +1700,17 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     </button>
                   </div>
                 ) : (
-                  <div className="border-2 border-[#1565d8] bg-white rounded-2xl p-3 space-y-2 shadow-2xs animate-in fade-in duration-150">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-[#0e1a2b]">Enter Staff ID, Code or Username</label>
-                      <button
-                        type="button"
-                        onClick={() => setIsEditingStaffId(false)}
-                        className="text-xs text-[#4c5a6b] hover:text-[#0e1a2b] font-semibold"
-                      >
-                        Done
-                      </button>
-                    </div>
-
+                  <div className="border border-[#d9e1e6] bg-[#f8fafc] rounded-2xl p-3 space-y-1.5 shadow-2xs">
+                    <label htmlFor="staff-credential-input" className="block text-xs font-bold text-[#0e1a2b]">
+                      Staff ID or Username
+                    </label>
                     <div className="flex items-center gap-2">
                       <input
+                        ref={staffInputRef}
                         type="text"
-                        autoFocus
+                        id="staff-credential-input"
+                        name="staffCredential"
+                        autoComplete="username"
                         value={staffCredentialInput}
                         onChange={(e) => {
                           setStaffCredentialInput(e.target.value);
@@ -1696,45 +1719,24 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
-                            setIsEditingStaffId(false);
+                            if (isDemoModeActive) {
+                              setIsEditingStaffId(false);
+                            }
+                            pinInputRef.current?.focus();
                           }
                         }}
-                        placeholder="e.g. #7000, 1001, cashier.a"
-                        className="flex-1 h-10 px-3.5 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] font-bold text-sm focus:bg-white focus:border-[#1565d8] focus:outline-none transition-colors"
+                        placeholder="Enter Staff ID or username (e.g. #1001, cashier.a)"
+                        className="flex-1 h-10 px-3.5 rounded-xl border border-[#d9e1e6] bg-white text-[#0e1a2b] font-bold text-sm focus:border-[#1565d8] focus:outline-none transition-colors"
                       />
-                      <button
-                        type="button"
-                        onClick={() => setIsEditingStaffId(false)}
-                        className="h-10 px-3.5 bg-[#1565d8] hover:bg-[#1255b5] text-white rounded-xl text-xs font-bold transition cursor-pointer"
-                      >
-                        Confirm
-                      </button>
-                    </div>
-
-                    {/* Quick-pick suggestions for active business staff */}
-                    <div className="pt-1">
-                      <div className="text-[10px] text-[#556375] font-semibold mb-1">Registered staff credentials:</div>
-                      <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                        {allSystemUsers.slice(0, 6).map((u) => (
-                          <button
-                            key={u.id}
-                            type="button"
-                            onClick={() => {
-                              setStaffCredentialInput(u.code || u.username || u.name);
-                              setIsEditingStaffId(false);
-                              setEnteredPin('');
-                              setPinError(null);
-                            }}
-                            className={`px-2 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer ${
-                              staffCredentialInput.toLowerCase() === (u.code || '').toLowerCase()
-                                ? 'bg-blue-50 border-[#1565d8] text-[#1565d8]'
-                                : 'bg-[#f8fafc] border-slate-200 text-[#4c5a6b] hover:bg-slate-100 hover:text-[#0e1a2b]'
-                            }`}
-                          >
-                            {u.code || u.name}
-                          </button>
-                        ))}
-                      </div>
+                      {isDemoModeActive && (
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingStaffId(false)}
+                          className="h-10 px-3.5 bg-[#1565d8] hover:bg-[#1255b5] text-white rounded-xl text-xs font-bold transition cursor-pointer shrink-0"
+                        >
+                          Done
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1816,14 +1818,18 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
                 {/* Status / Demo hint footer */}
                 <div className="pt-2 flex items-center justify-between text-xs text-[#556375]">
-                  <button
-                    type="button"
-                    className="text-[#1565d8] hover:underline font-bold cursor-pointer"
-                    id="fillPin"
-                    onClick={handleFillDemoPin}
-                  >
-                    Demo PIN: 1234
-                  </button>
+                  {isDemoModeActive ? (
+                    <button
+                      type="button"
+                      className="text-[#1565d8] hover:underline font-bold cursor-pointer"
+                      id="fillPin"
+                      onClick={handleFillDemoPin}
+                    >
+                      Demo PIN: 1234
+                    </button>
+                  ) : (
+                    <span className="text-xs text-[#556375] font-semibold">Secure terminal login</span>
+                  )}
                   <span className="text-[11px] text-[#718096]">
                     {isSubmittingTerminal ? 'Authenticating shift...' : 'Auto-submits on 4 digits'}
                   </span>

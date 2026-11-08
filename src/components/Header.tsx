@@ -24,6 +24,7 @@ import { usePos } from '../context/PosContext';
 import { ScannerStatusBadge } from './ScannerStatusBadge';
 import { AppLogo } from './common/AppLogo';
 import { MobileBentoMenuOverlay } from './common/MobileBentoMenuOverlay';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface HeaderProps {
   currentTab?: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers' | 'settings' | 'super-admin';
@@ -229,6 +230,9 @@ export const Header: React.FC<HeaderProps> = ({
             {activeShift ? `Shift #${activeShift.shiftNumber}` : 'Open Shift'}
           </span>
         </button>
+
+        {/* In-App PWA Install Prompt for 100% Offline Access */}
+        <PWAInstallButton variant="compact" />
 
         {/* Quick Dim Retail Dark Theme Toggle */}
         <button

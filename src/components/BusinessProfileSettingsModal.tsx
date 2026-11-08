@@ -47,14 +47,24 @@ import {
   ArrowUpRight,
   Zap,
   Bluetooth,
+  Smartphone,
+  QrCode,
+  Copy,
+  Mail,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
-import { UserRole, Location, Cashier, RetailTheme } from '../types';
+import { UserRole, Location, Cashier, RetailTheme, BusinessSecuritySettings } from '../types';
 import { RETAIL_THEMES, RetailThemeConfig } from '../data/retailThemes';
 import { SUPER_ADMIN_EMAIL } from '../data/initialData';
 import { ResetStoreModal } from './ResetStoreModal';
 import { TaxManagementPanel } from './TaxManagementPanel';
 import { LoyaltySettingsPanel } from './LoyaltySettingsPanel';
+import {
+  generateTotpSecret,
+  generateOtpAuthUrl,
+  generateQrCodeDataUrl,
+  verifyTotpOnServer,
+} from '../lib/totpService';
 
 export interface BusinessProfileSettingsViewProps {
   initialTab?: 'profile' | 'branches' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset';
@@ -168,6 +178,20 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
   const [confirmTerminalPin, setConfirmTerminalPin] = useState('');
   const [showPin, setShowPin] = useState(false);
   const [isUpdatingCredentials, setIsUpdatingCredentials] = useState(false);
+
+  // 2-Step Verification & Authenticator App (TOTP) State
+  const securitySettings = currentBusiness?.securitySettings;
+  const is2FaEnabled = securitySettings?.twoFactorEnabled ?? true;
+  const current2FaMethod = securitySettings?.twoFactorMethod || 'email_otp';
+  const isTotpPaired = Boolean(securitySettings?.totpEnabled && securitySettings?.totpSecret);
+
+  const [isSettingUpTotp, setIsSettingUpTotp] = useState(false);
+  const [totpSetupSecret, setTotpSetupSecret] = useState('');
+  const [totpSetupQrUrl, setTotpSetupQrUrl] = useState('');
+  const [totpVerifyCode, setTotpVerifyCode] = useState('');
+  const [totpVerifyError, setTotpVerifyError] = useState<string | null>(null);
+  const [isConfirmingTotp, setIsConfirmingTotp] = useState(false);
+  const [hasCopiedSecret, setHasCopiedSecret] = useState(false);
 
   // Sync profile form when currentBusiness changes
   React.useEffect(() => {
@@ -373,6 +397,135 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
       }
     } finally {
       setIsUpdatingCredentials(false);
+    }
+  };
+
+  // 2-Step Verification & Authenticator App (TOTP) Handlers
+  const handleStartTotpEnrollment = async () => {
+    soundFx.playBeep(520, 0.05);
+    const newSecret = generateTotpSecret(20);
+    const otpAuthUri = generateOtpAuthUrl(
+      newSecret,
+      currentBusiness?.ownerEmail || SUPER_ADMIN_EMAIL,
+      currentBusiness?.name || 'SokoPoS'
+    );
+    try {
+      const qrDataUrl = await generateQrCodeDataUrl(otpAuthUri);
+      setTotpSetupSecret(newSecret);
+      setTotpSetupQrUrl(qrDataUrl);
+      setTotpVerifyCode('');
+      setTotpVerifyError(null);
+      setIsSettingUpTotp(true);
+    } catch (err: any) {
+      showToast('Failed to generate pairing QR code: ' + (err?.message || 'unknown error'), 'error');
+    }
+  };
+
+  const handleConfirmTotpCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = totpVerifyCode.trim().replace(/\s+/g, '');
+    if (clean.length !== 6) {
+      setTotpVerifyError('Please enter the full 6-digit code from your Authenticator app.');
+      soundFx.playError();
+      return;
+    }
+    setIsConfirmingTotp(true);
+    setTotpVerifyError(null);
+    try {
+      const isValid = await verifyTotpOnServer(clean, totpSetupSecret);
+      if (isValid) {
+        soundFx.playSuccess();
+        const nextSecurity: BusinessSecuritySettings = {
+          ...securitySettings,
+          twoFactorEnabled: true,
+          twoFactorMethod: 'totp',
+          totpSecret: totpSetupSecret,
+          totpEnabled: true,
+          totpEnrolledAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        updateBusinessProfile({ securitySettings: nextSecurity });
+        setIsSettingUpTotp(false);
+        setTotpVerifyCode('');
+        showToast('Authenticator App successfully paired & 2FA activated!', 'success');
+      } else {
+        soundFx.playError();
+        setTotpVerifyError('Invalid 6-digit code. Please verify the code shown on your phone.');
+      }
+    } catch (err: any) {
+      soundFx.playError();
+      setTotpVerifyError(err?.message || 'Verification failed. Try again.');
+    } finally {
+      setIsConfirmingTotp(false);
+    }
+  };
+
+  const handleRemoveTotp = () => {
+    const nextSecurity: BusinessSecuritySettings = {
+      ...securitySettings,
+      totpEnabled: false,
+      totpSecret: undefined,
+      totpEnrolledAt: undefined,
+      twoFactorMethod: 'email_otp',
+      updatedAt: new Date().toISOString(),
+    };
+    updateBusinessProfile({ securitySettings: nextSecurity });
+    setIsSettingUpTotp(false);
+    showToast('Authenticator App removed. Defaulting to Email OTP.', 'info');
+  };
+
+  const handleToggle2Fa = (enabled: boolean) => {
+    const nextSecurity: BusinessSecuritySettings = {
+      ...securitySettings,
+      twoFactorEnabled: enabled,
+      twoFactorMethod: securitySettings?.twoFactorMethod || (isTotpPaired ? 'totp' : 'email_otp'),
+      updatedAt: new Date().toISOString(),
+    };
+    updateBusinessProfile({ securitySettings: nextSecurity });
+    showToast(enabled ? '2-Step Verification enabled on login.' : '2-Step Verification disabled.', 'info');
+  };
+
+  const handleUpdate2FaMethod = (method: 'email_otp' | 'totp' | 'both') => {
+    if (method === 'totp' && !isTotpPaired) {
+      handleStartTotpEnrollment();
+      return;
+    }
+    const nextSecurity: BusinessSecuritySettings = {
+      ...securitySettings,
+      twoFactorEnabled: true,
+      twoFactorMethod: method,
+      updatedAt: new Date().toISOString(),
+    };
+    updateBusinessProfile({ securitySettings: nextSecurity });
+    showToast(
+      `2-Step Verification method set to ${
+        method === 'both' ? 'Email OTP or Authenticator' : method === 'totp' ? 'Authenticator App (TOTP)' : 'Email Security OTP'
+      }.`,
+      'success'
+    );
+  };
+
+  const handleToggleStaffEnforce = (enforce: boolean) => {
+    const nextSecurity: BusinessSecuritySettings = {
+      ...securitySettings,
+      enforceForStaff: enforce,
+      updatedAt: new Date().toISOString(),
+    };
+    updateBusinessProfile({ securitySettings: nextSecurity });
+    showToast(
+      enforce
+        ? '2-Step Verification will now be enforced for staff logins.'
+        : 'Staff logins return to standard PIN verification.',
+      'info'
+    );
+  };
+
+  const handleCopySecret = () => {
+    if (navigator.clipboard && totpSetupSecret) {
+      navigator.clipboard.writeText(totpSetupSecret);
+      setHasCopiedSecret(true);
+      setTimeout(() => setHasCopiedSecret(false), 2000);
+      showToast('Secret key copied to clipboard', 'info');
     }
   };
 
@@ -1621,6 +1774,308 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                     </button>
                   </div>
                 </form>
+              </div>
+
+              {/* Two-Step Verification (2FA) & Authenticator App (TOTP) Card */}
+              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+                <div className="flex items-start justify-between gap-4 pb-4 mb-5 border-b border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600">
+                      <ShieldCheck className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                        <span>Two-Step Verification (2FA)</span>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            is2FaEnabled
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-slate-100 text-slate-500 border border-slate-200'
+                          }`}
+                        >
+                          {is2FaEnabled ? 'Protected' : 'Off'}
+                        </span>
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Add an extra layer of security to your store sign-in with Email OTP or an Authenticator App.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Master Toggle Button */}
+                  <button
+                    type="button"
+                    onClick={() => handleToggle2Fa(!is2FaEnabled)}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      is2FaEnabled ? 'bg-blue-600' : 'bg-slate-300'
+                    }`}
+                    role="switch"
+                    aria-checked={is2FaEnabled}
+                    aria-label="Toggle Two-Step Verification"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                        is2FaEnabled ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* 2FA Options (Active when enabled) */}
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-2">
+                      Primary Verification Method
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      {/* Email OTP Option */}
+                      <button
+                        type="button"
+                        onClick={() => handleUpdate2FaMethod('email_otp')}
+                        className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                          current2FaMethod === 'email_otp'
+                            ? 'border-blue-600 bg-blue-50/50 ring-1 ring-blue-500/20 shadow-xs'
+                            : 'border-slate-200 hover:border-slate-300 bg-white'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <Mail className="w-4 h-4 text-blue-600" />
+                            <span className="text-xs font-bold text-slate-900">Email OTP</span>
+                          </div>
+                          {current2FaMethod === 'email_otp' && (
+                            <Check className="w-3.5 h-3.5 text-blue-600" />
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 leading-snug">
+                          4-digit code sent to registered Gmail.
+                        </p>
+                      </button>
+
+                      {/* Authenticator App Option */}
+                      <button
+                        type="button"
+                        onClick={() => handleUpdate2FaMethod('totp')}
+                        className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                          current2FaMethod === 'totp'
+                            ? 'border-blue-600 bg-blue-50/50 ring-1 ring-blue-500/20 shadow-xs'
+                            : 'border-slate-200 hover:border-slate-300 bg-white'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <Smartphone className="w-4 h-4 text-emerald-600" />
+                            <span className="text-xs font-bold text-slate-900">Authenticator App</span>
+                          </div>
+                          {current2FaMethod === 'totp' && (
+                            <Check className="w-3.5 h-3.5 text-blue-600" />
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 leading-snug">
+                          6-digit code from Google/Microsoft Authenticator.
+                        </p>
+                      </button>
+
+                      {/* Both Option */}
+                      <button
+                        type="button"
+                        onClick={() => handleUpdate2FaMethod('both')}
+                        className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                          current2FaMethod === 'both'
+                            ? 'border-blue-600 bg-blue-50/50 ring-1 ring-blue-500/20 shadow-xs'
+                            : 'border-slate-200 hover:border-slate-300 bg-white'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <ShieldCheck className="w-4 h-4 text-purple-600" />
+                            <span className="text-xs font-bold text-slate-900">Both / Either</span>
+                          </div>
+                          {current2FaMethod === 'both' && (
+                            <Check className="w-3.5 h-3.5 text-blue-600" />
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 leading-snug">
+                          Prompt with choice to use Email or App.
+                        </p>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Authenticator App Pairing Sub-panel */}
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/90 text-xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Smartphone className="w-4 h-4 text-slate-700" />
+                        <span className="font-bold text-slate-900">Authenticator App (TOTP) Status</span>
+                      </div>
+                      {isTotpPaired ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-200">
+                          <CheckCircle2 className="w-3 h-3" /> Paired &amp; Active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                          Not Paired
+                        </span>
+                      )}
+                    </div>
+
+                    {isTotpPaired && !isSettingUpTotp ? (
+                      <div className="space-y-3 pt-1">
+                        <p className="text-slate-600 text-xs">
+                          Your store owner account is paired with an Authenticator app (enrolled {securitySettings?.totpEnrolledAt ? new Date(securitySettings.totpEnrolledAt).toLocaleDateString() : 'Active'}). You can use Google Authenticator, Microsoft Authenticator, or Authy to sign in.
+                        </p>
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={handleStartTotpEnrollment}
+                            className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 font-semibold text-slate-700 text-xs transition cursor-pointer"
+                          >
+                            Re-pair / Scan New Code
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleRemoveTotp}
+                            className="px-3 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 border border-rose-200 font-semibold text-xs transition cursor-pointer"
+                          >
+                            Remove Authenticator
+                          </button>
+                        </div>
+                      </div>
+                    ) : isSettingUpTotp ? (
+                      /* Authenticator Setup / Pairing Flow */
+                      <div className="bg-white rounded-xl p-4 border border-slate-200 space-y-4 animate-in fade-in duration-150">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                          <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                            <QrCode className="w-4 h-4 text-blue-600" />
+                            <span>Pair with Authenticator App</span>
+                          </h4>
+                          <button
+                            type="button"
+                            onClick={() => setIsSettingUpTotp(false)}
+                            className="text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+
+                        {/* Step 1 & QR Code */}
+                        <div className="flex flex-col sm:flex-row items-center gap-4">
+                          {totpSetupQrUrl && (
+                            <div className="bg-white p-2 rounded-xl border border-slate-200 shadow-2xs shrink-0 text-center">
+                              <img
+                                src={totpSetupQrUrl}
+                                alt="Authenticator App QR Code"
+                                className="w-36 h-36 mx-auto rounded-lg"
+                              />
+                              <span className="text-[10px] text-slate-400 font-medium block mt-1">
+                                Scan with phone camera
+                              </span>
+                            </div>
+                          )}
+
+                          <div className="space-y-2.5 flex-1 text-xs">
+                            <div className="space-y-1">
+                              <strong className="text-slate-900 block font-bold">1. Scan QR Code</strong>
+                              <p className="text-slate-500 text-[11px] leading-relaxed">
+                                Open Google Authenticator, Microsoft Authenticator, or Authy on your phone and tap <strong>+ Add Account</strong> &gt; <strong>Scan QR Code</strong>.
+                              </p>
+                            </div>
+
+                            <div className="space-y-1">
+                              <strong className="text-slate-900 block font-bold">Or enter key manually:</strong>
+                              <div className="flex items-center gap-2">
+                                <code className="px-2 py-1 bg-slate-100 rounded border border-slate-200 font-mono text-[11px] font-bold text-slate-800 tracking-wider select-all">
+                                  {totpSetupSecret}
+                                </code>
+                                <button
+                                  type="button"
+                                  onClick={handleCopySecret}
+                                  className="px-2 py-1 text-[10px] font-bold rounded bg-slate-200 hover:bg-slate-300 text-slate-700 transition flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                  <span>{hasCopiedSecret ? 'Copied' : 'Copy'}</span>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Step 2: Verification confirmation */}
+                        <form onSubmit={handleConfirmTotpCode} className="border-t border-slate-100 pt-3 space-y-3">
+                          <label className="block text-xs font-semibold text-slate-800">
+                            2. Enter the 6-digit code shown in your Authenticator app to confirm:
+                          </label>
+
+                          <div className="flex items-center gap-2 max-w-xs">
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              maxLength={6}
+                              value={totpVerifyCode}
+                              onChange={(e) => {
+                                setTotpVerifyCode(e.target.value.replace(/\D/g, ''));
+                                setTotpVerifyError(null);
+                              }}
+                              placeholder="000000"
+                              className="w-36 px-3 py-2 text-center text-lg font-black tracking-widest font-mono border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              required
+                            />
+                            <button
+                              type="submit"
+                              disabled={isConfirmingTotp || totpVerifyCode.length !== 6}
+                              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                            >
+                              {isConfirmingTotp ? 'Verifying...' : 'Confirm & Activate'}
+                            </button>
+                          </div>
+
+                          {totpVerifyError && (
+                            <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+                              <AlertTriangle className="w-3.5 h-3.5" />
+                              <span>{totpVerifyError}</span>
+                            </p>
+                          )}
+                        </form>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 pt-1">
+                        <p className="text-slate-600 text-xs">
+                          Pair Google Authenticator, Microsoft Authenticator, or Authy to generate secure, time-based 6-digit codes that work completely offline even when mobile reception drops.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleStartTotpEnrollment}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition shadow-xs cursor-pointer"
+                        >
+                          <QrCode className="w-4 h-4" />
+                          <span>Pair Authenticator App Now</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Staff Logins Enforce Checkbox */}
+                  <div className="pt-2 border-t border-slate-100 flex items-start gap-2.5">
+                    <input
+                      id="checkbox-enforce-staff-2fa"
+                      type="checkbox"
+                      checked={Boolean(securitySettings?.enforceForStaff)}
+                      onChange={(e) => handleToggleStaffEnforce(e.target.checked)}
+                      className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                    <label htmlFor="checkbox-enforce-staff-2fa" className="text-xs text-slate-700 cursor-pointer">
+                      <strong className="block text-slate-900 font-semibold">
+                        Enforce 2-Step Verification for POS Terminal Staff
+                      </strong>
+                      <span className="text-slate-500">
+                        When enabled, cashiers logging into shifts require an authorization code dispatched to the store owner Gmail or manager Authenticator app.
+                      </span>
+                    </label>
+                  </div>
+                </div>
               </div>
 
               {/* Security Diagnostics & Policies */}

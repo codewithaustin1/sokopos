@@ -21,6 +21,12 @@
       ]
     },
     "allowImportingTsExtensions": true,
+    "types": [
+      "vite/client",
+      "vite-plugin-pwa/client",
+      "web-bluetooth",
+      "node"
+    ],
     "noEmit": true
   }
 }

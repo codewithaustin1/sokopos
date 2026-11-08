@@ -139,6 +139,7 @@ export interface Business {
   retailTheme?: RetailTheme;
   taxSettings?: BusinessTaxSettings;
   loyaltySettings?: BusinessLoyaltySettings;
+  securitySettings?: BusinessSecuritySettings;
   rolePermissions?: import('./types/permissions').RolePermissionsMap;
   appointedDemoCashierId?: string; // Appointed cashier profile for public try-demo routing
   subscription?: {
@@ -152,6 +153,17 @@ export interface Business {
     isSimulatedPayment?: boolean;
     [key: string]: any;
   };
+}
+
+export interface BusinessSecuritySettings {
+  twoFactorEnabled?: boolean;
+  twoFactorMethod?: 'email_otp' | 'totp' | 'both';
+  totpSecret?: string;
+  totpEnabled?: boolean;
+  totpEnrolledAt?: string;
+  enforceForStaff?: boolean;
+  targetEmail?: string;
+  updatedAt?: string;
 }
 
 export * from './types/pricing';

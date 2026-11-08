@@ -3,6 +3,35 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Gracefully suppress benign Vite dev WebSocket HMR disconnect errors in preview iframe
+      (function() {
+        if (typeof window === 'undefined') return;
+        window.addEventListener('error', function(event) {
+          var msg = event && (event.message || (event.error && event.error.message) || '');
+          if (
+            msg.indexOf('WebSocket closed without opened') !== -1 ||
+            (msg.indexOf('WebSocket') !== -1 && msg.indexOf('closed') !== -1) ||
+            (event.filename && event.filename.indexOf('@vite/client') !== -1)
+          ) {
+            if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+            if (event.preventDefault) event.preventDefault();
+            return true;
+          }
+        }, true);
+
+        window.addEventListener('unhandledrejection', function(event) {
+          var reason = event && (event.reason && (event.reason.message || String(event.reason))) || '';
+          if (
+            reason.indexOf('WebSocket closed without opened') !== -1 ||
+            (reason.indexOf('WebSocket') !== -1 && reason.indexOf('closed') !== -1)
+          ) {
+            if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+            if (event.preventDefault) event.preventDefault();
+          }
+        }, true);
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -12,9 +41,14 @@
     <meta name="author" content="SokoPoS Kenya" />
     <meta name="publisher" content="SokoPoS Enterprise Platform" />
     <meta name="copyright" content="© 2026 SokoPoS Enterprise Platform" />
-    <meta name="application-name" content="SokoPoS" />
-    <meta name="theme-color" content="#ffffff" />
-    <meta name="format-detection" content="telephone=no" />
+    <meta name="theme-color" content="#1565d8" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="SokoPoS" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png" />
     <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
     <meta name="googlebot" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
 

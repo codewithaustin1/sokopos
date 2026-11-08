@@ -1,6 +1,7 @@
 import {
   AuthUser,
   Business,
+  BusinessSecuritySettings,
   Cashier,
   Category,
   Customer,
@@ -19,6 +20,15 @@ export const SUPER_ADMIN_EMAIL = 'upfrontretaile@gmail.com';
 
 export const isSuperAdminEmail = (email?: string | null): boolean =>
   (email || '').trim().toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+
+export const DEFAULT_SECURITY_SETTINGS: BusinessSecuritySettings = {
+  twoFactorEnabled: true,
+  twoFactorMethod: 'email_otp',
+  totpEnabled: false,
+  enforceForStaff: false,
+  targetEmail: SUPER_ADMIN_EMAIL,
+  updatedAt: '2026-01-01T08:00:00.000Z',
+};
 
 export const INITIAL_SUPER_ADMIN_USER: AuthUser = {
   id: 'usr-superadmin-01',
@@ -98,6 +108,7 @@ export const INITIAL_BUSINESSES: Business[] = [
     },
     rolePermissions: DEFAULT_ROLE_PERMISSIONS,
     appointedDemoCashierId: DEFAULT_APPOINTED_DEMO_CASHIER_ID,
+    securitySettings: DEFAULT_SECURITY_SETTINGS,
   },
   INITIAL_DEMO_BUSINESS,
 ];
