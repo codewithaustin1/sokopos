@@ -221,6 +221,8 @@ interface PosContextType {
   isDarkMode: boolean;
   setIsDarkMode: React.Dispatch<React.SetStateAction<boolean>>;
   toggleDarkMode: () => void;
+  language: 'en' | 'fr' | 'sw';
+  setLanguage: (lang: 'en' | 'fr' | 'sw') => void;
 
   // Retail Domain Accent Palettes
   retailTheme: RetailTheme;
@@ -6919,6 +6921,22 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
   };
 
+  const [language, setLanguageState] = useState<'en' | 'fr' | 'sw'>(() => {
+    return (localStorage.getItem('sokopos_language') as 'en' | 'fr' | 'sw') || 'en';
+  });
+
+  const setLanguage = useCallback((lang: 'en' | 'fr' | 'sw') => {
+    setLanguageState(lang);
+    localStorage.setItem('sokopos_language', lang);
+    if (lang === 'fr') {
+      showToast('Langue définie sur Français', 'success');
+    } else if (lang === 'sw') {
+      showToast('Lugha imewekwa kuwa Kiswahili', 'success');
+    } else {
+      showToast('Language set to English', 'success');
+    }
+  }, [showToast]);
+
   const openBusinessSettings = (initialTab: 'profile' | 'branches' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset' = 'profile') => {
     if (initialTab === 'pricing') {
       openPricingPage();
@@ -7291,6 +7309,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         isDarkMode,
         setIsDarkMode,
         toggleDarkMode,
+        language,
+        setLanguage,
 
         retailTheme,
         setRetailTheme,
