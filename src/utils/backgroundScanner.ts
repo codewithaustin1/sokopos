@@ -178,9 +178,22 @@ export class BackgroundScannerEngine {
   }
 
   private handleKeyDown(e: KeyboardEvent) {
+    if (!e || typeof e.key !== 'string') {
+      return;
+    }
+
+    if (!Array.isArray(this.charBuffer)) {
+      this.charBuffer = [];
+    }
+    if (!Array.isArray(this.keyTimestamps)) {
+      this.keyTimestamps = [];
+    }
+
+    const bufferLength = this.charBuffer.length;
+
     // Ignore control keys, modifier shortcuts (Ctrl+C, Alt+Tab, etc.)
     if (e.ctrlKey || e.altKey || e.metaKey) {
-      if (this.charBuffer.length > 0) {
+      if (bufferLength > 0) {
         this.resetBuffer();
       }
       return;
@@ -197,9 +210,10 @@ export class BackgroundScannerEngine {
 
     // Handle terminating key (Enter or Tab)
     if (isTerminator) {
-      if (this.charBuffer.length >= this.config.minBarcodeLength) {
+      const minLength = this.config?.minBarcodeLength ?? 3;
+      if (bufferLength >= minLength) {
         const burstDuration = now - this.burstStartTime;
-        const charCount = this.charBuffer.length;
+        const charCount = bufferLength;
         const interKeyGaps = [];
 
         for (let i = 1; i < this.keyTimestamps.length; i++) {
@@ -219,9 +233,9 @@ export class BackgroundScannerEngine {
         // 2. Terminator arrived shortly after last character (<= 250ms)
         // 3. Overall burst duration is reasonable for a scanner
         const isScannerBurst =
-          avgLatency <= this.config.maxInterKeyLatencyMs &&
+          avgLatency <= (this.config?.maxInterKeyLatencyMs ?? 55) &&
           timeSinceLastChar < 250 &&
-          burstDuration <= this.config.maxTotalBurstDurationMs;
+          burstDuration <= (this.config?.maxTotalBurstDurationMs ?? 1500);
 
         if (isScannerBurst) {
           // Stop propagation and prevent default action (e.g. form submission, dialog closing)
@@ -233,19 +247,19 @@ export class BackgroundScannerEngine {
           let restored = false;
 
           // Input element cleanup
-          if (this.config.enableInputRestoration && this.snapshotTarget) {
+          if (this.config?.enableInputRestoration && this.snapshotTarget) {
             // Restore original text before the burst typed into it
             restored = restoreInputElementValue(
               this.snapshotTarget,
               this.snapshotOriginalValue,
               this.snapshotSelection
             );
-          } else if (this.config.enableInputRestoration && isInputTarget) {
+          } else if (this.config?.enableInputRestoration && isInputTarget) {
             // Fallback: If snapshot target wasn't captured, strip barcode suffix if present
-            const currentVal = target.value;
-            if (currentVal.endsWith(barcode)) {
+            const currentVal = (target as HTMLInputElement)?.value;
+            if (typeof currentVal === 'string' && barcode && currentVal.endsWith(barcode)) {
               const cleanedVal = currentVal.slice(0, -barcode.length);
-              restored = restoreInputElementValue(target, cleanedVal);
+              restored = restoreInputElementValue(target as HTMLInputElement, cleanedVal);
             }
           }
 
@@ -275,7 +289,7 @@ export class BackgroundScannerEngine {
           }
 
           // Execute registered scan handler
-          this.config.onScan(barcode, metadata);
+          this.config?.onScan?.(barcode, metadata);
 
           this.resetBuffer();
           return;
@@ -288,11 +302,12 @@ export class BackgroundScannerEngine {
     }
 
     // Process printable character keys (length === 1)
-    if (e.key.length === 1) {
+    if (typeof e.key === 'string' && e.key.length === 1) {
       const timeSinceLastChar = now - this.lastCharTime;
+      const maxLatency = this.config?.maxInterKeyLatencyMs ?? 55;
 
       // If gap exceeds scanner burst threshold, start fresh buffer
-      if (this.charBuffer.length === 0 || timeSinceLastChar > this.config.maxInterKeyLatencyMs) {
+      if (bufferLength === 0 || timeSinceLastChar > maxLatency) {
         this.charBuffer = [e.key];
         this.keyTimestamps = [now];
         this.burstStartTime = now;
