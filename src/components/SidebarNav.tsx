@@ -34,6 +34,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
     isSuperAdmin,
     openReturnsModal,
     can,
+    t,
   } = usePos();
 
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -45,7 +46,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
     {
       id: 'register',
       tab: 'register' as const,
-      label: 'Sell',
+      label: t('nav_sell', 'Sell'),
       icon: ShoppingCart,
       badge: cartItemCount > 0 ? `${cartItemCount}` : null,
       badgeColor: 'bg-blue-500 text-white',
@@ -55,7 +56,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
     {
       id: 'customers',
       tab: 'customers' as const,
-      label: 'Customers',
+      label: t('nav_customers', 'Customers'),
       icon: Users,
       badge: null,
       badgeColor: '',
@@ -65,7 +66,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
     {
       id: 'inventory',
       tab: 'inventory' as const,
-      label: 'Inventory',
+      label: t('nav_inventory', 'Inventory'),
       icon: Package,
       badge: null,
       badgeColor: '',
@@ -75,7 +76,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
     {
       id: 'suppliers',
       tab: 'suppliers' as const,
-      label: 'Suppliers',
+      label: t('nav_suppliers', 'Suppliers'),
       icon: Truck,
       badge: null,
       badgeColor: '',
@@ -85,7 +86,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
     {
       id: 'shifts',
       tab: 'shifts' as const,
-      label: 'Shifts & Till',
+      label: t('nav_shifts', 'Shifts & Till'),
       icon: Clock,
       badge: null,
       badgeColor: '',
@@ -95,7 +96,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
     {
       id: 'analytics',
       tab: 'analytics' as const,
-      label: 'Analytics',
+      label: t('nav_analytics', 'Analytics'),
       icon: AnalyticsIcon,
       badge: null,
       badgeColor: '',
@@ -105,7 +106,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
     {
       id: 'reports',
       tab: 'reports' as const,
-      label: 'Reports',
+      label: t('nav_reports', 'Reports'),
       icon: FileText,
       badge: null,
       badgeColor: '',
@@ -115,7 +116,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
     {
       id: 'cloud-sync',
       tab: 'cloud-sync' as const,
-      label: 'Cloud Sync',
+      label: t('nav_cloud_sync', 'Cloud Sync'),
       icon: Radio,
       badge: pendingOfflineCount > 0 ? `${pendingOfflineCount}` : null,
       badgeColor: 'bg-amber-500 text-white',
@@ -196,7 +197,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
               <RotateCcw className="w-4 h-4 shrink-0 text-amber-600 group-hover:text-amber-700 transition" />
               {!isCollapsed && (
                 <span className="flex-1 text-left truncate text-slate-700 group-hover:text-amber-900">
-                  Returns & Refunds
+                  {t('nav_returns', 'Returns & Refunds')}
                 </span>
               )}
             </button>
@@ -231,7 +232,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
                   }`}
                 />
                 {!isCollapsed && (
-                  <span className="flex-1 text-left truncate">Staff Users</span>
+                  <span className="flex-1 text-left truncate">{t('auth_staff_tab', 'Staff Users')}</span>
                 )}
               </button>
 
@@ -254,7 +255,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
                   }`}
                 />
                 {!isCollapsed && (
-                  <span className="flex-1 text-left truncate">Store Settings</span>
+                  <span className="flex-1 text-left truncate">{t('nav_settings', 'Store Settings')}</span>
                 )}
               </button>
 
@@ -278,7 +279,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
                     }`}
                   />
                   {!isCollapsed && (
-                    <span className="flex-1 text-left truncate">Super-Admin</span>
+                    <span className="flex-1 text-left truncate">{t('nav_super_admin', 'Super-Admin')}</span>
                   )}
                   {!isCollapsed && (
                     <span

@@ -71,6 +71,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
     openShiftManagement,
     selectedCustomer,
     setSelectedCustomer,
+    t,
   } = usePos();
 
   const [selectedCategory, setSelectedCategory] = useState<string>('All Items');
@@ -381,7 +382,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                 id="register-search-input"
                 ref={searchInputRef}
                 type="text"
-                placeholder="Search product, SKU or scan barcode..."
+                placeholder={t('reg_search_placeholder', 'Search product, SKU or scan barcode...')}
                 value={searchQuery}
                 onFocus={() => setIsSearchFocused(true)}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -413,7 +414,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                   onClick={openBarcodeScanner}
                   className="px-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-[10px] font-bold flex items-center gap-1 border border-blue-200 cursor-pointer h-full"
                 >
-                  <Scan className="w-3 h-3" /> Scan (F2)
+                  <Scan className="w-3 h-3" /> {t('action_scan', 'Scan')} (F2)
                 </button>
               </div>
 
@@ -638,9 +639,9 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         <div className="p-3 sm:p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/80 shrink-0">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="font-black text-slate-800 text-sm">Active Order</h2>
+              <h2 className="font-black text-slate-800 text-sm">{t('reg_cart_title', 'Active Order')}</h2>
               <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                {totalCartCount} items
+                {totalCartCount} {totalCartCount === 1 ? t('reg_item', 'item') : t('reg_items', 'items')}
               </span>
             </div>
             <p className="text-[10px] text-slate-400 mt-0.5">
@@ -656,7 +657,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               title="Open Returns & Refunds Desk"
             >
               <RotateCcw className="w-3 h-3 text-amber-700" />
-              <span>Returns</span>
+              <span>{t('nav_returns', 'Returns')}</span>
             </button>
             <button
               type="button"
@@ -671,7 +672,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                 className="text-xs text-red-600 font-bold hover:bg-red-50 px-2.5 py-1 rounded-lg transition cursor-pointer"
                 title="Cancel sale and record audited cart void"
               >
-                Clear (Void)
+                {t('reg_clear_cart', 'Clear (Void)')}
               </button>
             )}
           </div>
@@ -688,7 +689,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             >
               <span className="flex items-center gap-2 truncate">
                 <User className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 shrink-0" />
-                <span className="truncate">Walk-in Customer (Unassigned)</span>
+                <span className="truncate">{t('reg_walk_in', 'Walk-in Customer (Unassigned)')}</span>
               </span>
               <span className="text-[10px] text-blue-600 bg-blue-50 group-hover:bg-blue-100 px-2 py-0.5 rounded-md font-bold shrink-0">
                 + Assign
@@ -761,9 +762,9 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
           {cart.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center p-8 text-center text-slate-400">
               <ShoppingBag className="w-10 h-10 mb-2 stroke-1 text-slate-300" />
-              <div className="text-xs font-bold text-slate-600">Cart is empty</div>
+              <div className="text-xs font-bold text-slate-600">{t('reg_empty_cart', 'Your cart is empty')}</div>
               <p className="text-[11px] text-slate-400 mt-1 max-w-[200px]">
-                Scan a barcode, search, or click any product card to start checkout.
+                {t('reg_empty_cart_sub', 'Scan a barcode, search, or click any product card to start checkout.')}
               </p>
               <button
                 type="button"
@@ -796,7 +797,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             <div className="flex justify-between text-xs text-emerald-600 font-bold">
               <span className="flex items-center gap-1">
                 <Tag className="w-3.5 h-3.5" />
-                <span>Discount Savings</span>
+                <span>{t('reg_discount', 'Discount')}</span>
               </span>
               <span className="font-mono">
                 - {currentLocation.currency} {cartDiscount.toFixed(2)}
@@ -804,7 +805,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             </div>
           )}
           <div className="flex justify-between text-xs text-slate-500">
-            <span>Subtotal (Net)</span>
+            <span>{t('reg_subtotal', 'Subtotal (Net)')}</span>
             <span className="font-semibold text-slate-700">
               {currentLocation.currency} {cartSubtotal.toFixed(2)}
             </span>
@@ -826,7 +827,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             </span>
           </div>
           <div className="flex justify-between text-sm sm:text-base font-black text-slate-900 pt-2 border-t border-slate-200">
-            <span>Total Payable</span>
+            <span>{t('reg_total', 'Total Payable')}</span>
             <span className="text-blue-600 font-black">
               {currentLocation.currency} {cartTotal.toFixed(2)}
             </span>
@@ -855,8 +856,8 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               title="Instant single-tap cash checkout with standard half-up rounding (Shortcut: F1)"
             >
               <Banknote className="w-4 h-4 text-emerald-100 shrink-0" />
-              <span className="hidden sm:inline">Exact Cash</span>
-              <span className="sm:hidden">Cash</span>
+              <span className="hidden sm:inline">{t('pay_exact_amount', 'Exact Cash')}</span>
+              <span className="sm:hidden">{t('pay_cash', 'Cash')}</span>
               <kbd className="hidden xl:inline-block text-[10px] bg-emerald-700/80 border border-emerald-500/40 text-emerald-100 px-1.5 py-0.5 rounded font-mono font-bold shrink-0">
                 F1
               </kbd>
@@ -874,7 +875,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               title="Pay / Proceed to Checkout (Shortcuts: Space, Enter)"
             >
               <span className="text-sm font-black truncate">
-                Pay {currentLocation.currency} {cartTotal.toFixed(2)}
+                {t('reg_pay_button', 'Pay')} {currentLocation.currency} {cartTotal.toFixed(2)}
               </span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform shrink-0" />
               <kbd className="hidden xl:inline-block text-[10px] bg-blue-700/80 border border-blue-500/40 text-blue-100 px-1.5 py-0.5 rounded font-mono font-bold shrink-0">

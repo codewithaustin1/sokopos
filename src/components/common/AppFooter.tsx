@@ -24,7 +24,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
   loginBgGraphic: propLoginBgGraphic,
   theme = 'dark',
 }) => {
-  const { loginBgGraphic: contextLoginBgGraphic, language, setLanguage } = usePos();
+  const { loginBgGraphic: contextLoginBgGraphic, language, setLanguage, t } = usePos();
   const loginBgGraphic = propLoginBgGraphic ?? contextLoginBgGraphic;
 
   const handlePricingClick = () => {
@@ -73,7 +73,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
         <div className={`flex items-center gap-2.5 flex-wrap justify-center ${isLight ? 'text-[#4c5a6b]' : 'text-[#9FB2A7]'}`}>
           <AppLogo theme={theme} size="sm" onClick={handleLogoClick} />
           <span className={`hidden sm:inline ${isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}`}>•</span>
-          <span>© 2026 SokoPoS Enterprise Platform</span>
+          <span>{t('footer_copyright', '© 2026 SokoPoS Enterprise Platform')}</span>
         </div>
 
         {/* Legal & Pricing Navigation Links */}
@@ -88,7 +88,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                 : isLight ? 'text-[#4c5a6b] hover:text-[#1565d8]' : 'text-[#9FB2A7] hover:text-[#4CC38A]'
             }`}
           >
-            Pricing
+            {t('footer_pricing', 'Pricing')}
           </button>
           <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
           <button
@@ -101,7 +101,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                 : isLight ? 'text-[#4c5a6b] hover:text-[#1565d8]' : 'text-[#9FB2A7] hover:text-[#4CC38A]'
             }`}
           >
-            Terms of Service
+            {t('footer_terms', 'Terms of Service')}
           </button>
           <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
           <button
@@ -114,7 +114,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                 : isLight ? 'text-[#4c5a6b] hover:text-[#1565d8]' : 'text-[#9FB2A7] hover:text-[#4CC38A]'
             }`}
           >
-            Privacy Policy
+            {t('footer_privacy', 'Privacy Policy')}
           </button>
           <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
           <button
@@ -127,7 +127,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                 : isLight ? 'text-[#4c5a6b] hover:text-[#1565d8]' : 'text-[#9FB2A7] hover:text-[#4CC38A]'
             }`}
           >
-            FAQs
+            {t('footer_faqs', 'FAQs')}
           </button>
           <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
           <button
@@ -140,7 +140,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                 : isLight ? 'text-[#4c5a6b] hover:text-[#1565d8]' : 'text-[#9FB2A7] hover:text-[#4CC38A]'
             }`}
           >
-            Legal & IP
+            {t('footer_legal_ip', 'Legal & IP')}
           </button>
           <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
           <button
@@ -152,7 +152,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
             }`}
             aria-label="Scroll to top of page"
           >
-            Scroll to Top ↑
+            {t('footer_scroll_top', 'Scroll to Top ↑')}
           </button>
           <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
           <div className="inline-flex items-center">

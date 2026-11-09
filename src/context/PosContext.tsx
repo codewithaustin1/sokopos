@@ -43,6 +43,7 @@ import {
 } from '../types';
 import { digitaxService } from '../services/digitaxService';
 import { bluetoothPrinterService } from '../services/bluetoothPrinterService';
+import { getTranslation, Language } from '../i18n/translations';
 import {
   resolveDynamicTaxRate,
   calculateCartTaxBreakdown,
@@ -223,6 +224,7 @@ interface PosContextType {
   toggleDarkMode: () => void;
   language: 'en' | 'fr' | 'sw';
   setLanguage: (lang: 'en' | 'fr' | 'sw') => void;
+  t: (key: string, fallback?: string) => string;
 
   // Retail Domain Accent Palettes
   retailTheme: RetailTheme;
@@ -6937,6 +6939,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [showToast]);
 
+  const t = useCallback(
+    (key: string, fallback?: string): string => {
+      return getTranslation(key, language, fallback);
+    },
+    [language]
+  );
+
   const openBusinessSettings = (initialTab: 'profile' | 'branches' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset' = 'profile') => {
     if (initialTab === 'pricing') {
       openPricingPage();
@@ -7311,6 +7320,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         toggleDarkMode,
         language,
         setLanguage,
+        t,
 
         retailTheme,
         setRetailTheme,

@@ -112,6 +112,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     closePricingPage,
     appointedDemoCashier,
     appointedDemoCashierId,
+    t,
   } = usePos();
 
   const [activeTab, setActiveTab] = useState<'owner' | 'staff' | 'register'>('owner');
@@ -1326,7 +1327,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   onClick={handleLaunchDemoSandbox}
                 >
                   <Zap className="w-4 h-4 fill-white" />
-                  <span>Try the demo account</span>
+                  <span>{t('auth_try_demo', 'Try the demo account')}</span>
                 </button>
               </div>
               <p className="sp-fine">Live sandbox in 5 seconds · No credit card · Pre-loaded inventory</p>
@@ -1574,7 +1575,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       : 'bg-transparent text-[#4c5a6b] hover:text-[#0e1a2b]'
                   }`}
                 >
-                  Owner
+                  {t('auth_owner_tab', 'Owner')}
                 </button>
                 <button
                   type="button"
@@ -1590,7 +1591,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       : 'bg-transparent text-[#4c5a6b] hover:text-[#0e1a2b]'
                   }`}
                 >
-                  Staff
+                  {t('auth_staff_tab', 'Staff')}
                 </button>
               </div>
             )}
@@ -1602,7 +1603,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   id="auth-modal-title"
                   className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-4 text-left"
                 >
-                  Welcome back!
+                  {t('auth_welcome_back', 'Welcome back!')}
                 </h2>
 
                 <button
@@ -1614,14 +1615,14 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   <span className="w-6 h-6 rounded-md bg-white text-[#1565d8] font-black text-xs flex items-center justify-center shrink-0 shadow-2xs">
                     G
                   </span>
-                  <span>Continue with Google</span>
+                  <span>{t('auth_google_button', 'Continue with Google')}</span>
                 </button>
 
                 {/* Subtle dashed divider with centered text */}
                 <div className="relative my-4 flex items-center justify-center">
                   <div className="w-full border-t border-dashed border-[#d9e1e6]"></div>
                   <span className="absolute px-3 bg-white text-xs text-[#556375] font-medium">
-                    or sign in with email
+                    {t('auth_or_email', 'or sign in with email')}
                   </span>
                 </div>
 
@@ -1631,7 +1632,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     ref={emailInputRef}
                     type="email"
                     id="email"
-                    placeholder="yourname@gmail.com"
+                    placeholder={t('auth_email_placeholder', 'yourname@gmail.com')}
                     aria-label="Google account email"
                     autoComplete="email"
                     value={ownerEmailInput}
@@ -1642,7 +1643,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     type="submit"
                     className="h-11 px-5 bg-[#1565d8] hover:bg-[#1255b5] active:scale-[0.98] text-white font-bold text-sm rounded-xl shrink-0 transition-all cursor-pointer shadow-xs"
                   >
-                    Sign in
+                    {t('auth_email_signin', 'Sign in')}
                   </button>
                 </form>
               </div>
@@ -1656,7 +1657,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     id="auth-modal-title"
                     className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight text-left"
                   >
-                    Start your shift
+                    {t('auth_start_shift', 'Start your shift')}
                   </h2>
                 </div>
 
@@ -1696,13 +1697,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       onClick={() => setIsEditingStaffId(true)}
                       className="text-xs text-[#1565d8] hover:text-[#1255b5] font-bold px-2 py-1 rounded-lg hover:bg-blue-50 transition cursor-pointer shrink-0"
                     >
-                      Change ID
+                      {t('action_edit', 'Change ID')}
                     </button>
                   </div>
                 ) : (
                   <div className="border border-[#d9e1e6] bg-[#f8fafc] rounded-2xl p-3 space-y-1.5 shadow-2xs">
                     <label htmlFor="staff-credential-input" className="block text-xs font-bold text-[#0e1a2b]">
-                      Staff ID or Username
+                      {t('auth_staff_id_label', 'Staff ID or Username')}
                     </label>
                     <div className="flex items-center gap-2">
                       <input
@@ -1725,7 +1726,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                             pinInputRef.current?.focus();
                           }
                         }}
-                        placeholder="Enter Staff ID or username (e.g. #1001, cashier.a)"
+                        placeholder={t('auth_staff_id_placeholder', 'Enter Staff ID or username (e.g. #1001, cashier.a)')}
                         className="flex-1 h-10 px-3.5 rounded-xl border border-[#d9e1e6] bg-white text-[#0e1a2b] font-bold text-sm focus:border-[#1565d8] focus:outline-none transition-colors"
                       />
                       {isDemoModeActive && (
@@ -1734,7 +1735,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           onClick={() => setIsEditingStaffId(false)}
                           className="h-10 px-3.5 bg-[#1565d8] hover:bg-[#1255b5] text-white rounded-xl text-xs font-bold transition cursor-pointer shrink-0"
                         >
-                          Done
+                          {t('action_done', 'Done')}
                         </button>
                       )}
                     </div>
@@ -1744,7 +1745,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 {/* PIN SECTION */}
                 <div className="pt-1 text-center">
                   <label htmlFor="staff-pin-entry-input" className="block text-sm font-bold text-[#0e1a2b] mb-1.5">
-                    Enter your 4-digit PIN
+                    {t('auth_enter_pin', 'Enter your 4-digit PIN')}
                   </label>
 
                   {/* Standard Obscured PIN Input Field per secure-entry practice */}
@@ -1808,7 +1809,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       {k === '⌫' ? (
                         <Delete className="w-5 h-5 text-[#0e1a2b]" />
                       ) : k === 'Clear' ? (
-                        <span className="text-xs sm:text-sm font-bold text-[#4c5a6b]">{k}</span>
+                        <span className="text-xs sm:text-sm font-bold text-[#4c5a6b]">{t('action_clear', 'Clear')}</span>
                       ) : (
                         <span>{k}</span>
                       )}
@@ -1825,10 +1826,10 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       id="fillPin"
                       onClick={handleFillDemoPin}
                     >
-                      Demo PIN: 1234
+                      {t('auth_demo_pin_hint', 'Demo PIN: 1234')}
                     </button>
                   ) : (
-                    <span className="text-xs text-[#556375] font-semibold">Secure terminal login</span>
+                    <span className="text-xs text-[#556375] font-semibold">{t('auth_secure_login', 'Secure terminal login')}</span>
                   )}
                   <span className="text-[11px] text-[#718096]">
                     {isSubmittingTerminal ? 'Authenticating shift...' : 'Auto-submits on 4 digits'}
@@ -1844,7 +1845,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   id="auth-modal-title"
                   className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-3 text-left"
                 >
-                  Add a new shop
+                  {t('auth_add_shop', 'Add a new shop')}
                 </h2>
                 <form id="regForm" onSubmit={handleRegisterFormSubmit} className="space-y-3 mb-4">
                   <div>
@@ -1882,7 +1883,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     <span className="w-6 h-6 rounded-md bg-white text-[#1565d8] font-black text-xs flex items-center justify-center shrink-0 shadow-2xs">
                       G
                     </span>
-                    <span>Continue with Google to create shop</span>
+                    <span>{t('auth_google_button', 'Continue with Google')}</span>
                   </button>
                 </form>
               </div>
@@ -1891,7 +1892,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             {/* Below Card Switcher: Dashed divider, question & red Add new shop button matching image_d64c8152.png */}
             <div className="border-t border-dashed border-[#d9e1e6] pt-4 text-center" id="below">
               <p className="text-xs sm:text-[13px] text-[#4c5a6b] font-medium mb-2.5" id="belowText">
-                {activeTab === 'register' ? 'Already have a registered shop?' : 'Need to register a new location?'}
+                {activeTab === 'register' ? t('auth_have_shop', 'Already have a registered shop?') : t('auth_need_shop', 'Need to register a new location?')}
               </p>
               <button
                 type="button"
@@ -1907,7 +1908,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     : 'bg-[#c8231b] hover:bg-[#b01e17] active:scale-[0.99] text-white shadow-xs'
                 }`}
               >
-                {activeTab === 'register' ? 'Return to login' : 'Add new shop'}
+                {activeTab === 'register' ? t('auth_return_login', 'Return to login') : t('auth_add_shop', 'Add new shop')}
               </button>
             </div>
           </div>
