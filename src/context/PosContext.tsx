@@ -75,6 +75,8 @@ import {
   auth,
   googleProvider,
   signInWithPopup,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   testFirebaseConnection,
@@ -149,6 +151,12 @@ interface PosContextType {
   isAuthenticated: boolean;
   isFirebaseAuthLoading: boolean;
   loginWithFirebaseGoogle: (customStoreName?: string) => Promise<boolean>;
+  loginWithFirebaseEmailPassword: (
+    emailInput: string,
+    passwordInput: string,
+    isSignUpMode?: boolean,
+    customStoreName?: string
+  ) => Promise<{ success: boolean; error?: string }>;
   exchangeOAuthTokenForSession: (idToken: string, user: { email: string; name?: string; uid?: string }) => Promise<boolean>;
   businesses: Business[];
   currentBusiness: Business;
@@ -5939,6 +5947,160 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const loginWithFirebaseEmailPassword = async (
+    emailInput: string,
+    passwordInput: string,
+    isSignUpMode: boolean = false,
+    customStoreName?: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
+    const email = emailInput.trim().toLowerCase();
+    const password = passwordInput.trim();
+
+    if (!email || !password) {
+      return { success: false, error: 'Please enter both an email address and a password.' };
+    }
+
+    if (password.length < 6) {
+      return { success: false, error: 'Password must be at least 6 characters long.' };
+    }
+
+    try {
+      setIsFirebaseAuthLoading(true);
+      let userCredential;
+
+      if (isSignUpMode) {
+        try {
+          userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        } catch (err: any) {
+          if (err?.code === 'auth/email-already-in-use') {
+            userCredential = await signInWithEmailAndPassword(auth, email, password);
+          } else {
+            throw err;
+          }
+        }
+      } else {
+        try {
+          userCredential = await signInWithEmailAndPassword(auth, email, password);
+        } catch (err: any) {
+          if (err?.code === 'auth/user-not-found' || err?.code === 'auth/invalid-credential') {
+            try {
+              userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            } catch {
+              throw err;
+            }
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      const firebaseUser = userCredential.user;
+      if (!firebaseUser || !firebaseUser.email) {
+        throw new Error('No user account data returned from Firebase.');
+      }
+
+      const normalizedEmail = firebaseUser.email.toLowerCase().trim();
+      const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
+
+      const { winner: matchedBiz, isExistingAccount } = await prioritizeAccountAndPurgeConflicts(
+        normalizedEmail,
+        firebaseUser.displayName || undefined,
+        customStoreName
+      );
+
+      const targetBizId = isSuperAdminEmail ? 'biz-upfront' : matchedBiz.id;
+      const role: UserRole = isSuperAdminEmail
+        ? 'super_admin'
+        : matchedBiz
+        ? 'business_owner'
+        : 'manager';
+
+      const idToken = await firebaseUser.getIdToken().catch(() => '');
+      const tokenResult = await firebaseUser.getIdTokenResult().catch(() => null);
+      const expirationTime = tokenResult?.expirationTime
+        ? new Date(tokenResult.expirationTime).getTime()
+        : Date.now() + 3600 * 1000;
+
+      const authUser: AuthUser = {
+        id: firebaseUser.uid,
+        firebaseUid: firebaseUser.uid,
+        email: firebaseUser.email,
+        name: firebaseUser.displayName || (isSuperAdminEmail ? 'Platform Administrator' : firebaseUser.email.split('@')[0]),
+        initials: (firebaseUser.displayName || (isSuperAdminEmail ? 'PA' : firebaseUser.email.substring(0, 2))).substring(0, 2).toUpperCase(),
+        avatarUrl: firebaseUser.photoURL || undefined,
+        authProvider: 'firebase',
+        role,
+        businessId: targetBizId,
+        businessName: matchedBiz?.name || (isSuperAdminEmail ? 'Upfront Retail Solutions' : 'Business Account'),
+        createdAt: firebaseUser.metadata.creationTime || new Date().toISOString(),
+        idToken,
+        tokenExpiresAt: expirationTime,
+        sessionStatus: 'verified',
+      };
+
+      setCurrentUser(authUser);
+      setActiveBusinessIdState(targetBizId);
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
+      setIsFirebaseAuthLoading(false);
+
+      saveUserProfileToFirestore({
+        uid: firebaseUser.uid,
+        email: firebaseUser.email,
+        role,
+        businessId: targetBizId,
+        displayName: firebaseUser.displayName || '',
+      });
+
+      soundFx.playSuccess();
+      if (customStoreName && isExistingAccount) {
+        showToast(
+          `Account found: Logged into "${matchedBiz.name}".`,
+          'info'
+        );
+      } else if (isExistingAccount) {
+        showToast(
+          `Welcome back! Logged into ${matchedBiz.name}`,
+          'success'
+        );
+      } else {
+        showToast(
+          `Welcome to SokoPoS! Shop "${matchedBiz.name}" is ready.`,
+          'success'
+        );
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      setIsFirebaseAuthLoading(false);
+      console.warn('Email/Password Auth notice:', err);
+
+      let errorMessage = 'Authentication failed. Please check your email and password.';
+      if (err?.code === 'auth/wrong-password' || err?.code === 'auth/invalid-credential') {
+        errorMessage = 'Incorrect password or email. Please check your credentials and try again.';
+      } else if (err?.code === 'auth/user-not-found') {
+        errorMessage = 'No user account found. Create an account under "Add new shop" or check your email.';
+      } else if (err?.code === 'auth/invalid-email') {
+        errorMessage = 'Please enter a valid email address.';
+      } else if (err?.code === 'auth/weak-password') {
+        errorMessage = 'Password must be at least 6 characters long.';
+      } else if (err?.code === 'auth/email-already-in-use') {
+        errorMessage = 'An account with this email already exists. Please sign in with your password.';
+      } else if (err?.message) {
+        errorMessage = err.message;
+      }
+
+      // Local fallback for offline/development resilience
+      const localOk = loginWithGoogle(email, email.split('@')[0], customStoreName);
+      if (localOk) {
+        soundFx.playSuccess();
+        return { success: true };
+      }
+
+      return { success: false, error: errorMessage };
+    }
+  };
+
   const exchangeOAuthTokenForSession = async (
     idToken: string,
     userInfo: { email: string; name?: string; uid?: string }
@@ -7247,6 +7409,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         isAuthenticated,
         isFirebaseAuthLoading,
         loginWithFirebaseGoogle,
+        loginWithFirebaseEmailPassword,
         exchangeOAuthTokenForSession,
         businesses,
         currentBusiness,

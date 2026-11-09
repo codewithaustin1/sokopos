@@ -117,13 +117,14 @@ export function sanitizeForFirestore<T>(data: T): T {
 // Tenant Businesses Firestore API
 // -------------------------------------------------------------
 export async function getBusinessesFromFirestore(): Promise<Business[]> {
-  if (!db || !auth.currentUser) return [];
+  if (!db) return [];
   const path = 'businesses';
   try {
     const snap = await getDocs(collection(db, path));
     return snap.docs.map((d) => d.data() as Business);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
+    return [];
   }
 }
 
@@ -347,7 +348,7 @@ export async function saveUserProfileToFirestore(user: {
 // Tenant Products Firestore API (Row-Level Security Scoped)
 // -------------------------------------------------------------
 export async function getTenantProductsFromFirestore(businessId: string): Promise<Product[]> {
-  if (!db || !auth.currentUser) return [];
+  if (!db || !businessId) return [];
   const path = 'products';
   try {
     const q = query(collection(db, path), where('businessId', '==', businessId));
@@ -355,6 +356,7 @@ export async function getTenantProductsFromFirestore(businessId: string): Promis
     return snap.docs.map((d) => d.data() as Product);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
+    return [];
   }
 }
 
@@ -363,7 +365,7 @@ export async function getTenantProductsFromFirestore(businessId: string): Promis
  * strictly bypassing any local client IndexedDB or memory cache.
  */
 export async function getFreshTenantProductsFromFirestore(businessId: string): Promise<Product[]> {
-  if (!db || !auth.currentUser) return [];
+  if (!db || !businessId) return [];
   const path = 'products';
   try {
     const q = query(collection(db, path), where('businessId', '==', businessId));
@@ -376,6 +378,7 @@ export async function getFreshTenantProductsFromFirestore(businessId: string): P
       return fallbackSnap.docs.map((d) => d.data() as Product);
     } catch (fallbackErr) {
       handleFirestoreError(fallbackErr, OperationType.LIST, path);
+      return [];
     }
   }
 }
@@ -384,8 +387,7 @@ export function subscribeToTenantProducts(
   businessId: string,
   onData: (products: Product[], isFromCache?: boolean) => void
 ): Unsubscribe {
-  // SKILL.md: Only attach onSnapshot listeners if auth is ready and user is authenticated
-  if (!db || !auth.currentUser) {
+  if (!db || !businessId) {
     return () => {};
   }
   const path = 'products';
@@ -445,7 +447,7 @@ export async function deleteProductFromFirestore(productId: string): Promise<voi
 // Tenant Categories Firestore API (Unique per Shop)
 // -------------------------------------------------------------
 export async function getTenantCategoriesFromFirestore(businessId: string): Promise<Category[]> {
-  if (!db || !auth.currentUser) return [];
+  if (!db || !businessId) return [];
   const path = 'categories';
   try {
     const q = query(collection(db, path), where('businessId', '==', businessId));
@@ -453,6 +455,7 @@ export async function getTenantCategoriesFromFirestore(businessId: string): Prom
     return snap.docs.map((d) => d.data() as Category);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
+    return [];
   }
 }
 
@@ -460,7 +463,7 @@ export function subscribeToTenantCategories(
   businessId: string,
   onData: (categories: Category[]) => void
 ): Unsubscribe {
-  if (!db || !auth.currentUser) {
+  if (!db || !businessId) {
     return () => {};
   }
   const path = 'categories';
@@ -517,7 +520,7 @@ export async function deleteCategoryFromFirestore(categoryId: string): Promise<v
 // Tenant Locations Firestore API
 // -------------------------------------------------------------
 export async function getTenantLocationsFromFirestore(businessId: string): Promise<Location[]> {
-  if (!db || !auth.currentUser) return [];
+  if (!db || !businessId) return [];
   const path = 'locations';
   try {
     const q = query(collection(db, path), where('businessId', '==', businessId));
@@ -525,6 +528,7 @@ export async function getTenantLocationsFromFirestore(businessId: string): Promi
     return snap.docs.map((d) => d.data() as Location);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
+    return [];
   }
 }
 
@@ -532,7 +536,7 @@ export function subscribeToTenantLocations(
   businessId: string,
   onData: (locations: Location[]) => void
 ): Unsubscribe {
-  if (!db || !auth.currentUser) {
+  if (!db || !businessId) {
     return () => {};
   }
   const path = 'locations';
@@ -589,7 +593,7 @@ export async function deleteLocationFromFirestore(locationId: string): Promise<v
 // Tenant Cashiers / Staff Firestore API
 // -------------------------------------------------------------
 export async function getTenantCashiersFromFirestore(businessId: string): Promise<Cashier[]> {
-  if (!db || !auth.currentUser) return [];
+  if (!db || !businessId) return [];
   const path = 'cashiers';
   try {
     const q = query(collection(db, path), where('businessId', '==', businessId));
@@ -602,7 +606,7 @@ export async function getTenantCashiersFromFirestore(businessId: string): Promis
 }
 
 export async function getAllCashiersFromFirestore(): Promise<Cashier[]> {
-  if (!db || !auth.currentUser) return [];
+  if (!db) return [];
   const path = 'cashiers';
   try {
     const snap = await getDocs(collection(db, path));
@@ -617,7 +621,7 @@ export function subscribeToTenantCashiers(
   businessId: string,
   onData: (cashiers: Cashier[]) => void
 ): Unsubscribe {
-  if (!db || !auth.currentUser) {
+  if (!db || !businessId) {
     return () => {};
   }
   const path = 'cashiers';

@@ -108,6 +108,18 @@ function PosAppContent() {
     }
   }, [currentUser, currentPath]);
 
+  // Automatic transition to terminal upon returning from Google OAuth redirect
+  useEffect(() => {
+    if (currentUser && typeof window !== 'undefined') {
+      const wasRedirectLogin = sessionStorage.getItem('sokopos_redirect_in_progress') === 'true';
+      if (wasRedirectLogin) {
+        sessionStorage.removeItem('sokopos_redirect_in_progress');
+        window.history.pushState(null, '', '/pos');
+        setCurrentPath('/pos');
+      }
+    }
+  }, [currentUser]);
+
   // Hidden Dynamic Sitemap View Triggered by Console Command (sitemap() / window.sitemap())
   const [isSitemapOpen, setIsSitemapOpen] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {

@@ -8,6 +8,12 @@ import {
   X,
   User,
   Delete,
+  Eye,
+  EyeOff,
+  Lock,
+  Mail,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { Cashier } from '../types';
@@ -103,6 +109,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     currentBusiness,
     loginWithGoogle,
     loginWithFirebaseGoogle,
+    loginWithFirebaseEmailPassword,
     loginWithCredentials,
     systemUsers,
     allSystemUsers,
@@ -191,12 +198,18 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     return null;
   }, [staffCredentialInput, allSystemUsers, businesses, appointedDemoCashier, isDemoModeActive]);
 
-  // Direct email login state
+  // Direct email & password login state
   const [ownerEmailInput, setOwnerEmailInput] = useState<string>('');
+  const [ownerPasswordInput, setOwnerPasswordInput] = useState<string>('');
+  const [showOwnerPassword, setShowOwnerPassword] = useState<boolean>(false);
+  const [emailAuthError, setEmailAuthError] = useState<string | null>(null);
+  const [isAuthenticatingEmail, setIsAuthenticatingEmail] = useState<boolean>(false);
 
   // Register state
   const [shopNameInput, setShopNameInput] = useState<string>('');
   const [shopEmailInput, setShopEmailInput] = useState<string>('');
+  const [shopPasswordInput, setShopPasswordInput] = useState<string>('');
+  const [showShopPassword, setShowShopPassword] = useState<boolean>(false);
 
   // Synchronize URL hash with active legal or pricing page for browser history & direct links
   useEffect(() => {
@@ -538,49 +551,82 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  const handleEmailFormSubmit = (e: React.FormEvent) => {
+  const handleEmailFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const email = ownerEmailInput.trim();
+    const password = ownerPasswordInput.trim();
+    setEmailAuthError(null);
+
     if (!email) {
-      showToast('Enter your Google account email.', 'info');
+      setEmailAuthError('Please enter your email address.');
       return;
     }
-    const ok = loginWithGoogle(email, email.split('@')[0]);
-    if (ok) {
-      showToast(`Signed in as ${email}`, 'success');
-      setIsAuthModalOpen(false);
-      onLoginSuccess?.();
+    if (!password) {
+      setEmailAuthError('Please enter your password.');
+      return;
+    }
+    if (password.length < 6) {
+      setEmailAuthError('Password must be at least 6 characters long.');
+      return;
+    }
+
+    setIsAuthenticatingEmail(true);
+    try {
+      const res = await loginWithFirebaseEmailPassword(email, password, false);
+      if (res.success) {
+        setIsAuthModalOpen(false);
+        onLoginSuccess?.();
+      } else {
+        setEmailAuthError(res.error || 'Authentication failed. Please check credentials.');
+        soundFx.playError();
+      }
+    } catch (err: any) {
+      setEmailAuthError(err?.message || 'Authentication failed.');
+      soundFx.playError();
+    } finally {
+      setIsAuthenticatingEmail(false);
     }
   };
 
   const handleRegisterFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const storeName = shopNameInput.trim();
+    const ownerEmail = shopEmailInput.trim();
+    const password = shopPasswordInput.trim();
+    setEmailAuthError(null);
+
     if (!storeName) {
-      showToast('Please enter your shop or business name', 'error');
+      setEmailAuthError('Please enter your shop or business name.');
       return;
     }
-    const ownerEmail = shopEmailInput.trim() || 'upfrontretaile@gmail.com';
+    if (!ownerEmail) {
+      setEmailAuthError('Please enter your owner email address.');
+      return;
+    }
+    if (!password) {
+      setEmailAuthError('Please enter a password for your account.');
+      return;
+    }
+    if (password.length < 6) {
+      setEmailAuthError('Password must be at least 6 characters long.');
+      return;
+    }
+
+    setIsAuthenticatingEmail(true);
     try {
-      const success = await loginWithFirebaseGoogle(storeName);
-      if (success) {
+      const res = await loginWithFirebaseEmailPassword(ownerEmail, password, true, storeName);
+      if (res.success) {
         setIsAuthModalOpen(false);
         onLoginSuccess?.();
-        return;
+      } else {
+        setEmailAuthError(res.error || 'Failed to create shop account. Please check inputs.');
+        soundFx.playError();
       }
-      const ok = loginWithGoogle(ownerEmail, 'Business Owner', storeName);
-      if (ok) {
-        showToast(`Shop "${storeName}" created.`, 'success');
-        setIsAuthModalOpen(false);
-        onLoginSuccess?.();
-      }
-    } catch {
-      const ok = loginWithGoogle(ownerEmail, 'Business Owner', storeName);
-      if (ok) {
-        showToast(`Shop "${storeName}" created.`, 'success');
-        setIsAuthModalOpen(false);
-        onLoginSuccess?.();
-      }
+    } catch (err: any) {
+      setEmailAuthError(err?.message || 'Failed to create shop account.');
+      soundFx.playError();
+    } finally {
+      setIsAuthenticatingEmail(false);
     }
   };
 
@@ -1595,7 +1641,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               </div>
             )}
 
-            {/* TAB 1: OWNER LOGIN (Directly matches image_d64c8152.png) */}
+            {/* TAB 1: OWNER LOGIN (Email & Password Sign-In Flow) */}
             {activeTab === 'owner' && (
               <div id="p-owner">
                 <h2
@@ -1621,28 +1667,89 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 <div className="relative my-4 flex items-center justify-center">
                   <div className="w-full border-t border-dashed border-[#d9e1e6]"></div>
                   <span className="absolute px-3 bg-white text-xs text-[#556375] font-medium">
-                    or sign in with email
+                    or sign in with email &amp; password
                   </span>
                 </div>
 
-                {/* Email row with matching inputs and blue Sign in button */}
-                <form id="emailForm" onSubmit={handleEmailFormSubmit} className="flex items-center gap-2 mb-4">
-                  <input
-                    ref={emailInputRef}
-                    type="email"
-                    id="email"
-                    placeholder="yourname@gmail.com"
-                    aria-label="Google account email"
-                    autoComplete="email"
-                    value={ownerEmailInput}
-                    onChange={(e) => setOwnerEmailInput(e.target.value)}
-                    className="flex-1 h-11 px-3.5 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#1565d8] focus:outline-none transition-colors"
-                  />
+                {/* Email & Password Sign-In Form */}
+                <form id="emailForm" onSubmit={handleEmailFormSubmit} className="space-y-3 mb-4">
+                  <div>
+                    <label htmlFor="owner-email-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
+                      Email address
+                    </label>
+                    <div className="relative flex items-center">
+                      <input
+                        ref={emailInputRef}
+                        type="email"
+                        id="owner-email-input"
+                        placeholder="yourname@gmail.com"
+                        aria-label="Email address"
+                        autoComplete="email"
+                        required
+                        value={ownerEmailInput}
+                        onChange={(e) => {
+                          setOwnerEmailInput(e.target.value);
+                          setEmailAuthError(null);
+                        }}
+                        className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#1565d8] focus:outline-none transition-colors"
+                      />
+                      <Mail className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label htmlFor="owner-password-input" className="block text-xs font-bold text-[#0e1a2b]">
+                        Password
+                      </label>
+                    </div>
+                    <div className="relative flex items-center">
+                      <input
+                        type={showOwnerPassword ? 'text' : 'password'}
+                        id="owner-password-input"
+                        placeholder="••••••••"
+                        aria-label="Password"
+                        autoComplete="current-password"
+                        required
+                        value={ownerPasswordInput}
+                        onChange={(e) => {
+                          setOwnerPasswordInput(e.target.value);
+                          setEmailAuthError(null);
+                        }}
+                        className="w-full h-11 pl-3.5 pr-10 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#1565d8] focus:outline-none transition-colors"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowOwnerPassword((prev) => !prev)}
+                        aria-label={showOwnerPassword ? 'Hide password' : 'Show password'}
+                        className="absolute right-2.5 p-1 text-[#556375] hover:text-[#0e1a2b] transition cursor-pointer"
+                      >
+                        {showOwnerPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Error alert banner */}
+                  {emailAuthError && (
+                    <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                      <span>{emailAuthError}</span>
+                    </div>
+                  )}
+
                   <button
                     type="submit"
-                    className="h-11 px-5 bg-[#1565d8] hover:bg-[#1255b5] active:scale-[0.98] text-white font-bold text-sm rounded-xl shrink-0 transition-all cursor-pointer shadow-xs"
+                    disabled={isAuthenticatingEmail}
+                    className="w-full h-11 bg-[#1565d8] hover:bg-[#1255b5] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1"
                   >
-                    Sign in
+                    {isAuthenticatingEmail ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Signing in...</span>
+                      </>
+                    ) : (
+                      <span>Sign in with Email &amp; Password</span>
+                    )}
                   </button>
                 </form>
               </div>
@@ -1848,7 +1955,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 </h2>
                 <form id="regForm" onSubmit={handleRegisterFormSubmit} className="space-y-3 mb-4">
                   <div>
-                    <label className="block text-xs font-bold text-[#0e1a2b] mb-1.5" htmlFor="shop">
+                    <label className="block text-xs font-bold text-[#0e1a2b] mb-1" htmlFor="shop">
                       Shop or business name
                     </label>
                     <input
@@ -1858,31 +1965,99 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       placeholder="e.g. Mombasa Coastal Grocers"
                       required
                       value={shopNameInput}
-                      onChange={(e) => setShopNameInput(e.target.value)}
+                      onChange={(e) => {
+                        setShopNameInput(e.target.value);
+                        setEmailAuthError(null);
+                      }}
                       className="w-full h-11 px-3.5 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#1565d8] focus:outline-none transition-colors"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-[#0e1a2b] mb-1.5" htmlFor="own">
-                      Owner Google email (optional)
+                    <label className="block text-xs font-bold text-[#0e1a2b] mb-1" htmlFor="own">
+                      Owner email address
                     </label>
-                    <input
-                      type="email"
-                      id="own"
-                      placeholder="you@gmail.com"
-                      value={shopEmailInput}
-                      onChange={(e) => setShopEmailInput(e.target.value)}
-                      className="w-full h-11 px-3.5 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#1565d8] focus:outline-none transition-colors"
-                    />
+                    <div className="relative flex items-center">
+                      <input
+                        type="email"
+                        id="own"
+                        placeholder="you@gmail.com"
+                        required
+                        value={shopEmailInput}
+                        onChange={(e) => {
+                          setShopEmailInput(e.target.value);
+                          setEmailAuthError(null);
+                        }}
+                        className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#1565d8] focus:outline-none transition-colors"
+                      />
+                      <Mail className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
+                    </div>
                   </div>
+                  <div>
+                    <label className="block text-xs font-bold text-[#0e1a2b] mb-1" htmlFor="shop-pass">
+                      Create password
+                    </label>
+                    <div className="relative flex items-center">
+                      <input
+                        type={showShopPassword ? 'text' : 'password'}
+                        id="shop-pass"
+                        placeholder="At least 6 characters"
+                        required
+                        minLength={6}
+                        value={shopPasswordInput}
+                        onChange={(e) => {
+                          setShopPasswordInput(e.target.value);
+                          setEmailAuthError(null);
+                        }}
+                        className="w-full h-11 pl-3.5 pr-10 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#1565d8] focus:outline-none transition-colors"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowShopPassword((prev) => !prev)}
+                        aria-label={showShopPassword ? 'Hide password' : 'Show password'}
+                        className="absolute right-2.5 p-1 text-[#556375] hover:text-[#0e1a2b] transition cursor-pointer"
+                      >
+                        {showShopPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Error alert banner */}
+                  {emailAuthError && (
+                    <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                      <span>{emailAuthError}</span>
+                    </div>
+                  )}
+
                   <button
                     type="submit"
-                    className="w-full h-12 bg-[#1565d8] hover:bg-[#1255b5] active:scale-[0.99] text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-xs mt-2"
+                    disabled={isAuthenticatingEmail}
+                    className="w-full h-12 bg-[#1565d8] hover:bg-[#1255b5] active:scale-[0.99] disabled:opacity-60 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs mt-1"
                   >
-                    <span className="w-6 h-6 rounded-md bg-white text-[#1565d8] font-black text-xs flex items-center justify-center shrink-0 shadow-2xs">
+                    {isAuthenticatingEmail ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Creating account...</span>
+                      </>
+                    ) : (
+                      <span>Create shop with Email &amp; Password</span>
+                    )}
+                  </button>
+
+                  <div className="relative my-3 flex items-center justify-center">
+                    <div className="w-full border-t border-dashed border-[#d9e1e6]"></div>
+                    <span className="absolute px-3 bg-white text-xs text-[#556375] font-medium">or</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleGoogleSignIn}
+                    className="w-full h-11 bg-[#f4f7f6] hover:bg-[#e2e8f0] text-[#0e1a2b] border border-[#d9e1e6] rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  >
+                    <span className="w-5 h-5 rounded-md bg-white text-[#1565d8] font-black text-xs flex items-center justify-center shrink-0 border border-[#d9e1e6]">
                       G
                     </span>
-                    <span>Continue with Google to create shop</span>
+                    <span>Continue with Google</span>
                   </button>
                 </form>
               </div>
