@@ -24,7 +24,7 @@ import {
   Trash2,
   Split,
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
+import { safeConfetti } from '../utils/confetti';
 import QRCode from 'qrcode';
 import { PaymentMethod, SplitPaymentTender } from '../types';
 import { usePos } from '../context/PosContext';
@@ -447,15 +447,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
     processPayment(selectedMethod, details);
 
     // Fire subtle celebratory confetti
-    try {
-      confetti({
-        particleCount: 50,
-        spread: 60,
-        origin: { y: 0.7 },
-      });
-    } catch {
-      // ignore
-    }
+    safeConfetti({
+      particleCount: 50,
+      spread: 60,
+      origin: { y: 0.7 },
+    });
 
     setIsProcessing(false);
     onClose();
@@ -2139,15 +2135,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                 : `Paybill ${paybillNumber} / Acc ${accountNumber}`,
           });
 
-          try {
-            confetti({
-              particleCount: 50,
-              spread: 60,
-              origin: { y: 0.7 },
-            });
-          } catch {
-            // ignore
-          }
+          safeConfetti({
+            particleCount: 50,
+            spread: 60,
+            origin: { y: 0.7 },
+          });
 
           onClose();
         }}

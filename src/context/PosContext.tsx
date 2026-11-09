@@ -70,7 +70,7 @@ import {
 import { soundFx } from '../utils/audio';
 import { Haptics } from '../utils/haptics';
 import { calculatePaymentGuardrails } from '../utils/cashRounding';
-import confetti from 'canvas-confetti';
+import { safeConfetti } from '../utils/confetti';
 import {
   auth,
   googleProvider,
@@ -499,6 +499,11 @@ interface PosContextType {
 
   // Audio Sound FX
   soundFx: typeof soundFx;
+
+  // Internationalization / Localization
+  language: string;
+  setLanguage: (lang: string) => void;
+  t: (key: string, fallback?: string) => string;
 }
 
 const PosContext = createContext<PosContextType | undefined>(undefined);
@@ -604,6 +609,12 @@ export function getStableBusinessIdForEmail(email: string): string {
 }
 
 export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  // Localization & Language
+  const [language, setLanguage] = useState<string>('en');
+  const t = useCallback((key: string, fallback?: string) => {
+    return fallback || key;
+  }, []);
+
   // 1. Multi-Tenant Business Registry
   const [businesses, setBusinesses] = useState<Business[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.BUSINESSES);
@@ -4490,15 +4501,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         cashChange: 0,
         roundingDifference: guardrail.roundingDifference,
       });
-      try {
-        confetti({
-          particleCount: 50,
-          spread: 60,
-          origin: { y: 0.7 },
-        });
-      } catch {
-        // ignore
-      }
+      safeConfetti({
+        particleCount: 50,
+        spread: 60,
+        origin: { y: 0.7 },
+      });
       if (guardrail.roundingDifference !== 0) {
         showToast(
           `Exact Cash (${currentLocation.currency} ${guardrail.payableAmount.toFixed(2)}) settled! (Half-up rounded from ${currentLocation.currency} ${cartTotal.toFixed(2)})`,
@@ -7627,6 +7634,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         toastMessage,
         showToast,
         soundFx,
+
+        language,
+        setLanguage,
+        t,
 
         adminActivityLogs,
         logAdminActivity,
