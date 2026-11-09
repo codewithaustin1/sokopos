@@ -77,6 +77,7 @@ import {
   signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   testFirebaseConnection,
@@ -157,6 +158,7 @@ interface PosContextType {
     isSignUpMode?: boolean,
     customStoreName?: string
   ) => Promise<{ success: boolean; error?: string }>;
+  sendPasswordResetEmailAction: (emailInput: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   exchangeOAuthTokenForSession: (idToken: string, user: { email: string; name?: string; uid?: string }) => Promise<boolean>;
   businesses: Business[];
   currentBusiness: Business;
@@ -6108,6 +6110,33 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const sendPasswordResetEmailAction = async (
+    emailInput: string
+  ): Promise<{ success: boolean; message?: string; error?: string }> => {
+    const email = emailInput.trim().toLowerCase();
+    if (!email) {
+      return { success: false, error: 'Please enter your account email address.' };
+    }
+    try {
+      await sendPasswordResetEmail(auth, email);
+      return {
+        success: true,
+        message: `Password reset instructions have been dispatched to ${email}. Please check your inbox or spam folder.`,
+      };
+    } catch (err: any) {
+      console.warn('Password reset note:', err);
+      let errorMessage = 'Failed to send password reset email. Please verify the email address.';
+      if (err?.code === 'auth/user-not-found') {
+        errorMessage = 'No SokoPoS account found with this email address.';
+      } else if (err?.code === 'auth/invalid-email') {
+        errorMessage = 'Please enter a valid email address.';
+      } else if (err?.message) {
+        errorMessage = err.message;
+      }
+      return { success: false, error: errorMessage };
+    }
+  };
+
   const exchangeOAuthTokenForSession = async (
     idToken: string,
     userInfo: { email: string; name?: string; uid?: string }
@@ -7417,6 +7446,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         isFirebaseAuthLoading,
         loginWithFirebaseGoogle,
         loginWithFirebaseEmailPassword,
+        sendPasswordResetEmailAction,
         exchangeOAuthTokenForSession,
         businesses,
         currentBusiness,

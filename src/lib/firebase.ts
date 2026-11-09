@@ -12,6 +12,7 @@ import {
   setPersistence,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   User as FirebaseUser,
   IdTokenResult,
 } from 'firebase/auth';
@@ -183,5 +184,6 @@ export {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
 };
 export type { FirebaseUser, IdTokenResult };

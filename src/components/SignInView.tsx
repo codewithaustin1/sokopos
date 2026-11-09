@@ -110,6 +110,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     loginWithGoogle,
     loginWithFirebaseGoogle,
     loginWithFirebaseEmailPassword,
+    sendPasswordResetEmailAction,
     loginWithCredentials,
     systemUsers,
     allSystemUsers,
@@ -205,6 +206,40 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const [emailAuthError, setEmailAuthError] = useState<string | null>(null);
   const [isAuthenticatingEmail, setIsAuthenticatingEmail] = useState<boolean>(false);
 
+  // Password reset state
+  const [isForgotPasswordMode, setIsForgotPasswordMode] = useState<boolean>(false);
+  const [resetEmailSuccessMessage, setResetEmailSuccessMessage] = useState<string | null>(null);
+  const [isSendingResetEmail, setIsSendingResetEmail] = useState<boolean>(false);
+
+  const handlePasswordResetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = ownerEmailInput.trim();
+    setEmailAuthError(null);
+    setResetEmailSuccessMessage(null);
+
+    if (!email) {
+      setEmailAuthError('Please enter your account email address.');
+      return;
+    }
+
+    setIsSendingResetEmail(true);
+    try {
+      const res = await sendPasswordResetEmailAction(email);
+      if (res.success) {
+        setResetEmailSuccessMessage(res.message || `Password reset link sent to ${email}.`);
+        soundFx.playSuccess();
+      } else {
+        setEmailAuthError(res.error || 'Failed to send password reset email.');
+        soundFx.playError();
+      }
+    } catch (err: any) {
+      setEmailAuthError(err?.message || 'Failed to send password reset email.');
+      soundFx.playError();
+    } finally {
+      setIsSendingResetEmail(false);
+    }
+  };
+
   // Register state
   const [shopNameInput, setShopNameInput] = useState<string>('');
   const [shopEmailInput, setShopEmailInput] = useState<string>('');
@@ -279,6 +314,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     setEnteredPin('');
     setStaffCredentialInput('');
     setIsEditingStaffId(false);
+    setIsForgotPasswordMode(false);
+    setResetEmailSuccessMessage(null);
+    setEmailAuthError(null);
     setIsAuthModalOpen(true);
   };
 
@@ -286,6 +324,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     setIsAuthModalOpen(false);
     setPinError(null);
     setEnteredPin('');
+    setIsForgotPasswordMode(false);
+    setResetEmailSuccessMessage(null);
+    setEmailAuthError(null);
     setIsDemoModeActive(false);
     localStorage.removeItem('sokopos_demo_intent');
     setTimeout(() => {
@@ -1641,117 +1682,199 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               </div>
             )}
 
-            {/* TAB 1: OWNER LOGIN (Email & Password Sign-In Flow) */}
+            {/* TAB 1: OWNER LOGIN (Email & Password Sign-In Flow / Password Reset) */}
             {activeTab === 'owner' && (
               <div id="p-owner">
-                <h2
-                  id="auth-modal-title"
-                  className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-4 text-left"
-                >
-                  Welcome back!
-                </h2>
-
-                <button
-                  type="button"
-                  id="google"
-                  onClick={handleGoogleSignIn}
-                  className="w-full h-12 bg-[#1565d8] hover:bg-[#1255b5] active:scale-[0.99] text-white rounded-xl font-bold text-sm sm:text-[15px] flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-xs"
-                >
-                  <span className="w-6 h-6 rounded-md bg-white text-[#1565d8] font-black text-xs flex items-center justify-center shrink-0 shadow-2xs">
-                    G
-                  </span>
-                  <span>Continue with Google</span>
-                </button>
-
-                {/* Subtle dashed divider with centered text */}
-                <div className="relative my-4 flex items-center justify-center">
-                  <div className="w-full border-t border-dashed border-[#d9e1e6]"></div>
-                  <span className="absolute px-3 bg-white text-xs text-[#556375] font-medium">
-                    or sign in with email &amp; password
-                  </span>
-                </div>
-
-                {/* Email & Password Sign-In Form */}
-                <form id="emailForm" onSubmit={handleEmailFormSubmit} className="space-y-3 mb-4">
+                {isForgotPasswordMode ? (
                   <div>
-                    <label htmlFor="owner-email-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
-                      Email address
-                    </label>
-                    <div className="relative flex items-center">
-                      <input
-                        ref={emailInputRef}
-                        type="email"
-                        id="owner-email-input"
-                        placeholder="yourname@gmail.com"
-                        aria-label="Email address"
-                        autoComplete="email"
-                        required
-                        value={ownerEmailInput}
-                        onChange={(e) => {
-                          setOwnerEmailInput(e.target.value);
-                          setEmailAuthError(null);
-                        }}
-                        className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#1565d8] focus:outline-none transition-colors"
-                      />
-                      <Mail className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
-                    </div>
-                  </div>
+                    <h2
+                      id="auth-modal-title"
+                      className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-1 text-left"
+                    >
+                      Reset your password
+                    </h2>
+                    <p className="text-xs text-[#556375] mb-4 text-left">
+                      Enter your account email address and we'll send password reset instructions.
+                    </p>
 
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label htmlFor="owner-password-input" className="block text-xs font-bold text-[#0e1a2b]">
-                        Password
-                      </label>
-                    </div>
-                    <div className="relative flex items-center">
-                      <input
-                        type={showOwnerPassword ? 'text' : 'password'}
-                        id="owner-password-input"
-                        placeholder="••••••••"
-                        aria-label="Password"
-                        autoComplete="current-password"
-                        required
-                        value={ownerPasswordInput}
-                        onChange={(e) => {
-                          setOwnerPasswordInput(e.target.value);
-                          setEmailAuthError(null);
-                        }}
-                        className="w-full h-11 pl-3.5 pr-10 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#1565d8] focus:outline-none transition-colors"
-                      />
+                    <form onSubmit={handlePasswordResetSubmit} className="space-y-3 mb-4">
+                      <div>
+                        <label htmlFor="reset-email-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
+                          Email address
+                        </label>
+                        <div className="relative flex items-center">
+                          <input
+                            ref={emailInputRef}
+                            type="email"
+                            id="reset-email-input"
+                            placeholder="yourname@gmail.com"
+                            aria-label="Account Email address for Password Reset"
+                            autoComplete="email"
+                            required
+                            value={ownerEmailInput}
+                            onChange={(e) => {
+                              setOwnerEmailInput(e.target.value);
+                              setEmailAuthError(null);
+                              setResetEmailSuccessMessage(null);
+                            }}
+                            className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#1565d8] focus:outline-none transition-colors"
+                          />
+                          <Mail className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
+                        </div>
+                      </div>
+
+                      {/* Error alert banner */}
+                      {emailAuthError && (
+                        <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
+                          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                          <span>{emailAuthError}</span>
+                        </div>
+                      )}
+
+                      {/* Success alert banner */}
+                      {resetEmailSuccessMessage && (
+                        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
+                          <Check className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+                          <span>{resetEmailSuccessMessage}</span>
+                        </div>
+                      )}
+
                       <button
-                        type="button"
-                        onClick={() => setShowOwnerPassword((prev) => !prev)}
-                        aria-label={showOwnerPassword ? 'Hide password' : 'Show password'}
-                        className="absolute right-2.5 p-1 text-[#556375] hover:text-[#0e1a2b] transition cursor-pointer"
+                        type="submit"
+                        disabled={isSendingResetEmail}
+                        className="w-full h-11 bg-[#1565d8] hover:bg-[#1255b5] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-2"
                       >
-                        {showOwnerPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        {isSendingResetEmail ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Sending instructions...</span>
+                          </>
+                        ) : (
+                          <span>Send Password Reset Email</span>
+                        )}
                       </button>
-                    </div>
+
+                      <div className="pt-2 text-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsForgotPasswordMode(false);
+                            setEmailAuthError(null);
+                            setResetEmailSuccessMessage(null);
+                          }}
+                          className="text-xs font-bold text-[#1565d8] hover:underline cursor-pointer"
+                        >
+                          ← Back to Sign In
+                        </button>
+                      </div>
+                    </form>
                   </div>
+                ) : (
+                  <div>
+                    <h2
+                      id="auth-modal-title"
+                      className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-1 text-left"
+                    >
+                      Welcome back!
+                    </h2>
+                    <p className="text-xs text-[#556375] mb-4 text-left">
+                      Sign in with your email and password to manage your shop.
+                    </p>
 
-                  {/* Error alert banner */}
-                  {emailAuthError && (
-                    <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
-                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
-                      <span>{emailAuthError}</span>
-                    </div>
-                  )}
+                    {/* Email & Password Sign-In Form */}
+                    <form id="emailForm" onSubmit={handleEmailFormSubmit} className="space-y-3.5 mb-4">
+                      <div>
+                        <label htmlFor="owner-email-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
+                          Email address
+                        </label>
+                        <div className="relative flex items-center">
+                          <input
+                            ref={emailInputRef}
+                            type="email"
+                            id="owner-email-input"
+                            placeholder="yourname@gmail.com"
+                            aria-label="Email address"
+                            autoComplete="email"
+                            required
+                            value={ownerEmailInput}
+                            onChange={(e) => {
+                              setOwnerEmailInput(e.target.value);
+                              setEmailAuthError(null);
+                            }}
+                            className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#1565d8] focus:outline-none transition-colors"
+                          />
+                          <Mail className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
+                        </div>
+                      </div>
 
-                  <button
-                    type="submit"
-                    disabled={isAuthenticatingEmail}
-                    className="w-full h-11 bg-[#1565d8] hover:bg-[#1255b5] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1"
-                  >
-                    {isAuthenticatingEmail ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Signing in...</span>
-                      </>
-                    ) : (
-                      <span>Sign in with Email &amp; Password</span>
-                    )}
-                  </button>
-                </form>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label htmlFor="owner-password-input" className="block text-xs font-bold text-[#0e1a2b]">
+                            Password
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsForgotPasswordMode(true);
+                              setEmailAuthError(null);
+                              setResetEmailSuccessMessage(null);
+                            }}
+                            className="text-[11px] font-bold text-[#1565d8] hover:underline cursor-pointer"
+                          >
+                            Forgot password?
+                          </button>
+                        </div>
+                        <div className="relative flex items-center">
+                          <input
+                            type={showOwnerPassword ? 'text' : 'password'}
+                            id="owner-password-input"
+                            placeholder="••••••••"
+                            aria-label="Password"
+                            autoComplete="current-password"
+                            required
+                            value={ownerPasswordInput}
+                            onChange={(e) => {
+                              setOwnerPasswordInput(e.target.value);
+                              setEmailAuthError(null);
+                            }}
+                            className="w-full h-11 pl-3.5 pr-10 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#1565d8] focus:outline-none transition-colors"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowOwnerPassword((prev) => !prev)}
+                            aria-label={showOwnerPassword ? 'Hide password' : 'Show password'}
+                            className="absolute right-2.5 p-1 text-[#556375] hover:text-[#0e1a2b] transition cursor-pointer"
+                          >
+                            {showOwnerPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Error alert banner */}
+                      {emailAuthError && (
+                        <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
+                          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                          <span>{emailAuthError}</span>
+                        </div>
+                      )}
+
+                      <button
+                        type="submit"
+                        disabled={isAuthenticatingEmail}
+                        className="w-full h-11 bg-[#1565d8] hover:bg-[#1255b5] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1"
+                      >
+                        {isAuthenticatingEmail ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Signing in...</span>
+                          </>
+                        ) : (
+                          <span>Sign in with Email &amp; Password</span>
+                        )}
+                      </button>
+                    </form>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2042,22 +2165,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     ) : (
                       <span>Create shop with Email &amp; Password</span>
                     )}
-                  </button>
-
-                  <div className="relative my-3 flex items-center justify-center">
-                    <div className="w-full border-t border-dashed border-[#d9e1e6]"></div>
-                    <span className="absolute px-3 bg-white text-xs text-[#556375] font-medium">or</span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleGoogleSignIn}
-                    className="w-full h-11 bg-[#f4f7f6] hover:bg-[#e2e8f0] text-[#0e1a2b] border border-[#d9e1e6] rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
-                  >
-                    <span className="w-5 h-5 rounded-md bg-white text-[#1565d8] font-black text-xs flex items-center justify-center shrink-0 border border-[#d9e1e6]">
-                      G
-                    </span>
-                    <span>Continue with Google</span>
                   </button>
                 </form>
               </div>
