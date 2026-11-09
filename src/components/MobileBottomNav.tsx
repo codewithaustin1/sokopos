@@ -61,7 +61,6 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     isMobileMenuOpen,
     setIsMobileMenuOpen,
     toggleMobileMenu,
-    t,
   } = usePos();
 
   const totalCartItems = cart.reduce((acc, item) => acc + item.quantity, 0);
@@ -96,7 +95,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
               </span>
             )}
           </div>
-          <span className="text-[10px] tracking-tight mt-0.5">{t('nav_sell', 'Sell')}</span>
+          <span className="text-[10px] tracking-tight mt-0.5">Sell</span>
         </button>
 
         {/* Inventory Tab */}
@@ -108,7 +107,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           }`}
         >
           <Package className={`w-5 h-5 ${currentTab === 'inventory' ? 'stroke-[2.5]' : 'stroke-2'}`} />
-          <span className="text-[10px] tracking-tight mt-0.5">{t('nav_inventory', 'Inventory')}</span>
+          <span className="text-[10px] tracking-tight mt-0.5">Inventory</span>
         </button>
 
         {/* Analytics Tab */}
@@ -120,7 +119,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           }`}
         >
           <BarChart3 className={`w-5 h-5 ${currentTab === 'analytics' ? 'stroke-[2.5]' : 'stroke-2'}`} />
-          <span className="text-[10px] tracking-tight mt-0.5">{t('nav_analytics', 'Analytics')}</span>
+          <span className="text-[10px] tracking-tight mt-0.5">Analytics</span>
         </button>
 
         {/* Cloud Sync Tab */}
@@ -146,7 +145,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
               <span className="absolute -bottom-0.5 -right-1 w-2 h-2 rounded-full bg-red-500 border border-white" />
             )}
           </div>
-          <span className="text-[10px] tracking-tight mt-0.5">{t('action_sync', 'Sync')}</span>
+          <span className="text-[10px] tracking-tight mt-0.5">Sync</span>
         </button>
 
         {/* More Menu Drawer Trigger */}
@@ -158,7 +157,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           }`}
         >
           <Menu className="w-5 h-5 stroke-2" />
-          <span className="text-[10px] tracking-tight mt-0.5">{t('nav_settings', 'Menu')}</span>
+          <span className="text-[10px] tracking-tight mt-0.5">More</span>
         </button>
       </nav>
     </>

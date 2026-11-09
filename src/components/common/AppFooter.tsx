@@ -24,7 +24,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
   loginBgGraphic: propLoginBgGraphic,
   theme = 'dark',
 }) => {
-  const { loginBgGraphic: contextLoginBgGraphic, language, setLanguage, t } = usePos();
+  const { loginBgGraphic: contextLoginBgGraphic } = usePos();
   const loginBgGraphic = propLoginBgGraphic ?? contextLoginBgGraphic;
 
   const handlePricingClick = () => {
@@ -73,7 +73,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
         <div className={`flex items-center gap-2.5 flex-wrap justify-center ${isLight ? 'text-[#4c5a6b]' : 'text-[#9FB2A7]'}`}>
           <AppLogo theme={theme} size="sm" onClick={handleLogoClick} />
           <span className={`hidden sm:inline ${isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}`}>•</span>
-          <span>{t('footer_copyright', '© 2026 SokoPoS Enterprise Platform')}</span>
+          <span>© 2026 SokoPoS Enterprise Platform</span>
         </div>
 
         {/* Legal & Pricing Navigation Links */}
@@ -88,7 +88,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                 : isLight ? 'text-[#4c5a6b] hover:text-[#1565d8]' : 'text-[#9FB2A7] hover:text-[#4CC38A]'
             }`}
           >
-            {t('footer_pricing', 'Pricing')}
+            Pricing
           </button>
           <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
           <button
@@ -101,7 +101,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                 : isLight ? 'text-[#4c5a6b] hover:text-[#1565d8]' : 'text-[#9FB2A7] hover:text-[#4CC38A]'
             }`}
           >
-            {t('footer_terms', 'Terms of Service')}
+            Terms of Service
           </button>
           <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
           <button
@@ -114,7 +114,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                 : isLight ? 'text-[#4c5a6b] hover:text-[#1565d8]' : 'text-[#9FB2A7] hover:text-[#4CC38A]'
             }`}
           >
-            {t('footer_privacy', 'Privacy Policy')}
+            Privacy Policy
           </button>
           <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
           <button
@@ -127,7 +127,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                 : isLight ? 'text-[#4c5a6b] hover:text-[#1565d8]' : 'text-[#9FB2A7] hover:text-[#4CC38A]'
             }`}
           >
-            {t('footer_faqs', 'FAQs')}
+            FAQs
           </button>
           <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
           <button
@@ -140,7 +140,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
                 : isLight ? 'text-[#4c5a6b] hover:text-[#1565d8]' : 'text-[#9FB2A7] hover:text-[#4CC38A]'
             }`}
           >
-            {t('footer_legal_ip', 'Legal & IP')}
+            Legal & IP
           </button>
           <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
           <button
@@ -152,24 +152,8 @@ export const AppFooter: React.FC<AppFooterProps> = ({
             }`}
             aria-label="Scroll to top of page"
           >
-            {t('footer_scroll_top', 'Scroll to Top ↑')}
+            Scroll to Top ↑
           </button>
-          <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
-          <div className="inline-flex items-center">
-            <select
-              id={`${idPrefix}-language-select`}
-              value={language}
-              onChange={(e) => setLanguage(e.target.value as 'en' | 'fr' | 'sw')}
-              aria-label="Select Language"
-              className={`bg-transparent font-medium cursor-pointer focus:outline-none transition ${
-                isLight ? 'text-[#4c5a6b] hover:text-[#1565d8]' : 'text-[#9FB2A7] hover:text-[#4CC38A]'
-              }`}
-            >
-              <option value="en" className={isLight ? 'bg-white text-[#0e1a2b]' : 'bg-[#0F1613] text-[#9FB2A7]'}>English</option>
-              <option value="fr" className={isLight ? 'bg-white text-[#0e1a2b]' : 'bg-[#0F1613] text-[#9FB2A7]'}>Français</option>
-              <option value="sw" className={isLight ? 'bg-white text-[#0e1a2b]' : 'bg-[#0F1613] text-[#9FB2A7]'}>Kiswahili</option>
-            </select>
-          </div>
         </div>
       </div>
     </footer>

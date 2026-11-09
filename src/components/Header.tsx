@@ -67,9 +67,6 @@ export const Header: React.FC<HeaderProps> = ({
     isSubscriptionActive,
     setIsSubscriptionModalOpen,
     openPricingPage,
-    language,
-    setLanguage,
-    t,
   } = usePos();
 
   const [isLocationMenuOpen, setIsLocationMenuOpen] = useState(false);
@@ -214,7 +211,7 @@ export const Header: React.FC<HeaderProps> = ({
           title="Open Barcode Scanner (F2)"
         >
           <Scan className="w-4 h-4 text-blue-600 shrink-0" />
-          <span className="hidden sm:inline">{t('action_scan', 'Scan')}</span>
+          <span className="hidden sm:inline">Scan</span>
         </button>
 
         {/* Quick Shift & Till Button */}
@@ -230,7 +227,7 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Clock className={`w-3.5 h-3.5 ${activeShift ? 'text-emerald-600' : 'text-slate-400'} shrink-0`} />
           <span className="hidden md:inline">
-            {activeShift ? `${t('action_shift_number', 'Shift')} #${activeShift.shiftNumber}` : t('action_open_shift', 'Open Shift')}
+            {activeShift ? `Shift #${activeShift.shiftNumber}` : 'Open Shift'}
           </span>
         </button>
 
@@ -281,12 +278,12 @@ export const Header: React.FC<HeaderProps> = ({
             {isOnline ? (
               <>
                 <Cloud className="w-3.5 h-3.5 text-emerald-600" />
-                <span className="hidden md:inline">{t('action_synced', 'Synced')}</span>
+                <span className="hidden md:inline">Cloud Synced</span>
               </>
             ) : (
               <>
                 <CloudOff className="w-3.5 h-3.5 text-amber-600" />
-                <span>{t('action_offline', 'Offline')}{pendingOfflineCount > 0 ? ` (${pendingOfflineCount})` : ''}</span>
+                <span>Offline{pendingOfflineCount > 0 ? ` (${pendingOfflineCount})` : ''}</span>
               </>
             )}
           </button>
@@ -451,7 +448,7 @@ export const Header: React.FC<HeaderProps> = ({
                     className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer"
                   >
                     <Lock className="w-4 h-4 text-slate-500 shrink-0" />
-                    <span>{t('action_lock_terminal', 'Lock Register (Enter PIN)')}</span>
+                    <span>Lock Register (Enter PIN)</span>
                   </button>
 
                   {/* View Landing Page */}
@@ -469,23 +466,6 @@ export const Header: React.FC<HeaderProps> = ({
                     <Globe className="w-4 h-4 text-blue-500 shrink-0" />
                     <span>View Landing Page (Home)</span>
                   </button>
-
-                  {/* Language Selector in User Menu */}
-                  <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 border border-slate-100">
-                    <div className="flex items-center gap-2 text-slate-700 font-bold text-xs">
-                      <Globe className="w-3.5 h-3.5 text-blue-600" />
-                      <span>{t('footer_select_language', 'Language')}</span>
-                    </div>
-                    <select
-                      value={language}
-                      onChange={(e) => setLanguage(e.target.value as 'en' | 'fr' | 'sw')}
-                      className="text-xs font-bold border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-800 cursor-pointer focus:outline-none focus:border-blue-500"
-                    >
-                      <option value="en">English</option>
-                      <option value="fr">Français</option>
-                      <option value="sw">Kiswahili</option>
-                    </select>
-                  </div>
                 </div>
 
                 {/* Sign Out of POS */}
@@ -503,7 +483,7 @@ export const Header: React.FC<HeaderProps> = ({
                 >
                   <div className="flex items-center gap-2.5">
                     <LogOut className="w-4 h-4 text-red-500 shrink-0" />
-                    <span>{t('action_logout', 'Sign Out of POS')}</span>
+                    <span>Sign Out of POS</span>
                   </div>
                   {activeShift && (
                     <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700">
