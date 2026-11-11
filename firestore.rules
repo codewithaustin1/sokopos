@@ -33,8 +33,15 @@ service cloud.firestore {
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.businessId == bizId;
     }
 
-    function hasTenantAccess(bizId) {
+    function isEmailVerified() {
       return isSignedIn() && (
+        request.auth.token.email_verified == true ||
+        isSuperAdmin()
+      );
+    }
+
+    function hasTenantAccess(bizId) {
+      return isEmailVerified() && (
         isSuperAdmin() ||
         (bizId != null && tokenBusinessId() != null && tokenBusinessId() == bizId) ||
         (bizId != null && isOwnerOf(bizId)) ||
@@ -62,7 +69,7 @@ service cloud.firestore {
     // Users Collection (Profile documents keyed by Firebase Auth UID)
     match /users/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin());
-      allow create, update: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin());
+      allow create, update: if isEmailVerified() && (request.auth.uid == userId || isSuperAdmin());
       allow delete: if isSuperAdmin();
     }
 
@@ -70,16 +77,16 @@ service cloud.firestore {
     match /businesses/{businessId} {
       allow get: if true;
       allow list: if true;
-      allow create: if isSignedIn() && (
+      allow create: if isEmailVerified() && (
         isSuperAdmin() ||
         (request.resource.data.ownerEmail != null && request.resource.data.ownerEmail == request.auth.token.email)
       );
-      allow update: if isSignedIn() && (
+      allow update: if isEmailVerified() && (
         isSuperAdmin() ||
         (resource.data.ownerEmail != null && resource.data.ownerEmail == request.auth.token.email) ||
         hasTenantAccess(businessId)
       );
-      allow delete: if isSignedIn() && (
+      allow delete: if isEmailVerified() && (
         isSuperAdmin() ||
         (resource.data.ownerEmail != null && resource.data.ownerEmail == request.auth.token.email)
       );

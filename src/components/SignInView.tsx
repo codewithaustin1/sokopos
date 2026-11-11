@@ -111,6 +111,10 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     loginWithFirebaseGoogle,
     loginWithFirebaseEmailPassword,
     sendPasswordResetEmailAction,
+    pendingVerificationEmail,
+    resendVerificationEmail,
+    checkEmailVerificationStatus,
+    cancelEmailVerification,
     loginWithCredentials,
     systemUsers,
     allSystemUsers,
@@ -210,6 +214,60 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const [isForgotPasswordMode, setIsForgotPasswordMode] = useState<boolean>(false);
   const [resetEmailSuccessMessage, setResetEmailSuccessMessage] = useState<string | null>(null);
   const [isSendingResetEmail, setIsSendingResetEmail] = useState<boolean>(false);
+
+  // Email Verification Gate state
+  const [isCheckingVerification, setIsCheckingVerification] = useState<boolean>(false);
+  const [isResendingVerification, setIsResendingVerification] = useState<boolean>(false);
+  const [verificationFeedback, setVerificationFeedback] = useState<string | null>(null);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (pendingVerificationEmail) {
+      setIsAuthModalOpen(true);
+    }
+  }, [pendingVerificationEmail]);
+
+  const handleCheckVerification = async () => {
+    setVerificationError(null);
+    setVerificationFeedback(null);
+    setIsCheckingVerification(true);
+    try {
+      const res = await checkEmailVerificationStatus();
+      if (res.verified) {
+        setIsAuthModalOpen(false);
+        onLoginSuccess?.();
+      } else {
+        setVerificationError(res.error || 'Email is not verified yet. Please check your inbox.');
+        soundFx.playError();
+      }
+    } finally {
+      setIsCheckingVerification(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    setVerificationError(null);
+    setVerificationFeedback(null);
+    setIsResendingVerification(true);
+    try {
+      const res = await resendVerificationEmail();
+      if (res.success) {
+        setVerificationFeedback(res.message || 'Verification email sent.');
+        soundFx.playSuccess();
+      } else {
+        setVerificationError(res.error || 'Failed to resend verification email.');
+        soundFx.playError();
+      }
+    } finally {
+      setIsResendingVerification(false);
+    }
+  };
+
+  const handleCancelVerification = async () => {
+    setVerificationError(null);
+    setVerificationFeedback(null);
+    await cancelEmailVerification();
+  };
 
   const handlePasswordResetSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -617,6 +675,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       if (res.success) {
         setIsAuthModalOpen(false);
         onLoginSuccess?.();
+      } else if (res.requiresVerification) {
+        setVerificationError(null);
+        setVerificationFeedback(`A verification link was sent to ${res.email || email}. Please verify your inbox to continue.`);
       } else {
         setEmailAuthError(res.error || 'Authentication failed. Please check credentials.');
         soundFx.playError();
@@ -659,6 +720,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       if (res.success) {
         setIsAuthModalOpen(false);
         onLoginSuccess?.();
+      } else if (res.requiresVerification) {
+        setVerificationError(null);
+        setVerificationFeedback(`We sent a verification link to ${res.email || ownerEmail}. Verify your email to activate your shop.`);
       } else {
         setEmailAuthError(res.error || 'Failed to create shop account. Please check inputs.');
         soundFx.playError();
@@ -1644,6 +1708,84 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               <X className="w-5 h-5" />
             </button>
 
+            {pendingVerificationEmail ? (
+              <div id="p-verify-email" className="space-y-4 pt-2">
+                <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-[#1565d8]">
+                  <Mail className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2
+                    id="auth-modal-title"
+                    className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-1 text-left"
+                  >
+                    Verify your email address
+                  </h2>
+                  <p className="text-xs sm:text-[13px] text-[#556375] leading-relaxed text-left">
+                    To protect your business and ensure this account belongs to a real owner, please click the verification link sent to{' '}
+                    <span className="font-bold text-[#0e1a2b]">{pendingVerificationEmail}</span>.
+                  </p>
+                </div>
+
+                {verificationFeedback && (
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-medium flex items-start gap-2">
+                    <Check className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+                    <span>{verificationFeedback}</span>
+                  </div>
+                )}
+
+                {verificationError && (
+                  <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                    <span>{verificationError}</span>
+                  </div>
+                )}
+
+                <div className="space-y-2.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleCheckVerification}
+                    disabled={isCheckingVerification}
+                    className="w-full h-11 bg-[#1565d8] hover:bg-[#1255b5] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2"
+                  >
+                    {isCheckingVerification ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Checking verification...</span>
+                      </>
+                    ) : (
+                      <span>I&apos;ve Verified My Email — Continue</span>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleResendVerification}
+                    disabled={isResendingVerification}
+                    className="w-full h-10 bg-[#f4f7f6] hover:bg-[#e9eff2] disabled:opacity-60 text-[#0e1a2b] font-bold text-xs rounded-xl border border-[#d9e1e6] transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {isResendingVerification ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Sending link...</span>
+                      </>
+                    ) : (
+                      <span>Resend Verification Email</span>
+                    )}
+                  </button>
+
+                  <div className="pt-1 text-center">
+                    <button
+                      type="button"
+                      onClick={handleCancelVerification}
+                      className="text-xs font-bold text-[#556375] hover:text-[#0e1a2b] hover:underline cursor-pointer"
+                    >
+                      Use a different email account
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
             {/* Segmented Tab Switcher (Owner vs Staff, matching attached design image_d64c8152.png) */}
             {activeTab !== 'register' && (
               <div className="bg-[#f0f3f6] p-1 rounded-xl grid grid-cols-2 gap-1 mb-5" role="tablist" id="seg">
@@ -2192,6 +2334,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 {activeTab === 'register' ? 'Return to login' : 'Add new shop'}
               </button>
             </div>
+              </>
+            )}
           </div>
         </div>,
         document.body

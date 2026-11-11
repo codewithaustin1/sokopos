@@ -237,23 +237,51 @@ Sitemap: ${origin}/sitemap.xml
         return res.status(400).json({ error: 'cashierId and businessId are required' });
       }
 
+      const creds = loadStaffCredentials();
+      const existingCred = creds[cashierId];
+
       let pinHash = hash;
       if (!pinHash && pin) {
         pinHash = await bcrypt.hash(String(pin), 10);
+      }
+      if (!pinHash && existingCred?.hash) {
+        pinHash = existingCred.hash;
       }
       if (!pinHash) {
         return res.status(400).json({ error: 'pin or hash is required' });
       }
 
-      const creds = loadStaffCredentials();
+      const normalizedUsername = username !== undefined
+        ? String(username).trim().toLowerCase()
+        : existingCred?.username?.trim().toLowerCase();
+      const normalizedCode = code !== undefined
+        ? String(code).trim().toLowerCase().replace(/^#/, '')
+        : existingCred?.code?.trim().toLowerCase().replace(/^#/, '');
+
+      // Enforce global uniqueness across ALL businesses in SokoPoS
+      for (const other of Object.values(creds)) {
+        if (other.cashierId === cashierId) continue;
+
+        if (normalizedUsername && other.username?.trim().toLowerCase() === normalizedUsername) {
+          return res.status(409).json({
+            error: `Username "${normalizedUsername}" is already assigned to another staff member in SokoPoS.`,
+          });
+        }
+        if (normalizedCode && other.code?.trim().toLowerCase().replace(/^#/, '') === normalizedCode) {
+          return res.status(409).json({
+            error: `Staff ID "${code || existingCred?.code}" is already assigned to another staff member in SokoPoS.`,
+          });
+        }
+      }
+
       creds[cashierId] = {
         cashierId,
         businessId,
         hash: pinHash,
-        role: role || creds[cashierId]?.role || 'cashier',
-        name: name || creds[cashierId]?.name || 'Staff Member',
-        code: code || creds[cashierId]?.code,
-        username: username || creds[cashierId]?.username,
+        role: role || existingCred?.role || 'cashier',
+        name: name || existingCred?.name || 'Staff Member',
+        code: code !== undefined ? String(code).trim() : existingCred?.code,
+        username: normalizedUsername || existingCred?.username,
         updatedAt: new Date().toISOString(),
       };
       saveStaffCredentials(creds);
@@ -280,6 +308,20 @@ Sitemap: ${origin}/sitemap.xml
       let count = 0;
       for (const c of cashiers) {
         if (c.id && c.pin && c.pin !== '••••••••' && !c.pin.startsWith('[PROTECTED')) {
+          const normUsername = c.username ? String(c.username).trim().toLowerCase() : undefined;
+          const normCode = c.code ? String(c.code).trim().toLowerCase().replace(/^#/, '') : undefined;
+
+          // Skip conflicting credentials belonging to a different cashierId
+          const conflict = Object.values(creds).find(
+            (other) =>
+              other.cashierId !== c.id &&
+              ((normUsername && other.username?.trim().toLowerCase() === normUsername) ||
+                (normCode && other.code?.trim().toLowerCase().replace(/^#/, '') === normCode))
+          );
+          if (conflict) {
+            continue;
+          }
+
           let pinHash = c.pin;
           if (!pinHash.startsWith('$2')) {
             pinHash = await bcrypt.hash(String(c.pin), 10);
@@ -290,8 +332,8 @@ Sitemap: ${origin}/sitemap.xml
             hash: pinHash,
             role: c.role || 'cashier',
             name: c.name || 'Staff Member',
-            code: c.code,
-            username: c.username,
+            code: c.code ? String(c.code).trim() : undefined,
+            username: normUsername,
             updatedAt: new Date().toISOString(),
           };
           count++;
@@ -371,10 +413,9 @@ Sitemap: ${origin}/sitemap.xml
           (c) =>
             (!businessId || c.businessId === businessId) &&
             (c.cashierId.toLowerCase() === cleanInput ||
-              c.username?.toLowerCase() === cleanInput ||
-              c.code?.toLowerCase() === cleanInput ||
-              c.code?.toLowerCase().replace(/^#/, '') === cleanNoHash ||
-              c.name?.toLowerCase() === cleanInput)
+              c.username?.trim().toLowerCase() === cleanInput ||
+              c.code?.trim().toLowerCase() === cleanInput ||
+              c.code?.trim().toLowerCase().replace(/^#/, '') === cleanNoHash)
         );
       }
 

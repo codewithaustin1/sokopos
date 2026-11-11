@@ -71,6 +71,12 @@ export async function hashPinOnServer(pin: string): Promise<string> {
   return bcrypt.hashSync(pin, salt);
 }
 
+export interface SaveStaffCredentialResult {
+  success: boolean;
+  error?: string;
+  status?: number;
+}
+
 /**
  * Save staff credential directly into the server-only isolated vault.
  * Raw or hashed PIN is strictly stored server-side and never exposed to other clients.
@@ -84,7 +90,7 @@ export async function saveStaffCredentialOnServer(params: {
   name?: string;
   code?: string;
   username?: string;
-}): Promise<boolean> {
+}): Promise<SaveStaffCredentialResult> {
   try {
     const response = await fetch('/api/auth/save-staff-credential', {
       method: 'POST',
@@ -93,10 +99,18 @@ export async function saveStaffCredentialOnServer(params: {
       },
       body: JSON.stringify(params),
     });
-    return response.ok;
+    if (response.ok) {
+      return { success: true, status: response.status };
+    }
+    const data = await response.json().catch(() => ({}));
+    return {
+      success: false,
+      status: response.status,
+      error: data.error || 'Failed to save staff credential on server.',
+    };
   } catch (err) {
     console.warn('Failed saving staff credential to server vault:', err);
-    return false;
+    return { success: false, error: 'Server unreachable while saving staff credential.' };
   }
 }
 

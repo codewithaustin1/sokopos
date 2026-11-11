@@ -13,6 +13,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
+  sendEmailVerification,
   User as FirebaseUser,
   IdTokenResult,
 } from 'firebase/auth';
@@ -185,5 +186,6 @@ export {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
+  sendEmailVerification,
 };
 export type { FirebaseUser, IdTokenResult };

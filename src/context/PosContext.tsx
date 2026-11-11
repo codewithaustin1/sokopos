@@ -71,6 +71,7 @@ import { soundFx } from '../utils/audio';
 import { Haptics } from '../utils/haptics';
 import { calculatePaymentGuardrails } from '../utils/cashRounding';
 import { safeConfetti } from '../utils/confetti';
+import { ToastItem } from '../components/common/ToastContainer';
 import {
   auth,
   googleProvider,
@@ -78,6 +79,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
+  sendEmailVerification,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   testFirebaseConnection,
@@ -151,14 +153,18 @@ interface PosContextType {
   setCurrentUser: (user: AuthUser | null) => void;
   isAuthenticated: boolean;
   isFirebaseAuthLoading: boolean;
+  pendingVerificationEmail: string | null;
   loginWithFirebaseGoogle: (customStoreName?: string) => Promise<boolean>;
   loginWithFirebaseEmailPassword: (
     emailInput: string,
     passwordInput: string,
     isSignUpMode?: boolean,
     customStoreName?: string
-  ) => Promise<{ success: boolean; error?: string }>;
+  ) => Promise<{ success: boolean; requiresVerification?: boolean; email?: string; error?: string }>;
   sendPasswordResetEmailAction: (emailInput: string) => Promise<{ success: boolean; message?: string; error?: string }>;
+  resendVerificationEmail: () => Promise<{ success: boolean; message?: string; error?: string }>;
+  checkEmailVerificationStatus: () => Promise<{ verified: boolean; error?: string }>;
+  cancelEmailVerification: () => Promise<void>;
   exchangeOAuthTokenForSession: (idToken: string, user: { email: string; name?: string; uid?: string }) => Promise<boolean>;
   businesses: Business[];
   currentBusiness: Business;
@@ -240,7 +246,7 @@ interface PosContextType {
   systemUsers: Cashier[];
   allSystemUsers: Cashier[];
   createSystemUser: (user: Omit<Cashier, 'id' | 'businessId'>) => Promise<boolean>;
-  updateSystemUser: (id: string, updates: Partial<Cashier>) => Promise<void>;
+  updateSystemUser: (id: string, updates: Partial<Cashier>) => Promise<boolean>;
   deleteSystemUser: (id: string) => void;
 
   // Live Role Privileges & Access Control (RBAC)
@@ -497,7 +503,9 @@ interface PosContextType {
 
   // Toast
   toastMessage: { text: string; type: 'success' | 'error' | 'info' | 'warning' } | null;
-  showToast: (text: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
+  toasts: ToastItem[];
+  showToast: (text: string, type?: 'success' | 'error' | 'info' | 'warning', duration?: number) => void;
+  dismissToast: (id: string) => void;
 
   // Audio Sound FX
   soundFx: typeof soundFx;
@@ -651,6 +659,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // 2. Authentication State
   const [isFirebaseAuthLoading, setIsFirebaseAuthLoading] = useState<boolean>(true);
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState<string | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
 
   // When logged out or visiting clean, currentUser is null.
@@ -833,17 +842,31 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
 
         try {
+          const normalizedEmail = fbUser.email.toLowerCase().trim();
+          const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
+
+          // Enforce email verification gate before granting tenant access or writing to Firestore
+          if (!fbUser.emailVerified && !isSuperAdminEmail) {
+            setPendingVerificationEmail(fbUser.email);
+            return;
+          }
+
+          setPendingVerificationEmail(null);
+
           const idToken = await fbUser.getIdToken();
           const tokenResult = await fbUser.getIdTokenResult();
           const expirationTime = new Date(tokenResult.expirationTime).getTime();
 
-          const normalizedEmail = fbUser.email.toLowerCase().trim();
-          const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
+          const pendingStoreName = sessionStorage.getItem('sokopos_pending_store_name') || undefined;
+          if (pendingStoreName) {
+            sessionStorage.removeItem('sokopos_pending_store_name');
+          }
 
           // Prioritize account last logged into & delete conflicts at Firestore level
           const { winner: matchedBiz } = await prioritizeAccountAndPurgeConflicts(
             normalizedEmail,
-            fbUser.displayName || undefined
+            fbUser.displayName || undefined,
+            pendingStoreName
           );
 
           const targetBizId = isSuperAdminEmail ? 'biz-upfront' : matchedBiz.id;
@@ -1034,14 +1057,47 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // 4. Toast notifications
-  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
-  const showToast = useCallback((text: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => {
-    setToastMessage({ text, type });
-    setTimeout(() => {
-      setToastMessage((prev) => (prev?.text === text ? null : prev));
-    }, 3200);
+  // 4. Toast notifications (Framer Motion stack)
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const toastTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  const dismissToast = useCallback((id: string) => {
+    const existingTimer = toastTimersRef.current.get(id);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      toastTimersRef.current.delete(id);
+    }
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  const showToast = useCallback(
+    (
+      text: string,
+      type: 'success' | 'error' | 'info' | 'warning' = 'success',
+      duration: number = 3600
+    ) => {
+      const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const now = Date.now();
+
+      setToasts((prev) => {
+        // Deduplicate identical message triggered within 600ms
+        const recentDup = prev.find((item) => item.text === text && now - item.createdAt < 600);
+        if (recentDup) return prev;
+        const next = [...prev, { id, text, type, duration, createdAt: now }];
+        // Keep at most 4 stacked toasts
+        return next.slice(-4);
+      });
+
+      const timer = setTimeout(() => {
+        toastTimersRef.current.delete(id);
+        setToasts((prev) => prev.filter((item) => item.id !== id));
+      }, duration);
+      toastTimersRef.current.set(id, timer);
+    },
+    []
+  );
+
+  const toastMessage = toasts.length > 0 ? toasts[toasts.length - 1] : null;
 
   // 4b. Appointed Public Demo Cashier State (Configured by Super Admin)
   const [appointedDemoCashierId, setAppointedDemoCashierId] = useState<string>(() => {
@@ -1858,22 +1914,56 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // Edge Case 3: Shared logins are prohibited, as they render attribution meaningless
     const rawUsername = (user.username || user.name.toLowerCase().replace(/\s+/g, '.')).trim().toLowerCase();
-    const GENERIC_PROHIBITED = ['cashier', 'shared', 'pos', 'terminal', 'till', 'store', 'user', 'staff', 'counter', 'operator'];
-    if (GENERIC_PROHIBITED.includes(rawUsername)) {
+    const GENERIC_PROHIBITED = ['cashier', 'shared', 'pos', 'terminal', 'till', 'store', 'user', 'staff', 'counter', 'operator', 'guest', 'general'];
+    if (!rawUsername || GENERIC_PROHIBITED.includes(rawUsername)) {
       showToast(
-        `Shared logins prohibited: Generic account identity "${rawUsername}" is forbidden. Each operator must have an individual personal account.`,
+        `Shared logins prohibited: Generic or empty account identity "${rawUsername}" is forbidden. Each operator must have an individual personal account.`,
         'error'
       );
       return false;
     }
 
-    // Validate account uniqueness in tenant
-    const existingSameUsername = allSystemUsers.find(
-      (u) => u.businessId === activeBusinessId && u.username?.toLowerCase() === rawUsername
+    const rawCode = (user.code || '').trim();
+    const cleanCode = rawCode.toLowerCase().replace(/^#/, '');
+    if (!cleanCode) {
+      showToast('Staff ID / Code is required and must be unique across SokoPoS.', 'error');
+      return false;
+    }
+
+    // Build global staff directory across ALL businesses (in-memory + Firestore if online)
+    let globalUsers: Cashier[] = [...allSystemUsers];
+    if (isOnline) {
+      try {
+        const remoteCashiers = await getAllCashiersFromFirestore();
+        if (remoteCashiers && remoteCashiers.length > 0) {
+          const map = new Map<string, Cashier>();
+          globalUsers.forEach((u) => map.set(u.id, u));
+          remoteCashiers.forEach((r) => map.set(r.id, r));
+          globalUsers = Array.from(map.values());
+        }
+      } catch (err) {
+        console.warn('Global staff uniqueness check fallback to local state:', err);
+      }
+    }
+
+    // Enforce global uniqueness across ALL businesses in SokoPoS (no two staff may share username or Staff ID)
+    const existingSameUsername = globalUsers.find(
+      (u) => u.username?.trim().toLowerCase() === rawUsername
     );
     if (existingSameUsername) {
       showToast(
-        `Shared logins prohibited: An account with username "${rawUsername}" already belongs to ${existingSameUsername.name}. Each staff member must have an individual account.`,
+        `Username "${rawUsername}" is already assigned to ${existingSameUsername.name}. No two staff members in SokoPoS can share a username.`,
+        'error'
+      );
+      return false;
+    }
+
+    const existingSameCode = globalUsers.find(
+      (u) => u.code?.trim().toLowerCase().replace(/^#/, '') === cleanCode
+    );
+    if (existingSameCode) {
+      showToast(
+        `Staff ID "${rawCode}" is already assigned to ${existingSameCode.name}. No two staff members in SokoPoS can share a Staff ID.`,
         'error'
       );
       return false;
@@ -1884,21 +1974,30 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       hashedPin = await hashPinOnServer(user.pin);
     }
 
-    const newUserId = `user-${Date.now()}`;
+    let newUserId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    while (globalUsers.some((u) => u.id === newUserId)) {
+      newUserId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    }
 
-    // Isolate staff PIN hash into server-only credentials vault
-    await saveStaffCredentialOnServer({
+    // Isolate staff PIN hash into server-only credentials vault (also enforces global uniqueness on server)
+    const credRes = await saveStaffCredentialOnServer({
       cashierId: newUserId,
       businessId: activeBusinessId,
       hash: hashedPin,
       role: user.role,
       name: user.name,
-      code: user.code,
+      code: rawCode,
       username: rawUsername,
     });
 
+    if (!credRes.success && credRes.status === 409) {
+      showToast(credRes.error || 'Staff ID or Username is already in use in SokoPoS.', 'error');
+      return false;
+    }
+
     const newUser: Cashier = {
       ...user,
+      code: rawCode,
       username: rawUsername,
       pin: PROTECTED_PIN_MASK,
       id: newUserId,
@@ -1949,47 +2048,107 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return true;
   };
 
-  const updateSystemUser = async (id: string, updates: Partial<Cashier>): Promise<void> => {
+  const updateSystemUser = async (id: string, updates: Partial<Cashier>): Promise<boolean> => {
     const oldUser = allSystemUsers.find((u) => u.id === id);
-    if (!oldUser) return;
+    if (!oldUser) return false;
 
-    // Edge Case 3: Check shared login uniqueness if username changed
-    if (updates.username) {
-      const raw = updates.username.trim().toLowerCase();
-      const GENERIC_PROHIBITED = ['cashier', 'shared', 'pos', 'terminal', 'till', 'store', 'user', 'staff', 'counter', 'operator'];
-      if (GENERIC_PROHIBITED.includes(raw)) {
+    const GENERIC_PROHIBITED = ['cashier', 'shared', 'pos', 'terminal', 'till', 'store', 'user', 'staff', 'counter', 'operator', 'guest', 'general'];
+    const normalizedUsername = updates.username !== undefined ? updates.username.trim().toLowerCase() : undefined;
+    const normalizedCode = updates.code !== undefined ? updates.code.trim() : undefined;
+    const cleanCode = normalizedCode !== undefined ? normalizedCode.toLowerCase().replace(/^#/, '') : undefined;
+
+    if (normalizedUsername !== undefined) {
+      if (!normalizedUsername || GENERIC_PROHIBITED.includes(normalizedUsername)) {
         showToast(
-          `Shared logins prohibited: Generic account identity "${raw}" is forbidden. Each operator must have an individual personal account.`,
+          `Shared logins prohibited: Generic or empty account identity "${normalizedUsername || ''}" is forbidden. Each operator must have an individual personal account.`,
           'error'
         );
-        return;
-      }
-      const existing = allSystemUsers.find(
-        (u) => u.id !== id && u.businessId === activeBusinessId && u.username?.toLowerCase() === raw
-      );
-      if (existing) {
-        showToast(`Shared logins prohibited: Username "${raw}" is already assigned to ${existing.name}.`, 'error');
-        return;
+        return false;
       }
     }
 
-    const finalUpdates: Partial<Cashier> = { ...updates };
-    if (updates.pin && updates.pin.trim() && updates.pin !== PROTECTED_PIN_MASK) {
-      let hashedPin = updates.pin;
-      if (!isBcryptHash(updates.pin)) {
-        hashedPin = await hashPinOnServer(updates.pin);
+    if (normalizedCode !== undefined && !cleanCode) {
+      showToast('Staff ID / Code cannot be empty.', 'error');
+      return false;
+    }
+
+    // Build global staff directory across ALL businesses for uniqueness checks
+    let globalUsers: Cashier[] = [...allSystemUsers];
+    if (isOnline && (normalizedUsername !== undefined || cleanCode !== undefined)) {
+      try {
+        const remoteCashiers = await getAllCashiersFromFirestore();
+        if (remoteCashiers && remoteCashiers.length > 0) {
+          const map = new Map<string, Cashier>();
+          globalUsers.forEach((u) => map.set(u.id, u));
+          remoteCashiers.forEach((r) => map.set(r.id, r));
+          globalUsers = Array.from(map.values());
+        }
+      } catch (err) {
+        console.warn('Global staff uniqueness check fallback on update:', err);
       }
-      // Save updated credential into server-only vault
-      await saveStaffCredentialOnServer({
+    }
+
+    if (normalizedUsername !== undefined) {
+      const existingUsername = globalUsers.find(
+        (u) => u.id !== id && u.username?.trim().toLowerCase() === normalizedUsername
+      );
+      if (existingUsername) {
+        showToast(
+          `Username "${normalizedUsername}" is already assigned to ${existingUsername.name}. No two staff members in SokoPoS can share a username.`,
+          'error'
+        );
+        return false;
+      }
+    }
+
+    if (cleanCode !== undefined) {
+      const existingCode = globalUsers.find(
+        (u) => u.id !== id && u.code?.trim().toLowerCase().replace(/^#/, '') === cleanCode
+      );
+      if (existingCode) {
+        showToast(
+          `Staff ID "${normalizedCode}" is already assigned to ${existingCode.name}. No two staff members in SokoPoS can share a Staff ID.`,
+          'error'
+        );
+        return false;
+      }
+    }
+
+    const finalUpdates: Partial<Cashier> = {
+      ...updates,
+      ...(normalizedUsername !== undefined ? { username: normalizedUsername } : {}),
+      ...(normalizedCode !== undefined ? { code: normalizedCode } : {}),
+    };
+
+    const hasNewPin = Boolean(updates.pin && updates.pin.trim() && updates.pin !== PROTECTED_PIN_MASK);
+    let hashedPin: string | undefined;
+    if (hasNewPin && updates.pin) {
+      hashedPin = isBcryptHash(updates.pin) ? updates.pin : await hashPinOnServer(updates.pin);
+      finalUpdates.pin = PROTECTED_PIN_MASK;
+    }
+
+    // Keep server-only vault in sync for PIN and/or identity/role metadata changes
+    if (
+      hasNewPin ||
+      normalizedUsername !== undefined ||
+      normalizedCode !== undefined ||
+      updates.role !== undefined ||
+      updates.name !== undefined
+    ) {
+      const credRes = await saveStaffCredentialOnServer({
         cashierId: id,
-        businessId: activeBusinessId,
-        hash: hashedPin,
+        businessId: oldUser.businessId,
+        ...(hashedPin ? { hash: hashedPin } : {}),
         role: updates.role || oldUser.role,
         name: updates.name || oldUser.name,
-        code: updates.code || oldUser.code,
-        username: updates.username || oldUser.username,
+        code: normalizedCode ?? oldUser.code,
+        username: normalizedUsername ?? oldUser.username,
       });
-      finalUpdates.pin = PROTECTED_PIN_MASK;
+
+      if (!credRes.success && credRes.status === 409) {
+        showToast(credRes.error || 'Staff ID or Username is already in use in SokoPoS.', 'error');
+        return false;
+      }
     }
 
     const updatedUser: Cashier = {
@@ -2040,6 +2199,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
 
     showToast(`User ${oldUser.name} updated`, 'success');
+    return true;
   };
 
   const deleteSystemUser = (id: string) => {
@@ -4458,6 +4618,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     clearCart();
     setActiveReceipt(newTx);
     soundFx.playSuccess();
+    const roundingNote =
+      guardrail.roundingDifference !== 0
+        ? ` (Half-up rounded from ${currentLocation.currency} ${cartTotal.toFixed(2)})`
+        : '';
+    showToast(
+      `Sale #${receiptNum} completed — ${currentLocation.currency} ${guardrail.payableAmount.toFixed(2)}${roundingNote}`,
+      'success'
+    );
     return newTx;
   };
 
@@ -4508,17 +4676,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         spread: 60,
         origin: { y: 0.7 },
       });
-      if (guardrail.roundingDifference !== 0) {
-        showToast(
-          `Exact Cash (${currentLocation.currency} ${guardrail.payableAmount.toFixed(2)}) settled! (Half-up rounded from ${currentLocation.currency} ${cartTotal.toFixed(2)})`,
-          'success'
-        );
-      } else {
-        showToast(
-          `Exact Cash (${currentLocation.currency} ${cartTotal.toFixed(2)}) settled successfully!`,
-          'success'
-        );
-      }
       return true;
     } catch (err) {
       console.error('Exact cash checkout error:', err);
@@ -5961,7 +6118,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     passwordInput: string,
     isSignUpMode: boolean = false,
     customStoreName?: string
-  ): Promise<{ success: boolean; error?: string }> => {
+  ): Promise<{ success: boolean; requiresVerification?: boolean; email?: string; error?: string }> => {
     localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
     const email = emailInput.trim().toLowerCase();
     const password = passwordInput.trim();
@@ -5977,10 +6134,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
       setIsFirebaseAuthLoading(true);
       let userCredential;
+      let isNewlyCreated = false;
 
       if (isSignUpMode) {
         try {
           userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          isNewlyCreated = true;
         } catch (err: any) {
           if (err?.code === 'auth/email-already-in-use') {
             userCredential = await signInWithEmailAndPassword(auth, email, password);
@@ -5989,19 +6148,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           }
         }
       } else {
-        try {
-          userCredential = await signInWithEmailAndPassword(auth, email, password);
-        } catch (err: any) {
-          if (err?.code === 'auth/user-not-found' || err?.code === 'auth/invalid-credential') {
-            try {
-              userCredential = await createUserWithEmailAndPassword(auth, email, password);
-            } catch {
-              throw err;
-            }
-          } else {
-            throw err;
-          }
-        }
+        userCredential = await signInWithEmailAndPassword(auth, email, password);
       }
 
       const firebaseUser = userCredential.user;
@@ -6011,6 +6158,32 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       const normalizedEmail = firebaseUser.email.toLowerCase().trim();
       const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
+
+      // Enforce Email Verification Gate for non-super-admin Email/Password accounts
+      if (!firebaseUser.emailVerified && !isSuperAdminEmail) {
+        if (customStoreName) {
+          sessionStorage.setItem('sokopos_pending_store_name', customStoreName);
+        }
+        if (isNewlyCreated) {
+          try {
+            await sendEmailVerification(firebaseUser);
+          } catch (verifyErr) {
+            console.warn('Initial sendEmailVerification notice:', verifyErr);
+          }
+        }
+        setPendingVerificationEmail(firebaseUser.email);
+        setIsFirebaseAuthLoading(false);
+        return {
+          success: false,
+          requiresVerification: true,
+          email: firebaseUser.email,
+        };
+      }
+
+      setPendingVerificationEmail(null);
+      if (sessionStorage.getItem('sokopos_pending_store_name')) {
+        sessionStorage.removeItem('sokopos_pending_store_name');
+      }
 
       const { winner: matchedBiz, isExistingAccount } = await prioritizeAccountAndPurgeConflicts(
         normalizedEmail,
@@ -6095,15 +6268,19 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         errorMessage = 'Password must be at least 6 characters long.';
       } else if (err?.code === 'auth/email-already-in-use') {
         errorMessage = 'An account with this email already exists. Please sign in with your password.';
+      } else if (err?.code === 'auth/too-many-requests') {
+        errorMessage = 'Too many failed attempts. Please wait a moment or reset your password.';
       } else if (err?.message) {
         errorMessage = err.message;
       }
 
-      // Local fallback for offline/development resilience
-      const localOk = loginWithGoogle(email, email.split('@')[0], customStoreName);
-      if (localOk) {
-        soundFx.playSuccess();
-        return { success: true };
+      // Offline-only fallback when network is unreachable
+      if (err?.code === 'auth/network-request-failed') {
+        const localOk = loginWithGoogle(email, email.split('@')[0], customStoreName);
+        if (localOk) {
+          soundFx.playSuccess();
+          return { success: true };
+        }
       }
 
       return { success: false, error: errorMessage };
@@ -6134,6 +6311,129 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         errorMessage = err.message;
       }
       return { success: false, error: errorMessage };
+    }
+  };
+
+  const resendVerificationEmail = async (): Promise<{ success: boolean; message?: string; error?: string }> => {
+    const fbUser = auth.currentUser;
+    if (!fbUser) {
+      return { success: false, error: 'No active sign-up session found. Please sign in again.' };
+    }
+    try {
+      await sendEmailVerification(fbUser);
+      return {
+        success: true,
+        message: `Verification link sent to ${fbUser.email}. Please check your inbox and spam folder.`,
+      };
+    } catch (err: any) {
+      console.warn('Resend verification email error:', err);
+      if (err?.code === 'auth/too-many-requests') {
+        return {
+          success: false,
+          error: 'A verification email was recently sent. Please wait a minute before requesting another.',
+        };
+      }
+      return {
+        success: false,
+        error: err?.message || 'Failed to resend verification email.',
+      };
+    }
+  };
+
+  const checkEmailVerificationStatus = async (): Promise<{ verified: boolean; error?: string }> => {
+    const fbUser = auth.currentUser;
+    if (!fbUser || !fbUser.email) {
+      return { verified: false, error: 'Session expired. Please sign in again.' };
+    }
+    try {
+      await fbUser.reload();
+      const refreshedUser = auth.currentUser;
+      if (!refreshedUser || !refreshedUser.emailVerified) {
+        return {
+          verified: false,
+          error: 'Email not verified yet. Please click the verification link in your inbox first.',
+        };
+      }
+
+      // Force token refresh so request.auth.token.email_verified == true in Firestore rules
+      const idToken = await refreshedUser.getIdToken(true);
+      const tokenResult = await refreshedUser.getIdTokenResult();
+      const expirationTime = new Date(tokenResult.expirationTime).getTime();
+
+      const normalizedEmail = refreshedUser.email!.toLowerCase().trim();
+      const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
+      const pendingStoreName = sessionStorage.getItem('sokopos_pending_store_name') || undefined;
+      if (pendingStoreName) {
+        sessionStorage.removeItem('sokopos_pending_store_name');
+      }
+
+      const { winner: matchedBiz, isExistingAccount } = await prioritizeAccountAndPurgeConflicts(
+        normalizedEmail,
+        refreshedUser.displayName || undefined,
+        pendingStoreName
+      );
+
+      const targetBizId = isSuperAdminEmail ? 'biz-upfront' : matchedBiz.id;
+      const role: UserRole = isSuperAdminEmail
+        ? 'super_admin'
+        : matchedBiz
+        ? 'business_owner'
+        : 'manager';
+
+      const authUser: AuthUser = {
+        id: refreshedUser.uid,
+        firebaseUid: refreshedUser.uid,
+        email: refreshedUser.email!,
+        name: refreshedUser.displayName || (isSuperAdminEmail ? 'Platform Administrator' : refreshedUser.email!.split('@')[0]),
+        initials: (refreshedUser.displayName || (isSuperAdminEmail ? 'PA' : refreshedUser.email!.substring(0, 2))).substring(0, 2).toUpperCase(),
+        avatarUrl: refreshedUser.photoURL || undefined,
+        authProvider: 'firebase',
+        role,
+        businessId: targetBizId,
+        businessName: matchedBiz?.name || (isSuperAdminEmail ? 'Upfront Retail Solutions' : 'Business Account'),
+        createdAt: refreshedUser.metadata.creationTime || new Date().toISOString(),
+        idToken,
+        tokenExpiresAt: expirationTime,
+        sessionStatus: 'verified',
+      };
+
+      setPendingVerificationEmail(null);
+      setCurrentUser(authUser);
+      setActiveBusinessIdState(targetBizId);
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
+
+      saveUserProfileToFirestore({
+        uid: refreshedUser.uid,
+        email: refreshedUser.email!,
+        role,
+        businessId: targetBizId,
+        displayName: refreshedUser.displayName || '',
+      });
+
+      soundFx.playSuccess();
+      showToast(
+        isExistingAccount
+          ? `Email verified! Logged into ${matchedBiz.name}.`
+          : `Email verified! Shop "${matchedBiz.name}" is now active.`,
+        'success'
+      );
+      return { verified: true };
+    } catch (err: any) {
+      console.warn('Check verification status error:', err);
+      return {
+        verified: false,
+        error: err?.message || 'Unable to verify status right now. Please try again.',
+      };
+    }
+  };
+
+  const cancelEmailVerification = async (): Promise<void> => {
+    setPendingVerificationEmail(null);
+    sessionStorage.removeItem('sokopos_pending_store_name');
+    try {
+      await firebaseSignOut(auth);
+    } catch (err) {
+      console.warn('Sign out during cancelEmailVerification:', err);
     }
   };
 
@@ -6340,22 +6640,27 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const trimmedInput = usernameOrId.trim().toLowerCase();
     const cleanCode = trimmedInput.replace(/^#/, '');
 
-    // Search candidates across in-memory system users by ID, Code (#7000/7000), Username, or Name
-    let candidateUsers = allSystemUsers.filter(
-      (u) =>
-        u.id.toLowerCase() === trimmedInput ||
-        u.username?.toLowerCase() === trimmedInput ||
-        u.code.toLowerCase() === trimmedInput ||
-        u.code.toLowerCase().replace(/^#/, '') === cleanCode ||
-        u.name.toLowerCase() === trimmedInput
-    );
+    if (!trimmedInput) {
+      soundFx.playError();
+      showToast('Please enter your Staff Username or Staff ID.', 'error');
+      return false;
+    }
 
-    // If candidate not in memory and online, query Firestore for fresh cashiers
+    // Search candidates strictly by unique ID, Username, or Staff Code (#7000/7000)
+    const matchesIdentity = (u: Cashier) =>
+      u.id.toLowerCase() === trimmedInput ||
+      u.username?.trim().toLowerCase() === trimmedInput ||
+      u.code?.trim().toLowerCase() === trimmedInput ||
+      u.code?.trim().toLowerCase().replace(/^#/, '') === cleanCode;
+
+    let candidateUsers = allSystemUsers.filter(matchesIdentity);
+
+    // If candidate not in memory and online, query ALL cashiers across Firestore so any business staff can sign in
     if (candidateUsers.length === 0 && isOnline) {
       try {
-        let remoteCashiers = await getTenantCashiersFromFirestore(activeBusinessId);
+        let remoteCashiers = await getAllCashiersFromFirestore();
         if (!remoteCashiers || remoteCashiers.length === 0) {
-          remoteCashiers = await getAllCashiersFromFirestore();
+          remoteCashiers = await getTenantCashiersFromFirestore(activeBusinessId);
         }
         if (remoteCashiers && remoteCashiers.length > 0) {
           setAllSystemUsers((prev) => {
@@ -6364,14 +6669,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             remoteCashiers.forEach((r) => map.set(r.id, { ...r, isPendingCloudSync: false }));
             return Array.from(map.values());
           });
-          candidateUsers = remoteCashiers.filter(
-            (u) =>
-              u.id.toLowerCase() === trimmedInput ||
-              u.username?.toLowerCase() === trimmedInput ||
-              u.code.toLowerCase() === trimmedInput ||
-              u.code.toLowerCase().replace(/^#/, '') === cleanCode ||
-              u.name.toLowerCase() === trimmedInput
-          );
+          candidateUsers = remoteCashiers.filter(matchesIdentity);
         }
       } catch (err) {
         console.warn('Fresh remote cashiers check on login:', err);
@@ -6385,6 +6683,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     for (const matchedUser of candidateUsers) {
+      const isExplicitDemoUser = Boolean(isDemo) || matchedUser.businessId === 'biz-demo';
+
       // Validate staff PIN strictly through protected /api/auth/verify-pin server route
       let isValid = false;
       try {
@@ -6396,19 +6696,18 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           fallbackHash: matchedUser.pin,
         });
 
+        // Demo PIN bypass ONLY applies when explicitly in a demo flow or logging into a biz-demo account
         const isDemoMatch =
+          isExplicitDemoUser &&
           pin === '1234' &&
-          (matchedUser.code === '#7000' ||
-            matchedUser.code === '#1000' ||
-            matchedUser.username === 'cashier.a' ||
-            matchedUser.username === 'admin.staff' ||
+          (matchedUser.businessId === 'biz-demo' ||
+            matchedUser.code === '#7000' ||
             matchedUser.id === appointedDemoCashierId ||
             matchedUser.isAppointedDemo);
 
         isValid = verifyRes.isValid || isDemoMatch;
 
         if (!isValid && verifyRes.error) {
-          // If server reports specific lockout or tenant mismatch
           if (verifyRes.error.includes('Access Blocked') || verifyRes.error.includes('locked')) {
             soundFx.playError();
             showToast(verifyRes.error, 'error');
@@ -6422,38 +6721,34 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           return false;
         }
         console.warn('Server PIN verification fallback attempt:', err);
-        // Fallback local evaluation if offline
         const isDemoMatch =
+          isExplicitDemoUser &&
           pin === '1234' &&
-          (matchedUser.code === '#7000' ||
-            matchedUser.code === '#1000' ||
-            matchedUser.username === 'cashier.a' ||
+          (matchedUser.businessId === 'biz-demo' ||
+            matchedUser.code === '#7000' ||
             matchedUser.id === appointedDemoCashierId ||
             matchedUser.isAppointedDemo);
         isValid = isDemoMatch || (await verifyPinOnServer(pin, matchedUser.pin));
       }
 
       if (isValid) {
-        // Evaluate if this session is an isolated demo sandbox session:
-        // - Routed explicitly via Try-Demo button (isDemo is true)
-        // - Or has demo intent flag in localStorage
-        // - Or PIN is 1234 on appointed cashier
-        // - Or matchedUser is explicitly assigned to biz-demo
-        const isDemoSessionActive =
-          Boolean(isDemo) ||
-          localStorage.getItem('sokopos_demo_intent') === 'true' ||
-          (pin === '1234' && (matchedUser.id === appointedDemoCashierId || matchedUser.code === '#7000' || matchedUser.isAppointedDemo)) ||
-          matchedUser.businessId === 'biz-demo';
-
-        // Isolate demo sessions strictly to biz-demo tenant and preloaded demo catalog
+        // Isolate demo sessions strictly to biz-demo; real staff members always land in their own businessId
+        const isDemoSessionActive = Boolean(isDemo) || matchedUser.businessId === 'biz-demo';
         const targetBizId = isDemoSessionActive ? 'biz-demo' : matchedUser.businessId;
-        const targetLocationId = isDemoSessionActive ? 'loc-demo-01' : (matchedUser.assignedLocationId || locations[0]?.id);
 
         if (!targetBizId) {
           soundFx.playError();
           showToast('Access Blocked: Staff member has no assigned business tenant.', 'error');
           return false;
         }
+
+        // Resolve assigned location within targetBizId (never inherit a location from the previous business)
+        const targetBizLocations = allLocations.filter((l) => l.businessId === targetBizId);
+        const targetLocationId = isDemoSessionActive
+          ? 'loc-demo-01'
+          : (matchedUser.assignedLocationId && targetBizLocations.some((l) => l.id === matchedUser.assignedLocationId)
+              ? matchedUser.assignedLocationId
+              : targetBizLocations[0]?.id || matchedUser.assignedLocationId);
 
         let biz = businesses.find((b) => b.id === targetBizId);
         if (!biz && isOnline) {
@@ -6483,7 +6778,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           return false;
         }
 
-        // Strict Session Lockdown: Bound strictly to targetBizId with masked PIN
+        // Strict Session Lockdown: Bound strictly to targetBizId and matchedUser.role with masked PIN
         const authUser: AuthUser = {
           id: matchedUser.id,
           email: `${matchedUser.username || matchedUser.code.replace(/^#/, '')}@${isDemoSessionActive ? 'demo' : biz?.code.toLowerCase() || 'pos'}.internal`,
@@ -6491,7 +6786,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           initials: matchedUser.initials,
           authProvider: 'credentials',
           role: matchedUser.role as UserRole,
-          businessId: targetBizId, // Strictly scoped: biz-demo for demo sessions, protecting super admin inventory
+          businessId: targetBizId,
           businessName: isDemoSessionActive ? 'SokoPoS Demo Mart (Sandbox)' : (biz?.name || 'SokoPoS Terminal Store'),
           username: matchedUser.username,
           pin: PROTECTED_PIN_MASK,
@@ -6510,6 +6805,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           localStorage.removeItem('sokopos_demo_intent');
         } else {
           localStorage.removeItem(STORAGE_KEYS.IS_DEMO_SESSION);
+          localStorage.removeItem('sokopos_demo_intent');
         }
 
         setCurrentCashier(matchedUser);
@@ -7444,9 +7740,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setCurrentUser,
         isAuthenticated,
         isFirebaseAuthLoading,
+        pendingVerificationEmail,
         loginWithFirebaseGoogle,
         loginWithFirebaseEmailPassword,
         sendPasswordResetEmailAction,
+        resendVerificationEmail,
+        checkEmailVerificationStatus,
+        cancelEmailVerification,
         exchangeOAuthTokenForSession,
         businesses,
         currentBusiness,
@@ -7662,7 +7962,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         seedTenantDataToFirestoreAction,
 
         toastMessage,
+        toasts,
         showToast,
+        dismissToast,
         soundFx,
 
         language,

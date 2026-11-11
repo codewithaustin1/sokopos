@@ -31,7 +31,7 @@ import { BusinessProfileSettingsModal } from './components/BusinessProfileSettin
 import { SubscriptionActivationModal } from './components/SubscriptionActivationModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { SidebarNav } from './components/SidebarNav';
-import { CheckCircle, AlertCircle, Info, Lock, AlertTriangle } from 'lucide-react';
+import { Lock, AlertTriangle } from 'lucide-react';
 import { PaymentMethod } from './types';
 import { useBackgroundScanner } from './hooks/useBackgroundScanner';
 import { ScannerInterceptHUD } from './components/ScannerInterceptHUD';
@@ -41,10 +41,12 @@ import { PricingPageView } from './components/PricingPageView';
 import { getSystemPaths, generateSitemapJson } from './utils/sitemapManifest';
 import { isSuperAdminEmail } from './data/initialData';
 import { MobileBentoMenuOverlay } from './components/common/MobileBentoMenuOverlay';
+import { ToastContainer } from './components/common/ToastContainer';
 
 function PosAppContent() {
   const {
-    toastMessage,
+    toasts,
+    dismissToast,
     currentUser,
     isSuperAdmin,
     currentBusiness,
@@ -483,29 +485,8 @@ function PosAppContent() {
         id="pos-pricing-page-container"
         className="h-screen w-screen overflow-y-auto scroll-smooth font-sans relative"
       >
-        {/* Toast Notification Alert */}
-        {toastMessage && (
-          <div className="fixed top-6 right-6 z-[120] animate-in slide-in-from-top-3 fade-in duration-200">
-            <div
-              className={`px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5 text-xs font-bold border ${
-                toastMessage.type === 'error'
-                  ? 'bg-red-50 text-red-800 border-red-200'
-                  : toastMessage.type === 'info'
-                  ? 'bg-blue-50 text-blue-800 border-blue-200'
-                  : 'bg-emerald-50 text-emerald-900 border-emerald-200'
-              }`}
-            >
-              {toastMessage.type === 'error' ? (
-                <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-              ) : toastMessage.type === 'info' ? (
-                <Info className="w-4 h-4 text-blue-600 shrink-0" />
-              ) : (
-                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-              )}
-              <span>{toastMessage.text}</span>
-            </div>
-          </div>
-        )}
+        {/* Framer Motion Toast Notification Stack */}
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} topOffsetClass="top-6" />
 
         <PricingPageView
           onBackToLogin={() => {
@@ -559,29 +540,8 @@ function PosAppContent() {
             style={{ backgroundImage: `url(${loginBgGraphic})` }}
           />
         )}
-        {/* Toast Notification Alert */}
-        {toastMessage && (
-          <div className="fixed top-6 right-6 z-[120] animate-in slide-in-from-top-3 fade-in duration-200">
-            <div
-              className={`px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5 text-xs font-bold border ${
-                toastMessage.type === 'error'
-                  ? 'bg-red-50 text-red-800 border-red-200'
-                  : toastMessage.type === 'info'
-                  ? 'bg-blue-50 text-blue-800 border-blue-200'
-                  : 'bg-emerald-50 text-emerald-900 border-emerald-200'
-              }`}
-            >
-              {toastMessage.type === 'error' ? (
-                <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-              ) : toastMessage.type === 'info' ? (
-                <Info className="w-4 h-4 text-blue-600 shrink-0" />
-              ) : (
-                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-              )}
-              <span>{toastMessage.text}</span>
-            </div>
-          </div>
-        )}
+        {/* Framer Motion Toast Notification Stack */}
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} topOffsetClass="top-6" />
         <SignInView onLoginSuccess={navigateToTerminal} />
 
         {/* Hidden Dynamic Sitemap View triggered by console command */}
@@ -600,29 +560,8 @@ function PosAppContent() {
         isDarkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-900'
       }`}
     >
-      {/* Toast Notification Alert */}
-      {toastMessage && (
-        <div className="fixed top-24 right-6 z-50 animate-in slide-in-from-top-3 fade-in duration-200">
-          <div
-            className={`px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5 text-xs font-bold border ${
-              toastMessage.type === 'error'
-                ? 'bg-red-50 text-red-800 border-red-200'
-                : toastMessage.type === 'info'
-                ? 'bg-blue-50 text-blue-800 border-blue-200'
-                : 'bg-emerald-50 text-emerald-900 border-emerald-200'
-            }`}
-          >
-            {toastMessage.type === 'error' ? (
-              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-            ) : toastMessage.type === 'info' ? (
-              <Info className="w-4 h-4 text-blue-600 shrink-0" />
-            ) : (
-              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-            )}
-            <span>{toastMessage.text}</span>
-          </div>
-        </div>
-      )}
+      {/* Framer Motion Toast Notification Stack */}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} topOffsetClass="top-20" />
 
       {/* Persistent Super-Admin Safeguard Warning Banner (Required Safeguard) */}
       <SuperAdminBanner

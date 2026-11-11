@@ -317,8 +317,10 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
       if (userPin.trim()) {
         updates.pin = userPin.trim();
       }
-      await updateSystemUser(editingUserId, updates);
-      cancelUserForm();
+      const ok = await updateSystemUser(editingUserId, updates);
+      if (ok) {
+        cancelUserForm();
+      }
       return;
     } else {
       if (!userPin.trim() || userPin.trim().length < 4) {
@@ -344,9 +346,10 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
         assignedLocationId: userAssignedLocId || undefined,
       });
 
-      if (created) {
-        setIsAddingUser(false);
+      if (!created) {
+        return;
       }
+      setIsAddingUser(false);
     }
 
     setUserName('');

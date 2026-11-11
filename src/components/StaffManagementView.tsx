@@ -24,6 +24,7 @@ export const StaffManagementView: React.FC = () => {
     currentUser,
     currentBusiness,
     systemUsers,
+    allSystemUsers,
     createSystemUser,
     updateSystemUser,
     deleteSystemUser,
@@ -90,14 +91,27 @@ export const StaffManagementView: React.FC = () => {
       return;
     }
 
-    const existingUserWithSameUsername = systemUsers.find(
-      (u) => (!editingUser || u.id !== editingUser.id) && u.username?.toLowerCase() === cleanUsername
+    const existingUserWithSameUsername = allSystemUsers.find(
+      (u) => (!editingUser || u.id !== editingUser.id) && u.username?.trim().toLowerCase() === cleanUsername
     );
     if (existingUserWithSameUsername) {
       setFormError(
-        `Username "${cleanUsername}" is already assigned to ${existingUserWithSameUsername.name}. Each operator must have an individual unique account.`
+        `Username "${cleanUsername}" is already assigned to ${existingUserWithSameUsername.name}. No two staff members in SokoPoS can share a username.`
       );
       return;
+    }
+
+    const cleanCodeInput = code.trim().toLowerCase().replace(/^#/, '');
+    if (cleanCodeInput) {
+      const existingUserWithSameCode = allSystemUsers.find(
+        (u) => (!editingUser || u.id !== editingUser.id) && u.code?.trim().toLowerCase().replace(/^#/, '') === cleanCodeInput
+      );
+      if (existingUserWithSameCode) {
+        setFormError(
+          `Staff ID "${code.trim()}" is already assigned to ${existingUserWithSameCode.name}. No two staff members in SokoPoS can share a Staff ID.`
+        );
+        return;
+      }
     }
 
     const initials = name
@@ -109,25 +123,26 @@ export const StaffManagementView: React.FC = () => {
 
     setIsSubmitting(true);
     try {
+      let ok = false;
       if (editingUser) {
         const updates: Partial<Cashier> = {
           name: name.trim(),
           initials,
           role,
-          username: username.trim().toLowerCase(),
+          username: cleanUsername,
           code: code.trim(),
           assignedLocationId,
         };
         if (pin.trim()) {
           updates.pin = pin.trim();
         }
-        await updateSystemUser(editingUser.id, updates);
+        ok = await updateSystemUser(editingUser.id, updates);
       } else {
-        await createSystemUser({
+        ok = await createSystemUser({
           name: name.trim(),
           initials,
           code: code.trim() || `#${Math.floor(1000 + Math.random() * 9000)}`,
-          username: (username.trim() || name.toLowerCase().replace(/\s+/g, '.')).toLowerCase(),
+          username: cleanUsername,
           pin: pin.trim(),
           role,
           avatarColor: 'bg-blue-600',
@@ -135,7 +150,9 @@ export const StaffManagementView: React.FC = () => {
           assignedLocationId,
         });
       }
-      setIsAddModalOpen(false);
+      if (ok) {
+        setIsAddModalOpen(false);
+      }
     } finally {
       setIsSubmitting(false);
     }
