@@ -193,16 +193,30 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
         return;
       }
 
-      if (paymentChannel === 'card' && initRes.authorizationUrl) {
+      if (initRes.authorizationUrl) {
+        try {
+          sessionStorage.setItem(
+            'sokopos_pending_sub_payment',
+            JSON.stringify({
+              reference: initRes.reference,
+              businessId: currentBusiness?.id || 'biz-default',
+              planId: selectedPlanId,
+              payer: paymentChannel === 'mpesa_stk' ? phoneNumber : payerEmail,
+            })
+          );
+        } catch {
+          // ignore sessionStorage errors
+        }
         setCardAuthUrl(initRes.authorizationUrl);
-        setStatusMessage('Complete your card payment in the Paystack checkout tab, then click Verify below.');
-      } else {
-        setStatusMessage(
-          initRes.displayText ||
-            `M-Pesa STK prompt sent to ${phoneNumber}. Enter your M-Pesa PIN to authorize Ksh ${payableAmount.toLocaleString()}.`
-        );
+        setStatusMessage('Redirecting to secure Paystack Checkout...');
+        window.location.href = initRes.authorizationUrl;
+        return;
       }
 
+      setStatusMessage(
+        initRes.displayText ||
+          `M-Pesa STK prompt sent to ${phoneNumber}. Enter your M-Pesa PIN to authorize Ksh ${payableAmount.toLocaleString()}.`
+      );
       pollUntilVerified(initRes.reference);
     } catch (err: any) {
       console.error('Subscription payment error:', err);

@@ -26,6 +26,7 @@ export interface CardCheckoutInitParams {
   email: string;
   reference: string;
   callbackUrl?: string;
+  channels?: ('card' | 'mobile_money')[];
   metadata?: Record<string, any>;
 }
 
@@ -48,6 +49,7 @@ export interface PaymentVerificationResult {
   channel?: string;
   gatewayResponse?: string;
   paidAt?: string;
+  metadata?: Record<string, any>;
   error?: string;
 }
 
@@ -190,7 +192,7 @@ export class PaystackAdapter implements PaymentProviderAdapter {
         amount: String(amountSubunits),
         currency: 'KES',
         reference: params.reference,
-        channels: ['card'],
+        channels: params.channels && params.channels.length > 0 ? params.channels : ['card'],
         ...(params.callbackUrl ? { callback_url: params.callbackUrl } : {}),
         metadata: params.metadata || {},
       }),
@@ -268,6 +270,7 @@ export class PaystackAdapter implements PaymentProviderAdapter {
       channel: tx.channel,
       gatewayResponse: tx.gateway_response,
       paidAt: tx.paid_at,
+      metadata: tx.metadata && typeof tx.metadata === 'object' ? tx.metadata : undefined,
     };
   }
 

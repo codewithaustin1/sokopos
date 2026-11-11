@@ -1098,7 +1098,11 @@ Extract:
         planId: planId || undefined,
       };
 
-      if (resolvedChannel === 'mpesa_stk') {
+      const useHostedRedirect =
+        resolvedChannel === 'card' ||
+        (resolvedFlow === 'subscription' && adapter.providerName === 'paystack');
+
+      if (!useHostedRedirect && resolvedChannel === 'mpesa_stk') {
         if (!phone || String(phone).replace(/\D/g, '').length < 9) {
           return res.status(400).json({ success: false, error: 'Valid Kenyan M-Pesa phone number is required.' });
         }
@@ -1127,17 +1131,28 @@ Extract:
           createdAt: new Date().toISOString(),
         });
 
-        return res.json(result);
+        return res.json({
+          ...result,
+          mode: 'stk_push',
+        });
       }
 
       const appBaseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-      const callbackUrl = `${appBaseUrl}/?payment_ref=${encodeURIComponent(reference)}`;
+      const callbackPath = resolvedFlow === 'subscription' ? '/pos' : '/';
+      const callbackUrl = `${appBaseUrl}${callbackPath}?payment_ref=${encodeURIComponent(reference)}`;
+      const hostedChannels: ('card' | 'mobile_money')[] =
+        resolvedFlow === 'subscription'
+          ? resolvedChannel === 'card'
+            ? ['card', 'mobile_money']
+            : ['mobile_money', 'card']
+          : ['card'];
 
       const cardResult = await adapter.initializeCardCheckout({
         amountKes: numericAmount,
         email: payerEmail,
         reference,
         callbackUrl,
+        channels: hostedChannels,
         metadata: sharedMeta,
       });
 
@@ -1157,7 +1172,10 @@ Extract:
         createdAt: new Date().toISOString(),
       });
 
-      return res.json(cardResult);
+      return res.json({
+        ...cardResult,
+        mode: 'redirect',
+      });
     } catch (err: any) {
       console.error('Error in /api/payments/initiate:', err);
       return res.status(500).json({ success: false, error: err?.message || 'Payment initiation failed.' });
@@ -1180,6 +1198,9 @@ Extract:
           status: 'success',
           amountKes: cached.amountKes,
           channel: cached.channel,
+          flowType: cached.flowType,
+          businessId: cached.businessId,
+          planId: cached.planId,
           gatewayResponse: cached.gatewayResponse || 'Approved via webhook',
           paidAt: cached.paidAt,
         });
@@ -1195,7 +1216,12 @@ Extract:
         paymentIntents.set(reference, cached);
       }
 
-      return res.json(verification);
+      return res.json({
+        ...verification,
+        flowType: cached?.flowType || (verification.metadata?.flowType as PaymentFlowType | undefined),
+        businessId: cached?.businessId || (verification.metadata?.businessId as string | undefined),
+        planId: cached?.planId || (verification.metadata?.planId as string | undefined),
+      });
     } catch (err: any) {
       console.error('Error in /api/payments/verify:', err);
       return res.status(500).json({
@@ -1207,7 +1233,70 @@ Extract:
     }
   });
 
-  app.post('/api/payments/webhook', (req: any, res) => {
+  function firestoreCollectionUrl(collection: string): string {
+    return `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(firebaseProjectId)}/databases/${encodeURIComponent(firestoreDatabaseId)}/documents/${collection}`;
+  }
+
+  function toFirestoreValue(val: any): any {
+    if (val === null || val === undefined) return { nullValue: null };
+    if (typeof val === 'string') return { stringValue: val };
+    if (typeof val === 'boolean') return { booleanValue: val };
+    if (typeof val === 'number') {
+      return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
+    }
+    if (Array.isArray(val)) {
+      return { arrayValue: { values: val.map((v) => toFirestoreValue(v)) } };
+    }
+    if (typeof val === 'object') {
+      const fields: Record<string, any> = {};
+      for (const [k, v] of Object.entries(val)) {
+        if (v !== undefined) fields[k] = toFirestoreValue(v);
+      }
+      return { mapValue: { fields } };
+    }
+    return { stringValue: String(val) };
+  }
+
+  async function patchFirestoreDoc(
+    collection: string,
+    docId: string,
+    data: Record<string, any>,
+    fieldPaths?: string[]
+  ): Promise<boolean> {
+    const token = await getGcpAccessToken();
+    if (!token || !docId) return false;
+
+    try {
+      const fields: Record<string, any> = {};
+      const paths = fieldPaths || Object.keys(data);
+      for (const [k, v] of Object.entries(data)) {
+        if (v !== undefined) fields[k] = toFirestoreValue(v);
+      }
+
+      const maskQuery = paths.map((p) => `updateMask.fieldPaths=${encodeURIComponent(p)}`).join('&');
+      const url = `${firestoreCollectionUrl(collection)}/${encodeURIComponent(docId)}?${maskQuery}`;
+      const resp = await fetch(url, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ fields }),
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        console.warn(`Firestore PATCH ${collection}/${docId} failed (${resp.status}):`, errText);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn(`Firestore PATCH ${collection}/${docId} notice:`, err);
+      return false;
+    }
+  }
+
+  app.post('/api/payments/webhook', async (req: any, res) => {
     try {
       const adapter = getActivePaymentAdapter();
       const signature = req.headers['x-paystack-signature'] as string | undefined;
@@ -1217,26 +1306,176 @@ Extract:
         return res.status(401).json({ error: 'Invalid webhook signature' });
       }
 
-      const event = req.body;
-      if (event?.event === 'charge.success' && event?.data?.reference) {
-        const ref = String(event.data.reference);
-        const existing = paymentIntents.get(ref);
+      const payload = req.body || {};
+      const eventName = String(payload.event || '');
+      const data = payload.data || {};
+      const metadata = data.metadata || data.subscription?.metadata || {};
+      const ref = data.reference ? String(data.reference) : `evt-${Date.now()}`;
+      const existing = paymentIntents.get(ref);
+
+      const flowType: PaymentFlowType = metadata.flowType || existing?.flowType || 'pos_sale';
+      const channel: PaymentChannel = data.channel === 'card' ? 'card' : existing?.channel || 'mpesa_stk';
+      const businessId: string | undefined = metadata.businessId || existing?.businessId;
+      const planId: string | undefined = metadata.planId || existing?.planId;
+      const transactionId: string | undefined = metadata.transactionId;
+      const amountKes = typeof data.amount === 'number' ? data.amount / 100 : existing?.amountKes || 0;
+      const nowIso = new Date().toISOString();
+
+      if (eventName === 'charge.success' && data.reference) {
         paymentIntents.set(ref, {
           reference: ref,
           provider: adapter.providerName,
-          flowType: event.data?.metadata?.flowType || existing?.flowType || 'pos_sale',
-          channel: event.data?.channel === 'card' ? 'card' : existing?.channel || 'mpesa_stk',
-          amountKes: typeof event.data.amount === 'number' ? event.data.amount / 100 : existing?.amountKes || 0,
+          flowType,
+          channel,
+          amountKes,
           status: 'success',
-          businessId: event.data?.metadata?.businessId || existing?.businessId,
-          planId: event.data?.metadata?.planId || existing?.planId,
-          gatewayResponse: event.data.gateway_response || 'Approved',
-          paidAt: event.data.paid_at || new Date().toISOString(),
-          createdAt: existing?.createdAt || new Date().toISOString(),
+          businessId,
+          planId,
+          gatewayResponse: data.gateway_response || 'Approved',
+          paidAt: data.paid_at || nowIso,
+          createdAt: existing?.createdAt || nowIso,
         });
+
+        await patchFirestoreDoc('payment_records', ref, {
+          reference: ref,
+          provider: adapter.providerName,
+          event: eventName,
+          flowType,
+          channel,
+          amountKes,
+          status: 'success',
+          businessId: businessId || '',
+          planId: planId || '',
+          customerEmail: data.customer?.email || '',
+          gatewayResponse: data.gateway_response || 'Approved',
+          paidAt: data.paid_at || nowIso,
+          updatedAt: nowIso,
+        });
+
+        if (flowType === 'subscription' && businessId) {
+          const durationDays = Number(metadata.durationDays) || (metadata.billingCycle === 'annual' ? 365 : 30);
+          const expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+          const resolvedPlan = planId || 'business';
+
+          await patchFirestoreDoc(
+            'businesses',
+            businessId,
+            {
+              status: 'active',
+              plan: resolvedPlan,
+              subscription: {
+                status: 'active',
+                plan: resolvedPlan,
+                planId: resolvedPlan,
+                activatedAt: nowIso,
+                expiresAt,
+                lastPaymentReference: ref,
+                paymentProvider: adapter.providerName,
+              },
+            },
+            ['status', 'plan', 'subscription']
+          );
+        } else if (flowType === 'pos_sale' && transactionId) {
+          await patchFirestoreDoc(
+            'transactions',
+            transactionId,
+            {
+              paymentStatus: 'paid',
+              paymentReference: ref,
+              paymentProvider: adapter.providerName,
+              paidAt: data.paid_at || nowIso,
+            },
+            ['paymentStatus', 'paymentReference', 'paymentProvider', 'paidAt']
+          );
+        }
+      } else if (eventName === 'charge.failed' && data.reference) {
+        paymentIntents.set(ref, {
+          reference: ref,
+          provider: adapter.providerName,
+          flowType,
+          channel,
+          amountKes,
+          status: 'failed',
+          businessId,
+          planId,
+          gatewayResponse: data.gateway_response || 'Payment failed',
+          createdAt: existing?.createdAt || nowIso,
+        });
+
+        await patchFirestoreDoc('payment_records', ref, {
+          reference: ref,
+          provider: adapter.providerName,
+          event: eventName,
+          flowType,
+          channel,
+          amountKes,
+          status: 'failed',
+          businessId: businessId || '',
+          gatewayResponse: data.gateway_response || 'Payment failed',
+          updatedAt: nowIso,
+        });
+
+        if (flowType === 'pos_sale' && transactionId) {
+          await patchFirestoreDoc(
+            'transactions',
+            transactionId,
+            {
+              paymentStatus: 'failed',
+              paymentReference: ref,
+            },
+            ['paymentStatus', 'paymentReference']
+          );
+        }
+      } else if (
+        eventName === 'subscription.payment_failed' ||
+        eventName === 'invoice.payment_failed' ||
+        eventName === 'subscription.disable'
+      ) {
+        const nextSubStatus = eventName === 'subscription.disable' ? 'expired' : 'past_due';
+
+        await patchFirestoreDoc('payment_records', ref, {
+          reference: ref,
+          provider: adapter.providerName,
+          event: eventName,
+          flowType: 'subscription',
+          status: 'failed',
+          businessId: businessId || '',
+          customerEmail: data.customer?.email || '',
+          gatewayResponse: data.gateway_response || eventName,
+          updatedAt: nowIso,
+        });
+
+        if (businessId) {
+          await patchFirestoreDoc(
+            'businesses',
+            businessId,
+            {
+              subscription: {
+                status: nextSubStatus,
+                lastFailureAt: nowIso,
+                lastFailureReason: data.gateway_response || eventName,
+                paymentProvider: adapter.providerName,
+              },
+            },
+            ['subscription.status', 'subscription.lastFailureAt', 'subscription.lastFailureReason', 'subscription.paymentProvider']
+          );
+        }
+      } else if (eventName === 'subscription.create' && businessId) {
+        await patchFirestoreDoc(
+          'businesses',
+          businessId,
+          {
+            subscription: {
+              status: 'active',
+              paystackSubscriptionCode: data.subscription_code || '',
+              paymentProvider: adapter.providerName,
+            },
+          },
+          ['subscription.status', 'subscription.paystackSubscriptionCode', 'subscription.paymentProvider']
+        );
       }
 
-      return res.status(200).json({ received: true });
+      return res.status(200).json({ received: true, event: eventName });
     } catch (err: any) {
       console.error('Error in /api/payments/webhook:', err);
       return res.status(500).json({ error: 'Webhook processing failed' });
@@ -1249,7 +1488,7 @@ Extract:
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: false },
+      server: { middlewareMode: true, hmr: false, ws: false },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -1261,6 +1500,8 @@ Extract:
         const indexHtmlPath = path.resolve(process.cwd(), 'index.html');
         let template = fs.readFileSync(indexHtmlPath, 'utf-8');
         template = await vite.transformIndexHtml(url, template);
+        // HMR is disabled; strip @vite/client so it does not attempt a WebSocket connection that closes without opening
+        template = template.replace(/<script\s+type="module"\s+src="\/@vite\/client"><\/script>\s*/g, '');
         res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
       } catch (e: any) {
         vite.ssrFixStacktrace(e);

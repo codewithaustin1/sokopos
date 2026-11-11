@@ -32,7 +32,7 @@ import { SubscriptionActivationModal } from './components/SubscriptionActivation
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { SidebarNav } from './components/SidebarNav';
 import { Lock, AlertTriangle } from 'lucide-react';
-import { PaymentMethod } from './types';
+import { PaymentMethod, BusinessPlanTier } from './types';
 import { useBackgroundScanner } from './hooks/useBackgroundScanner';
 import { ScannerInterceptHUD } from './components/ScannerInterceptHUD';
 import { InventoryQuickCheckHUD } from './components/InventoryQuickCheckHUD';
@@ -42,6 +42,7 @@ import { getSystemPaths, generateSitemapJson } from './utils/sitemapManifest';
 import { isSuperAdminEmail } from './data/initialData';
 import { MobileBentoMenuOverlay } from './components/common/MobileBentoMenuOverlay';
 import { ToastContainer } from './components/common/ToastContainer';
+import { verifyServerPayment } from './lib/paymentService';
 
 function PosAppContent() {
   const {
@@ -77,6 +78,7 @@ function PosAppContent() {
     isSubscriptionActive,
     isSubscriptionModalOpen,
     setIsSubscriptionModalOpen,
+    activateBusinessSubscription,
     isPricingPageOpen,
     openPricingPage,
     closePricingPage,
@@ -121,6 +123,86 @@ function PosAppContent() {
       }
     }
   }, [currentUser]);
+
+  // Verify subscription payment when returning from Paystack Hosted Checkout (?payment_ref=SOKO-SUB-...)
+  useEffect(() => {
+    if (!currentUser || typeof window === 'undefined') return;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const paymentRef = urlParams.get('payment_ref') || urlParams.get('reference') || urlParams.get('trxref');
+    if (!paymentRef || !paymentRef.startsWith('SOKO-SUB-')) return;
+
+    const handledKey = `sokopos_handled_${paymentRef}`;
+    if (sessionStorage.getItem(handledKey)) return;
+    sessionStorage.setItem(handledKey, '1');
+
+    // Clean query params from URL immediately
+    urlParams.delete('payment_ref');
+    urlParams.delete('reference');
+    urlParams.delete('trxref');
+    const remainingQuery = urlParams.toString();
+    const cleanUrl = `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ''}${window.location.hash}`;
+    window.history.replaceState(null, '', cleanUrl);
+
+    let pendingMeta: { businessId?: string; planId?: string; payer?: string } = {};
+    try {
+      const raw = sessionStorage.getItem('sokopos_pending_sub_payment');
+      if (raw) {
+        pendingMeta = JSON.parse(raw);
+        sessionStorage.removeItem('sokopos_pending_sub_payment');
+      }
+    } catch {
+      // ignore storage errors
+    }
+
+    let cancelled = false;
+    const verifyAndProvision = async (attempt = 1) => {
+      showToast('Verifying your Paystack subscription payment...', 'info');
+      const result = await verifyServerPayment(paymentRef);
+      if (cancelled) return;
+
+      if (result.verified && result.status === 'success') {
+        const targetBusinessId =
+          result.businessId ||
+          (result.metadata?.businessId as string | undefined) ||
+          pendingMeta.businessId ||
+          currentBusiness?.id ||
+          'biz-default';
+        const targetPlanId = (result.planId ||
+          (result.metadata?.planId as string | undefined) ||
+          pendingMeta.planId ||
+          'business') as BusinessPlanTier;
+        const payer = pendingMeta.payer || currentUser.email || currentBusiness?.ownerEmail || '';
+
+        const activation = await activateBusinessSubscription(targetBusinessId, targetPlanId, payer);
+        if (activation.success) {
+          setIsSubscriptionModalOpen(false);
+          showToast(`Subscription activated! Your ${targetPlanId.toUpperCase()} plan is now live.`, 'success');
+        } else {
+          showToast(activation.message || 'Payment verified, but plan activation failed. Please contact support.', 'error');
+        }
+        return;
+      }
+
+      if (result.status === 'pending' && attempt < 3) {
+        setTimeout(() => {
+          if (!cancelled) verifyAndProvision(attempt + 1);
+        }, 3000);
+        return;
+      }
+
+      if (result.status === 'failed' || result.status === 'abandoned') {
+        showToast(result.error || result.gatewayResponse || 'Subscription payment was not completed.', 'error');
+      } else {
+        showToast('Payment is still confirming. Refresh or reopen Activate Store in a moment.', 'info');
+      }
+    };
+
+    verifyAndProvision(1);
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser, currentBusiness?.id, currentBusiness?.ownerEmail, activateBusinessSubscription, setIsSubscriptionModalOpen, showToast]);
 
   // Hidden Dynamic Sitemap View Triggered by Console Command (sitemap() / window.sitemap())
   const [isSitemapOpen, setIsSitemapOpen] = useState<boolean>(() => {

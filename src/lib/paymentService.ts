@@ -21,6 +21,7 @@ export interface InitiatePaymentRequest {
 export interface InitiatePaymentResponse {
   success: boolean;
   provider?: 'paystack' | 'daraja';
+  mode?: 'redirect' | 'stk_push';
   reference?: string;
   status?: 'pay_offline' | 'pending' | 'success' | 'failed';
   displayText?: string;
@@ -38,6 +39,10 @@ export interface VerifyPaymentResponse {
   channel?: string;
   gatewayResponse?: string;
   paidAt?: string;
+  flowType?: ClientPaymentFlowType;
+  businessId?: string;
+  planId?: string;
+  metadata?: Record<string, any>;
   error?: string;
 }
 
