@@ -5,6 +5,7 @@ import { createServer as createViteServer } from 'vite';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { GoogleGenAI, Type } from '@google/genai';
+import { getActivePaymentAdapter, PaymentChannel, PaymentFlowType } from './src/server/paymentAdapter';
 
 async function startServer() {
   const app = express();
@@ -23,8 +24,15 @@ async function startServer() {
   // Trust reverse proxy for accurate client IP identification (Cloud Run / Nginx)
   app.set('trust proxy', 1);
 
-  // Enable large payload parser for Base64 document images & PDFs
-  app.use(express.json({ limit: '25mb' }));
+  // Enable large payload parser for Base64 document images & PDFs, preserving rawBody for webhook HMAC verification
+  app.use(
+    express.json({
+      limit: '25mb',
+      verify: (req: any, _res, buf) => {
+        req.rawBody = buf.toString('utf8');
+      },
+    })
+  );
   app.use(express.urlencoded({ limit: '25mb', extended: true }));
 
   // Rate Limiting for PIN Verification: 5-attempt threshold with a 15-minute lock
@@ -229,6 +237,158 @@ Sitemap: ${origin}/sitemap.xml
   // Pre-initialize server vault on startup
   loadStaffCredentials();
 
+  // -------------------------------------------------------------
+  // Firestore Persistent Backing Store for Staff Credentials
+  // Ensures staff PIN hashes survive Cloud Run deployments & container restarts
+  // -------------------------------------------------------------
+  let firebaseProjectId = process.env.FIREBASE_PROJECT_ID || 'gen-lang-client-0820403611';
+  let firestoreDatabaseId = process.env.FIRESTORE_DATABASE_ID || '(default)';
+  try {
+    const fbConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
+    if (fs.existsSync(fbConfigPath)) {
+      const fbCfg = JSON.parse(fs.readFileSync(fbConfigPath, 'utf-8'));
+      if (fbCfg.projectId) firebaseProjectId = fbCfg.projectId;
+      if (fbCfg.firestoreDatabaseId) firestoreDatabaseId = fbCfg.firestoreDatabaseId;
+    }
+  } catch (err) {
+    console.warn('Could not read firebase-applet-config.json on server:', err);
+  }
+
+  let cachedAdcToken: { token: string; expiresAt: number } | null = null;
+  let lastFirestoreHydrationAt = 0;
+
+  async function getGcpAccessToken(): Promise<string | null> {
+    if (cachedAdcToken && Date.now() < cachedAdcToken.expiresAt - 60_000) {
+      return cachedAdcToken.token;
+    }
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 2000);
+      const resp = await fetch(
+        'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
+        {
+          headers: { 'Metadata-Flavor': 'Google' },
+          signal: controller.signal,
+        }
+      );
+      clearTimeout(timeout);
+      if (!resp.ok) return null;
+      const data: any = await resp.json();
+      if (data?.access_token) {
+        cachedAdcToken = {
+          token: data.access_token,
+          expiresAt: Date.now() + (Number(data.expires_in) || 3600) * 1000,
+        };
+        return cachedAdcToken.token;
+      }
+    } catch {
+      // Metadata server unavailable (e.g. local non-GCP dev environment)
+    }
+    return null;
+  }
+
+  function firestoreDocBaseUrl(): string {
+    return `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(firebaseProjectId)}/databases/${encodeURIComponent(firestoreDatabaseId)}/documents/staff_credentials`;
+  }
+
+  async function hydrateStaffCredentialsFromFirestore(force = false): Promise<Record<string, StoredStaffCredential>> {
+    const creds = loadStaffCredentials();
+    if (!force && Date.now() - lastFirestoreHydrationAt < 30_000 && lastFirestoreHydrationAt > 0) {
+      return creds;
+    }
+
+    const token = await getGcpAccessToken();
+    if (!token) {
+      return creds;
+    }
+
+    try {
+      let pageToken: string | undefined;
+      let mergedAny = false;
+      do {
+        const url = `${firestoreDocBaseUrl()}?pageSize=500${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
+        const resp = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!resp.ok) break;
+        const data: any = await resp.json();
+        const docs = Array.isArray(data.documents) ? data.documents : [];
+        for (const doc of docs) {
+          const f = doc.fields || {};
+          const cashierId = f.cashierId?.stringValue || doc.name?.split('/').pop();
+          const hash = f.hash?.stringValue;
+          const businessId = f.businessId?.stringValue;
+          if (!cashierId || !hash || !businessId) continue;
+
+          const remoteUpdatedAt = f.updatedAt?.stringValue || '';
+          const localUpdatedAt = creds[cashierId]?.updatedAt || '';
+          if (!creds[cashierId] || remoteUpdatedAt >= localUpdatedAt) {
+            creds[cashierId] = {
+              cashierId,
+              businessId,
+              hash,
+              role: f.role?.stringValue || 'cashier',
+              name: f.name?.stringValue || 'Staff Member',
+              code: f.code?.stringValue,
+              username: f.username?.stringValue,
+              updatedAt: remoteUpdatedAt || new Date().toISOString(),
+            };
+            mergedAny = true;
+          }
+        }
+        pageToken = data.nextPageToken;
+      } while (pageToken);
+
+      lastFirestoreHydrationAt = Date.now();
+      if (mergedAny) {
+        saveStaffCredentials(creds);
+      }
+    } catch (err) {
+      console.warn('Firestore staff_credentials hydration notice:', err);
+    }
+    return creds;
+  }
+
+  async function persistStaffCredentialToFirestore(cred: StoredStaffCredential, fallbackBearerToken?: string): Promise<boolean> {
+    const token = (await getGcpAccessToken()) || fallbackBearerToken;
+    if (!token) return false;
+
+    try {
+      const fields: Record<string, { stringValue: string }> = {
+        cashierId: { stringValue: cred.cashierId },
+        businessId: { stringValue: cred.businessId },
+        hash: { stringValue: cred.hash },
+        role: { stringValue: cred.role || 'cashier' },
+        name: { stringValue: cred.name || 'Staff Member' },
+        updatedAt: { stringValue: cred.updatedAt },
+      };
+      if (cred.code) fields.code = { stringValue: cred.code };
+      if (cred.username) fields.username = { stringValue: cred.username };
+
+      const docUrl = `${firestoreDocBaseUrl()}/${encodeURIComponent(cred.cashierId)}`;
+      const resp = await fetch(docUrl, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ fields }),
+      });
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        console.warn('Firestore staff_credentials persist status:', resp.status, errText);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('Firestore staff_credentials persist notice:', err);
+      return false;
+    }
+  }
+
+  // Non-blocking startup hydration from Firestore
+  hydrateStaffCredentialsFromFirestore(true).catch(() => {});
+
   // Save / Isolate Staff Credential on Server
   app.post('/api/auth/save-staff-credential', async (req, res) => {
     try {
@@ -237,7 +397,7 @@ Sitemap: ${origin}/sitemap.xml
         return res.status(400).json({ error: 'cashierId and businessId are required' });
       }
 
-      const creds = loadStaffCredentials();
+      const creds = await hydrateStaffCredentialsFromFirestore();
       const existingCred = creds[cashierId];
 
       let pinHash = hash;
@@ -274,7 +434,7 @@ Sitemap: ${origin}/sitemap.xml
         }
       }
 
-      creds[cashierId] = {
+      const updatedCred: StoredStaffCredential = {
         cashierId,
         businessId,
         hash: pinHash,
@@ -284,7 +444,12 @@ Sitemap: ${origin}/sitemap.xml
         username: normalizedUsername || existingCred?.username,
         updatedAt: new Date().toISOString(),
       };
+      creds[cashierId] = updatedCred;
       saveStaffCredentials(creds);
+
+      const authHeader = req.headers.authorization;
+      const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+      await persistStaffCredentialToFirestore(updatedCred, bearerToken);
 
       return res.json({
         success: true,
@@ -304,7 +469,9 @@ Sitemap: ${origin}/sitemap.xml
       if (!Array.isArray(cashiers)) {
         return res.status(400).json({ error: 'cashiers must be an array' });
       }
-      const creds = loadStaffCredentials();
+      const creds = await hydrateStaffCredentialsFromFirestore();
+      const authHeader = req.headers.authorization;
+      const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
       let count = 0;
       for (const c of cashiers) {
         if (c.id && c.pin && c.pin !== '••••••••' && !c.pin.startsWith('[PROTECTED')) {
@@ -326,7 +493,7 @@ Sitemap: ${origin}/sitemap.xml
           if (!pinHash.startsWith('$2')) {
             pinHash = await bcrypt.hash(String(c.pin), 10);
           }
-          creds[c.id] = {
+          const syncedCred: StoredStaffCredential = {
             cashierId: c.id,
             businessId: c.businessId || 'biz-upfront',
             hash: pinHash,
@@ -336,6 +503,8 @@ Sitemap: ${origin}/sitemap.xml
             username: normUsername,
             updatedAt: new Date().toISOString(),
           };
+          creds[c.id] = syncedCred;
+          await persistStaffCredentialToFirestore(syncedCred, bearerToken);
           count++;
         }
       }
@@ -355,7 +524,7 @@ Sitemap: ${origin}/sitemap.xml
         return res.status(400).json({ error: 'PIN is required' });
       }
 
-      const creds = loadStaffCredentials();
+      let creds = await hydrateStaffCredentialsFromFirestore();
 
       // 1. Manager Override verification mode
       if (managerOverride) {
@@ -402,21 +571,30 @@ Sitemap: ${origin}/sitemap.xml
       }
 
       // 2. Staff verification by cashierId or usernameOrCode from server-only vault
-      let targetCred: StoredStaffCredential | undefined;
+      const findTargetCred = (credMap: Record<string, StoredStaffCredential>) => {
+        if (cashierId && credMap[cashierId]) {
+          return credMap[cashierId];
+        }
+        if (usernameOrCode) {
+          const cleanInput = String(usernameOrCode).trim().toLowerCase();
+          const cleanNoHash = cleanInput.replace(/^#/, '');
+          return Object.values(credMap).find(
+            (c) =>
+              (!businessId || c.businessId === businessId) &&
+              (c.cashierId.toLowerCase() === cleanInput ||
+                c.username?.trim().toLowerCase() === cleanInput ||
+                c.code?.trim().toLowerCase() === cleanInput ||
+                c.code?.trim().toLowerCase().replace(/^#/, '') === cleanNoHash)
+          );
+        }
+        return undefined;
+      };
 
-      if (cashierId && creds[cashierId]) {
-        targetCred = creds[cashierId];
-      } else if (usernameOrCode) {
-        const cleanInput = String(usernameOrCode).trim().toLowerCase();
-        const cleanNoHash = cleanInput.replace(/^#/, '');
-        targetCred = Object.values(creds).find(
-          (c) =>
-            (!businessId || c.businessId === businessId) &&
-            (c.cashierId.toLowerCase() === cleanInput ||
-              c.username?.trim().toLowerCase() === cleanInput ||
-              c.code?.trim().toLowerCase() === cleanInput ||
-              c.code?.trim().toLowerCase().replace(/^#/, '') === cleanNoHash)
-        );
+      let targetCred = findTargetCred(creds);
+      if (!targetCred && (cashierId || usernameOrCode)) {
+        // Cache-miss refresh from Firestore in case another server instance created the staff user
+        creds = await hydrateStaffCredentialsFromFirestore(true);
+        targetCred = findTargetCred(creds);
       }
 
       if (targetCred) {
@@ -852,6 +1030,216 @@ Extract:
     } catch (err: any) {
       console.error('Error proxying Digitax sale details:', err);
       return res.status(500).json({ error: err.message || 'Digitax sale details proxy failed' });
+    }
+  });
+
+  // -------------------------------------------------------------
+  // Unified Payment Gateway API (Paystack Active / Daraja Ready)
+  // -------------------------------------------------------------
+  interface StoredPaymentIntent {
+    reference: string;
+    provider: 'paystack' | 'daraja';
+    flowType: PaymentFlowType;
+    channel: PaymentChannel;
+    amountKes: number;
+    status: 'pending' | 'pay_offline' | 'success' | 'failed' | 'abandoned';
+    businessId?: string;
+    planId?: string;
+    gatewayResponse?: string;
+    paidAt?: string;
+    createdAt: string;
+  }
+
+  const paymentIntents = new Map<string, StoredPaymentIntent>();
+
+  app.get('/api/payments/config', (_req, res) => {
+    const adapter = getActivePaymentAdapter();
+    return res.json({
+      provider: adapter.providerName,
+      configured: adapter.isConfigured(),
+      channels: ['mpesa_stk', 'card'],
+    });
+  });
+
+  app.post('/api/payments/initiate', async (req, res) => {
+    try {
+      const adapter = getActivePaymentAdapter();
+      const { flowType, channel, amountKes, phone, email, businessId, planId, metadata } = req.body || {};
+
+      if (!adapter.isConfigured()) {
+        return res.status(503).json({
+          success: false,
+          provider: adapter.providerName,
+          error: `${adapter.providerName.toUpperCase()} is not configured on the server. Set PAYSTACK_SECRET_KEY in environment variables.`,
+        });
+      }
+
+      const numericAmount = Number(amountKes);
+      if (!Number.isFinite(numericAmount) || numericAmount < 1) {
+        return res.status(400).json({ success: false, error: 'Valid KES amount (>= 1) is required.' });
+      }
+
+      const resolvedChannel: PaymentChannel = channel === 'card' ? 'card' : 'mpesa_stk';
+      const resolvedFlow: PaymentFlowType = flowType === 'subscription' ? 'subscription' : 'pos_sale';
+      const reference = `SOKO-${resolvedFlow === 'subscription' ? 'SUB' : 'POS'}-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 7)
+        .toUpperCase()}`;
+
+      const payerEmail =
+        (typeof email === 'string' && email.includes('@') ? email.trim() : '') ||
+        `receipts+${businessId || 'terminal'}@sokopos.co.ke`;
+
+      const sharedMeta = {
+        ...(metadata || {}),
+        flowType: resolvedFlow,
+        channel: resolvedChannel,
+        businessId: businessId || 'unknown',
+        planId: planId || undefined,
+      };
+
+      if (resolvedChannel === 'mpesa_stk') {
+        if (!phone || String(phone).replace(/\D/g, '').length < 9) {
+          return res.status(400).json({ success: false, error: 'Valid Kenyan M-Pesa phone number is required.' });
+        }
+
+        const result = await adapter.initiateMpesaStk({
+          amountKes: numericAmount,
+          phone: String(phone),
+          email: payerEmail,
+          reference,
+          metadata: sharedMeta,
+        });
+
+        if (!result.success) {
+          return res.status(400).json(result);
+        }
+
+        paymentIntents.set(result.reference, {
+          reference: result.reference,
+          provider: result.provider,
+          flowType: resolvedFlow,
+          channel: resolvedChannel,
+          amountKes: numericAmount,
+          status: result.status,
+          businessId,
+          planId,
+          createdAt: new Date().toISOString(),
+        });
+
+        return res.json(result);
+      }
+
+      const appBaseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+      const callbackUrl = `${appBaseUrl}/?payment_ref=${encodeURIComponent(reference)}`;
+
+      const cardResult = await adapter.initializeCardCheckout({
+        amountKes: numericAmount,
+        email: payerEmail,
+        reference,
+        callbackUrl,
+        metadata: sharedMeta,
+      });
+
+      if (!cardResult.success) {
+        return res.status(400).json(cardResult);
+      }
+
+      paymentIntents.set(cardResult.reference, {
+        reference: cardResult.reference,
+        provider: cardResult.provider,
+        flowType: resolvedFlow,
+        channel: resolvedChannel,
+        amountKes: numericAmount,
+        status: 'pending',
+        businessId,
+        planId,
+        createdAt: new Date().toISOString(),
+      });
+
+      return res.json(cardResult);
+    } catch (err: any) {
+      console.error('Error in /api/payments/initiate:', err);
+      return res.status(500).json({ success: false, error: err?.message || 'Payment initiation failed.' });
+    }
+  });
+
+  app.get('/api/payments/verify/:reference', async (req, res) => {
+    try {
+      const reference = String(req.params.reference || '').trim();
+      if (!reference) {
+        return res.status(400).json({ verified: false, status: 'failed', error: 'Reference is required.' });
+      }
+
+      const cached = paymentIntents.get(reference);
+      if (cached && cached.status === 'success') {
+        return res.json({
+          verified: true,
+          provider: cached.provider,
+          reference: cached.reference,
+          status: 'success',
+          amountKes: cached.amountKes,
+          channel: cached.channel,
+          gatewayResponse: cached.gatewayResponse || 'Approved via webhook',
+          paidAt: cached.paidAt,
+        });
+      }
+
+      const adapter = getActivePaymentAdapter();
+      const verification = await adapter.verifyTransaction(reference);
+
+      if (cached) {
+        cached.status = verification.status;
+        cached.gatewayResponse = verification.gatewayResponse;
+        cached.paidAt = verification.paidAt;
+        paymentIntents.set(reference, cached);
+      }
+
+      return res.json(verification);
+    } catch (err: any) {
+      console.error('Error in /api/payments/verify:', err);
+      return res.status(500).json({
+        verified: false,
+        reference: req.params.reference,
+        status: 'failed',
+        error: err?.message || 'Verification failed.',
+      });
+    }
+  });
+
+  app.post('/api/payments/webhook', (req: any, res) => {
+    try {
+      const adapter = getActivePaymentAdapter();
+      const signature = req.headers['x-paystack-signature'] as string | undefined;
+      const rawBody = req.rawBody || JSON.stringify(req.body || {});
+
+      if (!adapter.verifyWebhookSignature(rawBody, signature)) {
+        return res.status(401).json({ error: 'Invalid webhook signature' });
+      }
+
+      const event = req.body;
+      if (event?.event === 'charge.success' && event?.data?.reference) {
+        const ref = String(event.data.reference);
+        const existing = paymentIntents.get(ref);
+        paymentIntents.set(ref, {
+          reference: ref,
+          provider: adapter.providerName,
+          flowType: event.data?.metadata?.flowType || existing?.flowType || 'pos_sale',
+          channel: event.data?.channel === 'card' ? 'card' : existing?.channel || 'mpesa_stk',
+          amountKes: typeof event.data.amount === 'number' ? event.data.amount / 100 : existing?.amountKes || 0,
+          status: 'success',
+          businessId: event.data?.metadata?.businessId || existing?.businessId,
+          planId: event.data?.metadata?.planId || existing?.planId,
+          gatewayResponse: event.data.gateway_response || 'Approved',
+          paidAt: event.data.paid_at || new Date().toISOString(),
+          createdAt: existing?.createdAt || new Date().toISOString(),
+        });
+      }
+
+      return res.status(200).json({ received: true });
+    } catch (err: any) {
+      console.error('Error in /api/payments/webhook:', err);
+      return res.status(500).json({ error: 'Webhook processing failed' });
     }
   });
 

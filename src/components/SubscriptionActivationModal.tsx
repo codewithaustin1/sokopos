@@ -14,9 +14,17 @@ import {
   Lock,
   Tag,
   CheckCircle2,
+  CreditCard,
+  ExternalLink,
+  RefreshCw,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
-import { DEFAULT_PRICING_TIERS, PricingTier } from '../types/pricing';
+import { DEFAULT_PRICING_TIERS } from '../types/pricing';
+import {
+  initiateServerPayment,
+  verifyServerPayment,
+  ClientPaymentChannel,
+} from '../lib/paymentService';
 
 interface SubscriptionActivationModalProps {
   isOpen: boolean;
@@ -47,10 +55,16 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
   });
 
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
+  const [paymentChannel, setPaymentChannel] = useState<ClientPaymentChannel>('mpesa_stk');
   const [phoneNumber, setPhoneNumber] = useState(() => currentLocation?.phone || '0740463021');
-  const [isSimulatingPayment, setIsSimulatingPayment] = useState(false);
-  const [paymentStep, setPaymentStep] = useState<'select' | 'simulating' | 'success'>('select');
-  const [simulatedRef, setSimulatedRef] = useState<string>('');
+  const [payerEmail, setPayerEmail] = useState(() => currentUser?.email || currentBusiness?.ownerEmail || '');
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [paymentStep, setPaymentStep] = useState<'select' | 'pending' | 'success'>('select');
+  const [paymentRef, setPaymentRef] = useState<string>('');
+  const [cardAuthUrl, setCardAuthUrl] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string>('');
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
 
   if (!isOpen) return null;
 
@@ -66,36 +80,134 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
   const durationDays = isFree ? 3650 : billingCycle === 'annual' ? 365 : 30;
   const durationLabel = isFree ? 'Lifetime Free Software' : billingCycle === 'annual' ? '365 Days (1 Year)' : '30 Days';
 
-  const handleSimulatePayment = async (e: React.FormEvent) => {
+  const completeActivation = async (verifiedRef: string) => {
+    if (activateBusinessSubscription) {
+      await activateBusinessSubscription(
+        currentBusiness?.id || 'biz-default',
+        selectedPlanId as any,
+        paymentChannel === 'mpesa_stk' ? phoneNumber : payerEmail
+      );
+    } else {
+      await updateBusinessPlan(currentBusiness?.id || 'biz-default', selectedPlanId as any);
+    }
+    setPaymentRef(verifiedRef);
+    setPaymentStep('success');
+
+    setTimeout(() => {
+      setIsProcessingPayment(false);
+      setPaymentStep('select');
+      setCardAuthUrl(null);
+      onClose();
+      onSuccess?.();
+    }, 1600);
+  };
+
+  const pollUntilVerified = async (ref: string) => {
+    const maxAttempts = 40; // ~120s at 3s intervals
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      const check = await verifyServerPayment(ref);
+      if (check.verified && check.status === 'success') {
+        await completeActivation(check.reference || ref);
+        return;
+      }
+      if (check.status === 'failed' || check.status === 'abandoned') {
+        setPaymentError(check.error || check.gatewayResponse || 'Payment was declined or cancelled.');
+        setIsProcessingPayment(false);
+        setPaymentStep('select');
+        return;
+      }
+    }
+    setStatusMessage('Still awaiting confirmation. Click "Verify Payment Status" once completed.');
+  };
+
+  const handleManualVerify = async () => {
+    if (!paymentRef) return;
+    setIsCheckingStatus(true);
+    setPaymentError(null);
+    try {
+      const check = await verifyServerPayment(paymentRef);
+      if (check.verified && check.status === 'success') {
+        await completeActivation(check.reference || paymentRef);
+      } else if (check.status === 'failed' || check.status === 'abandoned') {
+        setPaymentError(check.error || check.gatewayResponse || 'Payment was not completed.');
+        setIsProcessingPayment(false);
+        setPaymentStep('select');
+      } else {
+        setStatusMessage('Payment is still pending authorization. Please complete it and retry.');
+      }
+    } finally {
+      setIsCheckingStatus(false);
+    }
+  };
+
+  const handleStartPayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSimulatingPayment(true);
-    setPaymentStep('simulating');
+    setPaymentError(null);
+    setCardAuthUrl(null);
+
+    if (paymentChannel === 'mpesa_stk' && phoneNumber.replace(/\D/g, '').length < 9) {
+      setPaymentError('Please enter a valid Safaricom M-Pesa phone number.');
+      return;
+    }
+    if (paymentChannel === 'card' && (!payerEmail.trim() || !payerEmail.includes('@'))) {
+      setPaymentError('Please enter a valid email address for card receipt & 3DS verification.');
+      return;
+    }
+
+    setIsProcessingPayment(true);
+    setPaymentStep('pending');
+    setStatusMessage(
+      paymentChannel === 'mpesa_stk'
+        ? `Sending M-Pesa STK Push to ${phoneNumber}...`
+        : 'Initializing secure Paystack Card checkout...'
+    );
 
     try {
-      // Simulate Safaricom Daraja STK Push prompt & user PIN authorization delay
-      await new Promise((resolve) => setTimeout(resolve, 1800));
+      const initRes = await initiateServerPayment({
+        flowType: 'subscription',
+        channel: paymentChannel,
+        amountKes: payableAmount,
+        phone: paymentChannel === 'mpesa_stk' ? phoneNumber : undefined,
+        email: payerEmail || currentBusiness?.ownerEmail || 'billing@sokopos.co.ke',
+        businessId: currentBusiness?.id,
+        planId: selectedPlanId,
+        metadata: {
+          billingCycle,
+          durationDays,
+          businessName: currentBusiness?.name,
+        },
+      });
 
-      let refCode = `SIM-MPESA-${Math.floor(100000 + Math.random() * 900000)}`;
-      if (activateBusinessSubscription) {
-        const result = await activateBusinessSubscription(currentBusiness?.id || 'biz-default', selectedPlanId as any, phoneNumber);
-        if (result?.message) refCode = result.message;
-      } else {
-        await updateBusinessPlan(currentBusiness?.id || 'biz-default', selectedPlanId as any);
+      if (!initRes.success || !initRes.reference) {
+        setPaymentError(initRes.error || 'Could not initiate Paystack payment.');
+        setIsProcessingPayment(false);
+        setPaymentStep('select');
+        return;
       }
 
-      setSimulatedRef(refCode);
-      setPaymentStep('success');
+      setPaymentRef(initRes.reference);
 
-      // Allow owner to see celebratory success state briefly, then resume tender flow
-      setTimeout(() => {
-        setIsSimulatingPayment(false);
-        setPaymentStep('select');
-        onClose();
-        onSuccess?.();
-      }, 1600);
-    } catch (err) {
-      console.error('Subscription activation simulation error:', err);
-      setIsSimulatingPayment(false);
+      if (initRes.status === 'success') {
+        await completeActivation(initRes.reference);
+        return;
+      }
+
+      if (paymentChannel === 'card' && initRes.authorizationUrl) {
+        setCardAuthUrl(initRes.authorizationUrl);
+        setStatusMessage('Complete your card payment in the Paystack checkout tab, then click Verify below.');
+      } else {
+        setStatusMessage(
+          initRes.displayText ||
+            `M-Pesa STK prompt sent to ${phoneNumber}. Enter your M-Pesa PIN to authorize Ksh ${payableAmount.toLocaleString()}.`
+        );
+      }
+
+      pollUntilVerified(initRes.reference);
+    } catch (err: any) {
+      console.error('Subscription payment error:', err);
+      setPaymentError(err?.message || 'Unexpected payment error.');
+      setIsProcessingPayment(false);
       setPaymentStep('select');
     }
   };
@@ -141,30 +253,76 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
 
         {/* Modal Body */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1 text-xs">
-          {paymentStep === 'simulating' ? (
-            <div className="py-12 px-4 text-center space-y-4">
+          {paymentStep === 'pending' ? (
+            <div className="py-10 px-4 text-center space-y-4">
               <div className="relative inline-flex items-center justify-center">
-                <div className="w-16 h-16 rounded-full bg-emerald-500/10 border-2 border-emerald-500 flex items-center justify-center animate-pulse">
-                  <Phone className="w-8 h-8 text-emerald-600 animate-bounce" />
+                <div className="w-16 h-16 rounded-full bg-emerald-500/10 border-2 border-emerald-500 flex items-center justify-center">
+                  {paymentChannel === 'card' ? (
+                    <CreditCard className="w-8 h-8 text-blue-600" />
+                  ) : (
+                    <Phone className="w-8 h-8 text-emerald-600" />
+                  )}
                 </div>
                 <div className="absolute -top-1 -right-1">
                   <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
                 </div>
               </div>
 
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 <h3 className="text-base font-black text-slate-900">
-                  Simulating M-Pesa STK Push...
+                  {paymentChannel === 'card' ? 'Complete Card Checkout' : 'Awaiting M-Pesa PIN Authorization'}
                 </h3>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  Prompting phone <strong className="text-slate-800">{phoneNumber}</strong> for{' '}
-                  <strong className="text-emerald-700">Ksh {payableAmount.toLocaleString()}</strong>. Authorizing activation...
+                <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">
+                  {statusMessage}
                 </p>
+                {paymentRef && (
+                  <p className="text-[11px] font-mono text-slate-500">
+                    Reference: <span className="font-bold text-slate-800">{paymentRef}</span>
+                  </p>
+                )}
               </div>
 
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Simulating instant payment confirmation</span>
+              {cardAuthUrl && (
+                <div className="pt-1">
+                  <a
+                    href={cardAuthUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition"
+                  >
+                    <span>Open Paystack Card Checkout</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              )}
+
+              {paymentError && (
+                <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium max-w-md mx-auto">
+                  {paymentError}
+                </div>
+              )}
+
+              <div className="flex items-center justify-center gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={handleManualVerify}
+                  disabled={isCheckingStatus}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isCheckingStatus ? 'animate-spin' : ''}`} />
+                  <span>{isCheckingStatus ? 'Verifying...' : 'Verify Payment Status'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsProcessingPayment(false);
+                    setPaymentStep('select');
+                    setCardAuthUrl(null);
+                  }}
+                  className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold text-xs cursor-pointer"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
           ) : paymentStep === 'success' ? (
@@ -178,7 +336,7 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
                   Payment Verified & Store Activated!
                 </h3>
                 <p className="text-xs text-slate-600 max-w-sm mx-auto">
-                  Reference: <span className="font-mono font-bold text-slate-800">{simulatedRef}</span>. Active for{' '}
+                  Reference: <span className="font-mono font-bold text-slate-800">{paymentRef}</span>. Active for{' '}
                   <strong className="text-emerald-700">{durationLabel}</strong>.
                 </p>
               </div>
@@ -188,7 +346,7 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
               </div>
             </div>
           ) : (
-            <form onSubmit={handleSimulatePayment} className="space-y-5">
+            <form onSubmit={handleStartPayment} className="space-y-5">
               {/* Context Notice */}
               <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-2.5">
                 <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
@@ -287,36 +445,81 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
                 </div>
               </div>
 
-              {/* M-Pesa Simulated Payment Form */}
+              {/* Paystack Payment Form (M-Pesa STK Push or Card) */}
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
-                    <Phone className="w-4 h-4 text-emerald-600" />
-                    <span>M-Pesa STK Push Express Payment</span>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex bg-slate-200/80 p-0.5 rounded-lg text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaymentChannel('mpesa_stk');
+                        setPaymentError(null);
+                      }}
+                      className={`px-3 py-1.5 rounded-md font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                        paymentChannel === 'mpesa_stk'
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Phone className="w-3.5 h-3.5" />
+                      <span>M-Pesa STK Push</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaymentChannel('card');
+                        setPaymentError(null);
+                      }}
+                      className={`px-3 py-1.5 rounded-md font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                        paymentChannel === 'card'
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <CreditCard className="w-3.5 h-3.5" />
+                      <span>Debit / Credit Card</span>
+                    </button>
                   </div>
-                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                    Safaricom Daraja
+
+                  <span className="text-[11px] font-semibold text-slate-500">
+                    Secured by Paystack KES
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
-                      M-Pesa Phone Number
-                    </label>
-                    <input
-                      type="tel"
-                      required
-                      value={phoneNumber}
-                      onChange={(e) => setPhoneNumber(e.target.value)}
-                      placeholder="e.g. 0740 463 021"
-                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl text-slate-900 font-mono font-medium focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
+                  {paymentChannel === 'mpesa_stk' ? (
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                        M-Pesa Phone Number
+                      </label>
+                      <input
+                        type="tel"
+                        required
+                        value={phoneNumber}
+                        onChange={(e) => setPhoneNumber(e.target.value)}
+                        placeholder="e.g. 0740 463 021"
+                        className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl text-slate-900 font-mono font-medium focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                        Billing Receipt Email
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        value={payerEmail}
+                        onChange={(e) => setPayerEmail(e.target.value)}
+                        placeholder="owner@business.co.ke"
+                        className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl text-slate-900 font-medium focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  )}
 
                   <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex flex-col justify-center">
                     <div className="text-[10px] text-slate-500 font-medium">Activation Amount:</div>
-                    <div className="text-base font-black text-slate-900">
+                    <div className="text-base font-black text-slate-900 tabular-nums">
                       Ksh {payableAmount.toLocaleString()}
                       <span className="text-[11px] font-semibold text-slate-500 ml-1">
                         ({durationLabel})
@@ -325,20 +528,19 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
                   </div>
                 </div>
 
-                {/* Simulation Notice Banner */}
-                <div className="p-2.5 rounded-xl bg-blue-50/80 border border-blue-200 text-blue-900 text-[11px] flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
-                  <span>
-                    <strong>Sandbox Payment Simulation:</strong> Because the production M-Pesa gateway is staging, clicking below will simulate an instant verified payment and activate your store for <strong>{durationDays} days</strong>.
-                  </span>
-                </div>
+                {paymentError && (
+                  <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-[11px] flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                    <span>{paymentError}</span>
+                  </div>
+                )}
               </div>
 
               {/* Submit CTA */}
               <div className="space-y-2 pt-1">
                 <button
                   type="submit"
-                  disabled={isSimulatingPayment}
+                  disabled={isProcessingPayment}
                   className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-black text-sm transition shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
                 >
                   <Lock className="w-4 h-4" />
@@ -350,7 +552,7 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
 
                 <div className="text-[10px] text-center text-slate-500 flex items-center justify-center gap-2">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Instant Database Activation • Zero Downtime • Continuous Cloud Sync</span>
+                  <span>Instant Database Activation · Zero Downtime · Continuous Cloud Sync</span>
                 </div>
               </div>
             </form>

@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import { auth } from './firebase';
 
 export const PROTECTED_PIN_MASK = '••••••••';
 
@@ -92,11 +93,17 @@ export async function saveStaffCredentialOnServer(params: {
   username?: string;
 }): Promise<SaveStaffCredentialResult> {
   try {
+    const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (idToken) {
+      headers['Authorization'] = `Bearer ${idToken}`;
+    }
+
     const response = await fetch('/api/auth/save-staff-credential', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(params),
     });
     if (response.ok) {
@@ -119,11 +126,17 @@ export async function saveStaffCredentialOnServer(params: {
  */
 export async function syncStaffCredentialsOnServer(cashiers: any[]): Promise<number> {
   try {
+    const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (idToken) {
+      headers['Authorization'] = `Bearer ${idToken}`;
+    }
+
     const response = await fetch('/api/auth/sync-credentials', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({ cashiers }),
     });
     if (response.ok) {

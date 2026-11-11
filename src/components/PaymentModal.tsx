@@ -23,6 +23,8 @@ import {
   Plus,
   Trash2,
   Split,
+  ExternalLink,
+  RefreshCw,
 } from 'lucide-react';
 import { safeConfetti } from '../utils/confetti';
 import QRCode from 'qrcode';
@@ -31,6 +33,7 @@ import { usePos } from '../context/PosContext';
 import { calculatePaymentGuardrails, roundCashHalfUp } from '../utils/cashRounding';
 import { CustomerFacingMpesaQrModal } from './CustomerFacingMpesaQrModal';
 import { CustomerSelectModal } from './CustomerSelectModal';
+import { initiateServerPayment, verifyServerPayment } from '../lib/paymentService';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -280,6 +283,19 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
   // Card state
   const [cardLast4, setCardLast4] = useState('4192');
   const [cardNetwork, setCardNetwork] = useState('Visa');
+  const [cardCustomerEmail, setCardCustomerEmail] = useState('');
+  const [cardGatewayRef, setCardGatewayRef] = useState<string | null>(null);
+  const [cardAuthUrl, setCardAuthUrl] = useState<string | null>(null);
+  const [cardGatewayStatus, setCardGatewayStatus] = useState<'idle' | 'pending' | 'verified' | 'failed'>('idle');
+  const [cardGatewayError, setCardGatewayError] = useState<string | null>(null);
+  const [isInitializingCard, setIsInitializingCard] = useState(false);
+  const [isVerifyingCard, setIsVerifyingCard] = useState(false);
+
+  // Live M-Pesa STK Gateway state
+  const [gatewayStkRef, setGatewayStkRef] = useState<string | null>(null);
+  const [gatewayStkStatus, setGatewayStkStatus] = useState<'idle' | 'pending' | 'verified' | 'failed'>('idle');
+  const [gatewayStkError, setGatewayStkError] = useState<string | null>(null);
+  const [isVerifyingStk, setIsVerifyingStk] = useState(false);
 
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -296,14 +312,127 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
     );
   }, [cashPayable, roundedUp100, roundedUp500, roundedUp1000]);
 
+  const handleVerifyStkStatus = async (refOverride?: string) => {
+    const ref = refOverride || gatewayStkRef;
+    if (!ref) return;
+    setIsVerifyingStk(true);
+    setGatewayStkError(null);
+    try {
+      const check = await verifyServerPayment(ref);
+      if (check.verified && check.status === 'success') {
+        setGatewayStkStatus('verified');
+        soundFx?.playSuccess?.();
+        showToast(`M-Pesa payment confirmed (${ref})`, 'success');
+      } else if (check.status === 'failed' || check.status === 'abandoned') {
+        setGatewayStkStatus('failed');
+        setGatewayStkError(check.error || check.gatewayResponse || 'M-Pesa payment declined or cancelled.');
+      } else {
+        showToast('Awaiting customer M-Pesa PIN authorization...', 'info');
+      }
+    } finally {
+      setIsVerifyingStk(false);
+    }
+  };
+
   const handleMpesaStkPush = async () => {
-    setIsSendingMpesaPrompt(true);
-    // Simulate STK Push prompt to phone (Instant simulation in sandbox mode)
-    await new Promise((res) => setTimeout(res, 900));
-    setIsSendingMpesaPrompt(false);
-    setMpesaPromptSent(true);
+    setGatewayStkError(null);
     if (isDemoMode) {
+      setIsSendingMpesaPrompt(true);
+      await new Promise((res) => setTimeout(res, 900));
+      setIsSendingMpesaPrompt(false);
+      setMpesaPromptSent(true);
       showToast('Sandbox M-Pesa Simulator: Test prompt dispatched. No actual Safaricom billing occurred.', 'info');
+      return;
+    }
+
+    setIsSendingMpesaPrompt(true);
+    setGatewayStkStatus('pending');
+    try {
+      const res = await initiateServerPayment({
+        flowType: 'pos_sale',
+        channel: 'mpesa_stk',
+        amountKes: cartTotal,
+        phone: mpesaPhone,
+        email: selectedCustomer?.email || currentUser?.email || `receipts+${currentBusiness?.id || 'pos'}@sokopos.co.ke`,
+        businessId: currentBusiness?.id,
+        metadata: {
+          locationId: currentLocation.id,
+          tillNumber,
+        },
+      });
+
+      if (!res.success || !res.reference) {
+        setGatewayStkStatus('failed');
+        setGatewayStkError(res.error || 'Failed to dispatch M-Pesa STK Push.');
+        soundFx?.playError?.();
+        return;
+      }
+
+      setGatewayStkRef(res.reference);
+      setMpesaPromptSent(true);
+
+      if (res.status === 'success') {
+        setGatewayStkStatus('verified');
+        soundFx?.playSuccess?.();
+      } else {
+        showToast(res.displayText || `STK prompt sent to +254 ${mpesaPhone}`, 'info');
+      }
+    } finally {
+      setIsSendingMpesaPrompt(false);
+    }
+  };
+
+  const handleInitCardCheckout = async () => {
+    setCardGatewayError(null);
+    setIsInitializingCard(true);
+    try {
+      const email =
+        cardCustomerEmail.trim() ||
+        selectedCustomer?.email ||
+        currentUser?.email ||
+        `receipts+${currentBusiness?.id || 'pos'}@sokopos.co.ke`;
+      const res = await initiateServerPayment({
+        flowType: 'pos_sale',
+        channel: 'card',
+        amountKes: cartTotal,
+        email,
+        businessId: currentBusiness?.id,
+        metadata: {
+          locationId: currentLocation.id,
+        },
+      });
+
+      if (!res.success || !res.reference) {
+        setCardGatewayStatus('failed');
+        setCardGatewayError(res.error || 'Failed to initialize card checkout.');
+        return;
+      }
+      setCardGatewayRef(res.reference);
+      setCardAuthUrl(res.authorizationUrl || null);
+      setCardGatewayStatus('pending');
+    } finally {
+      setIsInitializingCard(false);
+    }
+  };
+
+  const handleVerifyCardPayment = async () => {
+    if (!cardGatewayRef) return;
+    setIsVerifyingCard(true);
+    setCardGatewayError(null);
+    try {
+      const check = await verifyServerPayment(cardGatewayRef);
+      if (check.verified && check.status === 'success') {
+        setCardGatewayStatus('verified');
+        soundFx?.playSuccess?.();
+        showToast(`Card payment verified (${cardGatewayRef})`, 'success');
+      } else if (check.status === 'failed' || check.status === 'abandoned') {
+        setCardGatewayStatus('failed');
+        setCardGatewayError(check.error || check.gatewayResponse || 'Card payment was not completed.');
+      } else {
+        showToast('Card checkout is still pending completion.', 'info');
+      }
+    } finally {
+      setIsVerifyingCard(false);
     }
   };
 
@@ -349,15 +478,18 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
     let details: any = {};
 
     if (selectedMethod === 'mpesa') {
-      const generatedCode = `QX${Math.floor(1000 + Math.random() * 9000)}${String.fromCharCode(
-        65 + Math.floor(Math.random() * 26)
-      )}${Math.floor(10 + Math.random() * 90)}`;
+      const generatedCode =
+        gatewayStkRef ||
+        `QX${Math.floor(1000 + Math.random() * 9000)}${String.fromCharCode(
+          65 + Math.floor(Math.random() * 26)
+        )}${Math.floor(10 + Math.random() * 90)}`;
       details = {
         mpesaPhone: mpesaSubMode === 'stk' ? `+254 ${mpesaPhone}` : 'Customer QR Scan',
         mpesaCode: generatedCode,
         mpesaMode: mpesaSubMode,
         mpesaType: mpesaQrType,
         mpesaTarget: mpesaQrType === 'buy_goods' ? `Till ${tillNumber}` : `Paybill ${paybillNumber} / Acc ${accountNumber}`,
+        paymentProvider: gatewayStkRef ? 'paystack' : undefined,
         roundingDifference: 0,
       };
     } else if (selectedMethod === 'cash') {
@@ -370,6 +502,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
       details = {
         cardLast4,
         cardNetwork,
+        paymentReference: cardGatewayRef || undefined,
+        paymentProvider: cardGatewayRef ? 'paystack' : undefined,
         roundingDifference: 0,
       };
     } else if (selectedMethod === 'store_credit') {
@@ -1067,12 +1201,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                           type="button"
                           onClick={handleMpesaStkPush}
                           disabled={isSendingMpesaPrompt}
-                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-lg text-xs shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
+                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-lg text-xs shadow-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
                         >
                           {isSendingMpesaPrompt ? (
                             <>
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              <span>{isDemoMode ? 'Simulating Safaricom Sandbox...' : 'Pinging Safaricom Gateway...'}</span>
+                              <span>{isDemoMode ? 'Simulating Safaricom Sandbox...' : 'Sending STK Push via Paystack...'}</span>
                             </>
                           ) : (
                             <>
@@ -1084,16 +1218,46 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                           )}
                         </button>
                       ) : (
-                        <div className="p-3 bg-emerald-100/70 border border-emerald-300 rounded-lg flex items-center gap-2.5 text-xs text-emerald-900 animate-in fade-in">
-                          <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                          <div>
-                            <div className="font-bold">
-                              {isDemoMode ? 'Sandbox STK Prompt Dispatched' : `STK Prompt Dispatched to +254 ${mpesaPhone}`}
+                        <div className="p-3 bg-emerald-100/70 border border-emerald-300 rounded-lg space-y-2 text-xs text-emerald-900 animate-in fade-in">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                              <div>
+                                <div className="font-bold">
+                                  {isDemoMode
+                                    ? 'Sandbox STK Prompt Dispatched'
+                                    : gatewayStkStatus === 'verified'
+                                    ? `M-Pesa Confirmed (${gatewayStkRef})`
+                                    : `STK Prompt Sent to +254 ${mpesaPhone}`}
+                                </div>
+                                <div className="text-[11px] text-emerald-700">
+                                  {isDemoMode
+                                    ? 'Simulated PIN approval ready. Finalize payment below to complete.'
+                                    : gatewayStkStatus === 'verified'
+                                    ? 'Payment verified by Paystack. Click Complete Sale to print receipt.'
+                                    : `Ref: ${gatewayStkRef || 'Pending'} · Customer enters M-Pesa PIN on phone.`}
+                                </div>
+                              </div>
                             </div>
-                            <div className="text-[11px] text-emerald-700">
-                              {isDemoMode ? 'Simulated PIN approval ready. Finalize payment below to complete.' : 'Customer PIN requested. Ready to finalize transaction.'}
-                            </div>
+                            {!isDemoMode && gatewayStkRef && gatewayStkStatus !== 'verified' && (
+                              <button
+                                type="button"
+                                onClick={() => handleVerifyStkStatus()}
+                                disabled={isVerifyingStk}
+                                className="px-2.5 py-1.5 rounded-md bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-[11px] flex items-center gap-1 shrink-0 cursor-pointer disabled:opacity-60"
+                              >
+                                <RefreshCw className={`w-3 h-3 ${isVerifyingStk ? 'animate-spin' : ''}`} />
+                                <span>{isVerifyingStk ? 'Checking...' : 'Verify'}</span>
+                              </button>
+                            )}
                           </div>
+                        </div>
+                      )}
+
+                      {gatewayStkError && (
+                        <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2 text-[11px] text-red-700">
+                          <AlertCircle className="w-3.5 h-3.5 text-red-600 shrink-0 mt-0.5" />
+                          <span>{gatewayStkError}</span>
                         </div>
                       )}
 
@@ -1243,9 +1407,89 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                     </div>
                   </div>
 
+                  {!isDemoMode && (
+                    <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-800">Online Card Checkout (Paystack)</span>
+                        <span className="text-[10px] font-semibold text-blue-700">Visa · Mastercard</span>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Customer Email (for Card Receipt)
+                        </label>
+                        <input
+                          type="email"
+                          value={cardCustomerEmail}
+                          onChange={(e) => setCardCustomerEmail(e.target.value)}
+                          placeholder={selectedCustomer?.email || 'customer@email.com'}
+                          className="w-full bg-slate-50 border border-slate-300 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-hidden focus:border-blue-500"
+                        />
+                      </div>
+
+                      {cardGatewayStatus === 'idle' || cardGatewayStatus === 'failed' ? (
+                        <button
+                          type="button"
+                          onClick={handleInitCardCheckout}
+                          disabled={isInitializingCard}
+                          className="w-full py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                        >
+                          {isInitializingCard ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>Initializing Paystack Checkout...</span>
+                            </>
+                          ) : (
+                            <>
+                              <CreditCard className="w-3.5 h-3.5" />
+                              <span>Launch Card Checkout ({currentLocation.currency} {cartTotal.toFixed(2)})</span>
+                            </>
+                          )}
+                        </button>
+                      ) : cardGatewayStatus === 'verified' ? (
+                        <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 font-bold flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span>Card Payment Verified ({cardGatewayRef})</span>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            {cardAuthUrl && (
+                              <a
+                                href={cardAuthUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex-1 py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5"
+                              >
+                                <span>Open Checkout</span>
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </a>
+                            )}
+                            <button
+                              type="button"
+                              onClick={handleVerifyCardPayment}
+                              disabled={isVerifyingCard}
+                              className="flex-1 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
+                            >
+                              <RefreshCw className={`w-3.5 h-3.5 ${isVerifyingCard ? 'animate-spin' : ''}`} />
+                              <span>{isVerifyingCard ? 'Verifying...' : 'Verify Card Payment'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {cardGatewayError && (
+                        <div className="p-2 bg-red-50 border border-red-200 rounded-lg text-[11px] text-red-700 flex items-start gap-1.5">
+                          <AlertCircle className="w-3.5 h-3.5 text-red-600 shrink-0 mt-0.5" />
+                          <span>{cardGatewayError}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg flex items-center gap-2 text-xs text-purple-800">
                     <CreditCard className="w-4 h-4 text-purple-600 shrink-0" />
-                    <span>Card terminal authorization pre-cleared via secure bank gateway.</span>
+                    <span>Or record physical PDQ card terminal authorization above.</span>
                   </div>
                 </div>
               )}

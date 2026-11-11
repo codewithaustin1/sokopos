@@ -183,7 +183,21 @@ service cloud.firestore {
 
     // Dedicated server-only staff credentials collection
     match /staff_credentials/{credId} {
-      allow read, write: if isSuperAdmin();
+      allow read: if isSuperAdmin();
+      allow create: if isSuperAdmin() || (
+        isEmailVerified() &&
+        request.resource.data.businessId is string &&
+        hasTenantAccess(request.resource.data.businessId)
+      );
+      allow update: if isSuperAdmin() || (
+        isEmailVerified() &&
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
+        (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+      );
+      allow delete: if isSuperAdmin() || (
+        isEmailVerified() &&
+        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+      );
     }
 
     // Transactions Collection (Tenant checkout receipts & sales)
