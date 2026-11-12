@@ -1482,7 +1482,7 @@ Extract:
     }
   });
 
-  // Enroll as an affiliate (Store Owner or Public Partner)
+  // Enroll as an affiliate (Store Owner, Partner-Only, or Hybrid)
   app.post('/api/affiliates/enroll', async (req, res) => {
     try {
       const { uid, email, name, mpesaPhone, accountType, preferredCode } = req.body || {};
@@ -1490,9 +1490,56 @@ Extract:
         return res.status(400).json({ error: 'uid, email, name, and mpesaPhone are required.' });
       }
 
-      const existing = await getFirestoreDoc('affiliates', String(uid));
+      const normalizedEmail = String(email).trim().toLowerCase();
+      const allBusinesses = await listFirestoreDocs('businesses');
+      const matchedBiz = allBusinesses.find(
+        (b) => String(b.ownerEmail || '').trim().toLowerCase() === normalizedEmail
+      );
+      const hasBusiness = Boolean(matchedBiz);
+
+      // Determine accurate accountType: if email has a business registered, it's hybrid
+      const effectiveAccountType = hasBusiness
+        ? 'hybrid'
+        : accountType === 'owner'
+        ? 'owner'
+        : 'partner';
+
+      let existing = await getFirestoreDoc('affiliates', String(uid));
+      if (!existing) {
+        const allAffiliates = await listFirestoreDocs('affiliates');
+        existing = allAffiliates.find(
+          (a) => String(a.email || '').trim().toLowerCase() === normalizedEmail
+        ) || null;
+      }
+
       if (existing) {
-        return res.json({ success: true, affiliate: existing });
+        // If business ownership status changed, update affiliate record
+        const needsUpdate =
+          (hasBusiness && existing.accountType !== 'hybrid') ||
+          (existing.mpesaPhone !== mpesaPhone && mpesaPhone);
+
+        if (needsUpdate) {
+          const updated = {
+            ...existing,
+            accountType: hasBusiness ? 'hybrid' : existing.accountType,
+            hasBusiness,
+            businessId: matchedBiz?.id || existing.businessId,
+            businessName: matchedBiz?.name || existing.businessName,
+            mpesaPhone: String(mpesaPhone).trim(),
+            updatedAt: new Date().toISOString(),
+          };
+          await patchFirestoreDoc('affiliates', existing.id, updated);
+          return res.json({ success: true, affiliate: updated });
+        }
+        return res.json({
+          success: true,
+          affiliate: {
+            ...existing,
+            hasBusiness,
+            businessId: matchedBiz?.id || existing.businessId,
+            businessName: matchedBiz?.name || existing.businessName,
+          },
+        });
       }
 
       const allAffiliates = await listFirestoreDocs('affiliates');
@@ -1512,10 +1559,13 @@ Extract:
       const newAffiliate = {
         id: String(uid),
         uid: String(uid),
-        email: String(email).trim().toLowerCase(),
+        email: normalizedEmail,
         name: String(name).trim(),
         code: candidateCode,
-        accountType: accountType === 'owner' ? 'owner' : 'public_partner',
+        accountType: effectiveAccountType,
+        hasBusiness,
+        businessId: matchedBiz?.id || undefined,
+        businessName: matchedBiz?.name || undefined,
         mpesaPhone: String(mpesaPhone).trim(),
         commissionRate: 0.20,
         totalEarnedKes: 0,
@@ -1544,11 +1594,25 @@ Extract:
   app.get('/api/affiliates/me', async (req, res) => {
     try {
       const uid = String(req.query.uid || '').trim();
-      if (!uid) {
-        return res.status(400).json({ error: 'uid is required.' });
+      const email = String(req.query.email || '').trim().toLowerCase();
+      if (!uid && !email) {
+        return res.status(400).json({ error: 'uid or email is required.' });
       }
 
-      const affiliate = await getFirestoreDoc('affiliates', uid);
+      let affiliate = uid ? await getFirestoreDoc('affiliates', uid) : null;
+      if (!affiliate && email) {
+        const allAffiliates = await listFirestoreDocs('affiliates');
+        affiliate = allAffiliates.find(
+          (a) => String(a.email || '').trim().toLowerCase() === email
+        ) || null;
+      }
+      if (!affiliate && uid) {
+        const allAffiliates = await listFirestoreDocs('affiliates');
+        affiliate = allAffiliates.find(
+          (a) => String(a.uid || '') === uid
+        ) || null;
+      }
+
       if (!affiliate) {
         return res.json({ enrolled: false, affiliate: null, commissions: [], payouts: [] });
       }
@@ -1559,12 +1623,17 @@ Extract:
         listFirestoreDocs('businesses'),
       ]);
 
+      const matchedBiz = allBusinesses.find(
+        (b) => String(b.ownerEmail || '').trim().toLowerCase() === String(affiliate.email || '').trim().toLowerCase()
+      );
+      const hasBusiness = Boolean(matchedBiz);
+
       const commissions = allCommissions
-        .filter((c) => c.affiliateUid === uid || c.affiliateId === affiliate.id)
+        .filter((c) => c.affiliateUid === uid || c.affiliateId === affiliate.id || (email && c.affiliateEmail === email))
         .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
 
       const payouts = allPayouts
-        .filter((p) => p.affiliateUid === uid || p.affiliateId === affiliate.id)
+        .filter((p) => p.affiliateUid === uid || p.affiliateId === affiliate.id || (email && p.affiliateEmail === email))
         .sort((a, b) => String(b.requestedAt || '').localeCompare(String(a.requestedAt || '')));
 
       const referredStores = allBusinesses.filter(
@@ -1575,6 +1644,10 @@ Extract:
         enrolled: true,
         affiliate: {
           ...affiliate,
+          hasBusiness,
+          businessId: matchedBiz?.id || affiliate.businessId,
+          businessName: matchedBiz?.name || affiliate.businessName,
+          accountType: hasBusiness ? 'hybrid' : (affiliate.accountType || 'partner'),
           referralCount: Math.max(Number(affiliate.referralCount || 0), referredStores.length),
         },
         commissions,

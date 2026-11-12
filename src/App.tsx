@@ -865,6 +865,7 @@ function PosAppContent() {
       <AffiliatePortalModal
         isOpen={isAffiliateModalOpen}
         onClose={() => setIsAffiliateModalOpen(false)}
+        onSwitchToPos={() => setIsAffiliateModalOpen(false)}
       />
     </div>
   );

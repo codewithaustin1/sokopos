@@ -5524,7 +5524,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       setSyncStatus('syncing');
-      if (!isSilent) soundFx.playBarcodeBeep();
+      // Background and user cloud sync should not trigger retail barcode scanner sound
 
       if (!isSilent) {
         await new Promise((res) => setTimeout(res, 500));
@@ -5656,7 +5656,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setIsOnlineState(true);
       setSyncStatus('syncing');
       showToast('Network connection detected. Auto-syncing pending store data with Cloud...', 'info');
-      triggerCloudSync(false).catch((err) =>
+      triggerCloudSync(true).catch((err) =>
         console.warn('Auto-sync on network reconnect error:', err)
       );
       if (activeBusinessId) {

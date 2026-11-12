@@ -14,6 +14,9 @@ import {
   Mail,
   AlertCircle,
   Loader2,
+  Gift,
+  Phone,
+  Share2,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { Cashier } from '../types';
@@ -29,6 +32,8 @@ import { scrollToTop } from '../utils/scrollUtils';
 import { SUPER_ADMIN_EMAIL } from '../data/initialData';
 import { PWAInstallButton } from './PWAInstallButton';
 import { AffiliatePortalModal } from './AffiliatePortalModal';
+import { enrollAffiliate, fetchAffiliateDashboard } from '../lib/affiliateService';
+import { auth } from '../lib/firebase';
 
 // Isolated Animated Counter Subcomponent: Keeps main-thread 60fps by updating the DOM ref directly without React state churn
 const AnimatedMetricCounter: React.FC<{ target?: number; duration?: number }> = React.memo(
@@ -129,7 +134,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     setIsAffiliateModalOpen,
   } = usePos();
 
-  const [activeTab, setActiveTab] = useState<'owner' | 'staff' | 'register'>('owner');
+  const [activeTab, setActiveTab] = useState<'owner' | 'partner' | 'staff' | 'register'>('owner');
   const [activeLegalPage, setActiveLegalPage] = useState<LegalTab | null>(null);
   const [isPricingPageOpen, setIsPricingPageOpen] = useState(false);
   const [isDemoModeActive, setIsDemoModeActive] = useState<boolean>(false);
@@ -218,11 +223,24 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const [resetEmailSuccessMessage, setResetEmailSuccessMessage] = useState<string | null>(null);
   const [isSendingResetEmail, setIsSendingResetEmail] = useState<boolean>(false);
 
+  // Partner tab authentication state
+  const [partnerMode, setPartnerMode] = useState<'signin' | 'register'>('signin');
+  const [partnerNameInput, setPartnerNameInput] = useState<string>('');
+  const [partnerEmailInput, setPartnerEmailInput] = useState<string>('');
+  const [partnerPhoneInput, setPartnerPhoneInput] = useState<string>('07');
+  const [partnerPasswordInput, setPartnerPasswordInput] = useState<string>('');
+  const [showPartnerPassword, setShowPartnerPassword] = useState<boolean>(false);
+  const [partnerCodeInput, setPartnerCodeInput] = useState<string>('');
+  const [partnerAuthError, setPartnerAuthError] = useState<string | null>(null);
+  const [isAuthenticatingPartner, setIsAuthenticatingPartner] = useState<boolean>(false);
+  const partnerEmailInputRef = useRef<HTMLInputElement>(null);
+
   // Email Verification Gate state
   const [isCheckingVerification, setIsCheckingVerification] = useState<boolean>(false);
   const [isResendingVerification, setIsResendingVerification] = useState<boolean>(false);
   const [verificationFeedback, setVerificationFeedback] = useState<string | null>(null);
   const [verificationError, setVerificationError] = useState<string | null>(null);
+  const [verificationContext, setVerificationContext] = useState<'owner' | 'partner'>('owner');
 
   useEffect(() => {
     if (pendingVerificationEmail) {
@@ -238,6 +256,45 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       const res = await checkEmailVerificationStatus();
       if (res.verified) {
         setIsAuthModalOpen(false);
+
+        // Check if there was a pending partner registration waiting for email verification
+        const rawPendingPartner = sessionStorage.getItem('sokopos_pending_partner_registration');
+        if (rawPendingPartner) {
+          try {
+            const pendingPartner = JSON.parse(rawPendingPartner);
+            sessionStorage.removeItem('sokopos_pending_partner_registration');
+            const uid = auth.currentUser?.uid || res.email || `partner-${Date.now()}`;
+            const enrollRes = await enrollAffiliate({
+              uid,
+              email: (res.email || pendingPartner.email).toLowerCase(),
+              name: pendingPartner.name || 'Partner',
+              mpesaPhone: pendingPartner.phone || '0700000000',
+              accountType: 'public_partner',
+              preferredCode: pendingPartner.preferredCode || undefined,
+            });
+
+            setIsAffiliateModalOpen(true);
+            soundFx.playSuccess();
+            showToast(
+              enrollRes.success && enrollRes.affiliate?.code
+                ? `Email verified! Welcome ${pendingPartner.name}! Referral code: ${enrollRes.affiliate.code}`
+                : 'Email verified! Partner account successfully activated.',
+              'success'
+            );
+            return;
+          } catch (enrollErr) {
+            console.error('Error auto-enrolling verified partner:', enrollErr);
+          }
+        }
+
+        // If user was verifying in partner tab mode or is marked partner context, open affiliate portal
+        if (verificationContext === 'partner') {
+          setIsAffiliateModalOpen(true);
+          soundFx.playSuccess();
+          showToast('Email verified! Welcome to the SokoPoS Partner Portal.', 'success');
+          return;
+        }
+
         onLoginSuccess?.();
       } else {
         setVerificationError(res.error || 'Email is not verified yet. Please check your inbox.');
@@ -269,6 +326,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const handleCancelVerification = async () => {
     setVerificationError(null);
     setVerificationFeedback(null);
+    sessionStorage.removeItem('sokopos_pending_partner_registration');
     await cancelEmailVerification();
   };
 
@@ -366,7 +424,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const modalCardRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
-  const openAuthModal = (targetTab: 'owner' | 'staff' | 'register' = 'owner') => {
+  const openAuthModal = (targetTab: 'owner' | 'partner' | 'staff' | 'register' = 'owner') => {
     previousFocusRef.current = document.activeElement as HTMLElement | null;
     setIsDemoModeActive(false);
     localStorage.removeItem('sokopos_demo_intent');
@@ -378,6 +436,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     setIsForgotPasswordMode(false);
     setResetEmailSuccessMessage(null);
     setEmailAuthError(null);
+    setPartnerAuthError(null);
     setIsAuthModalOpen(true);
   };
 
@@ -388,6 +447,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     setIsForgotPasswordMode(false);
     setResetEmailSuccessMessage(null);
     setEmailAuthError(null);
+    setPartnerAuthError(null);
     setIsDemoModeActive(false);
     localStorage.removeItem('sokopos_demo_intent');
     setTimeout(() => {
@@ -395,7 +455,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     }, 50);
   };
 
-  const scrollToAuthCard = (targetTab?: 'owner' | 'staff' | 'register') => {
+  const scrollToAuthCard = (targetTab?: 'owner' | 'partner' | 'staff' | 'register') => {
     openAuthModal(targetTab || 'owner');
   };
 
@@ -427,6 +487,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     const timer = setTimeout(() => {
       if (activeTab === 'owner') {
         emailInputRef.current?.focus();
+      } else if (activeTab === 'partner') {
+        partnerEmailInputRef.current?.focus();
       } else if (activeTab === 'register') {
         shopNameInputRef.current?.focus();
       } else if (activeTab === 'staff') {
@@ -439,7 +501,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     }, 60);
 
     return () => clearTimeout(timer);
-  }, [isAuthModalOpen, activeTab, isDemoModeActive, isEditingStaffId]);
+  }, [activeTab, isAuthModalOpen, isDemoModeActive, isEditingStaffId]);
 
   // Dismiss on Escape key and trap keyboard focus within modal
   useEffect(() => {
@@ -735,6 +797,175 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       soundFx.playError();
     } finally {
       setIsAuthenticatingEmail(false);
+    }
+  };
+
+  const handlePartnerFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPartnerAuthError(null);
+    const email = partnerEmailInput.trim().toLowerCase();
+    const password = partnerPasswordInput.trim();
+
+    if (!email) {
+      setPartnerAuthError('Please enter your email address.');
+      return;
+    }
+    if (!password) {
+      setPartnerAuthError('Please enter your password.');
+      return;
+    }
+    if (password.length < 6) {
+      setPartnerAuthError('Password must be at least 6 characters long.');
+      return;
+    }
+
+    if (partnerMode === 'register') {
+      const name = partnerNameInput.trim() || email.split('@')[0];
+      const phone = partnerPhoneInput.trim();
+      const cleanPhone = phone.replace(/\D/g, '');
+      if (cleanPhone.length < 9) {
+        setPartnerAuthError('Please enter a valid Safaricom M-Pesa phone number for commission payouts.');
+        return;
+      }
+
+      setIsAuthenticatingPartner(true);
+      try {
+        const authRes = await loginWithFirebaseEmailPassword(email, password, true, undefined);
+
+        if (authRes.requiresVerification) {
+          // Store pending partner details in session so they are enrolled once verified
+          sessionStorage.setItem(
+            'sokopos_pending_partner_registration',
+            JSON.stringify({
+              email,
+              name,
+              phone,
+              preferredCode: partnerCodeInput.trim() || undefined,
+            })
+          );
+          setVerificationContext('partner');
+          setVerificationError(null);
+          setVerificationFeedback(
+            `A verification link has been sent to ${authRes.email || email}. Please click the link in your inbox to confirm this is a real email and activate your partner account.`
+          );
+        } else if (authRes.success) {
+          // User is verified (or admin override)
+          sessionStorage.removeItem('sokopos_pending_partner_registration');
+          const uid = auth.currentUser?.uid || `partner-${Date.now()}`;
+          const enrollRes = await enrollAffiliate({
+            uid,
+            email,
+            name,
+            mpesaPhone: phone,
+            accountType: 'public_partner',
+            preferredCode: partnerCodeInput.trim() || undefined,
+          });
+
+          setIsAuthModalOpen(false);
+          setIsAffiliateModalOpen(true);
+          soundFx.playSuccess();
+          showToast(
+            enrollRes.success && enrollRes.affiliate?.code
+              ? `Welcome ${name}! Your referral code is ${enrollRes.affiliate.code}.`
+              : 'Partner account created! Referral link ready.',
+            'success'
+          );
+        } else {
+          setPartnerAuthError(authRes.error || 'Failed to create partner account.');
+          soundFx.playError();
+        }
+      } catch (err: any) {
+        setPartnerAuthError(err?.message || 'Failed to create partner account.');
+        soundFx.playError();
+      } finally {
+        setIsAuthenticatingPartner(false);
+      }
+    } else {
+      // Partner Sign-In mode
+      setIsAuthenticatingPartner(true);
+      try {
+        const authRes = await loginWithFirebaseEmailPassword(email, password, false);
+        if (authRes.requiresVerification) {
+          setVerificationContext('partner');
+          setVerificationError(null);
+          setVerificationFeedback(
+            `Your email address has not been verified yet. Please check ${authRes.email || email} and verify to access the partner portal.`
+          );
+        } else if (authRes.success) {
+          const uid = auth.currentUser?.uid || '';
+          try {
+            const data = await fetchAffiliateDashboard(uid, email);
+            if (!data.enrolled) {
+              await enrollAffiliate({
+                uid,
+                email,
+                name: auth.currentUser?.displayName || email.split('@')[0],
+                mpesaPhone: '0700000000',
+                accountType: 'public_partner',
+              });
+            }
+          } catch (dashErr) {
+            console.warn('Affiliate check on sign in:', dashErr);
+          }
+
+          setIsAuthModalOpen(false);
+          setIsAffiliateModalOpen(true);
+          soundFx.playSuccess();
+          showToast('Welcome back to the SokoPoS Partner Portal!', 'success');
+        } else {
+          setPartnerAuthError(authRes.error || 'Invalid partner email or password.');
+          soundFx.playError();
+        }
+      } catch (err: any) {
+        setPartnerAuthError(err?.message || 'Partner sign-in failed.');
+        soundFx.playError();
+      } finally {
+        setIsAuthenticatingPartner(false);
+      }
+    }
+  };
+
+  const handleGooglePartnerSignIn = async () => {
+    setIsAuthenticatingPartner(true);
+    setPartnerAuthError(null);
+    try {
+      const ok = await loginWithFirebaseGoogle();
+      if (ok && auth.currentUser) {
+        const uid = auth.currentUser.uid;
+        const email = auth.currentUser.email || '';
+        const name = auth.currentUser.displayName || email.split('@')[0];
+
+        try {
+          const data = await fetchAffiliateDashboard(uid, email);
+          if (!data.enrolled) {
+            await enrollAffiliate({
+              uid,
+              email,
+              name,
+              mpesaPhone: '0700000000',
+              accountType: 'public_partner',
+            });
+          }
+        } catch {
+          await enrollAffiliate({
+            uid,
+            email,
+            name,
+            mpesaPhone: '0700000000',
+            accountType: 'public_partner',
+          }).catch(() => null);
+        }
+
+        setIsAuthModalOpen(false);
+        setIsAffiliateModalOpen(true);
+        soundFx.playSuccess();
+        showToast(`Welcome ${name}! SokoPoS Partner Portal active.`, 'success');
+      }
+    } catch (err: any) {
+      setPartnerAuthError(err?.message || 'Google Partner authentication failed.');
+      soundFx.playError();
+    } finally {
+      setIsAuthenticatingPartner(false);
     }
   };
 
@@ -1722,10 +1953,14 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     id="auth-modal-title"
                     className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-1 text-left"
                   >
-                    Verify your email address
+                    {verificationContext === 'partner'
+                      ? 'Verify your partner email address'
+                      : 'Verify your email address'}
                   </h2>
                   <p className="text-xs sm:text-[13px] text-[#556375] leading-relaxed text-left">
-                    To protect your business and ensure this account belongs to a real owner, please click the verification link sent to{' '}
+                    {verificationContext === 'partner'
+                      ? 'To prevent system abuse and ensure you receive your M-Pesa commission payouts safely, please click the verification link sent to '
+                      : 'To protect your business and ensure this account belongs to a real owner, please click the verification link sent to '}
                     <span className="font-bold text-[#0e1a2b]">{pendingVerificationEmail}</span>.
                   </p>
                 </div>
@@ -1790,18 +2025,21 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               </div>
             ) : (
               <>
-            {/* Segmented Tab Switcher (Owner vs Staff, matching attached design image_d64c8152.png) */}
+            {/* Segmented Tab Switcher (Owner vs Partner vs Staff, matching attached design) */}
             {activeTab !== 'register' && (
-              <div className="bg-[#f0f3f6] p-1 rounded-xl grid grid-cols-2 gap-1 mb-5" role="tablist" id="seg">
+              <div className="bg-[#f0f3f6] p-1 rounded-xl grid grid-cols-3 gap-1 mb-5" role="tablist" id="seg">
                 <button
                   type="button"
                   role="tab"
+                  id="tab-owner"
                   aria-selected={activeTab === 'owner'}
                   onClick={() => {
                     setActiveTab('owner');
                     setPinError(null);
+                    setEmailAuthError(null);
+                    setPartnerAuthError(null);
                   }}
-                  className={`py-2 px-4 rounded-lg font-bold text-sm sm:text-base transition-all cursor-pointer flex items-center justify-center ${
+                  className={`py-2 px-2 sm:px-3 rounded-lg font-bold text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center ${
                     activeTab === 'owner'
                       ? 'bg-white text-[#0e1a2b] shadow-xs'
                       : 'bg-transparent text-[#4c5a6b] hover:text-[#0e1a2b]'
@@ -1812,12 +2050,37 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 <button
                   type="button"
                   role="tab"
+                  id="tab-partner"
+                  aria-selected={activeTab === 'partner'}
+                  onClick={() => {
+                    setActiveTab('partner');
+                    setPinError(null);
+                    setEmailAuthError(null);
+                    setPartnerAuthError(null);
+                  }}
+                  className={`py-2 px-2 sm:px-3 rounded-lg font-bold text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                    activeTab === 'partner'
+                      ? 'bg-white text-emerald-700 shadow-xs'
+                      : 'bg-transparent text-[#4c5a6b] hover:text-emerald-700'
+                  }`}
+                >
+                  <span>Partner</span>
+                  <span className="text-[10px] font-extrabold px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800">
+                    20%
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  id="tab-staff"
                   aria-selected={activeTab === 'staff'}
                   onClick={() => {
                     setActiveTab('staff');
                     setPinError(null);
+                    setEmailAuthError(null);
+                    setPartnerAuthError(null);
                   }}
-                  className={`py-2 px-4 rounded-lg font-bold text-sm sm:text-base transition-all cursor-pointer flex items-center justify-center ${
+                  className={`py-2 px-2 sm:px-3 rounded-lg font-bold text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center ${
                     activeTab === 'staff'
                       ? 'bg-white text-[#0e1a2b] shadow-xs'
                       : 'bg-transparent text-[#4c5a6b] hover:text-[#0e1a2b]'
@@ -2021,6 +2284,260 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     </form>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* TAB 2: PARTNER PORTAL LOGIN / JOIN */}
+            {activeTab === 'partner' && (
+              <div id="p-partner">
+                <div className="flex items-center justify-between mb-1">
+                  <h2
+                    id="auth-modal-title"
+                    className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight text-left"
+                  >
+                    {partnerMode === 'register' ? 'Join as Partner' : 'Partner Sign In'}
+                  </h2>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <Gift className="w-3 h-3 text-emerald-600" />
+                    <span>20% Recurring</span>
+                  </span>
+                </div>
+                <p className="text-xs text-[#556375] mb-4 text-left">
+                  {partnerMode === 'register'
+                    ? 'Earn 20% recurring monthly commission on every store you refer to SokoPoS.'
+                    : 'Sign in to access your referral link, commission ledger, and M-Pesa payouts.'}
+                </p>
+
+                {/* Sub-toggle: Sign In vs Become Partner */}
+                <div className="bg-[#f4f7f6] p-1 rounded-xl grid grid-cols-2 gap-1 mb-4 border border-[#e2e8f0]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPartnerMode('signin');
+                      setPartnerAuthError(null);
+                    }}
+                    className={`py-1.5 px-3 rounded-lg font-bold text-xs transition cursor-pointer flex items-center justify-center ${
+                      partnerMode === 'signin'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Sign In
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPartnerMode('register');
+                      setPartnerAuthError(null);
+                    }}
+                    className={`py-1.5 px-3 rounded-lg font-bold text-xs transition cursor-pointer flex items-center justify-center ${
+                      partnerMode === 'register'
+                        ? 'bg-white text-emerald-700 shadow-xs'
+                        : 'text-slate-500 hover:text-emerald-700'
+                    }`}
+                  >
+                    Become Partner
+                  </button>
+                </div>
+
+                <form id="partnerForm" onSubmit={handlePartnerFormSubmit} className="space-y-3.5 mb-4">
+                  {partnerMode === 'register' && (
+                    <div>
+                      <label htmlFor="partner-name-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
+                        Full Name / Agency Name
+                      </label>
+                      <input
+                        type="text"
+                        id="partner-name-input"
+                        placeholder="e.g. Wanjiku Kamau"
+                        required
+                        value={partnerNameInput}
+                        onChange={(e) => {
+                          setPartnerNameInput(e.target.value);
+                          setPartnerAuthError(null);
+                        }}
+                        className="w-full h-11 px-3.5 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-emerald-600 focus:outline-none transition-colors"
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label htmlFor="partner-email-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
+                      Email address
+                    </label>
+                    <div className="relative flex items-center">
+                      <input
+                        ref={partnerEmailInputRef}
+                        type="email"
+                        id="partner-email-input"
+                        placeholder="yourname@gmail.com"
+                        aria-label="Partner email address"
+                        autoComplete="email"
+                        required
+                        value={partnerEmailInput}
+                        onChange={(e) => {
+                          setPartnerEmailInput(e.target.value);
+                          setPartnerAuthError(null);
+                        }}
+                        className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-emerald-600 focus:outline-none transition-colors"
+                      />
+                      <Mail className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
+                    </div>
+                  </div>
+
+                  {partnerMode === 'register' && (
+                    <div>
+                      <label htmlFor="partner-phone-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
+                        M-Pesa Payout Number
+                      </label>
+                      <div className="relative flex items-center">
+                        <input
+                          type="tel"
+                          id="partner-phone-input"
+                          placeholder="0712 345 678"
+                          required
+                          value={partnerPhoneInput}
+                          onChange={(e) => {
+                            setPartnerPhoneInput(e.target.value);
+                            setPartnerAuthError(null);
+                          }}
+                          className="w-full h-11 pl-3.5 pr-9 font-mono rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-emerald-600 focus:outline-none transition-colors"
+                        />
+                        <Phone className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
+                      </div>
+                      <span className="text-[11px] text-slate-400 mt-0.5 block">
+                        Commission payouts are disbursed directly via Safaricom M-Pesa.
+                      </span>
+                    </div>
+                  )}
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label htmlFor="partner-password-input" className="block text-xs font-bold text-[#0e1a2b]">
+                        Password
+                      </label>
+                      {partnerMode === 'signin' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('owner');
+                            setIsForgotPasswordMode(true);
+                            setOwnerEmailInput(partnerEmailInput);
+                          }}
+                          className="text-[11px] font-bold text-[#1565d8] hover:underline cursor-pointer"
+                        >
+                          Forgot password?
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative flex items-center">
+                      <input
+                        type={showPartnerPassword ? 'text' : 'password'}
+                        id="partner-password-input"
+                        placeholder="••••••••"
+                        aria-label="Partner password"
+                        autoComplete={partnerMode === 'register' ? 'new-password' : 'current-password'}
+                        required
+                        value={partnerPasswordInput}
+                        onChange={(e) => {
+                          setPartnerPasswordInput(e.target.value);
+                          setPartnerAuthError(null);
+                        }}
+                        className="w-full h-11 pl-3.5 pr-10 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-emerald-600 focus:outline-none transition-colors"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPartnerPassword((prev) => !prev)}
+                        aria-label={showPartnerPassword ? 'Hide password' : 'Show password'}
+                        className="absolute right-2.5 p-1 text-[#556375] hover:text-[#0e1a2b] transition cursor-pointer"
+                      >
+                        {showPartnerPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {partnerMode === 'register' && (
+                    <div>
+                      <label htmlFor="partner-code-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
+                        Preferred Referral Code <span className="text-slate-400 font-normal">(optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        id="partner-code-input"
+                        placeholder="e.g. SOKOHUB or MOMBASA"
+                        maxLength={12}
+                        value={partnerCodeInput}
+                        onChange={(e) => {
+                          setPartnerCodeInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''));
+                        }}
+                        className="w-full h-11 px-3.5 font-mono uppercase rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-emerald-600 focus:outline-none transition-colors"
+                      />
+                    </div>
+                  )}
+
+                  {/* Error alert banner */}
+                  {partnerAuthError && (
+                    <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                      <span>{partnerAuthError}</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={isAuthenticatingPartner}
+                    className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1"
+                  >
+                    {isAuthenticatingPartner ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>{partnerMode === 'register' ? 'Creating account...' : 'Signing in...'}</span>
+                      </>
+                    ) : (
+                      <span>
+                        {partnerMode === 'register'
+                          ? 'Create Partner Account & Get Link'
+                          : 'Sign In to Partner Portal'}
+                      </span>
+                    )}
+                  </button>
+                </form>
+
+                {/* Direct Google Sign-In as Partner */}
+                <div className="relative flex items-center justify-center my-3">
+                  <div className="border-t border-[#e2e8f0] w-full" />
+                  <span className="bg-white px-2 text-[11px] font-semibold text-[#8ca0b3] shrink-0 uppercase tracking-wider">
+                    Or continue with
+                  </span>
+                  <div className="border-t border-[#e2e8f0] w-full" />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleGooglePartnerSignIn}
+                  disabled={isAuthenticatingPartner}
+                  className="w-full h-11 bg-white hover:bg-[#f4f7f6] border border-[#d9e1e6] text-[#0e1a2b] font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2.5 shadow-2xs"
+                >
+                  <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                    <path
+                      fill="#4285F4"
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                    />
+                  </svg>
+                  <span>Continue with Google as Partner</span>
+                </button>
               </div>
             )}
 
@@ -2316,18 +2833,29 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               </div>
             )}
 
-            {/* Below Card Switcher: Dashed divider, question & red Add new shop button matching image_d64c8152.png */}
+            {/* Below Card Switcher: Dashed divider, question & action button */}
             <div className="border-t border-dashed border-[#d9e1e6] pt-4 text-center" id="below">
               <p className="text-xs sm:text-[13px] text-[#4c5a6b] font-medium mb-2.5" id="belowText">
-                {activeTab === 'register' ? 'Already have a registered shop?' : 'Need to register a new location?'}
+                {activeTab === 'register'
+                  ? 'Already have a registered shop or partner account?'
+                  : activeTab === 'partner'
+                  ? 'Want to open and manage a physical retail store?'
+                  : 'Need to register a new location?'}
               </p>
               <button
                 type="button"
                 id="belowBtn"
                 onClick={() => {
-                  const nextTab = activeTab === 'register' ? 'owner' : 'register';
-                  setActiveTab(nextTab);
+                  if (activeTab === 'register') {
+                    setActiveTab('owner');
+                  } else if (activeTab === 'partner') {
+                    setActiveTab('register');
+                  } else {
+                    setActiveTab('register');
+                  }
                   setPinError(null);
+                  setEmailAuthError(null);
+                  setPartnerAuthError(null);
                 }}
                 className={`w-full h-11 rounded-xl font-bold text-sm sm:text-[15px] flex items-center justify-center transition-all cursor-pointer ${
                   activeTab === 'register'
@@ -2335,7 +2863,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     : 'bg-[#c8231b] hover:bg-[#b01e17] active:scale-[0.99] text-white shadow-xs'
                 }`}
               >
-                {activeTab === 'register' ? 'Return to login' : 'Add new shop'}
+                {activeTab === 'register'
+                  ? 'Return to login'
+                  : activeTab === 'partner'
+                  ? 'Add new shop'
+                  : 'Add new shop'}
               </button>
             </div>
               </>
@@ -2349,9 +2881,17 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       <AffiliatePortalModal
         isOpen={isAffiliateModalOpen}
         onClose={() => setIsAffiliateModalOpen(false)}
-        onRequestAuth={() => {
+        onRequestAuth={(targetTab = 'partner') => {
           setIsAffiliateModalOpen(false);
-          openAuthModal('owner');
+          openAuthModal(targetTab);
+        }}
+        onSwitchToPos={() => {
+          setIsAffiliateModalOpen(false);
+          onLoginSuccess?.();
+        }}
+        onOpenStoreRegistration={() => {
+          setIsAffiliateModalOpen(false);
+          openAuthModal('register');
         }}
       />
     </div>

@@ -6,16 +6,37 @@ class SoundFx {
   private scannerBuffer: AudioBuffer | null = null;
   private isDecodingScannerBuffer = false;
   private scannerHtmlAudio: HTMLAudioElement | null = null;
+  public isMuted = false;
 
   constructor() {
     if (typeof window !== 'undefined') {
       try {
+        const savedMute = localStorage.getItem('sokopos_sound_muted');
+        if (savedMute === 'true') {
+          this.isMuted = true;
+        }
         this.scannerHtmlAudio = new Audio(SCANNER_BEEP_DATA_URL);
         this.scannerHtmlAudio.preload = 'auto';
       } catch {
         // Audio element not permitted yet
       }
     }
+  }
+
+  public setMuted(muted: boolean) {
+    this.isMuted = muted;
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('sokopos_sound_muted', muted ? 'true' : 'false');
+      }
+    } catch {
+      // ignore storage error
+    }
+  }
+
+  public toggleMute(): boolean {
+    this.setMuted(!this.isMuted);
+    return this.isMuted;
   }
 
   private getContext(): AudioContext | null {
@@ -93,6 +114,7 @@ class SoundFx {
 
   // Laser barcode scanner sound (replaces old generic beep with authentic attached scanner sound)
   playBarcodeBeep() {
+    if (this.isMuted) return;
     try {
       const ctx = this.getContext();
 
@@ -173,6 +195,7 @@ class SoundFx {
 
   // UI generic beep (customizable frequency & duration for buttons / toggles)
   playBeep(frequency = 1760, duration = 0.08) {
+    if (this.isMuted) return;
     try {
       const ctx = this.getContext();
       if (!ctx) return;

@@ -26,13 +26,17 @@ import { auth } from '../lib/firebase';
 interface AffiliatePortalModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onRequestAuth?: () => void;
+  onRequestAuth?: (targetTab?: 'owner' | 'partner' | 'staff' | 'register') => void;
+  onSwitchToPos?: () => void;
+  onOpenStoreRegistration?: () => void;
 }
 
 export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
   isOpen,
   onClose,
   onRequestAuth,
+  onSwitchToPos,
+  onOpenStoreRegistration,
 }) => {
   const { currentUser, currentBusiness, currentLocation, showToast } = usePos();
 
@@ -64,11 +68,11 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
   const [isRequestingPayout, setIsRequestingPayout] = useState(false);
 
   const loadDashboard = useCallback(async () => {
-    if (!uid) return;
+    if (!uid && !email) return;
     setIsLoading(true);
     setError(null);
     try {
-      const data = await fetchAffiliateDashboard(uid);
+      const data = await fetchAffiliateDashboard(uid, email);
       setAffiliate(data.affiliate);
       setCommissions(data.commissions || []);
       setPayouts(data.payouts || []);
@@ -83,13 +87,13 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [uid]);
+  }, [uid, email]);
 
   useEffect(() => {
-    if (isOpen && uid) {
+    if (isOpen && (uid || email)) {
       loadDashboard();
     }
-  }, [isOpen, uid, loadDashboard]);
+  }, [isOpen, uid, email, loadDashboard]);
 
   useEffect(() => {
     if (defaultName && !enrollName) setEnrollName(defaultName);
@@ -247,11 +251,12 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
               </div>
               <button
                 type="button"
+                id="partner-auth-cta-btn"
                 onClick={() => {
                   onClose();
-                  onRequestAuth?.();
+                  onRequestAuth?.('partner');
                 }}
-                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition cursor-pointer"
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-bold text-xs transition cursor-pointer shadow-xs"
               >
                 Sign In or Register as Partner
               </button>
@@ -335,6 +340,74 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
                   <span>{error}</span>
                 </div>
               )}
+
+              {/* Account Role Status & Store POS Switcher */}
+              <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                      isOwner || affiliate.hasBusiness || affiliate.accountType === 'hybrid'
+                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    }`}
+                  >
+                    {isOwner || affiliate.hasBusiness || affiliate.accountType === 'hybrid' ? 'HYB' : 'PRT'}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-900">
+                        {isOwner || affiliate.hasBusiness || affiliate.accountType === 'hybrid'
+                          ? 'Store Owner & SokoPoS Partner'
+                          : 'Public SokoPoS Partner'}
+                      </span>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          isOwner || affiliate.hasBusiness || affiliate.accountType === 'hybrid'
+                            ? 'bg-blue-100 text-blue-800'
+                            : 'bg-emerald-100 text-emerald-800'
+                        }`}
+                      >
+                        {isOwner || affiliate.hasBusiness || affiliate.accountType === 'hybrid'
+                          ? 'Hybrid Account'
+                          : 'Partner Only'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      {isOwner || affiliate.hasBusiness || affiliate.accountType === 'hybrid'
+                        ? `Linked Retail Store: ${currentBusiness?.name || affiliate.businessName || 'Active Shop'}`
+                        : 'Partner account active · Add a physical store anytime to operate in-store POS.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {(isOwner || affiliate.hasBusiness || affiliate.accountType === 'hybrid') && onSwitchToPos && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onSwitchToPos();
+                      }}
+                      className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-xs"
+                    >
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                      <span>Switch to Store POS</span>
+                    </button>
+                  )}
+                  {!isOwner && !affiliate.hasBusiness && affiliate.accountType !== 'hybrid' && onOpenStoreRegistration && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onOpenStoreRegistration();
+                      }}
+                      className="px-3.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition cursor-pointer flex items-center gap-1.5"
+                    >
+                      <span>+ Open Retail Shop</span>
+                    </button>
+                  )}
+                </div>
+              </div>
 
               {/* Shareable Referral Link */}
               <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">

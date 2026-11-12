@@ -42,7 +42,8 @@ export type UserRole =
   | 'manager'
   | 'supervisor'
   | 'cashier'
-  | 'inventory_clerk';
+  | 'inventory_clerk'
+  | 'partner';
 
 export interface BusinessHardwareSettings {
   autoPrintReceipt?: boolean;
@@ -193,6 +194,10 @@ export interface AuthUser {
   tokenExpiresAt?: number;
   sessionStatus?: 'verified' | 'cached' | 'guest';
   isDemoSession?: boolean; // Strictly sandboxed demo session isolated from production
+  // Partner & Hybrid account capabilities
+  isPartner?: boolean;
+  isPartnerOnly?: boolean;
+  isBusinessOwner?: boolean;
 }
 
 export interface Location {
@@ -692,7 +697,7 @@ export interface AdminActivityEntry {
   isAdministrative: true;
 }
 
-export type AffiliateAccountType = 'owner' | 'public_partner';
+export type AffiliateAccountType = 'owner' | 'partner' | 'public_partner' | 'hybrid';
 
 export interface AffiliateProfile {
   id: string;
@@ -709,6 +714,9 @@ export interface AffiliateProfile {
   referralCount: number;
   activeStoreCount: number;
   status: 'active' | 'suspended';
+  hasBusiness?: boolean;
+  businessId?: string;
+  businessName?: string;
   createdAt: string;
   updatedAt?: string;
 }

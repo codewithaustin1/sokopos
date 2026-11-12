@@ -98,8 +98,11 @@ export interface AffiliateDashboardData {
   referredStoresCount?: number;
 }
 
-export async function fetchAffiliateDashboard(uid: string): Promise<AffiliateDashboardData> {
-  const resp = await fetch(`/api/affiliates/me?uid=${encodeURIComponent(uid)}`);
+export async function fetchAffiliateDashboard(uid: string, email?: string): Promise<AffiliateDashboardData> {
+  const query = new URLSearchParams();
+  if (uid) query.set('uid', uid);
+  if (email) query.set('email', email.trim().toLowerCase());
+  const resp = await fetch(`/api/affiliates/me?${query.toString()}`);
   if (!resp.ok) {
     throw new Error('Failed to load affiliate dashboard');
   }

@@ -17,6 +17,7 @@ import {
   Check,
   Sparkles,
   Volume2,
+  VolumeX,
   Keyboard,
   Clock,
   Trash2,
@@ -76,6 +77,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
     barcode: string;
     time: string;
   } | null>(null);
+
+  const [isMuted, setIsMuted] = useState<boolean>(() => soundFx.isMuted);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
@@ -287,8 +290,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
     if (!trimmed) return;
 
     const now = Date.now();
-    // Debounce duplicate scans of the EXACT same item by 800ms to allow quick consecutive scans
-    if (trimmed === lastScannedCodeRef.current && now - lastScannedTimeRef.current < 800) {
+    // Debounce duplicate scans of the EXACT same item by 2500ms to prevent runaway loop beeping when camera is held over barcode
+    if (trimmed === lastScannedCodeRef.current && now - lastScannedTimeRef.current < 2500) {
       return;
     }
 
@@ -416,8 +419,41 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
           <div className="flex items-center gap-2">
             <button
               type="button"
+              id="scanner-toggle-mute-btn"
+              onClick={() => {
+                const next = soundFx.toggleMute();
+                setIsMuted(next);
+              }}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition cursor-pointer ${
+                isMuted
+                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 hover:bg-rose-500/30'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700'
+              }`}
+              title={isMuted ? 'Scanner sound is muted. Click to enable sound' : 'Mute scanner sound'}
+            >
+              {isMuted ? (
+                <>
+                  <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+                  <span className="hidden xs:inline">Muted</span>
+                </>
+              ) : (
+                <>
+                  <Volume2 className="w-3.5 h-3.5 text-slate-300" />
+                  <span className="hidden xs:inline">Sound On</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
               id="scanner-test-beep-btn"
-              onClick={() => soundFx.playBarcodeBeep()}
+              onClick={() => {
+                if (isMuted) {
+                  const next = soundFx.toggleMute();
+                  setIsMuted(next);
+                }
+                soundFx.playBarcodeBeep();
+              }}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-blue-300 hover:text-white border border-slate-700 text-xs font-bold transition cursor-pointer"
               title="Test Retail Barcode Scanner Beep"
             >
