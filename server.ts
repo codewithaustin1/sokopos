@@ -1216,11 +1216,24 @@ Extract:
         paymentIntents.set(reference, cached);
       }
 
+      const resolvedFlowType = cached?.flowType || (verification.metadata?.flowType as PaymentFlowType | undefined);
+      const resolvedBusinessId = cached?.businessId || (verification.metadata?.businessId as string | undefined);
+      const resolvedPlanId = cached?.planId || (verification.metadata?.planId as string | undefined);
+
+      if (verification.verified && verification.status === 'success' && resolvedFlowType === 'subscription' && resolvedBusinessId) {
+        creditAffiliateCommissionOnPayment({
+          paymentReference: verification.reference || reference,
+          businessId: resolvedBusinessId,
+          planId: resolvedPlanId || 'business',
+          amountKes: verification.amountKes || cached?.amountKes || 0,
+        }).catch((err) => console.warn('Affiliate commission credit notice:', err));
+      }
+
       return res.json({
         ...verification,
-        flowType: cached?.flowType || (verification.metadata?.flowType as PaymentFlowType | undefined),
-        businessId: cached?.businessId || (verification.metadata?.businessId as string | undefined),
-        planId: cached?.planId || (verification.metadata?.planId as string | undefined),
+        flowType: resolvedFlowType,
+        businessId: resolvedBusinessId,
+        planId: resolvedPlanId,
       });
     } catch (err: any) {
       console.error('Error in /api/payments/verify:', err);
@@ -1295,6 +1308,448 @@ Extract:
       return false;
     }
   }
+
+  function fromFirestoreValue(val: any): any {
+    if (!val || typeof val !== 'object') return undefined;
+    if ('nullValue' in val) return null;
+    if ('stringValue' in val) return val.stringValue;
+    if ('booleanValue' in val) return val.booleanValue;
+    if ('integerValue' in val) return Number(val.integerValue);
+    if ('doubleValue' in val) return Number(val.doubleValue);
+    if ('arrayValue' in val) {
+      return Array.isArray(val.arrayValue?.values)
+        ? val.arrayValue.values.map((v: any) => fromFirestoreValue(v))
+        : [];
+    }
+    if ('mapValue' in val) {
+      const out: Record<string, any> = {};
+      const fields = val.mapValue?.fields || {};
+      for (const [k, v] of Object.entries(fields)) {
+        out[k] = fromFirestoreValue(v);
+      }
+      return out;
+    }
+    return undefined;
+  }
+
+  function fromFirestoreDoc(doc: any): Record<string, any> | null {
+    if (!doc || !doc.fields) return null;
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(doc.fields)) {
+      out[k] = fromFirestoreValue(v);
+    }
+    if (!out.id && doc.name) {
+      out.id = String(doc.name).split('/').pop();
+    }
+    return out;
+  }
+
+  async function getFirestoreDoc(collection: string, docId: string): Promise<Record<string, any> | null> {
+    const token = await getGcpAccessToken();
+    if (!token || !docId) return null;
+    try {
+      const url = `${firestoreCollectionUrl(collection)}/${encodeURIComponent(docId)}`;
+      const resp = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) return null;
+      const doc = await resp.json();
+      return fromFirestoreDoc(doc);
+    } catch {
+      return null;
+    }
+  }
+
+  async function listFirestoreDocs(collection: string, pageSize = 200): Promise<Record<string, any>[]> {
+    const token = await getGcpAccessToken();
+    if (!token) return [];
+    try {
+      const url = `${firestoreCollectionUrl(collection)}?pageSize=${pageSize}`;
+      const resp = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) return [];
+      const json: any = await resp.json().catch(() => ({}));
+      const docs = Array.isArray(json.documents) ? json.documents : [];
+      return docs.map((d: any) => fromFirestoreDoc(d)).filter(Boolean) as Record<string, any>[];
+    } catch {
+      return [];
+    }
+  }
+
+  const processedAffiliateRefs = new Set<string>();
+
+  async function creditAffiliateCommissionOnPayment(params: {
+    paymentReference: string;
+    businessId: string;
+    planId: string;
+    amountKes: number;
+  }): Promise<void> {
+    const { paymentReference, businessId, planId, amountKes } = params;
+    if (!paymentReference || !businessId || amountKes <= 0) return;
+    if (processedAffiliateRefs.has(paymentReference)) return;
+
+    // 1. Idempotency check in Firestore
+    const existingCommission = await getFirestoreDoc('affiliate_commissions', paymentReference);
+    if (existingCommission) {
+      processedAffiliateRefs.add(paymentReference);
+      return;
+    }
+
+    // 2. Fetch referred business
+    const business = await getFirestoreDoc('businesses', businessId);
+    const referredByCode = business?.referredByCode ? String(business.referredByCode).trim().toUpperCase() : '';
+    if (!referredByCode) return;
+
+    // 3. Find matching active affiliate
+    const affiliates = await listFirestoreDocs('affiliates');
+    const affiliate = affiliates.find(
+      (a) => String(a.code || '').trim().toUpperCase() === referredByCode && a.status === 'active'
+    );
+    if (!affiliate) return;
+
+    // 4. Self-referral guard
+    const bizOwnerEmail = String(business?.ownerEmail || '').trim().toLowerCase();
+    const affEmail = String(affiliate.email || '').trim().toLowerCase();
+    if (bizOwnerEmail && affEmail && bizOwnerEmail === affEmail) {
+      return;
+    }
+
+    // 5. Check if this business already has prior commission entries (renewal vs first)
+    const allCommissions = await listFirestoreDocs('affiliate_commissions');
+    const priorForBiz = allCommissions.some((c) => c.businessId === businessId && c.affiliateId === affiliate.id);
+
+    const rate = typeof affiliate.commissionRate === 'number' && affiliate.commissionRate > 0
+      ? affiliate.commissionRate
+      : 0.20;
+    const commissionAmountKes = Math.round(amountKes * rate);
+    if (commissionAmountKes <= 0) return;
+
+    const nowIso = new Date().toISOString();
+    processedAffiliateRefs.add(paymentReference);
+
+    await patchFirestoreDoc('affiliate_commissions', paymentReference, {
+      id: paymentReference,
+      affiliateId: affiliate.id,
+      affiliateUid: affiliate.uid,
+      affiliateCode: affiliate.code,
+      businessId,
+      businessName: business?.name || 'SokoPoS Store',
+      planId: planId || 'business',
+      paymentReference,
+      grossAmountKes: amountKes,
+      commissionRate: rate,
+      commissionAmountKes,
+      isRenewal: priorForBiz,
+      status: 'approved',
+      createdAt: nowIso,
+    });
+
+    await patchFirestoreDoc(
+      'affiliates',
+      affiliate.id,
+      {
+        totalEarnedKes: Number(affiliate.totalEarnedKes || 0) + commissionAmountKes,
+        availableBalanceKes: Number(affiliate.availableBalanceKes || 0) + commissionAmountKes,
+        activeStoreCount: Number(affiliate.activeStoreCount || 0) + (priorForBiz ? 0 : 1),
+        updatedAt: nowIso,
+      },
+      ['totalEarnedKes', 'availableBalanceKes', 'activeStoreCount', 'updatedAt']
+    );
+  }
+
+  // Public referral code validation (zero PII)
+  app.get('/api/affiliates/validate/:code', async (req, res) => {
+    try {
+      const code = String(req.params.code || '').trim().toUpperCase();
+      if (!code || code.length < 3) {
+        return res.json({ valid: false });
+      }
+      const affiliates = await listFirestoreDocs('affiliates');
+      const match = affiliates.find(
+        (a) => String(a.code || '').trim().toUpperCase() === code && a.status === 'active'
+      );
+      if (!match) {
+        return res.json({ valid: false });
+      }
+      return res.json({
+        valid: true,
+        code: match.code,
+        partnerName: match.name || 'SokoPoS Partner',
+      });
+    } catch {
+      return res.json({ valid: false });
+    }
+  });
+
+  // Enroll as an affiliate (Store Owner or Public Partner)
+  app.post('/api/affiliates/enroll', async (req, res) => {
+    try {
+      const { uid, email, name, mpesaPhone, accountType, preferredCode } = req.body || {};
+      if (!uid || !email || !name || !mpesaPhone) {
+        return res.status(400).json({ error: 'uid, email, name, and mpesaPhone are required.' });
+      }
+
+      const existing = await getFirestoreDoc('affiliates', String(uid));
+      if (existing) {
+        return res.json({ success: true, affiliate: existing });
+      }
+
+      const allAffiliates = await listFirestoreDocs('affiliates');
+      const cleanBase = (preferredCode || name || 'SOKO')
+        .toString()
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .toUpperCase()
+        .slice(0, 6) || 'SOKO';
+
+      let candidateCode = `${cleanBase}${Math.floor(100 + Math.random() * 900)}`;
+      const existingCodes = new Set(allAffiliates.map((a) => String(a.code || '').toUpperCase()));
+      while (existingCodes.has(candidateCode)) {
+        candidateCode = `${cleanBase}${Math.floor(100 + Math.random() * 900)}`;
+      }
+
+      const nowIso = new Date().toISOString();
+      const newAffiliate = {
+        id: String(uid),
+        uid: String(uid),
+        email: String(email).trim().toLowerCase(),
+        name: String(name).trim(),
+        code: candidateCode,
+        accountType: accountType === 'owner' ? 'owner' : 'public_partner',
+        mpesaPhone: String(mpesaPhone).trim(),
+        commissionRate: 0.20,
+        totalEarnedKes: 0,
+        availableBalanceKes: 0,
+        paidOutKes: 0,
+        referralCount: 0,
+        activeStoreCount: 0,
+        status: 'active',
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+
+      const saved = await patchFirestoreDoc('affiliates', String(uid), newAffiliate);
+      if (!saved) {
+        return res.status(500).json({ error: 'Failed to save affiliate profile to Firestore.' });
+      }
+
+      return res.json({ success: true, affiliate: newAffiliate });
+    } catch (err: any) {
+      console.error('Error in /api/affiliates/enroll:', err);
+      return res.status(500).json({ error: err?.message || 'Enrollment failed.' });
+    }
+  });
+
+  // Get current affiliate dashboard data (profile, commissions, payouts, referred count)
+  app.get('/api/affiliates/me', async (req, res) => {
+    try {
+      const uid = String(req.query.uid || '').trim();
+      if (!uid) {
+        return res.status(400).json({ error: 'uid is required.' });
+      }
+
+      const affiliate = await getFirestoreDoc('affiliates', uid);
+      if (!affiliate) {
+        return res.json({ enrolled: false, affiliate: null, commissions: [], payouts: [] });
+      }
+
+      const [allCommissions, allPayouts, allBusinesses] = await Promise.all([
+        listFirestoreDocs('affiliate_commissions'),
+        listFirestoreDocs('affiliate_payouts'),
+        listFirestoreDocs('businesses'),
+      ]);
+
+      const commissions = allCommissions
+        .filter((c) => c.affiliateUid === uid || c.affiliateId === affiliate.id)
+        .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+
+      const payouts = allPayouts
+        .filter((p) => p.affiliateUid === uid || p.affiliateId === affiliate.id)
+        .sort((a, b) => String(b.requestedAt || '').localeCompare(String(a.requestedAt || '')));
+
+      const referredStores = allBusinesses.filter(
+        (b) => String(b.referredByCode || '').toUpperCase() === String(affiliate.code || '').toUpperCase()
+      );
+
+      return res.json({
+        enrolled: true,
+        affiliate: {
+          ...affiliate,
+          referralCount: Math.max(Number(affiliate.referralCount || 0), referredStores.length),
+        },
+        commissions,
+        payouts,
+        referredStoresCount: referredStores.length,
+      });
+    } catch (err: any) {
+      console.error('Error in /api/affiliates/me:', err);
+      return res.status(500).json({ error: 'Failed to load affiliate dashboard.' });
+    }
+  });
+
+  // Partner M-Pesa Payout Request
+  app.post('/api/affiliates/payout-request', async (req, res) => {
+    try {
+      const { uid, amountKes, mpesaPhone } = req.body || {};
+      const amount = Math.round(Number(amountKes));
+      if (!uid || !Number.isFinite(amount) || amount < 500) {
+        return res.status(400).json({ error: 'Minimum payout request is KES 500.' });
+      }
+
+      const affiliate = await getFirestoreDoc('affiliates', String(uid));
+      if (!affiliate) {
+        return res.status(404).json({ error: 'Affiliate profile not found.' });
+      }
+
+      const available = Number(affiliate.availableBalanceKes || 0);
+      if (amount > available) {
+        return res.status(400).json({ error: `Requested amount exceeds available balance (KES ${available.toLocaleString()}).` });
+      }
+
+      const nowIso = new Date().toISOString();
+      const payoutId = `PAY-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+      const payoutDoc = {
+        id: payoutId,
+        affiliateId: affiliate.id,
+        affiliateUid: affiliate.uid,
+        affiliateCode: affiliate.code,
+        affiliateName: affiliate.name,
+        mpesaPhone: String(mpesaPhone || affiliate.mpesaPhone || '').trim(),
+        amountKes: amount,
+        status: 'pending',
+        requestedAt: nowIso,
+      };
+
+      const savedPayout = await patchFirestoreDoc('affiliate_payouts', payoutId, payoutDoc);
+      if (!savedPayout) {
+        return res.status(500).json({ error: 'Failed to create payout request.' });
+      }
+
+      await patchFirestoreDoc(
+        'affiliates',
+        affiliate.id,
+        {
+          availableBalanceKes: available - amount,
+          updatedAt: nowIso,
+        },
+        ['availableBalanceKes', 'updatedAt']
+      );
+
+      return res.json({ success: true, payout: payoutDoc, remainingBalanceKes: available - amount });
+    } catch (err: any) {
+      console.error('Error in /api/affiliates/payout-request:', err);
+      return res.status(500).json({ error: err?.message || 'Payout request failed.' });
+    }
+  });
+
+  // Super Admin: Affiliates & Payouts Overview
+  app.get('/api/affiliates/admin/overview', async (_req, res) => {
+    try {
+      const [affiliates, commissions, payouts] = await Promise.all([
+        listFirestoreDocs('affiliates'),
+        listFirestoreDocs('affiliate_commissions'),
+        listFirestoreDocs('affiliate_payouts'),
+      ]);
+
+      return res.json({
+        affiliates: affiliates.sort((a, b) => Number(b.totalEarnedKes || 0) - Number(a.totalEarnedKes || 0)),
+        commissions: commissions.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))),
+        payouts: payouts.sort((a, b) => String(b.requestedAt || '').localeCompare(String(a.requestedAt || ''))),
+      });
+    } catch (err: any) {
+      console.error('Error in /api/affiliates/admin/overview:', err);
+      return res.status(500).json({ error: 'Failed to load admin affiliate overview.' });
+    }
+  });
+
+  // Super Admin: Approve (Mark Paid) or Reject M-Pesa Payout
+  app.post('/api/affiliates/admin/payout-review', async (req, res) => {
+    try {
+      const { payoutId, action, mpesaReceiptNumber, reviewedBy, notes } = req.body || {};
+      if (!payoutId || (action !== 'paid' && action !== 'rejected')) {
+        return res.status(400).json({ error: 'payoutId and valid action (paid | rejected) are required.' });
+      }
+
+      const payout = await getFirestoreDoc('affiliate_payouts', String(payoutId));
+      if (!payout) {
+        return res.status(404).json({ error: 'Payout request not found.' });
+      }
+      if (payout.status !== 'pending') {
+        return res.status(400).json({ error: `Payout is already ${payout.status}.` });
+      }
+
+      const nowIso = new Date().toISOString();
+      const affiliate = await getFirestoreDoc('affiliates', String(payout.affiliateId));
+
+      await patchFirestoreDoc(
+        'affiliate_payouts',
+        String(payoutId),
+        {
+          status: action,
+          mpesaReceiptNumber: action === 'paid' ? String(mpesaReceiptNumber || '').trim() : '',
+          notes: notes ? String(notes).trim() : '',
+          reviewedBy: String(reviewedBy || 'Super Admin'),
+          reviewedAt: nowIso,
+        },
+        ['status', 'mpesaReceiptNumber', 'notes', 'reviewedBy', 'reviewedAt']
+      );
+
+      if (affiliate) {
+        if (action === 'paid') {
+          await patchFirestoreDoc(
+            'affiliates',
+            affiliate.id,
+            {
+              paidOutKes: Number(affiliate.paidOutKes || 0) + Number(payout.amountKes || 0),
+              updatedAt: nowIso,
+            },
+            ['paidOutKes', 'updatedAt']
+          );
+        } else if (action === 'rejected') {
+          await patchFirestoreDoc(
+            'affiliates',
+            affiliate.id,
+            {
+              availableBalanceKes: Number(affiliate.availableBalanceKes || 0) + Number(payout.amountKes || 0),
+              updatedAt: nowIso,
+            },
+            ['availableBalanceKes', 'updatedAt']
+          );
+        }
+      }
+
+      return res.json({ success: true });
+    } catch (err: any) {
+      console.error('Error in /api/affiliates/admin/payout-review:', err);
+      return res.status(500).json({ error: err?.message || 'Failed to review payout.' });
+    }
+  });
+
+  // Super Admin: Update Partner Commission Rate or Status
+  app.post('/api/affiliates/admin/update-rate', async (req, res) => {
+    try {
+      const { affiliateId, commissionRate, status } = req.body || {};
+      if (!affiliateId) {
+        return res.status(400).json({ error: 'affiliateId is required.' });
+      }
+      const updates: Record<string, any> = { updatedAt: new Date().toISOString() };
+      const paths = ['updatedAt'];
+
+      if (typeof commissionRate === 'number' && commissionRate > 0 && commissionRate <= 0.8) {
+        updates.commissionRate = commissionRate;
+        paths.push('commissionRate');
+      }
+      if (status === 'active' || status === 'suspended') {
+        updates.status = status;
+        paths.push('status');
+      }
+
+      const ok = await patchFirestoreDoc('affiliates', String(affiliateId), updates, paths);
+      return res.json({ success: ok });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Failed to update affiliate.' });
+    }
+  });
 
   app.post('/api/payments/webhook', async (req: any, res) => {
     try {
@@ -1375,6 +1830,13 @@ Extract:
             },
             ['status', 'plan', 'subscription']
           );
+
+          await creditAffiliateCommissionOnPayment({
+            paymentReference: ref,
+            businessId,
+            planId: resolvedPlan,
+            amountKes,
+          });
         } else if (flowType === 'pos_sale' && transactionId) {
           await patchFirestoreDoc(
             'transactions',

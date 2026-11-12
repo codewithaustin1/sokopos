@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   Monitor,
   User,
+  Gift,
 } from 'lucide-react';
 import { usePos } from '../../context/PosContext';
 import { scrollToTop } from '../../utils/scrollUtils';
@@ -376,6 +377,15 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
                 <span className="truncate flex-1">Store Settings</span>
               </button>
 
+              <button
+                type="button"
+                onClick={() => handleItemClick(() => posContext?.setIsAffiliateModalOpen(true))}
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-emerald-700 transition-all cursor-pointer group text-sm w-full text-left"
+              >
+                <Gift className="w-5 h-5 text-emerald-600 group-hover:text-emerald-700 transition-colors shrink-0" />
+                <span className="truncate flex-1">Refer &amp; Earn (20%)</span>
+              </button>
+
               {isSuperAdmin && (
                 <button
                   type="button"
@@ -442,6 +452,15 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
               >
                 <CreditCard className="w-5 h-5 text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" />
                 <span className="truncate flex-1">Pricing Plans</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleItemClick(() => posContext?.setIsAffiliateModalOpen(true))}
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-emerald-700 transition-all cursor-pointer group text-sm w-full text-left"
+              >
+                <Gift className="w-5 h-5 text-emerald-600 group-hover:text-emerald-700 transition-colors shrink-0" />
+                <span className="truncate flex-1">Partner Program (20%)</span>
               </button>
 
               <button

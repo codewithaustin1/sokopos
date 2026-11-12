@@ -43,6 +43,7 @@ import { Business, PricingTier } from '../types';
 import { processAndOptimizeImage } from '../utils/imageOptimizer';
 import { SUPER_ADMIN_EMAIL, isSuperAdminEmail } from '../data/initialData';
 import { PricingSlider } from './pricing/PricingSlider';
+import { SuperAdminAffiliatesTab } from './SuperAdminAffiliatesTab';
 import { PackageTierId } from '../types/pricing';
 
 interface SuperAdminDashboardModalProps {
@@ -180,7 +181,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
 
   const isSuperAdminUser = isSuperAdminEmail(currentUser?.email);
 
-  const [activeTab, setActiveTab] = useState<'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding'>(
+  const [activeTab, setActiveTab] = useState<'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding' | 'affiliates'>(
     defaultTab === 'subscriptions' && !isSuperAdminUser ? 'tenants' : (defaultTab || 'tenants')
   );
   const [brandingSubTab, setBrandingSubTab] = useState<'logo' | 'favicon' | 'login-bg'>('logo');
@@ -562,6 +563,21 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Custom Assets Active" />
             )}
           </button>
+
+          {isSuperAdminUser && (
+            <button
+              id="superadmin-tab-affiliates-btn"
+              onClick={() => setActiveTab('affiliates')}
+              className={`py-3 flex items-center gap-1.5 border-b-2 transition cursor-pointer ${
+                activeTab === 'affiliates'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <TrendingUp className="w-4 h-4" />
+              <span>Affiliates & Payouts</span>
+            </button>
+          )}
         </div>
 
         {/* Main Content Area (Scrollable with visible scrollbar) */}
@@ -1760,6 +1776,10 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
           )}
 
           {/* TAB 4: PLATFORM BRANDING & ASSETS (LOGO, FAVICON, LOGIN GRAPHIC) */}
+          {activeTab === 'affiliates' && isSuperAdminUser && (
+            <SuperAdminAffiliatesTab />
+          )}
+
           {activeTab === 'branding' && (
             <div className="space-y-6">
               {/* Asset Sub-Navigation Tabs */}

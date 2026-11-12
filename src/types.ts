@@ -142,6 +142,8 @@ export interface Business {
   securitySettings?: BusinessSecuritySettings;
   rolePermissions?: import('./types/permissions').RolePermissionsMap;
   appointedDemoCashierId?: string; // Appointed cashier profile for public try-demo routing
+  referredByCode?: string; // Affiliate referral code captured on signup
+  referredAt?: string; // ISO timestamp of referral attribution
   subscription?: {
     status?: 'active' | 'expired' | 'trial' | 'grace_period';
     expiresAt?: string;
@@ -689,3 +691,58 @@ export interface AdminActivityEntry {
   afterValue?: unknown;
   isAdministrative: true;
 }
+
+export type AffiliateAccountType = 'owner' | 'public_partner';
+
+export interface AffiliateProfile {
+  id: string;
+  uid: string;
+  email: string;
+  name: string;
+  code: string;
+  accountType: AffiliateAccountType;
+  mpesaPhone: string;
+  commissionRate: number; // e.g. 0.20 for 20%
+  totalEarnedKes: number;
+  availableBalanceKes: number;
+  paidOutKes: number;
+  referralCount: number;
+  activeStoreCount: number;
+  status: 'active' | 'suspended';
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface AffiliateCommission {
+  id: string;
+  affiliateId: string;
+  affiliateUid: string;
+  affiliateCode: string;
+  businessId: string;
+  businessName: string;
+  planId: string;
+  paymentReference: string;
+  grossAmountKes: number;
+  commissionRate: number;
+  commissionAmountKes: number;
+  isRenewal: boolean;
+  status: 'approved' | 'pending' | 'reversed';
+  createdAt: string;
+}
+
+export interface AffiliatePayout {
+  id: string;
+  affiliateId: string;
+  affiliateUid: string;
+  affiliateCode: string;
+  affiliateName: string;
+  mpesaPhone: string;
+  amountKes: number;
+  status: 'pending' | 'paid' | 'rejected';
+  mpesaReceiptNumber?: string;
+  notes?: string;
+  reviewedBy?: string;
+  requestedAt: string;
+  reviewedAt?: string;
+}
+

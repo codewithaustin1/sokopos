@@ -6,6 +6,7 @@ import { scrollToTop } from '../../utils/scrollUtils';
 export interface AppFooterProps {
   onBackToLogin?: () => void;
   onNavigatePricing?: () => void;
+  onNavigatePartners?: () => void;
   onNavigateLegal?: (tab: 'terms' | 'privacy' | 'faq' | 'ownership' | 'compliance') => void;
   activePage?: 'pricing' | 'terms' | 'privacy' | 'faq' | 'ownership' | 'compliance' | 'landing';
   idPrefix?: string;
@@ -17,6 +18,7 @@ export interface AppFooterProps {
 export const AppFooter: React.FC<AppFooterProps> = ({
   onBackToLogin,
   onNavigatePricing,
+  onNavigatePartners,
   onNavigateLegal,
   activePage,
   idPrefix = 'footer',
@@ -24,7 +26,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
   loginBgGraphic: propLoginBgGraphic,
   theme = 'dark',
 }) => {
-  const { loginBgGraphic: contextLoginBgGraphic, language, setLanguage, t } = usePos();
+  const { loginBgGraphic: contextLoginBgGraphic, language, setLanguage, t, setIsAffiliateModalOpen } = usePos();
   const loginBgGraphic = propLoginBgGraphic ?? contextLoginBgGraphic;
 
   const handlePricingClick = () => {
@@ -89,6 +91,23 @@ export const AppFooter: React.FC<AppFooterProps> = ({
             }`}
           >
             {t('footer_pricing', 'Pricing')}
+          </button>
+          <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
+          <button
+            type="button"
+            id={`${idPrefix}-partners-btn`}
+            onClick={() => {
+              if (onNavigatePartners) {
+                onNavigatePartners();
+              } else {
+                setIsAffiliateModalOpen(true);
+              }
+            }}
+            className={`transition cursor-pointer ${
+              isLight ? 'text-[#4c5a6b] hover:text-[#1565d8]' : 'text-[#9FB2A7] hover:text-[#4CC38A]'
+            }`}
+          >
+            {t('footer_partners', 'Partner Program')}
           </button>
           <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
           <button

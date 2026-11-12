@@ -43,6 +43,7 @@ import { isSuperAdminEmail } from './data/initialData';
 import { MobileBentoMenuOverlay } from './components/common/MobileBentoMenuOverlay';
 import { ToastContainer } from './components/common/ToastContainer';
 import { verifyServerPayment } from './lib/paymentService';
+import { AffiliatePortalModal } from './components/AffiliatePortalModal';
 
 function PosAppContent() {
   const {
@@ -82,6 +83,8 @@ function PosAppContent() {
     isPricingPageOpen,
     openPricingPage,
     closePricingPage,
+    isAffiliateModalOpen,
+    setIsAffiliateModalOpen,
     isMobileMenuOpen,
     setIsMobileMenuOpen,
   } = usePos();
@@ -580,8 +583,8 @@ function PosAppContent() {
             } else {
               closePricingPage();
               setTimeout(() => {
-                const regBtn = document.getElementById('auth-register-tab-btn');
-                regBtn?.click();
+                const loginBtn = document.getElementById('auth-owner-tab-btn') || document.getElementById('hero-login-btn');
+                loginBtn?.click();
               }, 120);
             }
           }}
@@ -857,6 +860,11 @@ function PosAppContent() {
           setIsMobileMenuOpen(false);
         }}
         isLoggedIn={true}
+      />
+
+      <AffiliatePortalModal
+        isOpen={isAffiliateModalOpen}
+        onClose={() => setIsAffiliateModalOpen(false)}
       />
     </div>
   );

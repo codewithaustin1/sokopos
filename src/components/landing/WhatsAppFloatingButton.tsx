@@ -229,30 +229,30 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
       {/* Modern In-App Chat Assistant Window */}
       {isOpen && (
         <div
-          className={`mb-3 w-[92vw] max-w-[380px] sm:w-[380px] bg-slate-950/95 backdrop-blur-2xl border border-slate-800 rounded-3xl shadow-2xl shadow-black/90 flex flex-col transition-all duration-300 overflow-hidden text-slate-100 ${
+          className={`mb-3 w-[92vw] max-w-[380px] sm:w-[380px] bg-white/95 backdrop-blur-xl border border-slate-200 rounded-3xl shadow-2xl shadow-slate-900/15 flex flex-col transition-all duration-300 overflow-hidden text-slate-800 ${
             isMinimized ? 'h-16' : 'h-[500px] max-h-[75vh]'
           } animate-in slide-in-from-bottom-4 fade-in duration-200`}
         >
           {/* Header Bar */}
-          <div className="px-4 py-3 bg-gradient-to-r from-slate-900 via-emerald-950/60 to-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0">
+          <div className="px-4 py-3 bg-gradient-to-r from-emerald-50/80 via-white to-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="relative">
-                <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center overflow-hidden text-emerald-400 shadow-inner">
+                <div className="w-9 h-9 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center overflow-hidden text-emerald-600 shadow-xs">
                   <img
                     src="/assets/aistudio/IMG_20261104_091006_253_1f889bfe.jpg"
                     alt="Support Specialist"
                     className="w-full h-full object-cover"
                   />
                 </div>
-                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-slate-950 animate-pulse" />
+                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white animate-pulse" />
               </div>
 
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <h3 className="text-xs font-black text-white truncate">SokoPoS Kenya Support</h3>
+                  <h3 className="text-xs font-black text-slate-900 truncate">SokoPoS Kenya Support</h3>
                 </div>
-                <p className="text-[10px] text-slate-400 flex items-center gap-1">
-                  <ShieldCheck className="w-3 h-3 text-emerald-400 shrink-0" />
+                <p className="text-[10px] text-slate-500 flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3 text-emerald-600 shrink-0" />
                   <span className="truncate">Support</span>
                 </p>
               </div>
@@ -262,7 +262,7 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
               <button
                 type="button"
                 onClick={() => setIsMinimized(!isMinimized)}
-                className="p-1.5 rounded-lg hover:bg-slate-800/80 text-slate-400 hover:text-white transition cursor-pointer"
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition cursor-pointer"
                 title={isMinimized ? 'Expand Chat' : 'Minimize Chat'}
               >
                 <Minimize2 className="w-3.5 h-3.5" />
@@ -271,7 +271,7 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="p-1.5 rounded-lg hover:bg-slate-800/80 text-slate-400 hover:text-white transition cursor-pointer"
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition cursor-pointer"
                 title="Close Assistant"
               >
                 <X className="w-4 h-4" />
@@ -282,15 +282,15 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
           {!isMinimized && (
             <>
               {/* WhatsApp Direct Hand-off Banner */}
-              <div className="bg-emerald-950/40 border-b border-emerald-900/40 px-3.5 py-2 flex items-center justify-between text-[11px]">
-                <div className="flex items-center gap-1.5 text-emerald-300 font-bold">
-                  <WhatsAppLogo className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <div className="bg-emerald-50/90 border-b border-emerald-200/80 px-3.5 py-2 flex items-center justify-between text-[11px]">
+                <div className="flex items-center gap-1.5 text-emerald-800 font-bold">
+                  <WhatsAppLogo className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                   <span>Prefer human chat on WhatsApp?</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => handleOpenWhatsApp()}
-                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-extrabold text-[10px] transition flex items-center gap-1 cursor-pointer shrink-0 shadow-sm"
+                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-extrabold text-[10px] transition flex items-center gap-1 cursor-pointer shrink-0 shadow-xs"
                 >
                   <span>WhatsApp</span>
                   <ExternalLink className="w-3 h-3" />
@@ -298,7 +298,7 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
               </div>
 
               {/* Chat Messages Stream */}
-              <div className="flex-1 overflow-y-auto p-3.5 space-y-3.5 modal-scrollbar">
+              <div className="flex-1 overflow-y-auto p-3.5 space-y-3.5 bg-slate-50/70 modal-scrollbar">
                 {messages.map((msg) => (
                   <div
                     key={msg.id}
@@ -307,7 +307,7 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
                     }`}
                   >
                     {msg.sender === 'bot' && (
-                      <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center overflow-hidden text-emerald-400 text-xs shrink-0 mb-0.5 shadow-sm">
+                      <div className="w-7 h-7 rounded-full bg-white border border-slate-200 flex items-center justify-center overflow-hidden text-emerald-600 text-xs shrink-0 mb-0.5 shadow-xs">
                         <img
                           src="/assets/aistudio/IMG_20261104_091006_253_1f889bfe.jpg"
                           alt="Support"
@@ -317,29 +317,29 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
                     )}
 
                     <div
-                      className={`max-w-[82%] rounded-2xl p-3 text-xs leading-relaxed shadow-md ${
+                      className={`max-w-[82%] rounded-2xl p-3 text-xs leading-relaxed ${
                         msg.sender === 'user'
-                          ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-br-xs'
-                          : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-xs'
+                          ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-br-xs shadow-sm'
+                          : 'bg-white border border-slate-200 text-slate-700 rounded-bl-xs shadow-xs'
                       }`}
                     >
                       <p className="whitespace-pre-wrap font-medium">{msg.text}</p>
 
                       <div
                         className={`mt-1.5 flex items-center justify-between gap-2 text-[9px] font-mono ${
-                          msg.sender === 'user' ? 'text-emerald-200' : 'text-slate-500'
+                          msg.sender === 'user' ? 'text-emerald-100' : 'text-slate-400'
                         }`}
                       >
                         <span>{msg.timestamp}</span>
-                        {msg.sender === 'user' && <CheckCheck className="w-3 h-3 text-emerald-200" />}
+                        {msg.sender === 'user' && <CheckCheck className="w-3 h-3 text-emerald-100" />}
                       </div>
 
                       {msg.sender === 'bot' && msg.whatsappPrompt && (
-                        <div className="mt-2.5 pt-2 border-t border-slate-800 flex justify-end">
+                        <div className="mt-2.5 pt-2 border-t border-slate-100 flex justify-end">
                           <button
                             type="button"
                             onClick={() => handleOpenWhatsApp(msg.whatsappPrompt)}
-                            className="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 transition flex items-center gap-1 cursor-pointer"
+                            className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 transition flex items-center gap-1 cursor-pointer"
                           >
                             <span>Discuss on WhatsApp</span>
                             <ArrowRight className="w-3 h-3" />
@@ -349,7 +349,7 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
                     </div>
 
                     {msg.sender === 'user' && (
-                      <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 text-xs shrink-0 mb-0.5">
+                      <div className="w-7 h-7 rounded-full bg-slate-200 border border-slate-300 flex items-center justify-center text-slate-600 text-xs shrink-0 mb-0.5">
                         <User className="w-4 h-4" />
                       </div>
                     )}
@@ -358,18 +358,18 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
 
                 {/* Simulated AI Typing Indicator */}
                 {isTyping && (
-                  <div className="flex items-center gap-2 text-xs text-slate-400">
-                    <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center overflow-hidden text-emerald-400 shrink-0 shadow-sm">
+                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <div className="w-7 h-7 rounded-full bg-white border border-slate-200 flex items-center justify-center overflow-hidden text-emerald-600 shrink-0 shadow-xs">
                       <img
                         src="/assets/aistudio/IMG_20261104_091006_253_1f889bfe.jpg"
                         alt="Support"
                         className="w-full h-full object-cover"
                       />
                     </div>
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl px-3 py-2 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce [animation-delay:-0.3s]" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce [animation-delay:-0.15s]" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce" />
+                    <div className="bg-white border border-slate-200 rounded-2xl px-3 py-2 flex items-center gap-1 shadow-xs">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-bounce [animation-delay:-0.3s]" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-bounce [animation-delay:-0.15s]" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-bounce" />
                       <span className="text-[10px] font-bold text-slate-500 ml-1.5">Typing...</span>
                     </div>
                   </div>
@@ -379,13 +379,13 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
               </div>
 
               {/* Quick Chip Suggestions */}
-              <div className="px-3 py-2 bg-slate-900/60 border-t border-slate-800/80 overflow-x-auto flex items-center gap-1.5 modal-scrollbar shrink-0">
+              <div className="px-3 py-2 bg-white border-t border-slate-200 overflow-x-auto flex items-center gap-1.5 modal-scrollbar shrink-0">
                 {quickChips.map((chip, idx) => (
                   <button
                     key={idx}
                     type="button"
                     onClick={() => handleSendMessage(chip.query)}
-                    className="px-2.5 py-1 rounded-full bg-slate-800/90 hover:bg-emerald-950/60 border border-slate-700/80 hover:border-emerald-500/50 text-[10px] font-bold text-slate-300 hover:text-emerald-300 transition whitespace-nowrap cursor-pointer shrink-0"
+                    className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 text-[10px] font-bold text-slate-700 hover:text-emerald-700 transition whitespace-nowrap cursor-pointer shrink-0"
                   >
                     {chip.label}
                   </button>
@@ -398,7 +398,7 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
                   e.preventDefault();
                   handleSendMessage();
                 }}
-                className="p-3 bg-slate-900 border-t border-slate-800 flex items-center gap-2 shrink-0"
+                className="p-3 bg-white border-t border-slate-200 flex items-center gap-2 shrink-0"
               >
                 <input
                   ref={chatInputRef}
@@ -406,7 +406,7 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
                   placeholder="Ask about setup, eTIMS, M-Pesa..."
-                  className="flex-1 px-3.5 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:border-transparent transition"
+                  className="flex-1 px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-400 transition"
                 />
 
                 <button

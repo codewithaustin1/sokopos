@@ -30,6 +30,8 @@
         "taxNumber": { "type": "string" },
         "createdAt": { "type": "string" },
         "lastLoginAt": { "type": "string" },
+        "referredByCode": { "type": "string" },
+        "referredAt": { "type": "string" },
         "retailTheme": { "type": "string", "enum": ["classic", "emerald", "amber", "burgundy", "industrial"] },
         "hardwareSettings": {
           "type": "object",
@@ -264,6 +266,71 @@
         "createdAt": { "type": "string" }
       },
       "required": ["id", "businessId", "name", "phone", "paymentTerms", "status"]
+    },
+    "Affiliate": {
+      "title": "Affiliate",
+      "description": "Recurring referral partner profile for store owners and public partners",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "code": { "type": "string" },
+        "accountType": { "type": "string", "enum": ["owner", "public_partner"] },
+        "mpesaPhone": { "type": "string" },
+        "commissionRate": { "type": "number" },
+        "totalEarnedKes": { "type": "number" },
+        "availableBalanceKes": { "type": "number" },
+        "paidOutKes": { "type": "number" },
+        "referralCount": { "type": "number" },
+        "activeStoreCount": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "suspended"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "uid", "email", "name", "code", "accountType", "mpesaPhone", "commissionRate", "status", "createdAt"]
+    },
+    "AffiliateCommission": {
+      "title": "AffiliateCommission",
+      "description": "Immutable recurring commission ledger entry tied to a Paystack subscription payment",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "affiliateId": { "type": "string" },
+        "affiliateUid": { "type": "string" },
+        "affiliateCode": { "type": "string" },
+        "businessId": { "type": "string" },
+        "businessName": { "type": "string" },
+        "planId": { "type": "string" },
+        "paymentReference": { "type": "string" },
+        "grossAmountKes": { "type": "number" },
+        "commissionRate": { "type": "number" },
+        "commissionAmountKes": { "type": "number" },
+        "isRenewal": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["approved", "pending", "reversed"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "affiliateId", "affiliateUid", "businessId", "paymentReference", "grossAmountKes", "commissionAmountKes", "status", "createdAt"]
+    },
+    "AffiliatePayout": {
+      "title": "AffiliatePayout",
+      "description": "Partner M-Pesa withdrawal request and Super Admin approval record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "affiliateId": { "type": "string" },
+        "affiliateUid": { "type": "string" },
+        "affiliateCode": { "type": "string" },
+        "affiliateName": { "type": "string" },
+        "mpesaPhone": { "type": "string" },
+        "amountKes": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "paid", "rejected"] },
+        "mpesaReceiptNumber": { "type": "string" },
+        "reviewedBy": { "type": "string" },
+        "requestedAt": { "type": "string" },
+        "reviewedAt": { "type": "string" }
+      },
+      "required": ["id", "affiliateId", "affiliateUid", "mpesaPhone", "amountKes", "status", "requestedAt"]
     }
   },
   "firestore": {
@@ -318,6 +385,18 @@
     "/platform_settings/{settingId}": {
       "schema": "PlatformSettings",
       "description": "Platform global configuration and custom login screen graphics"
+    },
+    "/affiliates/{affiliateId}": {
+      "schema": "Affiliate",
+      "description": "Affiliate partner profiles and commission balances"
+    },
+    "/affiliate_commissions/{commissionId}": {
+      "schema": "AffiliateCommission",
+      "description": "Recurring affiliate commission ledger entries"
+    },
+    "/affiliate_payouts/{payoutId}": {
+      "schema": "AffiliatePayout",
+      "description": "Affiliate M-Pesa payout requests and Super Admin approvals"
     }
   }
 }

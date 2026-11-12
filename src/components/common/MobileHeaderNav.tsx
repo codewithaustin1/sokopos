@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { MobileSlideDrawer } from './MobileSlideDrawer';
+import { HamburgerCloseBurst } from './HamburgerCloseBurst';
 
 export interface MobileHeaderNavProps {
   onNavigateSection: (sectionId: string) => void;
@@ -46,6 +47,7 @@ export const MobileHeaderNav: React.FC<MobileHeaderNavProps> = ({
           <span className="bar-middle w-full h-0.5 bg-current rounded-full" />
           <span className="bar-bottom w-full h-0.5 bg-current rounded-full" />
         </div>
+        {!isLoggedIn && <HamburgerCloseBurst isOpen={isOpen} />}
       </button>
 
       {/* Accessible Slide-In Drawer Navigation Menu */}

@@ -343,5 +343,46 @@ service cloud.firestore {
         (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
       );
     }
+
+    // Affiliates Collection (Partner profiles - PII and balances protected)
+    match /affiliates/{affiliateId} {
+      allow get: if isSignedIn() && (isSuperAdmin() || resource.data.uid == request.auth.uid);
+      allow list: if isSignedIn() && (isSuperAdmin() || resource.data.uid == request.auth.uid);
+      allow create: if isEmailVerified() && (
+        isSuperAdmin() || (
+          request.resource.data.uid == request.auth.uid &&
+          request.resource.data.totalEarnedKes == 0 &&
+          request.resource.data.availableBalanceKes == 0 &&
+          request.resource.data.paidOutKes == 0
+        )
+      );
+      allow update: if isSuperAdmin() || (
+        isEmailVerified() &&
+        resource.data.uid == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['mpesaPhone', 'name', 'updatedAt'])
+      );
+      allow delete: if isSuperAdmin();
+    }
+
+    // Affiliate Commissions Ledger (Server/SuperAdmin credited only)
+    match /affiliate_commissions/{commissionId} {
+      allow get: if isSignedIn() && (isSuperAdmin() || resource.data.affiliateUid == request.auth.uid);
+      allow list: if isSignedIn() && (isSuperAdmin() || resource.data.affiliateUid == request.auth.uid);
+      allow write: if isSuperAdmin();
+    }
+
+    // Affiliate Payout Requests (Partner creates pending request; SuperAdmin approves/rejects)
+    match /affiliate_payouts/{payoutId} {
+      allow get: if isSignedIn() && (isSuperAdmin() || resource.data.affiliateUid == request.auth.uid);
+      allow list: if isSignedIn() && (isSuperAdmin() || resource.data.affiliateUid == request.auth.uid);
+      allow create: if isEmailVerified() && (
+        isSuperAdmin() || (
+          request.resource.data.affiliateUid == request.auth.uid &&
+          request.resource.data.status == 'pending' &&
+          request.resource.data.amountKes >= 500
+        )
+      );
+      allow update, delete: if isSuperAdmin();
+    }
   }
 }

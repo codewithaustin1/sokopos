@@ -1,5 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useMemo, useRef } from 'react';
 import {
+  captureReferralCodeFromUrl,
+  getCapturedReferralCode,
+  clearCapturedReferralCode,
+} from '../lib/affiliateService';
+import {
   AuthUser,
   Business,
   CartItem,
@@ -207,6 +212,8 @@ interface PosContextType {
   setIsPricingPageOpen: React.Dispatch<React.SetStateAction<boolean>>;
   openPricingPage: () => void;
   closePricingPage: () => void;
+  isAffiliateModalOpen: boolean;
+  setIsAffiliateModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
 
   // Loyalty Program Settings
   loyaltySettings: BusinessLoyaltySettings;
@@ -6935,6 +6942,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       throw new Error(errMsg);
     }
 
+    const capturedRefCode = getCapturedReferralCode();
     const newBusiness: Business = {
       id: newBizId,
       name,
@@ -6946,7 +6954,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       status: 'active',
       currency: 'KES',
       taxNumber: `P0${Math.floor(100000000 + Math.random() * 900000000)}Z`,
+      ...(capturedRefCode ? { referredByCode: capturedRefCode, referredAt: new Date().toISOString() } : {}),
     };
+    if (capturedRefCode) {
+      clearCapturedReferralCode();
+    }
 
     // Default location
     const defaultLocation: Location = {
@@ -7655,6 +7667,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
   // Package Subscription & Activation State
   const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState<boolean>(false);
+  const [isAffiliateModalOpen, setIsAffiliateModalOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    captureReferralCodeFromUrl();
+  }, []);
   const [selectedCheckoutPlan, setSelectedCheckoutPlan] = useState<'free' | 'starter' | 'business' | 'premium'>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -7837,6 +7854,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setIsPricingPageOpen,
         openPricingPage,
         closePricingPage,
+        isAffiliateModalOpen,
+        setIsAffiliateModalOpen,
 
         loyaltySettings,
         updateLoyaltySettings,

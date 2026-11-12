@@ -28,6 +28,7 @@ import { MobileHeaderNav } from './common/MobileHeaderNav';
 import { scrollToTop } from '../utils/scrollUtils';
 import { SUPER_ADMIN_EMAIL } from '../data/initialData';
 import { PWAInstallButton } from './PWAInstallButton';
+import { AffiliatePortalModal } from './AffiliatePortalModal';
 
 // Isolated Animated Counter Subcomponent: Keeps main-thread 60fps by updating the DOM ref directly without React state churn
 const AnimatedMetricCounter: React.FC<{ target?: number; duration?: number }> = React.memo(
@@ -124,6 +125,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     closePricingPage,
     appointedDemoCashier,
     appointedDemoCashierId,
+    isAffiliateModalOpen,
+    setIsAffiliateModalOpen,
   } = usePos();
 
   const [activeTab, setActiveTab] = useState<'owner' | 'staff' | 'register'>('owner');
@@ -765,7 +768,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         onBackToLogin={returnToLogin}
         onSelectPlan={(_planId) => {
           returnToLogin();
-          setTimeout(() => scrollToAuthCard('register'), 100);
+          setTimeout(() => scrollToAuthCard('owner'), 100);
         }}
       />
     );
@@ -1668,6 +1671,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       <AppFooter
         onBackToLogin={() => scrollToTop(true)}
         onNavigatePricing={navigateToPricing}
+        onNavigatePartners={() => setIsAffiliateModalOpen(true)}
         onNavigateLegal={navigateToLegalPage}
         activePage="landing"
         idPrefix="landing-footer"
@@ -2340,6 +2344,16 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         </div>,
         document.body
       )}
+
+      {/* PUBLIC & OWNER AFFILIATE / PARTNER PORTAL */}
+      <AffiliatePortalModal
+        isOpen={isAffiliateModalOpen}
+        onClose={() => setIsAffiliateModalOpen(false)}
+        onRequestAuth={() => {
+          setIsAffiliateModalOpen(false);
+          openAuthModal('owner');
+        }}
+      />
     </div>
   );
 };

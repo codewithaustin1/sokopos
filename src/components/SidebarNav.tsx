@@ -12,6 +12,7 @@ import {
   Truck,
   Settings,
   ShieldAlert,
+  Share2,
 } from 'lucide-react';
 import { AnalyticsIcon } from './icons/AnalyticsIcon';
 import { usePos } from '../context/PosContext';
@@ -33,6 +34,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
     currentUser,
     isSuperAdmin,
     openReturnsModal,
+    setIsAffiliateModalOpen,
     can,
     t,
   } = usePos();
@@ -256,6 +258,21 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
                 />
                 {!isCollapsed && (
                   <span className="flex-1 text-left truncate">{t('nav_settings', 'Store Settings')}</span>
+                )}
+              </button>
+
+              {/* Refer & Earn (Affiliate Partner Portal) */}
+              <button
+                id="sidebar-nav-affiliates"
+                onClick={() => setIsAffiliateModalOpen(true)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer group text-slate-600 hover:text-emerald-800 hover:bg-emerald-50 ${
+                  isCollapsed ? 'justify-center px-2' : ''
+                }`}
+                title="Refer & Earn (20% Recurring)"
+              >
+                <Share2 className="w-4 h-4 shrink-0 text-emerald-600 group-hover:text-emerald-700" />
+                {!isCollapsed && (
+                  <span className="flex-1 text-left truncate">Refer & Earn (20%)</span>
                 )}
               </button>
 

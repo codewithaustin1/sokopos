@@ -188,10 +188,13 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
     if (currentUser) {
       showToast(`Selected ${tier.name} Plan (${billing === 'annual' ? 'Annual' : 'Monthly'}). Opening checkout...`, 'info');
       setIsSubscriptionModalOpen(true);
-    } else if (onSelectPlan) {
-      onSelectPlan(tier.id);
     } else {
-      onBackToLogin();
+      showToast(`Please sign in to subscribe to the ${tier.name} Plan.`, 'info');
+      if (onSelectPlan) {
+        onSelectPlan(tier.id);
+      } else {
+        onBackToLogin();
+      }
     }
   };
 
