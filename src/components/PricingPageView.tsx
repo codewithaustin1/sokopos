@@ -147,6 +147,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
     currentUser,
     loginBgGraphic: contextLoginBgGraphic,
     setIsSubscriptionModalOpen,
+    selectCheckoutPackage,
     showToast,
   } = usePos();
   const loginBgGraphic = propLoginBgGraphic ?? contextLoginBgGraphic;
@@ -170,6 +171,9 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
   };
 
   const handleCtaClick = (tier: TierDefinition) => {
+    const selectedPlan = tier.id as 'free' | 'starter' | 'business' | 'premium';
+    selectCheckoutPackage(selectedPlan, billing);
+
     if (tier.id === 'free') {
       const text = encodeURIComponent(
         'Hello SokoPoS! I would like to register for the Free Account and schedule the 1-on-1 Store Setup & Advisory Consultation (Ksh 1,999).'

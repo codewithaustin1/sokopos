@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Check,
   Zap,
@@ -44,17 +44,25 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
     currentUser,
     isSuperAdmin,
     currentLocation,
+    selectedCheckoutPlan,
+    selectedCheckoutBilling,
+    openPricingPage,
   } = usePos();
 
-  const [selectedPlanId, setSelectedPlanId] = useState<'free' | 'starter' | 'business' | 'premium'>(() => {
-    const curr = currentBusiness?.plan;
-    if (curr === 'starter') return 'starter';
-    if (curr === 'business' || curr === 'professional') return 'business';
-    if (curr === 'premium' || curr === 'enterprise') return 'premium';
-    return 'business';
-  });
+  const [selectedPlanId, setSelectedPlanId] = useState<'free' | 'starter' | 'business' | 'premium'>(
+    selectedCheckoutPlan || 'business'
+  );
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>(
+    selectedCheckoutBilling || 'monthly'
+  );
 
-  const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedPlanId(selectedCheckoutPlan || 'business');
+      setBillingCycle(selectedCheckoutBilling || 'monthly');
+    }
+  }, [isOpen, selectedCheckoutPlan, selectedCheckoutBilling]);
+
   const [paymentChannel, setPaymentChannel] = useState<ClientPaymentChannel>('mpesa_stk');
   const [phoneNumber, setPhoneNumber] = useState(() => currentLocation?.phone || '0740463021');
   const [payerEmail, setPayerEmail] = useState(() => currentUser?.email || currentBusiness?.ownerEmail || '');
@@ -360,103 +368,34 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
               </div>
             </div>
           ) : (
-            <form onSubmit={handleStartPayment} className="space-y-5">
-              {/* Context Notice */}
-              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-2.5">
-                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div className="text-xs leading-relaxed">
-                  <strong>Option 2 Live Sales Safeguard:</strong> SokoPoS allows free store registration and product setup. To prevent orphan entries and tender live cash/M-Pesa customer receipts, choose your store package below.
-                </div>
-              </div>
-
-              {/* Package Tier Selection Cards */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                    Select Your Store Package
-                  </label>
-                  {!isFree && (
-                    <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-[11px]">
-                      <button
-                        type="button"
-                        onClick={() => setBillingCycle('monthly')}
-                        className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer ${
-                          billingCycle === 'monthly' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500'
-                        }`}
-                      >
-                        Monthly (30 Days)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setBillingCycle('annual')}
-                        className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer flex items-center gap-1 ${
-                          billingCycle === 'annual' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500'
-                        }`}
-                      >
-                        <span>Annual (365 Days)</span>
-                        <span className="text-[9px] bg-emerald-100 text-emerald-800 font-black px-1 rounded">Save 17%</span>
-                      </button>
-                    </div>
-                  )}
+            <form onSubmit={handleStartPayment} className="space-y-4">
+              {/* Compact Selected Package Summary (fetched from Pricing Page selection) */}
+              <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-200/80 flex items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700">
+                      Selected Package
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-600 text-white">
+                      {selectedTier.name}
+                    </span>
+                  </div>
+                  <p className="text-xs font-bold text-slate-900">
+                    Ksh {payableAmount.toLocaleString()}{' '}
+                    <span className="text-slate-500 font-medium">({durationLabel})</span>
+                  </p>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {DEFAULT_PRICING_TIERS.map((tier) => {
-                    const isSelected = selectedPlanId === tier.id;
-                    const tierIsFree = tier.id === 'free';
-                    const price = tierIsFree
-                      ? 'Ksh 0/mo'
-                      : billingCycle === 'annual'
-                      ? `Ksh ${tier.annualPrice.toLocaleString()}/yr`
-                      : `Ksh ${tier.monthlyPrice.toLocaleString()}/mo`;
-
-                    return (
-                      <div
-                        key={tier.id}
-                        onClick={() => setSelectedPlanId(tier.id as any)}
-                        className={`p-3.5 rounded-2xl border-2 transition cursor-pointer relative flex flex-col justify-between ${
-                          isSelected
-                            ? 'border-blue-600 bg-blue-50/50 shadow-md ring-2 ring-blue-500/20'
-                            : 'border-slate-200 hover:border-slate-300 bg-white'
-                        }`}
-                      >
-                        {tier.isPopular && (
-                          <span className="absolute -top-2.5 right-3 text-[9px] font-black uppercase tracking-wider bg-indigo-600 text-white px-2 py-0.5 rounded-full shadow-xs">
-                            Recommended
-                          </span>
-                        )}
-                        {tierIsFree && (
-                          <span className="absolute -top-2.5 right-3 text-[9px] font-black uppercase tracking-wider bg-emerald-600 text-white px-2 py-0.5 rounded-full shadow-xs">
-                            Ksh 1,999 Setup
-                          </span>
-                        )}
-
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between">
-                            <span className="font-black text-slate-900 text-sm">{tier.name}</span>
-                            <span className="font-extrabold text-blue-700 text-xs">{price}</span>
-                          </div>
-                          <p className="text-[11px] text-slate-500 leading-snug">{tier.tagline}</p>
-                        </div>
-
-                        <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                          <span className="text-slate-600 font-medium">
-                            {tierIsFree
-                              ? '1 Branch • Up to 250 SKUs'
-                              : `${tier.maxBranches === -1 ? 'Unlimited' : tier.maxBranches} Branches • ${tier.maxStaffUsers === -1 ? 'Unlimited' : tier.maxStaffUsers} Staff`}
-                          </span>
-                          <div
-                            className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
-                              isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300'
-                            }`}
-                          >
-                            {isSelected && <Check className="w-2.5 h-2.5" />}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    openPricingPage();
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-indigo-200 text-indigo-700 font-bold text-[11px] shrink-0 transition cursor-pointer"
+                >
+                  Change Plan
+                </button>
               </div>
 
               {/* Paystack Payment Form (M-Pesa STK Push or Card) */}

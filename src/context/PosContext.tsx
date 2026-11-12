@@ -199,6 +199,9 @@ interface PosContextType {
   isSubscriptionActive: boolean;
   isSubscriptionModalOpen: boolean;
   setIsSubscriptionModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  selectedCheckoutPlan: 'free' | 'starter' | 'business' | 'premium';
+  selectedCheckoutBilling: 'monthly' | 'annual';
+  selectCheckoutPackage: (plan: 'free' | 'starter' | 'business' | 'premium', billing?: 'monthly' | 'annual') => void;
   activateBusinessSubscription: (businessId: string, plan: BusinessPlanTier, voucherCode?: string) => Promise<{ success: boolean; message: string }>;
   isPricingPageOpen: boolean;
   setIsPricingPageOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -7652,6 +7655,53 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
   // Package Subscription & Activation State
   const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState<boolean>(false);
+  const [selectedCheckoutPlan, setSelectedCheckoutPlan] = useState<'free' | 'starter' | 'business' | 'premium'>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = sessionStorage.getItem('sokopos_selected_checkout_pkg');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed?.plan && ['free', 'starter', 'business', 'premium'].includes(parsed.plan)) {
+            return parsed.plan;
+          }
+        }
+      } catch {
+        // ignore storage errors
+      }
+    }
+    return 'business';
+  });
+  const [selectedCheckoutBilling, setSelectedCheckoutBilling] = useState<'monthly' | 'annual'>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = sessionStorage.getItem('sokopos_selected_checkout_pkg');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed?.billing === 'annual' || parsed?.billing === 'monthly') {
+            return parsed.billing;
+          }
+        }
+      } catch {
+        // ignore storage errors
+      }
+    }
+    return 'monthly';
+  });
+
+  const selectCheckoutPackage = useCallback(
+    (plan: 'free' | 'starter' | 'business' | 'premium', billing: 'monthly' | 'annual' = 'monthly') => {
+      setSelectedCheckoutPlan(plan);
+      setSelectedCheckoutBilling(billing);
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem('sokopos_selected_checkout_pkg', JSON.stringify({ plan, billing }));
+        } catch {
+          // ignore storage errors
+        }
+      }
+    },
+    []
+  );
 
   // Dedicated Full-Page Pricing State (Seamless access across logged-in and public views)
   const [isPricingPageOpen, setIsPricingPageOpen] = useState<boolean>(() => {
@@ -7779,6 +7829,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         isSubscriptionActive,
         isSubscriptionModalOpen,
         setIsSubscriptionModalOpen,
+        selectedCheckoutPlan,
+        selectedCheckoutBilling,
+        selectCheckoutPackage,
         activateBusinessSubscription,
         isPricingPageOpen,
         setIsPricingPageOpen,
