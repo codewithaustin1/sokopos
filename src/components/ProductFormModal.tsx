@@ -10,6 +10,7 @@ interface ProductFormModalProps {
   onClose: () => void;
   productToEdit?: Product | null;
   initialAiProduct?: ParsedProductPackage | null;
+  initialDraftProduct?: Partial<Product> | null;
   initialBarcode?: string;
 }
 
@@ -18,6 +19,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   onClose,
   productToEdit,
   initialAiProduct,
+  initialDraftProduct,
   initialBarcode,
 }) => {
   const { categories, locations, suppliers, addProduct, updateProduct, deleteProduct, currentLocation } = usePos();
@@ -52,6 +54,25 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       setAiPopulatedNotice(null);
     } else if (initialAiProduct) {
       applyAiParsedData(initialAiProduct);
+    } else if (initialDraftProduct) {
+      const randNum = Math.floor(1000 + Math.random() * 9000);
+      setName(initialDraftProduct.name ? `${initialDraftProduct.name} (Copy)` : '');
+      setSku(`SKU-${randNum}`);
+      setBarcode(`616${Math.floor(100000000 + Math.random() * 900000000)}`);
+      const defaultCat = categories.find((c) => c !== 'All') || categories[0] || 'All';
+      setCategory(initialDraftProduct.category || defaultCat);
+      setSupplierId(initialDraftProduct.supplierId || '');
+      setBuyingPrice(String(initialDraftProduct.buyingPrice ?? 120));
+      setSellingPrice(String(initialDraftProduct.sellingPrice ?? 150));
+      setUnit(initialDraftProduct.unit || 'packet');
+      setReorderPoint(String(initialDraftProduct.reorderPoint ?? 15));
+      setDescription(initialDraftProduct.description || '');
+      setInitialStocks(
+        initialDraftProduct.stockByLocation
+          ? { ...initialDraftProduct.stockByLocation }
+          : locations.reduce<Record<string, number>>((acc, loc) => ({ ...acc, [loc.id]: 0 }), {})
+      );
+      setAiPopulatedNotice(null);
     } else {
       // Reset for new product
       setName('');
@@ -74,7 +95,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       });
       setInitialStocks(defaultStocks);
     }
-  }, [productToEdit, initialAiProduct, isOpen, categories, locations]);
+  }, [productToEdit, initialAiProduct, initialDraftProduct, initialBarcode, isOpen, categories, locations]);
 
   const applyAiParsedData = (data: ParsedProductPackage) => {
     setName(data.productName);

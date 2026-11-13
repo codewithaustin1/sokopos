@@ -94,6 +94,9 @@ import {
   saveProductToFirestore,
   updateProductInFirestore,
   deleteProductFromFirestore,
+  batchSaveProductsToFirestore,
+  batchUpdateProductsInFirestore,
+  batchDeleteProductsFromFirestore,
   saveCategoryToFirestore,
   updateCategoryInFirestore,
   deleteCategoryFromFirestore,
@@ -189,6 +192,7 @@ interface PosContextType {
   logout: () => boolean;
   provisionBusiness: (name: string, ownerEmail: string, ownerName: string, plan: 'starter' | 'professional' | 'enterprise') => Business;
   updateBusinessProfile: (updates: Partial<Business>) => void;
+  applyBusinessLocalUpdate: (businessId: string, updates: Partial<Business>, syncToFirestore?: boolean) => void;
   updateBusinessStatus: (businessId: string, status: 'active' | 'suspended') => Promise<void>;
   performSystemCleanup: () => Promise<{ removedCount: number; removedBusinesses: string[] }>;
   refreshAllBusinessesForSuperAdmin: (force?: boolean) => Promise<Business[]>;
@@ -197,8 +201,8 @@ interface PosContextType {
   // Business Profile Settings & Branch Management
   isBusinessSettingsOpen: boolean;
   setIsBusinessSettingsOpen: (open: boolean) => void;
-  businessSettingsDefaultTab: 'profile' | 'branches' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset';
-  openBusinessSettings: (initialTab?: 'profile' | 'branches' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset') => void;
+  businessSettingsDefaultTab: 'profile' | 'branches' | 'settlement' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset';
+  openBusinessSettings: (initialTab?: 'profile' | 'branches' | 'settlement' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset') => void;
   updateActiveUserCredentials: (newPin?: string, newUsername?: string) => Promise<boolean>;
 
   // Pricing Architecture & Package Tiers
@@ -329,6 +333,12 @@ interface PosContextType {
   addProduct: (product: Omit<Product, 'id' | 'businessId'> & { id?: string }) => void;
   updateProduct: (id: string, updates: Partial<Product>) => void;
   deleteProduct: (id: string) => void;
+  bulkAddProducts: (items: Array<Omit<Product, 'id' | 'businessId'> & { id?: string }>) => number;
+  bulkUpdateProducts: (
+    items: Array<{ id: string; updates: Partial<Product> }>,
+    summaryLabel?: string
+  ) => void;
+  bulkDeleteProducts: (ids: string[], onSuccess?: () => void) => void;
   adjustStock: (productId: string, locationId: string, newStock: number, reason: string) => void;
   transferStock: (productId: string, fromLocId: string, toLocId: string, quantity: number) => boolean;
   linkProductToSupplier: (productId: string, supplierId: string | null) => Promise<void>;
@@ -2794,6 +2804,140 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           afterValue: null,
         });
         showToast(`Product "${target.name}" deleted`, 'info');
+      },
+    });
+  };
+
+  const bulkAddProducts = (
+    items: Array<Omit<Product, 'id' | 'businessId'> & { id?: string }>
+  ): number => {
+    if (!Array.isArray(items) || items.length === 0) return 0;
+    const now = Date.now();
+    const createdProducts: Product[] = items.map((product, idx) => {
+      const finalCategory = !product.category || !product.category.trim() ? 'All' : product.category.trim();
+      const uniqueId =
+        product.id ||
+        `prod-${now}-${idx}-${Math.random().toString(36).substring(2, 7)}-${Math.floor(100 + Math.random() * 900)}`;
+      return {
+        ...product,
+        category: finalCategory,
+        id: uniqueId,
+        businessId: activeBusinessId,
+        supplierId: product.supplierId ?? null,
+        supplierName: product.supplierName ?? null,
+        isPendingCloudSync: !isOnline,
+      };
+    });
+
+    const createdIds = new Set(createdProducts.map((p) => p.id));
+    setAllProducts((prev) => [...createdProducts, ...prev.filter((p) => !createdIds.has(p.id))]);
+
+    if (isOnline) {
+      batchSaveProductsToFirestore(createdProducts)
+        .then(() => {
+          setAllProducts((prev) =>
+            prev.map((p) => (createdIds.has(p.id) ? { ...p, isPendingCloudSync: false } : p))
+          );
+        })
+        .catch((err) => {
+          console.warn('Firestore bulk product save:', err);
+        });
+    }
+
+    logAdminActivity({
+      category: 'catalog',
+      action: 'bulk_create_products',
+      description: `Imported ${createdProducts.length} catalog products via CSV`,
+      recordType: 'product',
+      recordId: activeBusinessId,
+    });
+    showToast(`Imported ${createdProducts.length} product${createdProducts.length === 1 ? '' : 's'}`, 'success');
+    return createdProducts.length;
+  };
+
+  const bulkUpdateProducts = (
+    items: Array<{ id: string; updates: Partial<Product> }>,
+    summaryLabel?: string
+  ) => {
+    if (!Array.isArray(items) || items.length === 0) return;
+    const updateMap = new Map(items.map((i) => [i.id, i.updates]));
+    setAllProducts((prev) =>
+      prev.map((p) => {
+        const up = updateMap.get(p.id);
+        if (!up) return p;
+        const finalCategory =
+          up.category !== undefined
+            ? !up.category || !up.category.trim()
+              ? 'All'
+              : up.category.trim()
+            : p.category;
+        return {
+          ...p,
+          ...up,
+          category: finalCategory,
+          isPendingCloudSync: !isOnline,
+        };
+      })
+    );
+
+    if (isOnline) {
+      batchUpdateProductsInFirestore(items)
+        .then(() => {
+          setAllProducts((prev) =>
+            prev.map((p) => (updateMap.has(p.id) ? { ...p, isPendingCloudSync: false } : p))
+          );
+        })
+        .catch((err) => {
+          console.warn('Firestore bulk product update:', err);
+        });
+    }
+
+    logAdminActivity({
+      category: 'catalog',
+      action: 'bulk_update_products',
+      description: summaryLabel || `Bulk updated ${items.length} products`,
+      recordType: 'product',
+      recordId: activeBusinessId,
+    });
+    showToast(summaryLabel || `Updated ${items.length} product${items.length === 1 ? '' : 's'}`, 'success');
+  };
+
+  const bulkDeleteProducts = (ids: string[], onSuccess?: () => void) => {
+    const cleanIds = Array.from(new Set(ids.filter(Boolean)));
+    if (cleanIds.length === 0) return;
+    const targets = allProducts.filter((p) => cleanIds.includes(p.id));
+    if (targets.length === 0) return;
+
+    const previewNames = targets
+      .slice(0, 3)
+      .map((t) => t.name)
+      .join(', ');
+    const moreSuffix = targets.length > 3 ? ` +${targets.length - 3} more` : '';
+
+    requestDestructiveAction({
+      title: `Delete ${targets.length} Selected Product${targets.length === 1 ? '' : 's'}`,
+      description: `This will permanently remove ${targets.length} item${targets.length === 1 ? '' : 's'} (${previewNames}${moreSuffix}) from ${currentBusiness.name}'s inventory across all branches.`,
+      warningNote: 'Past sales receipts will retain historical item names, but active inventory tracking will be removed.',
+      recordType: 'product',
+      recordId: cleanIds[0],
+      businessId: currentBusiness.id,
+      onConfirm: () => {
+        const idSet = new Set(cleanIds);
+        setAllProducts((prev) => prev.filter((p) => !idSet.has(p.id)));
+        if (isOnline) {
+          batchDeleteProductsFromFirestore(cleanIds).catch((err) =>
+            console.warn('Firestore bulk product delete:', err)
+          );
+        }
+        logAdminActivity({
+          category: 'catalog',
+          action: 'bulk_delete_products',
+          description: `Bulk deleted ${targets.length} products from catalog`,
+          recordType: 'product',
+          recordId: activeBusinessId,
+        });
+        showToast(`Deleted ${targets.length} product${targets.length === 1 ? '' : 's'}`, 'info');
+        onSuccess?.();
       },
     });
   };
@@ -7317,7 +7461,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Business Profile Settings & Credential Management
   const [isBusinessSettingsOpen, setIsBusinessSettingsOpen] = useState<boolean>(false);
-  const [businessSettingsDefaultTab, setBusinessSettingsDefaultTab] = useState<'profile' | 'branches' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset'>('profile');
+  const [businessSettingsDefaultTab, setBusinessSettingsDefaultTab] = useState<'profile' | 'branches' | 'settlement' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset'>('profile');
 
   // Hardware & Auto-Print Preferences (Browser Print Dialog on Checkout) - Scoped Strictly per Tenant
   const [autoPrintReceipt, setAutoPrintReceiptState] = useState<boolean>(() => {
@@ -7619,13 +7763,29 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
   };
 
-  const openBusinessSettings = (initialTab: 'profile' | 'branches' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset' = 'profile') => {
+  const openBusinessSettings = (initialTab: 'profile' | 'branches' | 'settlement' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset' = 'profile') => {
     if (initialTab === 'pricing') {
       openPricingPage();
       return;
     }
     setBusinessSettingsDefaultTab(initialTab);
     setIsBusinessSettingsOpen(true);
+  };
+
+  const applyBusinessLocalUpdate = (
+    businessId: string,
+    updates: Partial<Business>,
+    syncToFirestore = false
+  ) => {
+    if (!businessId) return;
+    setBusinesses((prev) =>
+      prev.map((b) => (b.id === businessId ? { ...b, ...updates } : b))
+    );
+    if (syncToFirestore && isOnline) {
+      updateBusinessInFirestore(businessId, updates).catch((err) =>
+        console.warn('Firestore business fallback sync:', err)
+      );
+    }
   };
 
   const updateBusinessProfile = (updates: Partial<Business>) => {
@@ -8020,6 +8180,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         logout,
         provisionBusiness,
         updateBusinessProfile,
+        applyBusinessLocalUpdate,
         updateBusinessStatus,
         performSystemCleanup,
         refreshAllBusinessesForSuperAdmin,
@@ -8133,6 +8294,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addProduct,
         updateProduct,
         deleteProduct,
+        bulkAddProducts,
+        bulkUpdateProducts,
+        bulkDeleteProducts,
         adjustStock,
         transferStock,
         linkProductToSupplier,

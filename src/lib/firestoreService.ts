@@ -562,6 +562,51 @@ export async function deleteProductFromFirestore(productId: string): Promise<voi
   }
 }
 
+export async function batchSaveProductsToFirestore(products: Product[]): Promise<void> {
+  if (!db || !auth.currentUser || !Array.isArray(products) || products.length === 0) return;
+  const eligible = products.filter(
+    (p) => p.id && !p.id.startsWith('prod-demo-') && p.businessId !== 'biz-demo'
+  );
+  for (let i = 0; i < eligible.length; i += 400) {
+    const chunk = eligible.slice(i, i + 400);
+    const batch = writeBatch(db);
+    chunk.forEach((product) => {
+      batch.set(doc(db, 'products', product.id), sanitizeForFirestore(product));
+    });
+    await batch.commit();
+  }
+}
+
+export async function batchUpdateProductsInFirestore(
+  items: Array<{ id: string; updates: Partial<Product> }>
+): Promise<void> {
+  if (!db || !auth.currentUser || !Array.isArray(items) || items.length === 0) return;
+  const eligible = items.filter(
+    (item) => item.id && !item.id.startsWith('prod-demo-') && item.updates.businessId !== 'biz-demo'
+  );
+  for (let i = 0; i < eligible.length; i += 400) {
+    const chunk = eligible.slice(i, i + 400);
+    const batch = writeBatch(db);
+    chunk.forEach(({ id, updates }) => {
+      batch.set(doc(db, 'products', id), sanitizeForFirestore(updates), { merge: true });
+    });
+    await batch.commit();
+  }
+}
+
+export async function batchDeleteProductsFromFirestore(productIds: string[]): Promise<void> {
+  if (!db || !auth.currentUser || !Array.isArray(productIds) || productIds.length === 0) return;
+  const eligible = productIds.filter((id) => id && !id.startsWith('prod-demo-'));
+  for (let i = 0; i < eligible.length; i += 400) {
+    const chunk = eligible.slice(i, i + 400);
+    const batch = writeBatch(db);
+    chunk.forEach((id) => {
+      batch.delete(doc(db, 'products', id));
+    });
+    await batch.commit();
+  }
+}
+
 // -------------------------------------------------------------
 // Tenant Categories Firestore API (Unique per Shop)
 // -------------------------------------------------------------

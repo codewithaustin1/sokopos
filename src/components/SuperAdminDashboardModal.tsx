@@ -36,9 +36,11 @@ import {
   Tag,
   Sliders,
   Zap,
+  Landmark,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { AppLogo } from './common/AppLogo';
+import { PaystackSubaccountPanel } from './common/PaystackSubaccountPanel';
 import { Business, PricingTier } from '../types';
 import { processAndOptimizeImage } from '../utils/imageOptimizer';
 import { SUPER_ADMIN_EMAIL, isSuperAdminEmail } from '../data/initialData';
@@ -198,6 +200,10 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
   const [subStatusFilter, setSubStatusFilter] = useState<'all' | 'active' | 'suspended'>('all');
   const [subPlanFilter, setSubPlanFilter] = useState<'all' | 'starter' | 'professional' | 'enterprise'>('all');
   const [togglingBizId, setTogglingBizId] = useState<string | null>(null);
+  const [selectedSubaccountBizId, setSelectedSubaccountBizId] = useState<string | null>(null);
+  const selectedSubaccountBiz = selectedSubaccountBizId
+    ? businesses.find((b) => b.id === selectedSubaccountBizId) || null
+    : null;
 
   useEffect(() => {
     if (isOpen && isSuperAdminUser) {
@@ -694,6 +700,37 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                         <div className="flex items-center justify-between">
                           <span className="text-slate-400">Tenant ID:</span>
                           <span className="font-mono text-[11px] text-slate-400">{biz.id}</span>
+                        </div>
+                        <div className="flex items-center justify-between pt-2 mt-2 border-t border-slate-100">
+                          <div className="text-[11px] text-slate-600 flex items-center gap-1.5 min-w-0">
+                            <Landmark className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            {biz.paystackSubaccountCode?.startsWith('ACCT_') ? (
+                              <span className="truncate">
+                                <span className="font-mono font-bold text-slate-800">{biz.paystackSubaccountCode}</span>
+                                <span className="text-slate-300 mx-1">·</span>
+                                <span
+                                  className={
+                                    biz.paystackSubaccountStatus === 'verified'
+                                      ? 'text-emerald-700 font-semibold'
+                                      : 'text-amber-700 font-semibold'
+                                  }
+                                >
+                                  {biz.paystackSubaccountStatus === 'verified' ? 'Verified' : 'Inactive'}
+                                </span>
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">Paystack settlement not configured</span>
+                            )}
+                          </div>
+                          {biz.id !== 'biz-demo' && (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedSubaccountBizId(biz.id)}
+                              className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 hover:underline shrink-0 cursor-pointer"
+                            >
+                              Manage Subaccount
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -3010,6 +3047,31 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
             </div>
           )}
         </div>
+
+        {selectedSubaccountBiz && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+              <div className="px-5 py-3.5 bg-white border-b border-slate-200 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Paystack Settlement · {selectedSubaccountBiz.name}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-mono">{selectedSubaccountBiz.id}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedSubaccountBizId(null)}
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-5 overflow-y-auto modal-scrollbar">
+                <PaystackSubaccountPanel targetBusiness={selectedSubaccountBiz} />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
   );
 };

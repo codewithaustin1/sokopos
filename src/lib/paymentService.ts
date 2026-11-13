@@ -20,6 +20,7 @@ export interface InitiatePaymentRequest {
 
 export interface InitiatePaymentResponse {
   success: boolean;
+  code?: string;
   provider?: 'paystack' | 'daraja';
   mode?: 'redirect' | 'stk_push';
   reference?: string;
@@ -27,6 +28,42 @@ export interface InitiatePaymentResponse {
   displayText?: string;
   authorizationUrl?: string;
   accessCode?: string;
+  error?: string;
+}
+
+export interface SettlementBankOption {
+  name: string;
+  code: string;
+  type: string;
+  currency: string;
+  active: boolean;
+}
+
+export interface PaystackSettlementInfo {
+  paystackSubaccountCode: string;
+  paystackSettlementBank: string;
+  paystackSettlementAccountMask: string;
+  paystackSubaccountStatus: 'verified' | 'unconfigured' | 'inactive';
+  paystackSubaccountVerifiedAt: string;
+  paystackFeeBearer: 'subaccount';
+}
+
+export interface ManageSubaccountRequest {
+  action: 'verify_existing' | 'create' | 'unlink';
+  businessId: string;
+  subaccountCode?: string;
+  businessName?: string;
+  settlementBankCode?: string;
+  settlementBankName?: string;
+  accountNumber?: string;
+  primaryContactEmail?: string;
+  primaryContactPhone?: string;
+}
+
+export interface ManageSubaccountResponse {
+  success: boolean;
+  persistedToFirestore?: boolean;
+  settlement?: PaystackSettlementInfo;
   error?: string;
 }
 
@@ -62,19 +99,82 @@ export async function getPaymentGatewayConfig(): Promise<PaymentConfigResponse> 
   };
 }
 
+export async function fetchPaystackSettlementBanks(): Promise<{
+  success: boolean;
+  banks: SettlementBankOption[];
+  error?: string;
+}> {
+  try {
+    const resp = await fetch('/api/payments/banks');
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data?.success) {
+      return {
+        success: false,
+        banks: [],
+        error: data?.error || `Failed to load Kenyan settlement banks (${resp.status})`,
+      };
+    }
+    return {
+      success: true,
+      banks: Array.isArray(data.banks) ? data.banks : [],
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      banks: [],
+      error: err?.message || 'Unable to load settlement banks.',
+    };
+  }
+}
+
+export async function manageBusinessPaystackSubaccount(
+  payload: ManageSubaccountRequest,
+  idToken: string
+): Promise<ManageSubaccountResponse> {
+  try {
+    const resp = await fetch('/api/payments/subaccounts', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data?.success) {
+      return {
+        success: false,
+        error: data?.error || `Subaccount update failed (${resp.status})`,
+      };
+    }
+    return data;
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || 'Unable to reach settlement configuration server.',
+    };
+  }
+}
+
 export async function initiateServerPayment(
-  payload: InitiatePaymentRequest
+  payload: InitiatePaymentRequest,
+  idToken?: string
 ): Promise<InitiatePaymentResponse> {
   try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (idToken) {
+      headers.Authorization = `Bearer ${idToken}`;
+    }
     const resp = await fetch('/api/payments/initiate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(payload),
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
       return {
         success: false,
+        code: data?.code,
         error: data?.error || `Payment initiation failed (${resp.status})`,
       };
     }

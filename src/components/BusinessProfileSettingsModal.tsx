@@ -51,6 +51,7 @@ import {
   QrCode,
   Copy,
   Mail,
+  Landmark,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { UserRole, Location, Cashier, RetailTheme, BusinessSecuritySettings } from '../types';
@@ -59,6 +60,7 @@ import { SUPER_ADMIN_EMAIL } from '../data/initialData';
 import { ResetStoreModal } from './ResetStoreModal';
 import { TaxManagementPanel } from './TaxManagementPanel';
 import { LoyaltySettingsPanel } from './LoyaltySettingsPanel';
+import { PaystackSubaccountPanel } from './common/PaystackSubaccountPanel';
 import {
   generateTotpSecret,
   generateOtpAuthUrl,
@@ -67,7 +69,7 @@ import {
 } from '../lib/totpService';
 
 export interface BusinessProfileSettingsViewProps {
-  initialTab?: 'profile' | 'branches' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset';
+  initialTab?: 'profile' | 'branches' | 'settlement' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset';
   onClose?: () => void;
 }
 
@@ -121,7 +123,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
     soundFx,
   } = usePos();
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'branches' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset'>(
+  const [activeTab, setActiveTab] = useState<'profile' | 'branches' | 'settlement' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset'>(
     initialTab || businessSettingsDefaultTab || 'profile'
   );
 
@@ -662,6 +664,27 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
             <span className="ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-700 font-bold">
               {locations.length}
             </span>
+          </button>
+
+          <button
+            id="tab-settlement-btn"
+            onClick={() => setActiveTab('settlement')}
+            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
+              activeTab === 'settlement'
+                ? 'border-blue-600 text-blue-600 bg-white'
+                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
+            }`}
+          >
+            <Landmark className="w-4 h-4" />
+            <span>Paystack Settlement</span>
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                currentBusiness?.paystackSubaccountCode?.startsWith('ACCT_') &&
+                currentBusiness?.paystackSubaccountStatus === 'verified'
+                  ? 'bg-emerald-500'
+                  : 'bg-amber-500'
+              }`}
+            />
           </button>
 
           <button
@@ -2928,6 +2951,15 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                   </span>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* TAB: PAYSTACK SETTLEMENT SUBACCOUNT */}
+          {/* ========================================================= */}
+          {activeTab === 'settlement' && currentBusiness && (
+            <div className="max-w-3xl mx-auto">
+              <PaystackSubaccountPanel targetBusiness={currentBusiness} />
             </div>
           )}
 

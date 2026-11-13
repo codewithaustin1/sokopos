@@ -23,13 +23,15 @@ import {
   Plus,
   Trash2,
   Split,
-  ExternalLink,
   RefreshCw,
+  Landmark,
 } from 'lucide-react';
+import PaystackPop from '@paystack/inline-js';
 import { safeConfetti } from '../utils/confetti';
 import QRCode from 'qrcode';
 import { PaymentMethod, SplitPaymentTender } from '../types';
 import { usePos } from '../context/PosContext';
+import { auth } from '../lib/firebase';
 import { calculatePaymentGuardrails, roundCashHalfUp } from '../utils/cashRounding';
 import { CustomerFacingMpesaQrModal } from './CustomerFacingMpesaQrModal';
 import { CustomerSelectModal } from './CustomerSelectModal';
@@ -62,12 +64,25 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
     soundFx,
     currentUser,
     activeBusinessId,
+    openBusinessSettings,
+    isSuperAdmin,
   } = usePos();
 
   const isDemoMode = Boolean(
     currentUser?.isDemoSession ||
     activeBusinessId === 'biz-demo' ||
     currentBusiness?.id === 'biz-demo'
+  );
+
+  const isPaystackSubaccountVerified = Boolean(
+    currentBusiness?.paystackSubaccountCode?.startsWith('ACCT_') &&
+    currentBusiness?.paystackSubaccountStatus === 'verified'
+  );
+
+  const canConfigureSettlement = Boolean(
+    isSuperAdmin ||
+    currentUser?.role === 'business_owner' ||
+    currentUser?.role === 'manager'
   );
 
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>(initialMethod || 'cash');
@@ -285,7 +300,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
   const [cardNetwork, setCardNetwork] = useState('Visa');
   const [cardCustomerEmail, setCardCustomerEmail] = useState('');
   const [cardGatewayRef, setCardGatewayRef] = useState<string | null>(null);
-  const [cardAuthUrl, setCardAuthUrl] = useState<string | null>(null);
+  const [cardAccessCode, setCardAccessCode] = useState<string | null>(null);
   const [cardGatewayStatus, setCardGatewayStatus] = useState<'idle' | 'pending' | 'verified' | 'failed'>('idle');
   const [cardGatewayError, setCardGatewayError] = useState<string | null>(null);
   const [isInitializingCard, setIsInitializingCard] = useState(false);
@@ -296,6 +311,19 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
   const [gatewayStkStatus, setGatewayStkStatus] = useState<'idle' | 'pending' | 'verified' | 'failed'>('idle');
   const [gatewayStkError, setGatewayStkError] = useState<string | null>(null);
   const [isVerifyingStk, setIsVerifyingStk] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setGatewayStkRef(null);
+      setGatewayStkStatus('idle');
+      setGatewayStkError(null);
+      setMpesaPromptSent(false);
+      setCardGatewayRef(null);
+      setCardAccessCode(null);
+      setCardGatewayStatus('idle');
+      setCardGatewayError(null);
+    }
+  }, [isOpen]);
 
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -312,27 +340,30 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
     );
   }, [cashPayable, roundedUp100, roundedUp500, roundedUp1000]);
 
-  const handleVerifyStkStatus = async (refOverride?: string) => {
-    const ref = refOverride || gatewayStkRef;
-    if (!ref) return;
-    setIsVerifyingStk(true);
-    setGatewayStkError(null);
-    try {
-      const check = await verifyServerPayment(ref);
-      if (check.verified && check.status === 'success') {
-        setGatewayStkStatus('verified');
-        soundFx?.playSuccess?.();
-        showToast(`M-Pesa payment confirmed (${ref})`, 'success');
-      } else if (check.status === 'failed' || check.status === 'abandoned') {
-        setGatewayStkStatus('failed');
-        setGatewayStkError(check.error || check.gatewayResponse || 'M-Pesa payment declined or cancelled.');
-      } else {
-        showToast('Awaiting customer M-Pesa PIN authorization...', 'info');
+  const handleVerifyStkStatus = useCallback(
+    async (refOverride?: string, silent = false) => {
+      const ref = refOverride || gatewayStkRef;
+      if (!ref) return;
+      if (!silent) setIsVerifyingStk(true);
+      if (!silent) setGatewayStkError(null);
+      try {
+        const check = await verifyServerPayment(ref);
+        if (check.verified && check.status === 'success') {
+          setGatewayStkStatus('verified');
+          soundFx?.playSuccess?.();
+          showToast(`M-Pesa payment confirmed (${ref})`, 'success');
+        } else if (check.status === 'failed' || check.status === 'abandoned') {
+          setGatewayStkStatus('failed');
+          setGatewayStkError(check.error || check.gatewayResponse || 'M-Pesa payment declined or cancelled.');
+        } else if (!silent) {
+          showToast('Awaiting customer M-Pesa PIN authorization...', 'info');
+        }
+      } finally {
+        if (!silent) setIsVerifyingStk(false);
       }
-    } finally {
-      setIsVerifyingStk(false);
-    }
-  };
+    },
+    [gatewayStkRef, soundFx, showToast]
+  );
 
   const handleMpesaStkPush = async () => {
     setGatewayStkError(null);
@@ -345,21 +376,33 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
       return;
     }
 
+    if (!isPaystackSubaccountVerified) {
+      setGatewayStkStatus('failed');
+      setGatewayStkError(
+        'Live M-Pesa STK Push requires a verified Paystack subaccount (ACCT_...). Configure it in Business Settings → Paystack Settlement.'
+      );
+      return;
+    }
+
     setIsSendingMpesaPrompt(true);
     setGatewayStkStatus('pending');
     try {
-      const res = await initiateServerPayment({
-        flowType: 'pos_sale',
-        channel: 'mpesa_stk',
-        amountKes: cartTotal,
-        phone: mpesaPhone,
-        email: selectedCustomer?.email || currentUser?.email || `receipts+${currentBusiness?.id || 'pos'}@sokopos.co.ke`,
-        businessId: currentBusiness?.id,
-        metadata: {
-          locationId: currentLocation.id,
-          tillNumber,
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => undefined) : undefined;
+      const res = await initiateServerPayment(
+        {
+          flowType: 'pos_sale',
+          channel: 'mpesa_stk',
+          amountKes: cartTotal,
+          phone: mpesaPhone,
+          email: selectedCustomer?.email || currentUser?.email || `receipts+${currentBusiness?.id || 'pos'}@sokopos.co.ke`,
+          businessId: currentBusiness?.id,
+          metadata: {
+            locationId: currentLocation.id,
+            tillNumber,
+          },
         },
-      });
+        idToken
+      );
 
       if (!res.success || !res.reference) {
         setGatewayStkStatus('failed');
@@ -382,25 +425,83 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
     }
   };
 
+  const handleVerifyCardPayment = useCallback(
+    async (refOverride?: string, silent = false) => {
+      const ref = refOverride || cardGatewayRef;
+      if (!ref) return;
+      if (!silent) setIsVerifyingCard(true);
+      if (!silent) setCardGatewayError(null);
+      try {
+        const check = await verifyServerPayment(ref);
+        if (check.verified && check.status === 'success') {
+          setCardGatewayStatus('verified');
+          soundFx?.playSuccess?.();
+          showToast(`Card payment verified (${ref})`, 'success');
+        } else if (check.status === 'failed' || check.status === 'abandoned') {
+          setCardGatewayStatus('failed');
+          setCardGatewayError(check.error || check.gatewayResponse || 'Card payment was not completed.');
+        } else if (!silent) {
+          showToast('Card checkout is still pending completion.', 'info');
+        }
+      } finally {
+        if (!silent) setIsVerifyingCard(false);
+      }
+    },
+    [cardGatewayRef, soundFx, showToast]
+  );
+
+  const openPaystackPopup = useCallback(
+    (accessCode: string, reference: string) => {
+      try {
+        const popup = new PaystackPop();
+        popup.resumeTransaction(accessCode, {
+          onSuccess: () => {
+            handleVerifyCardPayment(reference);
+          },
+          onCancel: () => {
+            showToast('Card checkout popup closed. Reopen or click Verify if completed.', 'info');
+          },
+          onError: (err: any) => {
+            setCardGatewayError(err?.message || 'Paystack card popup encountered an error.');
+          },
+        });
+      } catch (err: any) {
+        setCardGatewayError(err?.message || 'Unable to launch Paystack Card modal.');
+      }
+    },
+    [handleVerifyCardPayment, showToast]
+  );
+
   const handleInitCardCheckout = async () => {
     setCardGatewayError(null);
+    if (!isPaystackSubaccountVerified) {
+      setCardGatewayStatus('failed');
+      setCardGatewayError(
+        'Live Paystack Card checkout requires a verified Paystack subaccount (ACCT_...). Configure it in Business Settings → Paystack Settlement.'
+      );
+      return;
+    }
     setIsInitializingCard(true);
     try {
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken().catch(() => undefined) : undefined;
       const email =
         cardCustomerEmail.trim() ||
         selectedCustomer?.email ||
         currentUser?.email ||
         `receipts+${currentBusiness?.id || 'pos'}@sokopos.co.ke`;
-      const res = await initiateServerPayment({
-        flowType: 'pos_sale',
-        channel: 'card',
-        amountKes: cartTotal,
-        email,
-        businessId: currentBusiness?.id,
-        metadata: {
-          locationId: currentLocation.id,
+      const res = await initiateServerPayment(
+        {
+          flowType: 'pos_sale',
+          channel: 'card',
+          amountKes: cartTotal,
+          email,
+          businessId: currentBusiness?.id,
+          metadata: {
+            locationId: currentLocation.id,
+          },
         },
-      });
+        idToken
+      );
 
       if (!res.success || !res.reference) {
         setCardGatewayStatus('failed');
@@ -408,33 +509,62 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
         return;
       }
       setCardGatewayRef(res.reference);
-      setCardAuthUrl(res.authorizationUrl || null);
+      setCardAccessCode(res.accessCode || null);
       setCardGatewayStatus('pending');
+
+      if (res.accessCode) {
+        openPaystackPopup(res.accessCode, res.reference);
+      } else {
+        setCardGatewayError('Paystack access code missing. Please verify or retry checkout.');
+      }
     } finally {
       setIsInitializingCard(false);
     }
   };
 
-  const handleVerifyCardPayment = async () => {
-    if (!cardGatewayRef) return;
-    setIsVerifyingCard(true);
-    setCardGatewayError(null);
-    try {
-      const check = await verifyServerPayment(cardGatewayRef);
-      if (check.verified && check.status === 'success') {
-        setCardGatewayStatus('verified');
-        soundFx?.playSuccess?.();
-        showToast(`Card payment verified (${cardGatewayRef})`, 'success');
-      } else if (check.status === 'failed' || check.status === 'abandoned') {
-        setCardGatewayStatus('failed');
-        setCardGatewayError(check.error || check.gatewayResponse || 'Card payment was not completed.');
-      } else {
-        showToast('Card checkout is still pending completion.', 'info');
+  // Automatic verification polling every 3s for active M-Pesa STK Push
+  useEffect(() => {
+    if (!isOpen || isDemoMode || !gatewayStkRef || gatewayStkStatus !== 'pending') return;
+    let attempts = 0;
+    let inFlight = false;
+    const timer = window.setInterval(async () => {
+      if (inFlight) return;
+      attempts += 1;
+      if (attempts > 30) {
+        window.clearInterval(timer);
+        return;
       }
-    } finally {
-      setIsVerifyingCard(false);
-    }
-  };
+      inFlight = true;
+      try {
+        await handleVerifyStkStatus(gatewayStkRef, true);
+      } finally {
+        inFlight = false;
+      }
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [isOpen, isDemoMode, gatewayStkRef, gatewayStkStatus, handleVerifyStkStatus]);
+
+  // Automatic verification polling every 3s for active Paystack Card Checkout
+  useEffect(() => {
+    if (!isOpen || isDemoMode || !cardGatewayRef || cardGatewayStatus !== 'pending') return;
+    let attempts = 0;
+    let inFlight = false;
+    const timer = window.setInterval(async () => {
+      if (inFlight) return;
+      attempts += 1;
+      if (attempts > 30) {
+        window.clearInterval(timer);
+        return;
+      }
+      inFlight = true;
+      try {
+        await handleVerifyCardPayment(cardGatewayRef, true);
+      } finally {
+        inFlight = false;
+      }
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [isOpen, isDemoMode, cardGatewayRef, cardGatewayStatus, handleVerifyCardPayment]);
 
   const handleCompletePayment = useCallback(async () => {
     if (isProcessing) return;
@@ -1196,12 +1326,54 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                         </div>
                       </div>
 
+                      {!isDemoMode && !isPaystackSubaccountVerified && (
+                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2 text-xs text-amber-950">
+                          <div className="flex items-start gap-2">
+                            <Landmark className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                            <div className="space-y-0.5">
+                              <div className="font-bold">Paystack Subaccount Not Verified</div>
+                              <p className="text-[11px] text-amber-800 leading-snug">
+                                Live M-Pesa STK Push is locked until this store links a verified{' '}
+                                <span className="font-mono font-semibold">ACCT_</span> subaccount. You can still use Dynamic QR Scan or Cash.
+                              </p>
+                            </div>
+                          </div>
+                          {canConfigureSettlement && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onClose();
+                                openBusinessSettings('settlement');
+                              }}
+                              className="px-2.5 py-1 rounded-md bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 font-semibold text-[11px] transition cursor-pointer"
+                            >
+                              Configure Settlement
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {!isDemoMode && isPaystackSubaccountVerified && (
+                        <div className="text-[11px] text-slate-600 flex items-center justify-between bg-white border border-slate-200 rounded-lg px-2.5 py-1.5">
+                          <span className="flex items-center gap-1.5">
+                            <Landmark className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>
+                              Settles 100% to{' '}
+                              <strong className="font-mono text-slate-800">{currentBusiness?.paystackSubaccountCode}</strong>
+                            </span>
+                          </span>
+                          <span className="text-slate-400 truncate max-w-[160px]">
+                            {currentBusiness?.paystackSettlementBank}
+                          </span>
+                        </div>
+                      )}
+
                       {!mpesaPromptSent ? (
                         <button
                           type="button"
                           onClick={handleMpesaStkPush}
-                          disabled={isSendingMpesaPrompt}
-                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-lg text-xs shadow-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                          disabled={isSendingMpesaPrompt || (!isDemoMode && !isPaystackSubaccountVerified)}
+                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-lg text-xs shadow-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {isSendingMpesaPrompt ? (
                             <>
@@ -1235,7 +1407,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                                     ? 'Simulated PIN approval ready. Finalize payment below to complete.'
                                     : gatewayStkStatus === 'verified'
                                     ? 'Payment verified by Paystack. Click Complete Sale to print receipt.'
-                                    : `Ref: ${gatewayStkRef || 'Pending'} · Customer enters M-Pesa PIN on phone.`}
+                                    : `Ref: ${gatewayStkRef || 'Pending'} · Auto-verifying every 3s while customer enters PIN.`}
                                 </div>
                               </div>
                             </div>
@@ -1414,6 +1586,41 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                         <span className="text-[10px] font-semibold text-blue-700">Visa · Mastercard</span>
                       </div>
 
+                      {!isPaystackSubaccountVerified ? (
+                        <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg space-y-2 text-xs text-amber-950">
+                          <div className="flex items-start gap-2">
+                            <Landmark className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                            <div className="space-y-0.5">
+                              <div className="font-bold">Paystack Subaccount Not Verified</div>
+                              <p className="text-[11px] text-amber-800 leading-snug">
+                                Live Paystack card checkout is blocked until a verified{' '}
+                                <span className="font-mono font-semibold">ACCT_</span> subaccount is configured for this store.
+                              </p>
+                            </div>
+                          </div>
+                          {canConfigureSettlement && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onClose();
+                                openBusinessSettings('settlement');
+                              }}
+                              className="px-2.5 py-1 rounded-md bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 font-semibold text-[11px] transition cursor-pointer"
+                            >
+                              Configure Settlement
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-[11px] text-slate-600 flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+                          <span>
+                            Settles 100% to{' '}
+                            <strong className="font-mono text-slate-800">{currentBusiness?.paystackSubaccountCode}</strong>
+                          </span>
+                          <span className="text-slate-400">Subaccount pays fees</span>
+                        </div>
+                      )}
+
                       <div>
                         <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                           Customer Email (for Card Receipt)
@@ -1431,8 +1638,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                         <button
                           type="button"
                           onClick={handleInitCardCheckout}
-                          disabled={isInitializingCard}
-                          className="w-full py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                          disabled={isInitializingCard || !isPaystackSubaccountVerified}
+                          className="w-full py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {isInitializingCard ? (
                             <>
@@ -1454,20 +1661,19 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                       ) : (
                         <div className="space-y-2">
                           <div className="flex items-center gap-2">
-                            {cardAuthUrl && (
-                              <a
-                                href={cardAuthUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex-1 py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5"
+                            {cardAccessCode && cardGatewayRef && (
+                              <button
+                                type="button"
+                                onClick={() => openPaystackPopup(cardAccessCode, cardGatewayRef)}
+                                className="flex-1 py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
                               >
-                                <span>Open Checkout</span>
-                                <ExternalLink className="w-3.5 h-3.5" />
-                              </a>
+                                <CreditCard className="w-3.5 h-3.5" />
+                                <span>Reopen Card Popup</span>
+                              </button>
                             )}
                             <button
                               type="button"
-                              onClick={handleVerifyCardPayment}
+                              onClick={() => handleVerifyCardPayment()}
                               disabled={isVerifyingCard}
                               className="flex-1 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
                             >
@@ -1475,6 +1681,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                               <span>{isVerifyingCard ? 'Verifying...' : 'Verify Card Payment'}</span>
                             </button>
                           </div>
+                          <p className="text-[10px] text-slate-500 text-center">
+                            Auto-verifying payment status every 3 seconds · Ref: <span className="font-mono">{cardGatewayRef}</span>
+                          </p>
                         </div>
                       )}
 

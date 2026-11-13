@@ -5,7 +5,13 @@ import { createServer as createViteServer } from 'vite';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { GoogleGenAI, Type } from '@google/genai';
-import { getActivePaymentAdapter, PaymentChannel, PaymentFlowType } from './src/server/paymentAdapter';
+import {
+  getActivePaymentAdapter,
+  PaystackAdapter,
+  PaymentChannel,
+  PaymentFlowType,
+  SettlementBankOption,
+} from './src/server/paymentAdapter';
 
 async function startServer() {
   const app = express();
@@ -243,19 +249,67 @@ Sitemap: ${origin}/sitemap.xml
   // -------------------------------------------------------------
   let firebaseProjectId = process.env.FIREBASE_PROJECT_ID || 'gen-lang-client-0820403611';
   let firestoreDatabaseId = process.env.FIRESTORE_DATABASE_ID || '(default)';
+  let firebaseWebApiKey = process.env.FIREBASE_WEB_API_KEY || '';
   try {
     const fbConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
     if (fs.existsSync(fbConfigPath)) {
       const fbCfg = JSON.parse(fs.readFileSync(fbConfigPath, 'utf-8'));
       if (fbCfg.projectId) firebaseProjectId = fbCfg.projectId;
       if (fbCfg.firestoreDatabaseId) firestoreDatabaseId = fbCfg.firestoreDatabaseId;
+      if (fbCfg.apiKey) firebaseWebApiKey = fbCfg.apiKey;
     }
   } catch (err) {
     console.warn('Could not read firebase-applet-config.json on server:', err);
   }
 
+  const SUPER_ADMIN_EMAIL = 'upfrontretaile@gmail.com';
+
+  async function verifyFirebaseIdToken(
+    idToken: string | undefined
+  ): Promise<{ uid: string; email: string; emailVerified: boolean } | null> {
+    const clean = String(idToken || '').trim();
+    if (!clean || !firebaseWebApiKey) return null;
+    try {
+      const resp = await fetch(
+        `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(firebaseWebApiKey)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken: clean }),
+        }
+      );
+      if (!resp.ok) return null;
+      const data: any = await resp.json().catch(() => null);
+      const user = Array.isArray(data?.users) ? data.users[0] : null;
+      if (!user || !user.localId || !user.email) return null;
+      return {
+        uid: String(user.localId),
+        email: String(user.email).trim().toLowerCase(),
+        emailVerified: Boolean(user.emailVerified),
+      };
+    } catch {
+      return null;
+    }
+  }
+
   let cachedAdcToken: { token: string; expiresAt: number } | null = null;
+  let gcpTokenFirestoreDenied = false;
   let lastFirestoreHydrationAt = 0;
+
+  async function resolveFirestoreCandidateTokens(preferredBearerToken?: string): Promise<string[]> {
+    const tokens: string[] = [];
+    const cleanPreferred = String(preferredBearerToken || '').trim();
+    if (cleanPreferred) {
+      tokens.push(cleanPreferred);
+    }
+    if (!gcpTokenFirestoreDenied) {
+      const gcpToken = await getGcpAccessToken();
+      if (gcpToken && gcpToken !== cleanPreferred) {
+        tokens.push(gcpToken);
+      }
+    }
+    return tokens;
+  }
 
   async function getGcpAccessToken(): Promise<string | null> {
     if (cachedAdcToken && Date.now() < cachedAdcToken.expiresAt - 60_000) {
@@ -349,41 +403,51 @@ Sitemap: ${origin}/sitemap.xml
     return creds;
   }
 
-  async function persistStaffCredentialToFirestore(cred: StoredStaffCredential, fallbackBearerToken?: string): Promise<boolean> {
-    const token = (await getGcpAccessToken()) || fallbackBearerToken;
-    if (!token) return false;
+  async function persistStaffCredentialToFirestore(cred: StoredStaffCredential, preferredBearerToken?: string): Promise<boolean> {
+    const tokens = await resolveFirestoreCandidateTokens(preferredBearerToken);
+    if (tokens.length === 0) return false;
 
-    try {
-      const fields: Record<string, { stringValue: string }> = {
-        cashierId: { stringValue: cred.cashierId },
-        businessId: { stringValue: cred.businessId },
-        hash: { stringValue: cred.hash },
-        role: { stringValue: cred.role || 'cashier' },
-        name: { stringValue: cred.name || 'Staff Member' },
-        updatedAt: { stringValue: cred.updatedAt },
-      };
-      if (cred.code) fields.code = { stringValue: cred.code };
-      if (cred.username) fields.username = { stringValue: cred.username };
+    const fields: Record<string, { stringValue: string }> = {
+      cashierId: { stringValue: cred.cashierId },
+      businessId: { stringValue: cred.businessId },
+      hash: { stringValue: cred.hash },
+      role: { stringValue: cred.role || 'cashier' },
+      name: { stringValue: cred.name || 'Staff Member' },
+      updatedAt: { stringValue: cred.updatedAt },
+    };
+    if (cred.code) fields.code = { stringValue: cred.code };
+    if (cred.username) fields.username = { stringValue: cred.username };
 
-      const docUrl = `${firestoreDocBaseUrl()}/${encodeURIComponent(cred.cashierId)}`;
-      const resp = await fetch(docUrl, {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ fields }),
-      });
-      if (!resp.ok) {
-        const errText = await resp.text().catch(() => '');
-        console.warn('Firestore staff_credentials persist status:', resp.status, errText);
-        return false;
+    const docUrl = `${firestoreDocBaseUrl()}/${encodeURIComponent(cred.cashierId)}`;
+    const cleanPreferred = String(preferredBearerToken || '').trim();
+
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      try {
+        const resp = await fetch(docUrl, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ fields }),
+        });
+        if (resp.ok) return true;
+        if ((resp.status === 401 || resp.status === 403) && token !== cleanPreferred) {
+          gcpTokenFirestoreDenied = true;
+        }
+        const hasNext = i < tokens.length - 1;
+        if (!hasNext) {
+          const errText = await resp.text().catch(() => '');
+          console.warn('Firestore staff_credentials persist status:', resp.status, errText);
+        }
+      } catch (err) {
+        if (i === tokens.length - 1) {
+          console.warn('Firestore staff_credentials persist notice:', err);
+        }
       }
-      return true;
-    } catch (err) {
-      console.warn('Firestore staff_credentials persist notice:', err);
-      return false;
     }
+    return false;
   }
 
   // Non-blocking startup hydration from Firestore
@@ -1069,6 +1133,11 @@ Extract:
   }
 
   const paymentIntents = new Map<string, StoredPaymentIntent>();
+  const verifiedSubaccountCache = new Map<
+    string,
+    { code: string; status: 'verified' | 'unconfigured' | 'inactive'; bank?: string; mask?: string }
+  >();
+  let cachedKenyaBanks: { items: SettlementBankOption[]; fetchedAt: number } | null = null;
 
   app.get('/api/payments/config', (_req, res) => {
     const adapter = getActivePaymentAdapter();
@@ -1077,6 +1146,209 @@ Extract:
       configured: adapter.isConfigured(),
       channels: ['mpesa_stk', 'card'],
     });
+  });
+
+  app.get('/api/payments/banks', async (_req, res) => {
+    try {
+      if (cachedKenyaBanks && Date.now() - cachedKenyaBanks.fetchedAt < 6 * 60 * 60 * 1000) {
+        return res.json({ success: true, banks: cachedKenyaBanks.items });
+      }
+      const paystack = new PaystackAdapter();
+      if (!paystack.isConfigured()) {
+        return res.status(503).json({
+          success: false,
+          banks: [],
+          error: 'PAYSTACK_SECRET_KEY is not configured on the server.',
+        });
+      }
+      const banks = await paystack.listSettlementBanks('kenya');
+      if (banks.length > 0) {
+        cachedKenyaBanks = { items: banks, fetchedAt: Date.now() };
+      }
+      return res.json({ success: true, banks });
+    } catch (err: any) {
+      console.error('Error in /api/payments/banks:', err);
+      return res.status(500).json({ success: false, banks: [], error: err?.message || 'Failed to load settlement banks.' });
+    }
+  });
+
+  app.post('/api/payments/subaccounts', async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+      if (!bearerToken) {
+        return res.status(401).json({
+          success: false,
+          error: 'Sign in with a verified Business Owner or Super Admin Google account to manage Paystack settlement.',
+        });
+      }
+
+      const caller = await verifyFirebaseIdToken(bearerToken);
+      if (!caller || !caller.email) {
+        return res.status(401).json({
+          success: false,
+          error: 'Invalid or expired authentication session. Please refresh and sign in again.',
+        });
+      }
+
+      const {
+        action,
+        businessId,
+        subaccountCode,
+        businessName,
+        settlementBankCode,
+        settlementBankName,
+        accountNumber,
+        primaryContactEmail,
+        primaryContactPhone,
+      } = req.body || {};
+
+      const cleanBusinessId = String(businessId || '').trim();
+      if (!cleanBusinessId) {
+        return res.status(400).json({ success: false, error: 'businessId is required.' });
+      }
+      if (cleanBusinessId === 'biz-demo') {
+        return res.status(400).json({
+          success: false,
+          error: 'Demo sandbox stores cannot be linked to a live Paystack settlement subaccount.',
+        });
+      }
+
+      const bizDoc = await getFirestoreDoc('businesses', cleanBusinessId, bearerToken);
+      const isCallerSuperAdmin = caller.email === SUPER_ADMIN_EMAIL && caller.emailVerified;
+      const isCallerOwner = Boolean(
+        bizDoc?.ownerEmail &&
+          String(bizDoc.ownerEmail).trim().toLowerCase() === caller.email &&
+          caller.emailVerified
+      );
+
+      if (!isCallerSuperAdmin && !isCallerOwner) {
+        return res.status(403).json({
+          success: false,
+          error: 'Only the verified Business Owner or Super Admin can modify Paystack settlement settings.',
+        });
+      }
+
+      const paystack = new PaystackAdapter();
+      if (action !== 'unlink' && !paystack.isConfigured()) {
+        return res.status(503).json({
+          success: false,
+          error: 'PAYSTACK_SECRET_KEY is not configured on the server.',
+        });
+      }
+
+      const nowIso = new Date().toISOString();
+      let settlementFields: {
+        paystackSubaccountCode: string;
+        paystackSettlementBank: string;
+        paystackSettlementAccountMask: string;
+        paystackSubaccountStatus: 'verified' | 'unconfigured' | 'inactive';
+        paystackSubaccountVerifiedAt: string;
+        paystackFeeBearer: 'subaccount';
+      };
+
+      if (action === 'verify_existing') {
+        const cleanCode = String(subaccountCode || '').trim();
+        if (!cleanCode.startsWith('ACCT_')) {
+          return res.status(400).json({
+            success: false,
+            error: 'Paystack subaccount code must start with ACCT_.',
+          });
+        }
+        const details = await paystack.fetchSubaccount(cleanCode);
+        if (!details.found) {
+          return res.status(400).json({
+            success: false,
+            error: details.error || `Subaccount ${cleanCode} could not be verified on Paystack.`,
+          });
+        }
+        const status: 'verified' | 'inactive' = details.active ? 'verified' : 'inactive';
+        settlementFields = {
+          paystackSubaccountCode: details.subaccountCode,
+          paystackSettlementBank: details.settlementBank || 'Paystack Settlement Account',
+          paystackSettlementAccountMask: details.accountNumberMask || '****',
+          paystackSubaccountStatus: status,
+          paystackSubaccountVerifiedAt: nowIso,
+          paystackFeeBearer: 'subaccount',
+        };
+      } else if (action === 'create') {
+        const bankCode = String(settlementBankCode || '').trim();
+        const acctNum = String(accountNumber || '').trim();
+        const resolvedBizName = String(businessName || bizDoc?.name || '').trim();
+        if (!resolvedBizName || !bankCode || !acctNum) {
+          return res.status(400).json({
+            success: false,
+            error: 'Business name, settlement bank/provider, and account number are required.',
+          });
+        }
+        const created = await paystack.createSubaccount({
+          businessName: resolvedBizName,
+          settlementBankCode: bankCode,
+          accountNumber: acctNum,
+          primaryContactEmail: primaryContactEmail || bizDoc?.ownerEmail || caller.email,
+          primaryContactPhone: primaryContactPhone || bizDoc?.phone || undefined,
+          description: `SokoPoS merchant settlement for ${resolvedBizName} (${cleanBusinessId})`,
+        });
+        if (!created.success || !created.subaccountCode) {
+          return res.status(400).json({
+            success: false,
+            error: created.error || 'Failed to create Paystack subaccount.',
+          });
+        }
+        const status: 'verified' | 'inactive' = created.active !== false ? 'verified' : 'inactive';
+        settlementFields = {
+          paystackSubaccountCode: created.subaccountCode,
+          paystackSettlementBank: String(settlementBankName || created.settlementBank || bankCode),
+          paystackSettlementAccountMask: created.accountNumberMask || '****',
+          paystackSubaccountStatus: status,
+          paystackSubaccountVerifiedAt: nowIso,
+          paystackFeeBearer: 'subaccount',
+        };
+      } else if (action === 'unlink') {
+        settlementFields = {
+          paystackSubaccountCode: '',
+          paystackSettlementBank: '',
+          paystackSettlementAccountMask: '',
+          paystackSubaccountStatus: 'unconfigured',
+          paystackSubaccountVerifiedAt: '',
+          paystackFeeBearer: 'subaccount',
+        };
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: 'action must be one of verify_existing, create, or unlink.',
+        });
+      }
+
+      verifiedSubaccountCache.set(cleanBusinessId, {
+        code: settlementFields.paystackSubaccountCode,
+        status: settlementFields.paystackSubaccountStatus,
+        bank: settlementFields.paystackSettlementBank,
+        mask: settlementFields.paystackSettlementAccountMask,
+      });
+
+      const persistedToFirestore = bizDoc
+        ? await patchFirestoreDoc(
+            'businesses',
+            cleanBusinessId,
+            settlementFields,
+            Object.keys(settlementFields),
+            bearerToken
+          )
+        : false;
+
+      return res.json({
+        success: true,
+        persistedToFirestore,
+        settlement: settlementFields,
+      });
+    } catch (err: any) {
+      console.error('Error in /api/payments/subaccounts:', err);
+      return res.status(500).json({
+        success: false,
+        error: err?.message || 'Failed to manage Paystack subaccount.',
+      });
+    }
   });
 
   app.post('/api/payments/initiate', async (req, res) => {
@@ -1099,6 +1371,37 @@ Extract:
 
       const resolvedChannel: PaymentChannel = channel === 'card' ? 'card' : 'mpesa_stk';
       const resolvedFlow: PaymentFlowType = flowType === 'subscription' ? 'subscription' : 'pos_sale';
+
+      // Resolve Paystack subaccount for POS sales (subscriptions settle to main platform account)
+      let posSubaccountCode: string | undefined;
+      if (resolvedFlow === 'pos_sale') {
+        const cleanBizId = String(businessId || '').trim();
+        if (!cleanBizId || cleanBizId === 'biz-demo') {
+          return res.status(403).json({
+            success: false,
+            code: 'SUBACCOUNT_REQUIRED',
+            error: 'Live Paystack checkout is unavailable for sandbox or unassigned stores.',
+          });
+        }
+
+        const authHeader = req.headers.authorization;
+        const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined;
+        const bizDoc = await getFirestoreDoc('businesses', cleanBizId, bearerToken);
+        const cachedSa = verifiedSubaccountCache.get(cleanBizId);
+
+        const resolvedCode = String(bizDoc?.paystackSubaccountCode || cachedSa?.code || '').trim();
+        const resolvedStatus = String(bizDoc?.paystackSubaccountStatus || cachedSa?.status || '').trim();
+
+        if (!resolvedCode || !resolvedCode.startsWith('ACCT_') || resolvedStatus !== 'verified') {
+          return res.status(403).json({
+            success: false,
+            code: 'SUBACCOUNT_REQUIRED',
+            error: 'Paystack subaccount not verified for this store. Link or create an ACCT_ subaccount in Business Settings → Paystack Settlement before accepting live M-Pesa STK or Card payments.',
+          });
+        }
+        posSubaccountCode = resolvedCode;
+      }
+
       const reference = `SOKO-${resolvedFlow === 'subscription' ? 'SUB' : 'POS'}-${Date.now()}-${Math.random()
         .toString(36)
         .slice(2, 7)
@@ -1114,6 +1417,7 @@ Extract:
         channel: resolvedChannel,
         businessId: businessId || 'unknown',
         planId: planId || undefined,
+        ...(posSubaccountCode ? { subaccount: posSubaccountCode } : {}),
       };
 
       const useHostedRedirect =
@@ -1130,6 +1434,7 @@ Extract:
           phone: String(phone),
           email: payerEmail,
           reference,
+          ...(posSubaccountCode ? { subaccount: posSubaccountCode, bearer: 'subaccount' as const } : {}),
           metadata: sharedMeta,
         });
 
@@ -1171,6 +1476,7 @@ Extract:
         reference,
         callbackUrl,
         channels: hostedChannels,
+        ...(posSubaccountCode ? { subaccount: posSubaccountCode, bearer: 'subaccount' as const } : {}),
         metadata: sharedMeta,
       });
 
@@ -1292,39 +1598,56 @@ Extract:
     collection: string,
     docId: string,
     data: Record<string, any>,
-    fieldPaths?: string[]
+    fieldPaths?: string[],
+    preferredBearerToken?: string
   ): Promise<boolean> {
-    const token = await getGcpAccessToken();
-    if (!token || !docId) return false;
+    if (!docId) return false;
+    const tokens = await resolveFirestoreCandidateTokens(preferredBearerToken);
+    if (tokens.length === 0) return false;
 
-    try {
-      const fields: Record<string, any> = {};
-      const paths = fieldPaths || Object.keys(data);
-      for (const [k, v] of Object.entries(data)) {
-        if (v !== undefined) fields[k] = toFirestoreValue(v);
-      }
-
-      const maskQuery = paths.map((p) => `updateMask.fieldPaths=${encodeURIComponent(p)}`).join('&');
-      const url = `${firestoreCollectionUrl(collection)}/${encodeURIComponent(docId)}?${maskQuery}`;
-      const resp = await fetch(url, {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ fields }),
-      });
-
-      if (!resp.ok) {
-        const errText = await resp.text().catch(() => '');
-        console.warn(`Firestore PATCH ${collection}/${docId} failed (${resp.status}):`, errText);
-        return false;
-      }
-      return true;
-    } catch (err) {
-      console.warn(`Firestore PATCH ${collection}/${docId} notice:`, err);
-      return false;
+    const fields: Record<string, any> = {};
+    const paths = fieldPaths || Object.keys(data);
+    for (const [k, v] of Object.entries(data)) {
+      if (v !== undefined) fields[k] = toFirestoreValue(v);
     }
+
+    const maskQuery = paths.map((p) => `updateMask.fieldPaths=${encodeURIComponent(p)}`).join('&');
+    const url = `${firestoreCollectionUrl(collection)}/${encodeURIComponent(docId)}?${maskQuery}`;
+    const cleanPreferred = String(preferredBearerToken || '').trim();
+
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      try {
+        const resp = await fetch(url, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ fields }),
+        });
+
+        if (resp.ok) {
+          return true;
+        }
+
+        if ((resp.status === 401 || resp.status === 403) && token !== cleanPreferred) {
+          gcpTokenFirestoreDenied = true;
+          return false;
+        }
+
+        const hasNext = i < tokens.length - 1;
+        if (!hasNext) {
+          const errText = await resp.text().catch(() => '');
+          console.warn(`Firestore PATCH ${collection}/${docId} failed (${resp.status}):`, errText);
+        }
+      } catch (err) {
+        if (i === tokens.length - 1) {
+          console.warn(`Firestore PATCH ${collection}/${docId} notice:`, err);
+        }
+      }
+    }
+    return false;
   }
 
   function fromFirestoreValue(val: any): any {
@@ -1362,20 +1685,40 @@ Extract:
     return out;
   }
 
-  async function getFirestoreDoc(collection: string, docId: string): Promise<Record<string, any> | null> {
-    const token = await getGcpAccessToken();
-    if (!token || !docId) return null;
-    try {
-      const url = `${firestoreCollectionUrl(collection)}/${encodeURIComponent(docId)}`;
-      const resp = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!resp.ok) return null;
-      const doc = await resp.json();
-      return fromFirestoreDoc(doc);
-    } catch {
-      return null;
+  async function getFirestoreDoc(
+    collection: string,
+    docId: string,
+    preferredBearerToken?: string
+  ): Promise<Record<string, any> | null> {
+    if (!docId) return null;
+    const tokens = await resolveFirestoreCandidateTokens(preferredBearerToken);
+    if (tokens.length === 0) return null;
+
+    const url = `${firestoreCollectionUrl(collection)}/${encodeURIComponent(docId)}`;
+    const cleanPreferred = String(preferredBearerToken || '').trim();
+
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      try {
+        const resp = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (resp.ok) {
+          const doc = await resp.json();
+          return fromFirestoreDoc(doc);
+        }
+        if ((resp.status === 401 || resp.status === 403) && token !== cleanPreferred) {
+          gcpTokenFirestoreDenied = true;
+          return null;
+        }
+        if (resp.status === 404) {
+          return null;
+        }
+      } catch {
+        // try next token
+      }
     }
+    return null;
   }
 
   async function listFirestoreDocs(collection: string, pageSize = 200): Promise<Record<string, any>[]> {

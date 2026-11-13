@@ -24,8 +24,10 @@ service cloud.firestore {
     function isOwnerOf(bizId) {
       return bizId is string &&
              request.auth.token.email_verified == true &&
+             request.auth.token.email is string &&
              exists(/databases/$(database)/documents/businesses/$(bizId)) &&
-             get(/databases/$(database)/documents/businesses/$(bizId)).data.ownerEmail == request.auth.token.email;
+             get(/databases/$(database)/documents/businesses/$(bizId)).data.ownerEmail is string &&
+             get(/databases/$(database)/documents/businesses/$(bizId)).data.ownerEmail.lower() == request.auth.token.email.lower();
     }
 
     function isMemberOf(bizId) {
@@ -78,7 +80,7 @@ service cloud.firestore {
     match /businesses/{businessId} {
       allow get: if isSignedIn() && (
         isSuperAdmin() ||
-        (resource != null && request.auth.token.email_verified == true && resource.data.ownerEmail != null && resource.data.ownerEmail == request.auth.token.email) ||
+        (resource != null && request.auth.token.email_verified == true && request.auth.token.email is string && resource.data.ownerEmail is string && resource.data.ownerEmail.lower() == request.auth.token.email.lower()) ||
         hasTenantAccess(businessId)
       );
       allow list: if isSignedIn() && (
@@ -87,16 +89,26 @@ service cloud.firestore {
       );
       allow create: if isEmailVerified() && (
         isSuperAdmin() ||
-        (request.resource.data.id != 'biz-demo' && request.resource.data.ownerEmail != null && request.resource.data.ownerEmail == request.auth.token.email)
+        (request.resource.data.id != 'biz-demo' && request.auth.token.email is string && request.resource.data.ownerEmail is string && request.resource.data.ownerEmail.lower() == request.auth.token.email.lower())
       );
       allow update: if isEmailVerified() && (
         isSuperAdmin() ||
-        (resource.data.ownerEmail != null && resource.data.ownerEmail == request.auth.token.email) ||
-        hasTenantAccess(businessId)
+        (request.auth.token.email is string && resource.data.ownerEmail is string && resource.data.ownerEmail.lower() == request.auth.token.email.lower()) ||
+        (
+          hasTenantAccess(businessId) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'paystackSubaccountCode',
+            'paystackSettlementBank',
+            'paystackSettlementAccountMask',
+            'paystackSubaccountStatus',
+            'paystackSubaccountVerifiedAt',
+            'paystackFeeBearer'
+          ])
+        )
       );
       allow delete: if isEmailVerified() && (
         isSuperAdmin() ||
-        (resource.data.ownerEmail != null && resource.data.ownerEmail == request.auth.token.email)
+        (request.auth.token.email is string && resource.data.ownerEmail is string && resource.data.ownerEmail.lower() == request.auth.token.email.lower())
       );
     }
 

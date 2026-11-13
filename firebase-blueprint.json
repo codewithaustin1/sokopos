@@ -32,6 +32,12 @@
         "lastLoginAt": { "type": "string" },
         "referredByCode": { "type": "string" },
         "referredAt": { "type": "string" },
+        "paystackSubaccountCode": { "type": "string" },
+        "paystackSettlementBank": { "type": "string" },
+        "paystackSettlementAccountMask": { "type": "string" },
+        "paystackSubaccountStatus": { "type": "string", "enum": ["verified", "unconfigured", "inactive"] },
+        "paystackSubaccountVerifiedAt": { "type": "string" },
+        "paystackFeeBearer": { "type": "string", "enum": ["subaccount"] },
         "retailTheme": { "type": "string", "enum": ["classic", "emerald", "amber", "burgundy", "industrial"] },
         "hardwareSettings": {
           "type": "object",

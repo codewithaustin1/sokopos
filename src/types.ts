@@ -145,6 +145,12 @@ export interface Business {
   appointedDemoCashierId?: string; // Appointed cashier profile for public try-demo routing
   referredByCode?: string; // Affiliate referral code captured on signup
   referredAt?: string; // ISO timestamp of referral attribution
+  paystackSubaccountCode?: string; // Verified Paystack subaccount code (ACCT_...)
+  paystackSettlementBank?: string; // Settlement bank or mobile money provider name
+  paystackSettlementAccountMask?: string; // Masked payout destination (e.g. ****4821)
+  paystackSubaccountStatus?: 'verified' | 'unconfigured' | 'inactive';
+  paystackSubaccountVerifiedAt?: string; // ISO timestamp of last live Paystack verification
+  paystackFeeBearer?: 'subaccount'; // Business subaccount pays Paystack processing fees
   subscription?: {
     status?: 'active' | 'expired' | 'trial' | 'grace_period';
     expiresAt?: string;
