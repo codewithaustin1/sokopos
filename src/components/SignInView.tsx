@@ -263,10 +263,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           try {
             const pendingPartner = JSON.parse(rawPendingPartner);
             sessionStorage.removeItem('sokopos_pending_partner_registration');
-            const uid = auth.currentUser?.uid || res.email || `partner-${Date.now()}`;
+            const verifiedEmail = auth.currentUser?.email || pendingPartner.email;
+            const uid = auth.currentUser?.uid || `partner-${Date.now()}`;
             const enrollRes = await enrollAffiliate({
               uid,
-              email: (res.email || pendingPartner.email).toLowerCase(),
+              email: verifiedEmail.toLowerCase(),
               name: pendingPartner.name || 'Partner',
               mpesaPhone: pendingPartner.phone || '0700000000',
               accountType: 'public_partner',
@@ -595,7 +596,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           return;
         }
         e.preventDefault();
-        soundFx.playBarcodeBeep();
+        soundFx.playBeep(640, 0.04);
         setPinError(null);
         setEnteredPin((prev) => {
           if (prev.length < 4) {
@@ -611,7 +612,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         });
       } else if (e.key === 'Backspace') {
         e.preventDefault();
-        soundFx.playBarcodeBeep();
+        soundFx.playBeep(520, 0.04);
         setEnteredPin((prev) => prev.slice(0, -1));
         setPinError(null);
       } else if (e.key === 'Enter') {
@@ -625,7 +626,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   }, [isAuthModalOpen, activeTab, enteredPin, staffCredentialInput, matchedStaff, isDemoModeActive]);
 
   const handleKeypadPress = (val: string) => {
-    soundFx.playBarcodeBeep();
+    soundFx.playBeep(640, 0.04);
     setPinError(null);
     if (val === 'Clear') {
       setEnteredPin('');
@@ -648,7 +649,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   };
 
   const handleFillDemoPin = () => {
-    soundFx.playBarcodeBeep();
+    soundFx.playBeep(640, 0.04);
     setEnteredPin('1234');
     setPinError(null);
     setIsDemoModeActive(true);
@@ -925,50 +926,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  const handleGooglePartnerSignIn = async () => {
-    setIsAuthenticatingPartner(true);
-    setPartnerAuthError(null);
-    try {
-      const ok = await loginWithFirebaseGoogle();
-      if (ok && auth.currentUser) {
-        const uid = auth.currentUser.uid;
-        const email = auth.currentUser.email || '';
-        const name = auth.currentUser.displayName || email.split('@')[0];
-
-        try {
-          const data = await fetchAffiliateDashboard(uid, email);
-          if (!data.enrolled) {
-            await enrollAffiliate({
-              uid,
-              email,
-              name,
-              mpesaPhone: '0700000000',
-              accountType: 'public_partner',
-            });
-          }
-        } catch {
-          await enrollAffiliate({
-            uid,
-            email,
-            name,
-            mpesaPhone: '0700000000',
-            accountType: 'public_partner',
-          }).catch(() => null);
-        }
-
-        setIsAuthModalOpen(false);
-        setIsAffiliateModalOpen(true);
-        soundFx.playSuccess();
-        showToast(`Welcome ${name}! SokoPoS Partner Portal active.`, 'success');
-      }
-    } catch (err: any) {
-      setPartnerAuthError(err?.message || 'Google Partner authentication failed.');
-      soundFx.playError();
-    } finally {
-      setIsAuthenticatingPartner(false);
-    }
-  };
-
   const handleLaunchDemoSandbox = () => {
     setIsDemoModeActive(true);
     localStorage.setItem('sokopos_demo_intent', 'true');
@@ -985,7 +942,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     setEnteredPin('');
     setPinError(null);
     setIsAuthModalOpen(true);
-    soundFx.playBarcodeBeep();
+    soundFx.playBeep(640, 0.04);
 
     setTimeout(() => {
       pinInputRef.current?.focus();
@@ -2502,42 +2459,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     )}
                   </button>
                 </form>
-
-                {/* Direct Google Sign-In as Partner */}
-                <div className="relative flex items-center justify-center my-3">
-                  <div className="border-t border-[#e2e8f0] w-full" />
-                  <span className="bg-white px-2 text-[11px] font-semibold text-[#8ca0b3] shrink-0 uppercase tracking-wider">
-                    Or continue with
-                  </span>
-                  <div className="border-t border-[#e2e8f0] w-full" />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleGooglePartnerSignIn}
-                  disabled={isAuthenticatingPartner}
-                  className="w-full h-11 bg-white hover:bg-[#f4f7f6] border border-[#d9e1e6] text-[#0e1a2b] font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2.5 shadow-2xs"
-                >
-                  <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-                    <path
-                      fill="#4285F4"
-                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                    />
-                  </svg>
-                  <span>Continue with Google as Partner</span>
-                </button>
               </div>
             )}
 

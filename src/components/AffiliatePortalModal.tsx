@@ -67,10 +67,65 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
   const [payoutPhone, setPayoutPhone] = useState('');
   const [isRequestingPayout, setIsRequestingPayout] = useState(false);
 
+  // Diagnostic Logs state for tracing affiliate profile initialization & currentUser mapping
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [diagnosticLogs, setDiagnosticLogs] = useState<Array<{
+    id: string;
+    timestamp: string;
+    level: 'info' | 'success' | 'warn' | 'error';
+    step: string;
+    details: string;
+    payload?: any;
+  }>>([]);
+
+  const addDiagnosticLog = useCallback((step: string, details: string, level: 'info' | 'success' | 'warn' | 'error' = 'info', payload?: any) => {
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 });
+    setDiagnosticLogs((prev) => [
+      {
+        id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        timestamp: timeStr,
+        level,
+        step,
+        details,
+        payload,
+      },
+      ...prev.slice(0, 49), // Keep last 50 logs
+    ]);
+  }, []);
+
+  // Initialize mapping audit log on open or auth change
+  useEffect(() => {
+    if (isOpen) {
+      addDiagnosticLog(
+        'currentUser_Mapping',
+        'Mapped currentUser & Firebase Auth context for Affiliate Profile initialization',
+        'info',
+        {
+          authUid: auth.currentUser?.uid || null,
+          authEmail: auth.currentUser?.email || null,
+          authEmailVerified: auth.currentUser?.emailVerified ?? null,
+          currentUserId: currentUser?.id || null,
+          currentUserEmail: currentUser?.email || null,
+          currentUserName: currentUser?.name || null,
+          currentUserRole: currentUser?.role || null,
+          currentBusinessId: currentBusiness?.id || null,
+          currentBusinessName: currentBusiness?.name || null,
+          resolvedUid: uid || 'MISSING_UID',
+          resolvedEmail: email || 'MISSING_EMAIL',
+          isOwner,
+        }
+      );
+    }
+  }, [isOpen, currentUser, currentBusiness, uid, email, isOwner, addDiagnosticLog]);
+
   const loadDashboard = useCallback(async () => {
-    if (!uid && !email) return;
+    if (!uid && !email) {
+      addDiagnosticLog('LoadDashboard', 'Missing both UID and Email. Cannot query affiliate dashboard.', 'warn', { uid, email });
+      return;
+    }
     setIsLoading(true);
     setError(null);
+    addDiagnosticLog('FetchDashboard_Start', `Querying affiliate dashboard for uid: "${uid}", email: "${email}"`, 'info');
     try {
       const data = await fetchAffiliateDashboard(uid, email);
       setAffiliate(data.affiliate);
@@ -82,12 +137,20 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
       if (data.affiliate?.availableBalanceKes && data.affiliate.availableBalanceKes >= 500) {
         setPayoutAmount(String(data.affiliate.availableBalanceKes));
       }
+      addDiagnosticLog(
+        'FetchDashboard_Success',
+        data.affiliate ? `Affiliate profile loaded successfully (Code: ${data.affiliate.code})` : 'User is not enrolled as an affiliate yet.',
+        data.affiliate ? 'success' : 'info',
+        data
+      );
     } catch (err: any) {
-      setError(err?.message || 'Unable to load partner dashboard.');
+      const errMsg = err?.message || 'Unable to load partner dashboard.';
+      setError(errMsg);
+      addDiagnosticLog('FetchDashboard_Error', errMsg, 'error', err);
     } finally {
       setIsLoading(false);
     }
-  }, [uid, email]);
+  }, [uid, email, addDiagnosticLog]);
 
   useEffect(() => {
     if (isOpen && (uid || email)) {
@@ -121,17 +184,19 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
   const handleEnroll = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!uid || !email) {
+      addDiagnosticLog('Enroll_Blocked', 'Enrollment attempted with missing UID or Email', 'warn', { uid, email });
       onRequestAuth?.();
       return;
     }
     if (enrollPhone.replace(/\D/g, '').length < 9) {
+      addDiagnosticLog('Enroll_ValidationError', 'Invalid phone number length', 'warn', { enrollPhone });
       setError('Enter a valid Safaricom M-Pesa phone number for commission payouts.');
       return;
     }
 
     setIsEnrolling(true);
     setError(null);
-    const res = await enrollAffiliate({
+    addDiagnosticLog('Enroll_Start', `Submitting affiliate enrollment for uid: "${uid}", email: "${email}"`, 'info', {
       uid,
       email,
       name: enrollName.trim() || email.split('@')[0],
@@ -139,16 +204,35 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
       accountType: isOwner ? 'owner' : 'public_partner',
       preferredCode: preferredCode.trim() || undefined,
     });
-    setIsEnrolling(false);
 
-    if (!res.success || !res.affiliate) {
-      setError(res.error || 'Could not activate partner account.');
-      return;
+    try {
+      const res = await enrollAffiliate({
+        uid,
+        email,
+        name: enrollName.trim() || email.split('@')[0],
+        mpesaPhone: enrollPhone.trim(),
+        accountType: isOwner ? 'owner' : 'public_partner',
+        preferredCode: preferredCode.trim() || undefined,
+      });
+      setIsEnrolling(false);
+
+      if (!res.success || !res.affiliate) {
+        const errStr = res.error || 'Could not activate partner account.';
+        setError(errStr);
+        addDiagnosticLog('Enroll_Error', errStr, 'error', res);
+        return;
+      }
+
+      setAffiliate(res.affiliate);
+      setPayoutPhone(res.affiliate.mpesaPhone);
+      showToast(`Partner code ${res.affiliate.code} activated!`, 'success');
+      addDiagnosticLog('Enroll_Success', `Affiliate profile created/updated successfully with code: ${res.affiliate.code}`, 'success', res.affiliate);
+    } catch (enrollErr: any) {
+      setIsEnrolling(false);
+      const errMsg = enrollErr?.message || 'Enrollment network error.';
+      setError(errMsg);
+      addDiagnosticLog('Enroll_Exception', errMsg, 'error', enrollErr);
     }
-
-    setAffiliate(res.affiliate);
-    setPayoutPhone(res.affiliate.mpesaPhone);
-    showToast(`Partner code ${res.affiliate.code} activated!`, 'success');
   };
 
   const handleRequestPayout = async (e: React.FormEvent) => {
@@ -214,6 +298,20 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowDiagnostics((prev) => !prev)}
+              className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                showDiagnostics
+                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                  : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+              }`}
+              title="Toggle Profile Initialization Diagnostic Logs"
+            >
+              <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+              <span>Diagnostics ({diagnosticLogs.length})</span>
+            </button>
+
             {affiliate && (
               <button
                 type="button"
@@ -238,6 +336,104 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
 
         {/* Body */}
         <div className="p-6 overflow-y-auto flex-1 space-y-6 bg-slate-50/50">
+          {showDiagnostics && (
+            <div className="bg-slate-900 text-slate-100 rounded-xl p-4 border border-amber-500/50 space-y-4 mb-6 shadow-xl">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-400" />
+                  <h3 className="text-xs font-bold tracking-wide uppercase text-amber-300">
+                    Affiliate & currentUser Mapping Diagnostics Tracing
+                  </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDiagnosticLogs([])}
+                    className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-300 transition cursor-pointer"
+                  >
+                    Clear Logs
+                  </button>
+                  <button
+                    type="button"
+                    onClick={loadDashboard}
+                    className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-[11px] text-white transition cursor-pointer font-semibold"
+                  >
+                    Re-test Init
+                  </button>
+                </div>
+              </div>
+
+              {/* Context Mapping Overview Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] bg-slate-950/60 p-3 rounded-lg border border-slate-800 font-mono">
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Auth UID:</span>
+                  <span className="text-emerald-400 truncate block">{auth.currentUser?.uid || 'null'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Current User ID:</span>
+                  <span className="text-blue-400 truncate block">{currentUser?.id || 'null'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Resolved UID:</span>
+                  <span className="text-amber-400 truncate block">{uid || 'MISSING'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Email:</span>
+                  <span className="text-cyan-400 truncate block">{email || 'MISSING'}</span>
+                </div>
+              </div>
+
+              {/* Diagnostic Logs Table */}
+              <div className="max-h-60 overflow-y-auto rounded-lg border border-slate-800 bg-slate-950">
+                {diagnosticLogs.length === 0 ? (
+                  <div className="p-4 text-center text-xs text-slate-500">No diagnostic logs recorded yet.</div>
+                ) : (
+                  <table className="w-full text-left text-[11px] font-mono">
+                    <thead className="bg-slate-900 text-slate-400 sticky top-0 border-b border-slate-800">
+                      <tr>
+                        <th className="py-2 px-3">Time</th>
+                        <th className="py-2 px-3">Level</th>
+                        <th className="py-2 px-3">Step</th>
+                        <th className="py-2 px-3">Details</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {diagnosticLogs.map((log) => (
+                        <tr key={log.id} className="hover:bg-slate-900/50">
+                          <td className="py-2 px-3 text-slate-500 tabular-nums whitespace-nowrap">{log.timestamp}</td>
+                          <td className="py-2 px-3 whitespace-nowrap">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                log.level === 'success'
+                                  ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                                  : log.level === 'error'
+                                  ? 'bg-red-950 text-red-400 border border-red-800'
+                                  : log.level === 'warn'
+                                  ? 'bg-amber-950 text-amber-400 border border-amber-800'
+                                  : 'bg-blue-950 text-blue-400 border border-blue-800'
+                              }`}
+                            >
+                              {log.level}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 font-semibold text-slate-200 whitespace-nowrap">{log.step}</td>
+                          <td className="py-2 px-3 text-slate-300">
+                            <div>{log.details}</div>
+                            {log.payload && (
+                              <pre className="mt-1 text-[10px] text-slate-400 bg-slate-900/80 p-1.5 rounded overflow-x-auto max-h-24">
+                                {JSON.stringify(log.payload, null, 2)}
+                              </pre>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          )}
+
           {!uid ? (
             <div className="bg-white border border-slate-200 rounded-xl p-8 text-center space-y-4 max-w-lg mx-auto">
               <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center mx-auto">

@@ -97,6 +97,10 @@ function PosAppContent() {
     return '/';
   });
 
+  // Path-based routing: Root URL ('/') routes to Landing Page.
+  // POS terminal is accessible at '/pos' or '/app' when authenticated.
+  const isAtLandingPage = currentPath === '/' || !currentUser;
+
   useEffect(() => {
     const handlePopState = () => {
       setCurrentPath(window.location.pathname || '/');
@@ -357,7 +361,8 @@ function PosAppContent() {
       }
       handleBarcodeScanned(barcode);
     },
-    enabled: true,
+    // Only enable background scanner listener when logged into POS terminal (not on public landing/auth page)
+    enabled: Boolean(currentUser) && !isAtLandingPage,
     enableQuickCheckHUD: true,
     products,
     onUnrecognizedBarcode: (barcode) => {
@@ -608,10 +613,6 @@ function PosAppContent() {
       </div>
     );
   }
-
-  // Path-based routing: Root URL ('/') routes to Landing Page.
-  // POS terminal is accessible at '/pos' or '/app' when authenticated.
-  const isAtLandingPage = currentPath === '/' || !currentUser;
 
   if (isAtLandingPage) {
     return (
