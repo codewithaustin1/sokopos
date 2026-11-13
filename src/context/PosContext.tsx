@@ -588,7 +588,7 @@ const STORAGE_KEYS = {
   RETAIL_THEME: 'sokopos_retail_theme_v2',
   CUSTOMERS: 'sokopos_customers_v1',
   SUPPLIERS: 'sokopos_suppliers_v1',
-  PRICING_TIERS: 'sokopos_pricing_tiers_v2',
+  PRICING_TIERS: 'sokopos_pricing_tiers_v3',
   APPOINTED_DEMO_CASHIER_ID: 'sokopos_appointed_demo_cashier_id_v1',
   IS_DEMO_SESSION: 'sokopos_is_demo_session_v1',
   getTenantAutoPrintKey: (bizId: string) => `sokopos_auto_print_receipt_${bizId || 'default'}_v2`,

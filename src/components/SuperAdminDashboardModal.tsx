@@ -835,7 +835,8 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                     KES{' '}
                     {businesses
                       .reduce((sum, b) => {
-                        const fee = b.plan === 'enterprise' ? 12000 : b.plan === 'professional' ? 5500 : 2500;
+                        if (b.status === 'suspended') return sum;
+                        const fee = b.plan === 'premium' || b.plan === 'enterprise' ? 2999 : b.plan === 'business' || b.plan === 'professional' ? 1299 : b.plan === 'starter' ? 599 : 0;
                         return sum + fee;
                       }, 0)
                       .toLocaleString()}
@@ -1162,7 +1163,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                   <button
                     type="button"
                     onClick={() => {
-                      if (window.confirm('Reset all package pricing and feature sets to the canonical architecture: STARTER (KES 399/mo), BUSINESS (KES 899/mo - Best Value), PREMIUM (KES 1,499/mo)?')) {
+                      if (window.confirm('Reset all package pricing and feature sets to the canonical architecture: STARTER (KES 599/mo), BUSINESS (KES 1,299/mo - Best Value), PREMIUM (KES 2,999/mo)?')) {
                         resetPricingTiersToDefault();
                       }
                     }}
@@ -1242,10 +1243,10 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                       {businesses
                         .reduce((acc, b) => {
                           if (b.status === 'suspended') return acc;
-                          if (b.plan === 'starter') return acc + 399;
-                          if (b.plan === 'business' || b.plan === 'professional') return acc + 899;
-                          if (b.plan === 'premium' || b.plan === 'enterprise') return acc + 1499;
-                          return acc + 399;
+                          if (b.plan === 'starter') return acc + 599;
+                          if (b.plan === 'business' || b.plan === 'professional') return acc + 1299;
+                          if (b.plan === 'premium' || b.plan === 'enterprise') return acc + 2999;
+                          return acc + 599;
                         }, 0)
                         .toLocaleString()}
                     </div>
