@@ -338,6 +338,54 @@
         "reviewedAt": { "type": "string" }
       },
       "required": ["id", "affiliateId", "affiliateUid", "mpesaPhone", "amountKes", "status", "requestedAt"]
+    },
+    "PlatformTrafficDaily": {
+      "title": "PlatformTrafficDaily",
+      "description": "Daily aggregated platform-wide traffic, funnel, UTM attribution, active store, and checkout conversion metrics",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "maxLength": 16 },
+        "dateKey": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "maxLength": 16 },
+        "pageViews": { "type": "number" },
+        "uniqueSessions": { "type": "number" },
+        "botHitsBlocked": { "type": "number" },
+        "landingViews": { "type": "number" },
+        "pricingViews": { "type": "number" },
+        "demoStarts": { "type": "number" },
+        "signInStarts": { "type": "number" },
+        "signUpsCompleted": { "type": "number" },
+        "posSessions": { "type": "number" },
+        "posCheckouts": { "type": "number" },
+        "posGmvKes": { "type": "number" },
+        "subscriptionModalOpens": { "type": "number" },
+        "subscriptionCheckouts": { "type": "number" },
+        "subscriptionActivations": { "type": "number" },
+        "subscriptionRevenueKes": { "type": "number" },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "dateKey", "pageViews", "uniqueSessions", "updatedAt"]
+    },
+    "PlatformTrafficEvent": {
+      "title": "PlatformTrafficEvent",
+      "description": "Bounded non-PII milestone traffic and conversion event for Super Admin observability",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "dateKey": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "maxLength": 16 },
+        "timestamp": { "type": "string", "maxLength": 64 },
+        "eventType": { "type": "string", "maxLength": 64 },
+        "sessionId": { "type": "string", "maxLength": 96 },
+        "businessId": { "type": "string", "maxLength": 128 },
+        "businessName": { "type": "string", "maxLength": 160 },
+        "utmSource": { "type": "string", "maxLength": 120 },
+        "utmCampaign": { "type": "string", "maxLength": 120 },
+        "referrerHost": { "type": "string", "maxLength": 160 },
+        "deviceType": { "type": "string", "enum": ["mobile", "tablet", "desktop"] },
+        "channel": { "type": "string", "maxLength": 64 },
+        "planId": { "type": "string", "maxLength": 64 },
+        "amountKes": { "type": "number" }
+      },
+      "required": ["id", "dateKey", "timestamp", "eventType", "sessionId", "deviceType"]
     }
   },
   "firestore": {
@@ -404,6 +452,14 @@
     "/affiliate_payouts/{payoutId}": {
       "schema": "AffiliatePayout",
       "description": "Affiliate M-Pesa payout requests and Super Admin approvals"
+    },
+    "/platform_traffic_daily/{dateKey}": {
+      "schema": "PlatformTrafficDaily",
+      "description": "Daily rolled-up platform traffic, funnel, and conversion analytics readable strictly by Super Admin"
+    },
+    "/platform_traffic_events/{eventId}": {
+      "schema": "PlatformTrafficEvent",
+      "description": "Bounded non-PII milestone conversion events readable strictly by Super Admin"
     }
   }
 }

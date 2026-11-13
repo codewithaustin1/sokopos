@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Monitor,
   ArrowRight,
@@ -10,6 +10,7 @@ import { MobileHeaderNav } from './common/MobileHeaderNav';
 import { WhatsAppFloatingButton } from './landing/WhatsAppFloatingButton';
 import { usePos } from '../context/PosContext';
 import { scrollToTop } from '../utils/scrollUtils';
+import { trackPlatformEvent } from '../lib/telemetryService';
 
 interface PricingPageViewProps {
   onBackToLogin: () => void;
@@ -158,6 +159,15 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
   const [statusMessage, setStatusMessage] = useState<string>('');
 
   const savePercentage = Math.round((1 - TIERS[1].a / (TIERS[1].m * 12)) * 100);
+
+  useEffect(() => {
+    trackPlatformEvent('pricing_view', {
+      path: '/pricing',
+      pageName: 'pricing',
+      dedupeKey: 'pricing-view',
+      dedupeTtlMs: 30_000,
+    });
+  }, []);
 
   const handleBranchSelect = (n: number) => {
     setSelectedBranches(n);

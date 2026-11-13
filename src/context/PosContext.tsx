@@ -4,6 +4,7 @@ import {
   getCapturedReferralCode,
   clearCapturedReferralCode,
 } from '../lib/affiliateService';
+import { trackPlatformEvent } from '../lib/telemetryService';
 import {
   AuthUser,
   Business,
@@ -4752,6 +4753,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       );
     }
 
+    trackPlatformEvent('pos_checkout', {
+      businessId: activeBusinessId,
+      businessName: currentBusiness?.name,
+      isDemo: activeBusinessId === 'biz-demo',
+      channel: paymentMethod,
+      amountKes: newTx.total,
+    });
+
     // Update Customer Profile, Loyalty Points & Credit Ledger
     if (customer) {
       const updatedLedger = [...(customer.ledger || [])];
@@ -6363,6 +6372,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           'success'
         );
       } else {
+        if (!isSuperAdminEmail) {
+          trackPlatformEvent('signup_complete', {
+            businessId: matchedBiz.id,
+            businessName: matchedBiz.name,
+            planId: matchedBiz.plan,
+            dedupeKey: `signup-${matchedBiz.id}`,
+            dedupeTtlMs: 3600_000,
+          });
+        }
         showToast(
           `Welcome to SokoPoS! Your shop "${matchedBiz.name}" has been created.`,
           'success'
@@ -6536,6 +6554,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           'success'
         );
       } else {
+        if (!isSuperAdminEmail) {
+          trackPlatformEvent('signup_complete', {
+            businessId: matchedBiz.id,
+            businessName: matchedBiz.name,
+            planId: matchedBiz.plan,
+            dedupeKey: `signup-${matchedBiz.id}`,
+            dedupeTtlMs: 3600_000,
+          });
+        }
         showToast(
           `Welcome to SokoPoS! Shop "${matchedBiz.name}" is ready.`,
           'success'
@@ -8145,10 +8172,18 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         subscription: nextSubscription,
       });
 
+      trackPlatformEvent('subscription_activated', {
+        businessId: targetId,
+        businessName: currentBusiness?.name,
+        planId: plan,
+        dedupeKey: `sub-act-${targetId}`,
+        dedupeTtlMs: 600_000,
+      });
+
       showToast(`Package "${plan.toUpperCase()}" successfully activated!`, 'success');
       return { success: true, message: `SIM-MPESA-${Math.floor(100000 + Math.random() * 900000)}` };
     },
-    [currentBusiness?.id, updateBusinessProfile, showToast]
+    [currentBusiness?.id, currentBusiness?.name, updateBusinessProfile, showToast]
   );
 
   return (

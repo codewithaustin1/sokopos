@@ -446,5 +446,54 @@ service cloud.firestore {
       );
       allow update, delete: if isSuperAdmin();
     }
+
+    // Platform Traffic Daily Rollups (Super-Admin-only read/write oversight)
+    function isValidDateKey(dateKey) {
+      return dateKey is string &&
+             dateKey.size() == 10 &&
+             dateKey.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    function isValidTrafficDaily(data) {
+      return data.keys().hasAll(['id', 'dateKey', 'pageViews', 'uniqueSessions', 'updatedAt']) &&
+             data.id is string &&
+             data.id.size() <= 16 &&
+             isValidDateKey(data.dateKey) &&
+             data.pageViews is number && data.pageViews >= 0 &&
+             data.uniqueSessions is number && data.uniqueSessions >= 0 &&
+             data.updatedAt is string && data.updatedAt.size() <= 64;
+    }
+
+    match /platform_traffic_daily/{dateKey} {
+      allow get: if isSuperAdmin() && isValidDateKey(dateKey);
+      allow list: if isSuperAdmin();
+      allow create, update: if isSuperAdmin() && isValidDateKey(dateKey) && isValidTrafficDaily(request.resource.data);
+      allow delete: if isSuperAdmin() && isValidDateKey(dateKey);
+    }
+
+    // Platform Traffic Milestone Events (Super-Admin-only read/write oversight)
+    function isValidTrafficEventId(eventId) {
+      return eventId is string &&
+             eventId.size() > 0 &&
+             eventId.size() <= 128 &&
+             eventId.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidTrafficEvent(data) {
+      return data.keys().hasAll(['id', 'dateKey', 'timestamp', 'eventType', 'sessionId', 'deviceType']) &&
+             isValidTrafficEventId(data.id) &&
+             isValidDateKey(data.dateKey) &&
+             data.timestamp is string && data.timestamp.size() <= 64 &&
+             data.eventType is string && data.eventType.size() <= 64 &&
+             data.sessionId is string && data.sessionId.size() <= 96 &&
+             data.deviceType in ['mobile', 'tablet', 'desktop'];
+    }
+
+    match /platform_traffic_events/{eventId} {
+      allow get: if isSuperAdmin() && isValidTrafficEventId(eventId);
+      allow list: if isSuperAdmin();
+      allow create, update: if isSuperAdmin() && isValidTrafficEventId(eventId) && isValidTrafficEvent(request.resource.data);
+      allow delete: if isSuperAdmin() && isValidTrafficEventId(eventId);
+    }
   }
 }

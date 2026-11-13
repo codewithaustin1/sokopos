@@ -25,6 +25,7 @@ import {
   verifyServerPayment,
   ClientPaymentChannel,
 } from '../lib/paymentService';
+import { trackPlatformEvent } from '../lib/telemetryService';
 
 interface SubscriptionActivationModalProps {
   isOpen: boolean;
@@ -60,8 +61,15 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
     if (isOpen) {
       setSelectedPlanId(selectedCheckoutPlan || 'business');
       setBillingCycle(selectedCheckoutBilling || 'monthly');
+      trackPlatformEvent('subscription_modal_open', {
+        businessId: currentBusiness?.id,
+        businessName: currentBusiness?.name,
+        planId: selectedCheckoutPlan || 'business',
+        dedupeKey: `sub-modal-${currentBusiness?.id || 'anon'}`,
+        dedupeTtlMs: 30_000,
+      });
     }
-  }, [isOpen, selectedCheckoutPlan, selectedCheckoutBilling]);
+  }, [isOpen, selectedCheckoutPlan, selectedCheckoutBilling, currentBusiness?.id, currentBusiness?.name]);
 
   const [paymentChannel, setPaymentChannel] = useState<ClientPaymentChannel>('mpesa_stk');
   const [phoneNumber, setPhoneNumber] = useState(() => currentLocation?.phone || '0740463021');
@@ -170,6 +178,16 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
         ? `Sending M-Pesa STK Push to ${phoneNumber}...`
         : 'Initializing secure Paystack Card checkout...'
     );
+
+    trackPlatformEvent('subscription_checkout_start', {
+      businessId: currentBusiness?.id,
+      businessName: currentBusiness?.name,
+      planId: selectedPlanId,
+      channel: paymentChannel,
+      amountKes: payableAmount,
+      dedupeKey: `sub-checkout-${currentBusiness?.id || 'anon'}-${selectedPlanId}`,
+      dedupeTtlMs: 10_000,
+    });
 
     try {
       const initRes = await initiateServerPayment({

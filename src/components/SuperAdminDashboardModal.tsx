@@ -37,6 +37,7 @@ import {
   Sliders,
   Zap,
   Landmark,
+  Activity,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { AppLogo } from './common/AppLogo';
@@ -46,12 +47,13 @@ import { processAndOptimizeImage } from '../utils/imageOptimizer';
 import { SUPER_ADMIN_EMAIL, isSuperAdminEmail } from '../data/initialData';
 import { PricingSlider } from './pricing/PricingSlider';
 import { SuperAdminAffiliatesTab } from './SuperAdminAffiliatesTab';
+import { SuperAdminTrafficTab } from './superadmin/SuperAdminTrafficTab';
 import { PackageTierId } from '../types/pricing';
 
 interface SuperAdminDashboardModalProps {
   isOpen?: boolean;
   onClose: () => void;
-  defaultTab?: 'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding';
+  defaultTab?: 'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding' | 'traffic';
 }
 
 const BRANDING_PRESETS = [
@@ -184,8 +186,8 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
 
   const isSuperAdminUser = isSuperAdminEmail(currentUser?.email);
 
-  const [activeTab, setActiveTab] = useState<'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding' | 'affiliates'>(
-    defaultTab === 'subscriptions' && !isSuperAdminUser ? 'tenants' : (defaultTab || 'tenants')
+  const [activeTab, setActiveTab] = useState<'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding' | 'affiliates' | 'traffic'>(
+    (defaultTab === 'subscriptions' || defaultTab === 'traffic') && !isSuperAdminUser ? 'tenants' : (defaultTab || 'tenants')
   );
   const [brandingSubTab, setBrandingSubTab] = useState<'logo' | 'favicon' | 'login-bg'>('logo');
   const [isCleaningUp, setIsCleaningUp] = useState(false);
@@ -213,7 +215,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
 
   useEffect(() => {
     if (isOpen && defaultTab) {
-      if (defaultTab === 'subscriptions' && !isSuperAdminUser) {
+      if ((defaultTab === 'subscriptions' || defaultTab === 'traffic') && !isSuperAdminUser) {
         setActiveTab('tenants');
       } else {
         setActiveTab(defaultTab);
@@ -581,7 +583,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
             <button
               id="superadmin-tab-affiliates-btn"
               onClick={() => setActiveTab('affiliates')}
-              className={`py-3 flex items-center gap-1.5 border-b-2 transition cursor-pointer ${
+              className={`py-3 flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap ${
                 activeTab === 'affiliates'
                   ? 'border-blue-600 text-blue-600'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -589,6 +591,21 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
             >
               <TrendingUp className="w-4 h-4" />
               <span>Affiliates & Payouts</span>
+            </button>
+          )}
+
+          {isSuperAdminUser && (
+            <button
+              id="superadmin-tab-traffic-btn"
+              onClick={() => setActiveTab('traffic')}
+              className={`py-3 flex items-center gap-1.5 border-b-2 transition cursor-pointer whitespace-nowrap ${
+                activeTab === 'traffic'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Activity className="w-4 h-4" />
+              <span>Traffic & Telemetry</span>
             </button>
           )}
         </div>
@@ -1822,6 +1839,10 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
           {/* TAB 4: PLATFORM BRANDING & ASSETS (LOGO, FAVICON, LOGIN GRAPHIC) */}
           {activeTab === 'affiliates' && isSuperAdminUser && (
             <SuperAdminAffiliatesTab />
+          )}
+
+          {activeTab === 'traffic' && isSuperAdminUser && (
+            <SuperAdminTrafficTab />
           )}
 
           {activeTab === 'branding' && (

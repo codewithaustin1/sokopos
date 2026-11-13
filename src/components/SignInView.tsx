@@ -34,6 +34,7 @@ import { PWAInstallButton } from './PWAInstallButton';
 import { AffiliatePortalModal } from './AffiliatePortalModal';
 import { enrollAffiliate, fetchAffiliateDashboard } from '../lib/affiliateService';
 import { auth } from '../lib/firebase';
+import { trackPlatformEvent } from '../lib/telemetryService';
 
 // Isolated Animated Counter Subcomponent: Keeps main-thread 60fps by updating the DOM ref directly without React state churn
 const AnimatedMetricCounter: React.FC<{ target?: number; duration?: number }> = React.memo(
@@ -676,6 +677,14 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       return;
     }
 
+    if (!isDemoModeActive) {
+      trackPlatformEvent('signin_start', {
+        channel: 'staff_pin',
+        dedupeKey: 'signin-start',
+        dedupeTtlMs: 15_000,
+      });
+    }
+
     setIsSubmittingTerminal(true);
     setPinError(null);
     try {
@@ -703,6 +712,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   };
 
   const handleGoogleSignIn = async () => {
+    trackPlatformEvent('signin_start', {
+      channel: 'google',
+      dedupeKey: 'signin-start',
+      dedupeTtlMs: 15_000,
+    });
     try {
       const ok = await loginWithFirebaseGoogle();
       if (ok) {
@@ -734,6 +748,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       setEmailAuthError('Password must be at least 6 characters long.');
       return;
     }
+
+    trackPlatformEvent('signin_start', {
+      channel: 'email',
+      dedupeKey: 'signin-start',
+      dedupeTtlMs: 15_000,
+    });
 
     setIsAuthenticatingEmail(true);
     try {
@@ -779,6 +799,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       setEmailAuthError('Password must be at least 6 characters long.');
       return;
     }
+
+    trackPlatformEvent('signin_start', {
+      channel: 'register',
+      dedupeKey: 'signin-start',
+      dedupeTtlMs: 15_000,
+    });
 
     setIsAuthenticatingEmail(true);
     try {
@@ -930,6 +956,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     setIsDemoModeActive(true);
     localStorage.setItem('sokopos_demo_intent', 'true');
     setActiveTab('staff');
+    trackPlatformEvent('demo_start', {
+      isDemo: true,
+      businessId: 'biz-demo',
+      businessName: 'SokoPoS Demo Mart',
+      dedupeKey: 'demo-start',
+      dedupeTtlMs: 30_000,
+    });
 
     // Prefill the cashier profile appointed by the super admin from among cashiers created by admin
     const targetCashier = appointedDemoCashier;

@@ -44,6 +44,7 @@ import { MobileBentoMenuOverlay } from './components/common/MobileBentoMenuOverl
 import { ToastContainer } from './components/common/ToastContainer';
 import { verifyServerPayment } from './lib/paymentService';
 import { AffiliatePortalModal } from './components/AffiliatePortalModal';
+import { trackPlatformEvent } from './lib/telemetryService';
 
 function PosAppContent() {
   const {
@@ -299,13 +300,53 @@ function PosAppContent() {
   const [paymentInitialMethod, setPaymentInitialMethod] = useState<PaymentMethod>('mpesa');
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
-  const [superAdminModalDefaultTab, setSuperAdminModalDefaultTab] = useState<'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding'>('tenants');
+  const [superAdminModalDefaultTab, setSuperAdminModalDefaultTab] = useState<'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding' | 'traffic'>('tenants');
 
-  const handleOpenSuperAdmin = (tab?: 'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding') => {
-    const targetTab = tab === 'subscriptions' && !isSuperAdminEmail(currentUser?.email) ? 'tenants' : (tab || 'tenants');
+  const handleOpenSuperAdmin = (tab?: 'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding' | 'traffic') => {
+    const targetTab = (tab === 'subscriptions' || tab === 'traffic') && !isSuperAdminEmail(currentUser?.email) ? 'tenants' : (tab || 'tenants');
     setSuperAdminModalDefaultTab(targetTab);
     setCurrentTab('super-admin');
   };
+
+  // First-party cookie-free traffic & POS session telemetry
+  useEffect(() => {
+    if (isAtLandingPage && !isPricingPageOpen) {
+      trackPlatformEvent('page_view', {
+        path: '/',
+        pageName: 'landing',
+        dedupeKey: 'landing-view',
+        dedupeTtlMs: 60_000,
+      });
+    }
+  }, [isAtLandingPage, isPricingPageOpen]);
+
+  useEffect(() => {
+    if (currentUser && !isAtLandingPage && currentBusiness?.id) {
+      trackPlatformEvent('pos_session_start', {
+        path: '/pos',
+        businessId: currentBusiness.id,
+        businessName: currentBusiness.name,
+        planId: currentBusiness.plan,
+        isDemo: currentBusiness.id === 'biz-demo',
+        dedupeKey: `pos-sess-${currentBusiness.id}`,
+        dedupeTtlMs: 30 * 60_000,
+      });
+    }
+  }, [currentUser?.id, isAtLandingPage, currentBusiness?.id, currentBusiness?.name, currentBusiness?.plan]);
+
+  useEffect(() => {
+    if (currentUser && !isAtLandingPage && currentBusiness?.id) {
+      trackPlatformEvent('pos_tab_view', {
+        path: `/pos/${currentTab}`,
+        tabName: currentTab,
+        businessId: currentBusiness.id,
+        businessName: currentBusiness.name,
+        isDemo: currentBusiness.id === 'biz-demo',
+        dedupeKey: `pos-tab-${currentBusiness.id}-${currentTab}`,
+        dedupeTtlMs: 30_000,
+      });
+    }
+  }, [currentTab, currentUser?.id, isAtLandingPage, currentBusiness?.id, currentBusiness?.name]);
 
   const handleOpenPayment = (method: PaymentMethod = 'cash') => {
     // Strict Guardrail: No transaction may be tendered or completed without an open session

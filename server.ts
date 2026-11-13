@@ -1337,6 +1337,17 @@ Extract:
           )
         : false;
 
+      if (action !== 'unlink' && settlementFields.paystackSubaccountStatus === 'verified') {
+        recordTelemetryEventOnServer({
+          eventType: 'subaccount_verified',
+          sessionId: `srv-${cleanBusinessId}`,
+          businessId: cleanBusinessId,
+          businessName: String(businessName || bizDoc?.name || cleanBusinessId).trim(),
+          channel: 'paystack_subaccount',
+          deviceType: 'desktop',
+        });
+      }
+
       return res.json({
         success: true,
         persistedToFirestore,
@@ -1721,21 +1732,35 @@ Extract:
     return null;
   }
 
-  async function listFirestoreDocs(collection: string, pageSize = 200): Promise<Record<string, any>[]> {
-    const token = await getGcpAccessToken();
-    if (!token) return [];
-    try {
-      const url = `${firestoreCollectionUrl(collection)}?pageSize=${pageSize}`;
-      const resp = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!resp.ok) return [];
-      const json: any = await resp.json().catch(() => ({}));
-      const docs = Array.isArray(json.documents) ? json.documents : [];
-      return docs.map((d: any) => fromFirestoreDoc(d)).filter(Boolean) as Record<string, any>[];
-    } catch {
-      return [];
+  async function listFirestoreDocs(
+    collection: string,
+    pageSize = 200,
+    preferredBearerToken?: string
+  ): Promise<Record<string, any>[]> {
+    const tokens = await resolveFirestoreCandidateTokens(preferredBearerToken);
+    if (tokens.length === 0) return [];
+    const cleanPreferred = String(preferredBearerToken || '').trim();
+
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      try {
+        const url = `${firestoreCollectionUrl(collection)}?pageSize=${pageSize}`;
+        const resp = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (resp.ok) {
+          const json: any = await resp.json().catch(() => ({}));
+          const docs = Array.isArray(json.documents) ? json.documents : [];
+          return docs.map((d: any) => fromFirestoreDoc(d)).filter(Boolean) as Record<string, any>[];
+        }
+        if ((resp.status === 401 || resp.status === 403) && token !== cleanPreferred) {
+          gcpTokenFirestoreDenied = true;
+        }
+      } catch {
+        // try next candidate token
+      }
     }
+    return [];
   }
 
   async function queryFirestoreDocs(
@@ -2324,6 +2349,16 @@ Extract:
             planId: resolvedPlan,
             amountKes,
           });
+
+          recordTelemetryEventOnServer({
+            eventType: 'subscription_activated',
+            sessionId: `webhook-${ref}`,
+            businessId,
+            planId: resolvedPlan,
+            channel,
+            amountKes,
+            deviceType: 'desktop',
+          });
         } else if (flowType === 'pos_sale' && transactionId) {
           await patchFirestoreDoc(
             'transactions',
@@ -2428,6 +2463,866 @@ Extract:
     } catch (err: any) {
       console.error('Error in /api/payments/webhook:', err);
       return res.status(500).json({ error: 'Webhook processing failed' });
+    }
+  });
+
+  // -------------------------------------------------------------
+  // Platform-Owner First-Party Traffic & Telemetry Engine
+  // Cookie-free daily rollups persisted locally & synced to Firestore
+  // -------------------------------------------------------------
+  const TRAFFIC_FILE = path.join(DATA_DIR, 'platform_traffic.json');
+
+  interface StoredBusinessActivity {
+    name?: string;
+    isDemo?: boolean;
+    sessions: number;
+    checkouts: number;
+    gmvKes: number;
+    lastSeenAt: string;
+  }
+
+  interface StoredDailyTrafficRollup {
+    id: string;
+    dateKey: string;
+    pageViews: number;
+    uniqueSessions: number;
+    botHitsBlocked: number;
+    landingViews: number;
+    pricingViews: number;
+    demoStarts: number;
+    signInStarts: number;
+    signUpsCompleted: number;
+    posSessions: number;
+    demoPosSessions: number;
+    posCheckouts: number;
+    demoPosCheckouts: number;
+    posGmvKes: number;
+    demoPosGmvKes: number;
+    subscriptionModalOpens: number;
+    subscriptionCheckouts: number;
+    subscriptionActivations: number;
+    subscriptionRevenueKes: number;
+    subaccountVerifications: number;
+    utmSources: Record<string, number>;
+    utmCampaigns: Record<string, number>;
+    referrers: Record<string, number>;
+    devices: Record<string, number>;
+    pages: Record<string, number>;
+    posTabs: Record<string, number>;
+    checkoutChannels: Record<string, number>;
+    businessActivity: Record<string, StoredBusinessActivity>;
+    updatedAt: string;
+  }
+
+  interface StoredTrafficMilestone {
+    id: string;
+    dateKey: string;
+    timestamp: string;
+    eventType: string;
+    sessionId: string;
+    businessId?: string;
+    businessName?: string;
+    isDemo?: boolean;
+    utmSource?: string;
+    utmCampaign?: string;
+    referrerHost?: string;
+    deviceType: 'mobile' | 'tablet' | 'desktop';
+    channel?: string;
+    planId?: string;
+    amountKes?: number;
+    pageName?: string;
+  }
+
+  interface TrafficStoreState {
+    daily: Record<string, StoredDailyTrafficRollup>;
+    recentEvents: StoredTrafficMilestone[];
+  }
+
+  function createEmptyRollup(dateKey: string): StoredDailyTrafficRollup {
+    return {
+      id: dateKey,
+      dateKey,
+      pageViews: 0,
+      uniqueSessions: 0,
+      botHitsBlocked: 0,
+      landingViews: 0,
+      pricingViews: 0,
+      demoStarts: 0,
+      signInStarts: 0,
+      signUpsCompleted: 0,
+      posSessions: 0,
+      demoPosSessions: 0,
+      posCheckouts: 0,
+      demoPosCheckouts: 0,
+      posGmvKes: 0,
+      demoPosGmvKes: 0,
+      subscriptionModalOpens: 0,
+      subscriptionCheckouts: 0,
+      subscriptionActivations: 0,
+      subscriptionRevenueKes: 0,
+      subaccountVerifications: 0,
+      utmSources: {},
+      utmCampaigns: {},
+      referrers: {},
+      devices: { desktop: 0, mobile: 0, tablet: 0 },
+      pages: {},
+      posTabs: {},
+      checkoutChannels: {},
+      businessActivity: {},
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  function loadTrafficStore(): TrafficStoreState {
+    try {
+      if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      }
+      if (fs.existsSync(TRAFFIC_FILE)) {
+        const parsed = JSON.parse(fs.readFileSync(TRAFFIC_FILE, 'utf-8'));
+        return {
+          daily: parsed?.daily && typeof parsed.daily === 'object' ? parsed.daily : {},
+          recentEvents: Array.isArray(parsed?.recentEvents) ? parsed.recentEvents : [],
+        };
+      }
+    } catch (err) {
+      console.warn('Could not read platform_traffic.json, starting fresh:', err);
+    }
+    return { daily: {}, recentEvents: [] };
+  }
+
+  function saveTrafficStore(state: TrafficStoreState) {
+    try {
+      if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      }
+      // Keep max 180 days of daily rollups locally and max 150 milestone events
+      const sortedKeys = Object.keys(state.daily).sort().slice(-180);
+      const trimmedDaily: Record<string, StoredDailyTrafficRollup> = {};
+      for (const k of sortedKeys) trimmedDaily[k] = state.daily[k];
+      state.daily = trimmedDaily;
+      state.recentEvents = state.recentEvents.slice(0, 150);
+      fs.writeFileSync(TRAFFIC_FILE, JSON.stringify(state), 'utf-8');
+    } catch (err) {
+      console.warn('Failed writing platform_traffic.json:', err);
+    }
+  }
+
+  const trafficStore: TrafficStoreState = loadTrafficStore();
+  const dirtyRollupDates = new Set<string>();
+  const pendingEventsForFirestore: StoredTrafficMilestone[] = [];
+  let flushTimer: NodeJS.Timeout | null = null;
+
+  function sanitizeMapKey(raw: unknown, fallback = 'unknown'): string {
+    const cleaned = String(raw || '')
+      .trim()
+      .replace(/[.$[\]#/]/g, '_')
+      .slice(0, 80);
+    return cleaned || fallback;
+  }
+
+  function incrementMapCounter(map: Record<string, number>, key: string, delta = 1) {
+    if (!key) return;
+    map[key] = (Number(map[key]) || 0) + delta;
+  }
+
+  function isBotTraffic(userAgent: string, clientAutomated?: boolean): boolean {
+    if (clientAutomated) return true;
+    const ua = String(userAgent || '').toLowerCase();
+    if (!ua) return true;
+    return /bot|crawler|spider|slurp|headlesschrome|phantomjs|playwright|puppeteer|curl|wget|python-requests|axios|node-fetch|lighthouse|pagespeed|semrush|ahrefs|mj12bot|bytespider|petalbot|bingpreview|facebookexternalhit|twitterbot|discordbot|telegrambot|whatsapp/.test(
+      ua
+    );
+  }
+
+  async function flushTelemetryToFirestore(preferredBearerToken?: string): Promise<boolean> {
+    if (dirtyRollupDates.size === 0 && pendingEventsForFirestore.length === 0) {
+      return false;
+    }
+    const tokens = await resolveFirestoreCandidateTokens(preferredBearerToken);
+    if (tokens.length === 0) return false;
+
+    let anySaved = false;
+    const datesToFlush = Array.from(dirtyRollupDates);
+    for (const dateKey of datesToFlush) {
+      const rollup = trafficStore.daily[dateKey];
+      if (!rollup) continue;
+      const ok = await patchFirestoreDoc(
+        'platform_traffic_daily',
+        dateKey,
+        rollup,
+        Object.keys(rollup),
+        preferredBearerToken
+      );
+      if (ok) {
+        dirtyRollupDates.delete(dateKey);
+        anySaved = true;
+      }
+    }
+
+    const eventsToFlush = pendingEventsForFirestore.splice(0, 25);
+    for (const evt of eventsToFlush) {
+      const ok = await patchFirestoreDoc(
+        'platform_traffic_events',
+        evt.id,
+        evt,
+        Object.keys(evt),
+        preferredBearerToken
+      );
+      if (ok) {
+        anySaved = true;
+      } else {
+        // Re-queue bounded events if ADC wasn't authorized yet
+        pendingEventsForFirestore.unshift(evt);
+        if (pendingEventsForFirestore.length > 50) {
+          pendingEventsForFirestore.length = 50;
+        }
+        break;
+      }
+    }
+    return anySaved;
+  }
+
+  function scheduleTelemetryFlush() {
+    if (flushTimer) return;
+    flushTimer = setTimeout(() => {
+      flushTimer = null;
+      flushTelemetryToFirestore().catch(() => {});
+    }, 5000);
+  }
+
+  const MILESTONE_EVENT_TYPES = new Set([
+    'signup_complete',
+    'demo_start',
+    'subaccount_verified',
+    'subscription_activated',
+    'pos_checkout',
+  ]);
+  const recentSubActivations = new Map<string, { at: number; hasAmount: boolean }>();
+
+  function recordTelemetryEventOnServer(input: {
+    eventType: string;
+    sessionId: string;
+    isNewSessionToday?: boolean;
+    path?: string;
+    pageName?: string;
+    tabName?: string;
+    businessId?: string;
+    businessName?: string;
+    planId?: string;
+    isDemo?: boolean;
+    channel?: string;
+    amountKes?: number;
+    utmSource?: string;
+    utmCampaign?: string;
+    referrerHost?: string;
+    deviceType?: 'mobile' | 'tablet' | 'desktop';
+    isBot?: boolean;
+  }) {
+    const nowIso = new Date().toISOString();
+    const dateKey = nowIso.slice(0, 10);
+    if (!trafficStore.daily[dateKey]) {
+      trafficStore.daily[dateKey] = createEmptyRollup(dateKey);
+    }
+    const day = trafficStore.daily[dateKey];
+    day.updatedAt = nowIso;
+
+    if (input.isBot) {
+      day.botHitsBlocked = (day.botHitsBlocked || 0) + 1;
+      dirtyRollupDates.add(dateKey);
+      saveTrafficStore(trafficStore);
+      scheduleTelemetryFlush();
+      return;
+    }
+
+    const device: 'mobile' | 'tablet' | 'desktop' =
+      input.deviceType === 'mobile' || input.deviceType === 'tablet' ? input.deviceType : 'desktop';
+    const isDemoBiz = Boolean(input.isDemo) || input.businessId === 'biz-demo';
+
+    if (input.isNewSessionToday) {
+      day.uniqueSessions += 1;
+      incrementMapCounter(day.devices, device, 1);
+
+      const src = sanitizeMapKey(input.utmSource, 'direct');
+      incrementMapCounter(day.utmSources, src, 1);
+
+      if (input.utmCampaign) {
+        incrementMapCounter(day.utmCampaigns, sanitizeMapKey(input.utmCampaign), 1);
+      }
+
+      const refHost = sanitizeMapKey(input.referrerHost, 'direct');
+      incrementMapCounter(day.referrers, refHost, 1);
+    }
+
+    switch (input.eventType) {
+      case 'page_view': {
+        day.pageViews += 1;
+        const pName = sanitizeMapKey(input.pageName || input.path || '/', '/');
+        incrementMapCounter(day.pages, pName, 1);
+        if (pName === 'landing' || pName === '/') {
+          day.landingViews += 1;
+        } else if (pName === 'pricing') {
+          day.pricingViews += 1;
+        }
+        break;
+      }
+      case 'pricing_view':
+        day.pageViews += 1;
+        day.pricingViews += 1;
+        incrementMapCounter(day.pages, 'pricing', 1);
+        break;
+      case 'demo_start':
+        day.demoStarts += 1;
+        break;
+      case 'signin_start':
+        day.signInStarts += 1;
+        break;
+      case 'signup_complete':
+        day.signUpsCompleted += 1;
+        break;
+      case 'pos_session_start':
+        if (isDemoBiz) {
+          day.demoPosSessions += 1;
+        } else {
+          day.posSessions += 1;
+        }
+        if (input.businessId) {
+          const bId = sanitizeMapKey(input.businessId);
+          const prev = day.businessActivity[bId] || {
+            name: input.businessName || bId,
+            isDemo: isDemoBiz,
+            sessions: 0,
+            checkouts: 0,
+            gmvKes: 0,
+            lastSeenAt: nowIso,
+          };
+          day.businessActivity[bId] = {
+            ...prev,
+            name: input.businessName || prev.name,
+            isDemo: isDemoBiz,
+            sessions: prev.sessions + 1,
+            lastSeenAt: nowIso,
+          };
+        }
+        break;
+      case 'pos_tab_view':
+        if (input.tabName) {
+          incrementMapCounter(day.posTabs, sanitizeMapKey(input.tabName), 1);
+        }
+        break;
+      case 'pos_checkout': {
+        const amt = Math.max(0, Number(input.amountKes) || 0);
+        if (isDemoBiz) {
+          day.demoPosCheckouts += 1;
+          day.demoPosGmvKes += amt;
+        } else {
+          day.posCheckouts += 1;
+          day.posGmvKes += amt;
+          const ch = sanitizeMapKey(input.channel, 'cash');
+          incrementMapCounter(day.checkoutChannels, ch, 1);
+        }
+        if (input.businessId) {
+          const bId = sanitizeMapKey(input.businessId);
+          const prev = day.businessActivity[bId] || {
+            name: input.businessName || bId,
+            isDemo: isDemoBiz,
+            sessions: 0,
+            checkouts: 0,
+            gmvKes: 0,
+            lastSeenAt: nowIso,
+          };
+          day.businessActivity[bId] = {
+            ...prev,
+            name: input.businessName || prev.name,
+            isDemo: isDemoBiz,
+            checkouts: prev.checkouts + 1,
+            gmvKes: prev.gmvKes + amt,
+            lastSeenAt: nowIso,
+          };
+        }
+        break;
+      }
+      case 'subaccount_verified':
+        day.subaccountVerifications += 1;
+        break;
+      case 'subscription_modal_open':
+        day.subscriptionModalOpens += 1;
+        break;
+      case 'subscription_checkout_start':
+        day.subscriptionCheckouts += 1;
+        break;
+      case 'subscription_activated': {
+        const subAmt = Math.max(0, Number(input.amountKes) || 0);
+        const subBizKey = input.businessId || input.sessionId || 'unknown';
+        const prevAct = recentSubActivations.get(subBizKey);
+        const nowMs = Date.now();
+        if (prevAct && nowMs - prevAct.at < 10 * 60_000) {
+          // Already counted activation for this store in this 10-minute window; top up revenue only if webhook arrived after client call
+          if (!prevAct.hasAmount && subAmt > 0) {
+            day.subscriptionRevenueKes += subAmt;
+            recentSubActivations.set(subBizKey, { at: prevAct.at, hasAmount: true });
+          }
+          return;
+        }
+        recentSubActivations.set(subBizKey, { at: nowMs, hasAmount: subAmt > 0 });
+        day.subscriptionActivations += 1;
+        day.subscriptionRevenueKes += subAmt;
+        break;
+      }
+      default:
+        day.pageViews += 1;
+        break;
+    }
+
+    if (
+      MILESTONE_EVENT_TYPES.has(input.eventType) ||
+      (input.eventType === 'page_view' && input.isNewSessionToday)
+    ) {
+      const milestone: StoredTrafficMilestone = {
+        id: `evt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+        dateKey,
+        timestamp: nowIso,
+        eventType: input.eventType,
+        sessionId: String(input.sessionId || 'anon').slice(0, 64),
+        deviceType: device,
+        ...(input.businessId ? { businessId: String(input.businessId).slice(0, 80) } : {}),
+        ...(input.businessName ? { businessName: String(input.businessName).slice(0, 120) } : {}),
+        ...(isDemoBiz ? { isDemo: true } : {}),
+        ...(input.utmSource ? { utmSource: String(input.utmSource).slice(0, 80) } : {}),
+        ...(input.utmCampaign ? { utmCampaign: String(input.utmCampaign).slice(0, 80) } : {}),
+        ...(input.referrerHost ? { referrerHost: String(input.referrerHost).slice(0, 120) } : {}),
+        ...(input.channel ? { channel: String(input.channel).slice(0, 40) } : {}),
+        ...(input.planId ? { planId: String(input.planId).slice(0, 40) } : {}),
+        ...(typeof input.amountKes === 'number' && Number.isFinite(input.amountKes)
+          ? { amountKes: Math.max(0, Math.round(input.amountKes)) }
+          : {}),
+        ...(input.pageName ? { pageName: String(input.pageName).slice(0, 60) } : {}),
+      };
+      trafficStore.recentEvents.unshift(milestone);
+      if (trafficStore.recentEvents.length > 150) {
+        trafficStore.recentEvents.length = 150;
+      }
+      pendingEventsForFirestore.push(milestone);
+    }
+
+    dirtyRollupDates.add(dateKey);
+    saveTrafficStore(trafficStore);
+    scheduleTelemetryFlush();
+  }
+
+  function mergeRollupPair(
+    localDoc: StoredDailyTrafficRollup | undefined,
+    remoteDoc: Record<string, any> | undefined,
+    dateKey: string
+  ): StoredDailyTrafficRollup {
+    if (!localDoc && !remoteDoc) return createEmptyRollup(dateKey);
+    if (!remoteDoc) return localDoc!;
+    const base = createEmptyRollup(dateKey);
+    const l = localDoc || base;
+    const r = remoteDoc;
+    const maxNum = (k: keyof StoredDailyTrafficRollup) =>
+      Math.max(Number((l as any)[k]) || 0, Number(r[k as string]) || 0);
+    const mergeMap = (m1: Record<string, number> = {}, m2: Record<string, number> = {}) => {
+      const out: Record<string, number> = {};
+      for (const k of new Set([...Object.keys(m1), ...Object.keys(m2)])) {
+        out[k] = Math.max(Number(m1[k]) || 0, Number(m2[k]) || 0);
+      }
+      return out;
+    };
+
+    const bizActivity: Record<string, StoredBusinessActivity> = { ...(r.businessActivity || {}) };
+    for (const [bId, bVal] of Object.entries(l.businessActivity || {})) {
+      const existing = bizActivity[bId];
+      if (!existing) {
+        bizActivity[bId] = bVal;
+      } else {
+        bizActivity[bId] = {
+          name: bVal.name || existing.name,
+          isDemo: Boolean(bVal.isDemo || existing.isDemo),
+          sessions: Math.max(Number(bVal.sessions) || 0, Number(existing.sessions) || 0),
+          checkouts: Math.max(Number(bVal.checkouts) || 0, Number(existing.checkouts) || 0),
+          gmvKes: Math.max(Number(bVal.gmvKes) || 0, Number(existing.gmvKes) || 0),
+          lastSeenAt:
+            String(bVal.lastSeenAt || '') >= String(existing.lastSeenAt || '')
+              ? bVal.lastSeenAt
+              : existing.lastSeenAt,
+        };
+      }
+    }
+
+    return {
+      id: dateKey,
+      dateKey,
+      pageViews: maxNum('pageViews'),
+      uniqueSessions: maxNum('uniqueSessions'),
+      botHitsBlocked: maxNum('botHitsBlocked'),
+      landingViews: maxNum('landingViews'),
+      pricingViews: maxNum('pricingViews'),
+      demoStarts: maxNum('demoStarts'),
+      signInStarts: maxNum('signInStarts'),
+      signUpsCompleted: maxNum('signUpsCompleted'),
+      posSessions: maxNum('posSessions'),
+      demoPosSessions: maxNum('demoPosSessions'),
+      posCheckouts: maxNum('posCheckouts'),
+      demoPosCheckouts: maxNum('demoPosCheckouts'),
+      posGmvKes: maxNum('posGmvKes'),
+      demoPosGmvKes: maxNum('demoPosGmvKes'),
+      subscriptionModalOpens: maxNum('subscriptionModalOpens'),
+      subscriptionCheckouts: maxNum('subscriptionCheckouts'),
+      subscriptionActivations: maxNum('subscriptionActivations'),
+      subscriptionRevenueKes: maxNum('subscriptionRevenueKes'),
+      subaccountVerifications: maxNum('subaccountVerifications'),
+      utmSources: mergeMap(l.utmSources, r.utmSources),
+      utmCampaigns: mergeMap(l.utmCampaigns, r.utmCampaigns),
+      referrers: mergeMap(l.referrers, r.referrers),
+      devices: mergeMap(l.devices, r.devices),
+      pages: mergeMap(l.pages, r.pages),
+      posTabs: mergeMap(l.posTabs, r.posTabs),
+      checkoutChannels: mergeMap(l.checkoutChannels, r.checkoutChannels),
+      businessActivity: bizActivity,
+      updatedAt:
+        String(l.updatedAt || '') >= String(r.updatedAt || '')
+          ? l.updatedAt
+          : String(r.updatedAt || new Date().toISOString()),
+    };
+  }
+
+  const telemetryCollectLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 180,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { ok: false, error: 'Telemetry rate limit exceeded' },
+  });
+
+  app.post('/api/telemetry/collect', telemetryCollectLimiter, (req, res) => {
+    try {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const eventType = String(body.eventType || '').trim();
+      if (!eventType || eventType.length > 64) {
+        return res.status(400).json({ ok: false, error: 'Invalid eventType' });
+      }
+
+      const ua = String(req.headers['user-agent'] || '');
+      const isBot = isBotTraffic(ua, Boolean(body.isAutomated));
+
+      recordTelemetryEventOnServer({
+        eventType,
+        sessionId: String(body.sessionId || 'anon').slice(0, 64),
+        isNewSessionToday: Boolean(body.isNewSessionToday),
+        path: body.path ? String(body.path).slice(0, 120) : undefined,
+        pageName: body.pageName ? String(body.pageName).slice(0, 64) : undefined,
+        tabName: body.tabName ? String(body.tabName).slice(0, 48) : undefined,
+        businessId: body.businessId ? String(body.businessId).slice(0, 96) : undefined,
+        businessName: body.businessName ? String(body.businessName).slice(0, 140) : undefined,
+        planId: body.planId ? String(body.planId).slice(0, 48) : undefined,
+        isDemo: Boolean(body.isDemo),
+        channel: body.channel ? String(body.channel).slice(0, 48) : undefined,
+        amountKes: typeof body.amountKes === 'number' ? body.amountKes : Number(body.amountKes) || 0,
+        utmSource: body.utmSource ? String(body.utmSource).slice(0, 80) : undefined,
+        utmCampaign: body.utmCampaign ? String(body.utmCampaign).slice(0, 80) : undefined,
+        referrerHost: body.referrerHost ? String(body.referrerHost).slice(0, 120) : undefined,
+        deviceType: body.deviceType,
+        isBot,
+      });
+
+      return res.status(202).json({ ok: true, filtered: isBot ? 'bot' : 'accepted' });
+    } catch {
+      return res.status(202).json({ ok: true });
+    }
+  });
+
+  app.get('/api/telemetry/overview', async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+      const verified = await verifyFirebaseIdToken(bearerToken);
+      if (!verified || verified.email !== SUPER_ADMIN_EMAIL.toLowerCase() || !verified.emailVerified) {
+        return res.status(403).json({ error: 'Super Admin authentication required for platform traffic telemetry.' });
+      }
+
+      const rawDays = Number(req.query.days) || 30;
+      const rangeDays = rawDays === 7 ? 7 : rawDays === 90 ? 90 : 30;
+      const excludeDemo = String(req.query.excludeDemo ?? 'true') !== 'false';
+
+      // Build exact list of dateKeys for [today - (rangeDays - 1) ... today]
+      const dateKeys: string[] = [];
+      const now = new Date();
+      for (let i = rangeDays - 1; i >= 0; i--) {
+        const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
+        dateKeys.push(d.toISOString().slice(0, 10));
+      }
+
+      // Fetch Firestore daily rollups, milestone feed, and businesses in parallel using verified Super Admin token
+      const [remoteDailyDocs, remoteEvents, remoteBusinesses] = await Promise.all([
+        listFirestoreDocs('platform_traffic_daily', 120, bearerToken),
+        listFirestoreDocs('platform_traffic_events', 150, bearerToken),
+        listFirestoreDocs('businesses', 500, bearerToken),
+      ]);
+
+      const remoteDailyMap = new Map<string, Record<string, any>>();
+      for (const doc of remoteDailyDocs) {
+        const key = String(doc.dateKey || doc.id || '');
+        if (key) remoteDailyMap.set(key, doc);
+      }
+
+      // Merge local store and Firestore store per dateKey
+      for (const key of new Set([...Object.keys(trafficStore.daily), ...Array.from(remoteDailyMap.keys())])) {
+        const merged = mergeRollupPair(trafficStore.daily[key], remoteDailyMap.get(key), key);
+        trafficStore.daily[key] = merged;
+        if (dirtyRollupDates.has(key) || !remoteDailyMap.has(key)) {
+          dirtyRollupDates.add(key);
+        }
+      }
+      saveTrafficStore(trafficStore);
+
+      // Flush local buffered rollups/events up to Firestore with Super Admin's token
+      const firestoreSynced = await flushTelemetryToFirestore(bearerToken);
+
+      // Aggregate range metrics
+      const utmSourceTotals: Record<string, number> = {};
+      const utmCampaignTotals: Record<string, number> = {};
+      const referrerTotals: Record<string, number> = {};
+      const deviceTotals: Record<string, number> = {};
+      const pageTotals: Record<string, number> = {};
+      const posTabTotals: Record<string, number> = {};
+      const channelTotals: Record<string, number> = {};
+      const storeTotals: Record<
+        string,
+        { businessId: string; businessName: string; isDemo: boolean; sessions: number; checkouts: number; gmvKes: number; lastSeenDate: string }
+      > = {};
+      const activeStoreSet = new Set<string>();
+
+      let pageViews = 0;
+      let uniqueSessions = 0;
+      let landingViews = 0;
+      let pricingViews = 0;
+      let demoStarts = 0;
+      let signInStarts = 0;
+      let signUpsCompleted = 0;
+      let posSessions = 0;
+      let posCheckouts = 0;
+      let posGmvKes = 0;
+      let subscriptionModalOpens = 0;
+      let subscriptionCheckouts = 0;
+      let subscriptionActivations = 0;
+      let subscriptionRevenueKes = 0;
+      let botHitsBlocked = 0;
+
+      const addMap = (target: Record<string, number>, source: Record<string, number> = {}) => {
+        for (const [k, v] of Object.entries(source)) {
+          target[k] = (target[k] || 0) + (Number(v) || 0);
+        }
+      };
+
+      const dailySeries = dateKeys.map((dateKey) => {
+        const d = trafficStore.daily[dateKey] || createEmptyRollup(dateKey);
+        const daySessions = (d.posSessions || 0) + (excludeDemo ? 0 : d.demoPosSessions || 0);
+        const dayCheckouts = (d.posCheckouts || 0) + (excludeDemo ? 0 : d.demoPosCheckouts || 0);
+        const dayGmv = (d.posGmvKes || 0) + (excludeDemo ? 0 : d.demoPosGmvKes || 0);
+
+        const dayActiveBizIds = Object.entries(d.businessActivity || {})
+          .filter(([bId, info]) => !(excludeDemo && (info?.isDemo || bId === 'biz-demo')))
+          .map(([bId]) => bId);
+        dayActiveBizIds.forEach((bId) => activeStoreSet.add(bId));
+
+        for (const [bId, info] of Object.entries(d.businessActivity || {})) {
+          const isDemo = Boolean(info?.isDemo) || bId === 'biz-demo';
+          if (excludeDemo && isDemo) continue;
+          const prev = storeTotals[bId] || {
+            businessId: bId,
+            businessName: info?.name || bId,
+            isDemo,
+            sessions: 0,
+            checkouts: 0,
+            gmvKes: 0,
+            lastSeenDate: dateKey,
+          };
+          storeTotals[bId] = {
+            businessId: bId,
+            businessName: info?.name || prev.businessName,
+            isDemo,
+            sessions: prev.sessions + (Number(info?.sessions) || 0),
+            checkouts: prev.checkouts + (Number(info?.checkouts) || 0),
+            gmvKes: prev.gmvKes + (Number(info?.gmvKes) || 0),
+            lastSeenDate: dateKey > prev.lastSeenDate ? dateKey : prev.lastSeenDate,
+          };
+        }
+
+        pageViews += d.pageViews || 0;
+        uniqueSessions += d.uniqueSessions || 0;
+        landingViews += d.landingViews || 0;
+        pricingViews += d.pricingViews || 0;
+        demoStarts += d.demoStarts || 0;
+        signInStarts += d.signInStarts || 0;
+        signUpsCompleted += d.signUpsCompleted || 0;
+        posSessions += daySessions;
+        posCheckouts += dayCheckouts;
+        posGmvKes += dayGmv;
+        subscriptionModalOpens += d.subscriptionModalOpens || 0;
+        subscriptionCheckouts += d.subscriptionCheckouts || 0;
+        subscriptionActivations += d.subscriptionActivations || 0;
+        subscriptionRevenueKes += d.subscriptionRevenueKes || 0;
+        botHitsBlocked += d.botHitsBlocked || 0;
+
+        addMap(utmSourceTotals, d.utmSources);
+        addMap(utmCampaignTotals, d.utmCampaigns);
+        addMap(referrerTotals, d.referrers);
+        addMap(deviceTotals, d.devices);
+        addMap(pageTotals, d.pages);
+        addMap(posTabTotals, d.posTabs);
+        addMap(channelTotals, d.checkoutChannels);
+
+        const parsedDate = new Date(`${dateKey}T00:00:00Z`);
+        const label = parsedDate.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          timeZone: 'UTC',
+        });
+
+        return {
+          dateKey,
+          label,
+          pageViews: d.pageViews || 0,
+          uniqueSessions: d.uniqueSessions || 0,
+          landingViews: d.landingViews || 0,
+          pricingViews: d.pricingViews || 0,
+          demoStarts: d.demoStarts || 0,
+          signInStarts: d.signInStarts || 0,
+          signUpsCompleted: d.signUpsCompleted || 0,
+          activeStoresCount: dayActiveBizIds.length,
+          posSessions: daySessions,
+          posCheckouts: dayCheckouts,
+          posGmvKes: Math.round(dayGmv),
+          subscriptionModalOpens: d.subscriptionModalOpens || 0,
+          subscriptionCheckouts: d.subscriptionCheckouts || 0,
+          subscriptionActivations: d.subscriptionActivations || 0,
+          subscriptionRevenueKes: Math.round(d.subscriptionRevenueKes || 0),
+          botHitsBlocked: d.botHitsBlocked || 0,
+        };
+      });
+
+      const toBreakdownRows = (map: Record<string, number>, limit = 8) => {
+        const entries = Object.entries(map)
+          .filter(([, v]) => v > 0)
+          .sort((a, b) => b[1] - a[1]);
+        const sum = entries.reduce((acc, [, v]) => acc + v, 0) || 1;
+        return entries.slice(0, limit).map(([label, count]) => ({
+          label,
+          count,
+          sharePercent: Math.round((count / sum) * 1000) / 10,
+        }));
+      };
+
+      const bizById = new Map<string, Record<string, any>>();
+      for (const b of remoteBusinesses) {
+        if (b?.id) bizById.set(String(b.id), b);
+      }
+
+      const registeredStores = excludeDemo
+        ? remoteBusinesses.filter((b) => b.id !== 'biz-demo')
+        : remoteBusinesses;
+      const paidStoresCount = registeredStores.filter(
+        (b) => b.status === 'active' && b.plan && b.plan !== 'free'
+      ).length;
+      const verifiedSubaccountsCount = registeredStores.filter(
+        (b) => b.paystackSubaccountStatus === 'verified'
+      ).length;
+
+      const topStores = Object.values(storeTotals)
+        .sort((a, b) => b.checkouts - a.checkouts || b.sessions - a.sessions)
+        .slice(0, 15)
+        .map((st) => {
+          const meta = bizById.get(st.businessId);
+          return {
+            businessId: st.businessId,
+            businessName: meta?.name || st.businessName,
+            plan: String(meta?.plan || 'starter'),
+            status: String(meta?.status || 'active'),
+            paystackVerified: meta?.paystackSubaccountStatus === 'verified',
+            posSessions: st.sessions,
+            posCheckouts: st.checkouts,
+            posGmvKes: Math.round(st.gmvKes),
+            lastSeenDate: st.lastSeenDate,
+          };
+        });
+
+      // Merge local & remote recent milestone events cleanly
+      const eventMap = new Map<string, StoredTrafficMilestone>();
+      for (const evt of [...trafficStore.recentEvents, ...(remoteEvents as StoredTrafficMilestone[])]) {
+        if (!evt?.id) continue;
+        if (excludeDemo && (evt.isDemo || evt.businessId === 'biz-demo')) continue;
+        if (!dateKeys.includes(evt.dateKey || String(evt.timestamp || '').slice(0, 10))) continue;
+        if (!eventMap.has(evt.id)) eventMap.set(evt.id, evt);
+      }
+      const recentEvents = Array.from(eventMap.values())
+        .sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')))
+        .slice(0, 60);
+
+      const funnelRaw = [
+        { id: 'landing', label: 'Landing Page Views', count: landingViews },
+        { id: 'pricing', label: 'Pricing Page Views', count: pricingViews },
+        { id: 'signin', label: 'Sign-In / Demo Started', count: signInStarts + demoStarts },
+        { id: 'signup', label: 'New Stores Created', count: signUpsCompleted },
+        { id: 'paid', label: 'Paid Subscriptions', count: subscriptionActivations },
+      ];
+      const baseTop = Math.max(funnelRaw[0].count, 1);
+      const funnel = funnelRaw.map((step, idx) => {
+        const prevCount = idx === 0 ? step.count : funnelRaw[idx - 1].count;
+        return {
+          ...step,
+          rateFromPrevious:
+            idx === 0 ? 100 : prevCount > 0 ? Math.min(100, Math.round((step.count / prevCount) * 1000) / 10) : 0,
+          rateFromLanding:
+            landingViews > 0 ? Math.min(100, Math.round((step.count / baseTop) * 1000) / 10) : 0,
+        };
+      });
+
+      const signupConversionRate =
+        landingViews > 0 ? Math.round((signUpsCompleted / landingViews) * 1000) / 10 : 0;
+
+      return res.json({
+        rangeDays,
+        excludeDemo,
+        generatedAt: new Date().toISOString(),
+        firestoreSynced,
+        totals: {
+          pageViews,
+          uniqueSessions,
+          landingViews,
+          pricingViews,
+          demoStarts,
+          signInStarts,
+          signUpsCompleted,
+          signupConversionRate,
+          posSessions,
+          activeStoresInRange: activeStoreSet.size,
+          totalRegisteredStores: registeredStores.length,
+          paidStoresCount,
+          verifiedSubaccountsCount,
+          posCheckouts,
+          posGmvKes: Math.round(posGmvKes),
+          subscriptionModalOpens,
+          subscriptionCheckouts,
+          subscriptionActivations,
+          subscriptionRevenueKes: Math.round(subscriptionRevenueKes),
+          botHitsBlocked,
+        },
+        dailySeries,
+        funnel,
+        utmSources: toBreakdownRows(utmSourceTotals, 8),
+        utmCampaigns: toBreakdownRows(utmCampaignTotals, 6),
+        referrers: toBreakdownRows(referrerTotals, 8),
+        devices: toBreakdownRows(deviceTotals, 3),
+        topPages: toBreakdownRows(pageTotals, 8),
+        posTabs: toBreakdownRows(posTabTotals, 8),
+        checkoutChannels: toBreakdownRows(channelTotals, 6),
+        topStores,
+        recentEvents,
+      });
+    } catch (err: any) {
+      console.error('Error in /api/telemetry/overview:', err);
+      return res.status(500).json({ error: 'Failed to aggregate platform traffic overview.' });
     }
   });
 
