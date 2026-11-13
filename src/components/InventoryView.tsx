@@ -113,7 +113,13 @@ export const InventoryView: React.FC = () => {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const productsTableScrollRef = useRef<HTMLDivElement>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [rowMenuPosition, setRowMenuPosition] = useState<{
+    top?: number;
+    bottom?: number;
+    right: number;
+  } | null>(null);
 
   // Global `/` shortcut to focus search & click-outside menu closing
   useEffect(() => {
@@ -154,10 +160,22 @@ export const InventoryView: React.FC = () => {
   }, []);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    setShowScrollTop(e.currentTarget.scrollTop > 140);
+    const pageTop = e.currentTarget.scrollTop;
+    const tableTop = productsTableScrollRef.current?.scrollTop ?? 0;
+    setShowScrollTop(pageTop > 140 || tableTop > 140);
+  };
+
+  const handleProductsScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const tableTop = e.currentTarget.scrollTop;
+    const pageTop = scrollContainerRef.current?.scrollTop ?? 0;
+    setShowScrollTop(tableTop > 140 || pageTop > 140);
+    if (openRowMenuId) {
+      setOpenRowMenuId(null);
+    }
   };
 
   const scrollToTop = () => {
+    productsTableScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -400,7 +418,7 @@ export const InventoryView: React.FC = () => {
     <div
       ref={scrollContainerRef}
       onScroll={handleScroll}
-      className="flex-1 flex flex-col bg-slate-100 overflow-y-auto overflow-x-hidden min-h-0 relative inventory-vertical-scroller"
+      className="flex-1 flex flex-col bg-slate-100 overflow-y-auto md:overflow-hidden overflow-x-hidden min-h-0 relative inventory-vertical-scroller"
       id="inventory-scroll-container"
     >
       {/* Top Bar: Single-line Title + Unboxed Count Metadata · Icon Refresh · Tools Menu · 1 Primary CTA */}
@@ -583,7 +601,7 @@ export const InventoryView: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      <div className="p-3 sm:p-6 flex flex-col gap-3 sm:gap-4 pb-24 md:pb-16 min-h-0">
+      <div className="flex-1 flex flex-col gap-3 p-3 sm:p-5 pb-24 md:pb-5 min-h-0 md:overflow-hidden">
         {/* Low Stock Callout */}
         {lowStockItems.length > 0 && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 flex items-center justify-between gap-3 shrink-0">
@@ -1004,13 +1022,21 @@ export const InventoryView: React.FC = () => {
           )}
         </div>
 
-        {/* Desktop View: Sortable Product Grid (md and up) */}
-        <div className="hidden md:block bg-white rounded-xl border border-slate-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[920px]">
-              <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600">
+        {/* Desktop View: Sortable Product Grid with Right-Side Vertical Scroller (md and up) */}
+        <div className="hidden md:flex md:flex-col flex-1 min-h-0 bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div
+            ref={productsTableScrollRef}
+            onScroll={handleProductsScroll}
+            className="flex-1 min-h-0 products-view-scroller"
+          >
+            <table
+              className={`w-full text-left border-collapse ${
+                showMultiLocationColumns ? 'min-w-max' : 'min-w-[820px]'
+              }`}
+            >
+              <thead className="sticky top-0 z-20 bg-slate-50 shadow-[0_1px_0_0_#e2e8f0] text-xs font-semibold text-slate-600">
                 <tr>
-                  <th className="py-2.5 pl-4 pr-2 w-10 text-center">
+                  <th className="py-2.5 pl-3 pr-1.5 w-9 text-center">
                     <input
                       type="checkbox"
                       checked={isAllFilteredSelected}
@@ -1025,7 +1051,7 @@ export const InventoryView: React.FC = () => {
                       title={isAllFilteredSelected ? 'Deselect all filtered' : 'Select all filtered'}
                     />
                   </th>
-                  <th className="py-2.5 px-3">
+                  <th className="py-2.5 px-2.5">
                     <button
                       type="button"
                       onClick={() => toggleSort('name')}
@@ -1035,7 +1061,7 @@ export const InventoryView: React.FC = () => {
                       {renderSortIcon('name')}
                     </button>
                   </th>
-                  <th className="py-2.5 px-3">
+                  <th className="py-2.5 px-2.5">
                     <button
                       type="button"
                       onClick={() => toggleSort('sku')}
@@ -1045,9 +1071,9 @@ export const InventoryView: React.FC = () => {
                       {renderSortIcon('sku')}
                     </button>
                   </th>
-                  <th className="py-2.5 px-3">Category</th>
-                  <th className="py-2.5 px-3">Supplier</th>
-                  <th className="py-2.5 px-3 text-right">
+                  <th className="py-2.5 px-2.5">Category</th>
+                  <th className="py-2.5 px-2.5">Supplier</th>
+                  <th className="py-2.5 px-2.5 text-right">
                     <button
                       type="button"
                       onClick={() => toggleSort('buyingPrice')}
@@ -1057,7 +1083,7 @@ export const InventoryView: React.FC = () => {
                       {renderSortIcon('buyingPrice')}
                     </button>
                   </th>
-                  <th className="py-2.5 px-3 text-right">
+                  <th className="py-2.5 px-2.5 text-right">
                     <button
                       type="button"
                       onClick={() => toggleSort('sellingPrice')}
@@ -1067,7 +1093,7 @@ export const InventoryView: React.FC = () => {
                       {renderSortIcon('sellingPrice')}
                     </button>
                   </th>
-                  <th className="py-2.5 px-3 text-right">
+                  <th className="py-2.5 px-2.5 text-right">
                     <button
                       type="button"
                       onClick={() => toggleSort('margin')}
@@ -1077,7 +1103,7 @@ export const InventoryView: React.FC = () => {
                       {renderSortIcon('margin')}
                     </button>
                   </th>
-                  <th className="py-2.5 px-3">
+                  <th className="py-2.5 px-2.5 whitespace-nowrap">
                     <button
                       type="button"
                       onClick={() => toggleSort('stock')}
@@ -1092,14 +1118,16 @@ export const InventoryView: React.FC = () => {
                     locations.map((loc) => (
                       <th
                         key={loc.id}
-                        className="py-2.5 px-3 text-center whitespace-nowrap"
+                        className="py-2.5 px-2.5 text-center whitespace-nowrap"
                         title={loc.name}
                       >
                         {loc.code || loc.name.split(' ')[0]}
                       </th>
                     ))}
 
-                  <th className="py-2.5 pl-3 pr-4 text-right">Actions</th>
+                  <th className="py-2.5 pl-2.5 pr-4 text-right sticky right-0 z-30 bg-slate-50 border-l border-slate-200/70">
+                    Actions
+                  </th>
                 </tr>
               </thead>
 
@@ -1175,7 +1203,7 @@ export const InventoryView: React.FC = () => {
                         }`}
                       >
                         {/* Selection Checkbox */}
-                        <td className="py-2.5 pl-4 pr-2 text-center">
+                        <td className="py-2.5 pl-3 pr-1.5 text-center">
                           <input
                             type="checkbox"
                             checked={isSelected}
@@ -1186,11 +1214,11 @@ export const InventoryView: React.FC = () => {
                         </td>
 
                         {/* Name & Barcode (Click opens Slide-Over Drawer) */}
-                        <td className="py-2.5 px-3">
+                        <td className="py-2.5 px-2.5">
                           <button
                             type="button"
                             onClick={() => setInspectedProductId(p.id)}
-                            className="text-left group/name cursor-pointer block max-w-[260px]"
+                            className="text-left group/name cursor-pointer block max-w-[200px] xl:max-w-[250px]"
                           >
                             <div className="font-semibold text-slate-900 group-hover/name:text-blue-600 transition truncate">
                               {p.name}
@@ -1203,19 +1231,19 @@ export const InventoryView: React.FC = () => {
                         </td>
 
                         {/* SKU */}
-                        <td className="py-2.5 px-3 font-mono tabular-nums text-slate-500 whitespace-nowrap">
+                        <td className="py-2.5 px-2.5 font-mono tabular-nums text-slate-500 whitespace-nowrap">
                           {p.sku}
                         </td>
 
                         {/* Category */}
-                        <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
+                        <td className="py-2.5 px-2.5 text-slate-600 whitespace-nowrap max-w-[140px] truncate">
                           {p.category}
                         </td>
 
                         {/* Supplier (Zero-Pill Clean Text) */}
-                        <td className="py-2.5 px-3">
+                        <td className="py-2.5 px-2.5">
                           {p.supplierName ? (
-                            <span className="inline-flex items-center gap-1.5 text-slate-700 max-w-[140px]">
+                            <span className="inline-flex items-center gap-1.5 text-slate-700 max-w-[130px]">
                               <Truck className="w-3 h-3 text-slate-400 shrink-0" />
                               <span className="truncate">{p.supplierName}</span>
                             </span>
@@ -1225,22 +1253,22 @@ export const InventoryView: React.FC = () => {
                         </td>
 
                         {/* Buying Price */}
-                        <td className="py-2.5 px-3 text-right font-mono tabular-nums text-slate-500 whitespace-nowrap">
+                        <td className="py-2.5 px-2.5 text-right font-mono tabular-nums text-slate-500 whitespace-nowrap">
                           {canViewCost ? `${currentLocation.currency} ${p.buyingPrice.toFixed(2)}` : '••••'}
                         </td>
 
                         {/* Selling Price */}
-                        <td className="py-2.5 px-3 text-right font-mono tabular-nums font-semibold text-slate-900 whitespace-nowrap">
+                        <td className="py-2.5 px-2.5 text-right font-mono tabular-nums font-semibold text-slate-900 whitespace-nowrap">
                           {currentLocation.currency} {p.sellingPrice.toFixed(2)}
                         </td>
 
                         {/* Margin */}
-                        <td className="py-2.5 px-3 text-right font-mono tabular-nums font-medium text-emerald-700 whitespace-nowrap">
+                        <td className="py-2.5 px-2.5 text-right font-mono tabular-nums font-medium text-emerald-700 whitespace-nowrap">
                           {canViewCost ? `${margin}%` : '—'}
                         </td>
 
                         {/* Current Location Stock Level + Inline Stepper Editor */}
-                        <td className="py-2.5 px-3 whitespace-nowrap">
+                        <td className="py-2.5 px-2.5 whitespace-nowrap">
                           {quickAdjustProductId === p.id && canManage ? (
                             <div className="flex items-center gap-1">
                               <button
@@ -1347,8 +1375,16 @@ export const InventoryView: React.FC = () => {
                             );
                           })}
 
-                        {/* Actions: Primary Inspect/Edit + Compact Row Overflow Menu */}
-                        <td className="py-2.5 pl-3 pr-4 text-right whitespace-nowrap">
+                        {/* Actions: Primary Inspect/Edit + Compact Row Overflow Menu (Sticky Right) */}
+                        <td
+                          className={`py-2.5 pl-2.5 pr-4 text-right whitespace-nowrap sticky right-0 z-10 border-l border-slate-100 transition-colors ${
+                            isInspected
+                              ? 'bg-blue-50'
+                              : isSelected
+                              ? 'bg-blue-50'
+                              : 'bg-white group-hover:bg-slate-50'
+                          }`}
+                        >
                           <div className="inline-flex items-center justify-end gap-1" data-row-menu-root>
                             <button
                               type="button"
@@ -1363,17 +1399,41 @@ export const InventoryView: React.FC = () => {
                             <div className="relative">
                               <button
                                 type="button"
-                                onClick={() =>
-                                  setOpenRowMenuId((prev) => (prev === p.id ? null : p.id))
-                                }
+                                onClick={(e) => {
+                                  if (openRowMenuId === p.id) {
+                                    setOpenRowMenuId(null);
+                                    return;
+                                  }
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  const spaceBelow = window.innerHeight - rect.bottom;
+                                  if (spaceBelow < 210) {
+                                    setRowMenuPosition({
+                                      bottom: window.innerHeight - rect.top + 4,
+                                      right: Math.max(12, window.innerWidth - rect.right),
+                                    });
+                                  } else {
+                                    setRowMenuPosition({
+                                      top: rect.bottom + 4,
+                                      right: Math.max(12, window.innerWidth - rect.right),
+                                    });
+                                  }
+                                  setOpenRowMenuId(p.id);
+                                }}
                                 className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
                                 aria-label={`More actions for ${p.name}`}
                               >
                                 <MoreHorizontal className="w-4 h-4" />
                               </button>
 
-                              {openRowMenuId === p.id && (
-                                <div className="absolute right-0 mt-1 w-48 bg-white rounded-xl border border-slate-200 shadow-xl py-1 z-30 text-left">
+                              {openRowMenuId === p.id && rowMenuPosition && (
+                                <div
+                                  style={{
+                                    top: rowMenuPosition.top,
+                                    bottom: rowMenuPosition.bottom,
+                                    right: rowMenuPosition.right,
+                                  }}
+                                  className="fixed w-48 bg-white rounded-xl border border-slate-200 shadow-xl py-1 z-50 text-left"
+                                >
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -1458,7 +1518,7 @@ export const InventoryView: React.FC = () => {
         <button
           type="button"
           onClick={scrollToTop}
-          className="fixed sm:absolute bottom-20 sm:bottom-6 right-4 sm:right-6 z-30 bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg border border-blue-500/50 transition-all duration-150 flex items-center justify-center cursor-pointer"
+          className="fixed sm:absolute bottom-20 sm:bottom-8 right-5 sm:right-9 z-30 bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg border border-blue-500/50 transition-all duration-150 flex items-center justify-center cursor-pointer"
           title="Scroll back to top of inventory"
           aria-label="Scroll to top"
         >

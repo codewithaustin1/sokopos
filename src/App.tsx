@@ -693,7 +693,7 @@ function PosAppContent() {
       )}
 
       {/* Main Workspace: Left Vertical Navigation Tabs + Primary Viewport */}
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex-1 flex overflow-hidden relative min-h-0 min-w-0">
         {/* Left Vertical Navigation */}
         <SidebarNav
           currentTab={currentTab}

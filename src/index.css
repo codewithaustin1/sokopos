@@ -559,6 +559,41 @@ html.dark .bg-black\/60 {
   background: #64748b;
 }
 
+/* Dedicated right-side vertical scroller for Inventory products table */
+.products-view-scroller {
+  overflow-y: scroll !important;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #f1f5f9;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
+.products-view-scroller::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+  display: block;
+}
+
+.products-view-scroller::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-left: 1px solid #e2e8f0;
+}
+
+.products-view-scroller::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 9999px;
+  border: 2px solid #f1f5f9;
+}
+
+.products-view-scroller::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+.products-view-scroller::-webkit-scrollbar-corner {
+  background: #f1f5f9;
+}
+
 /* Dark theme scrollbar */
 .dark-scrollbar::-webkit-scrollbar {
   width: 8px;
