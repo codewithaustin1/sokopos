@@ -11,7 +11,7 @@ service cloud.firestore {
 
     function isSuperAdmin() {
       return isSignedIn() && (
-        request.auth.token.email == 'upfrontretaile@gmail.com' ||
+        (request.auth.token.email == 'upfrontretaile@gmail.com' && request.auth.token.email_verified == true) ||
         request.auth.uid == 'ulGLrKgcsrWyqcGRJ6DzvHoEYY12' ||
         (request.auth.token.role != null && request.auth.token.role == 'super_admin')
       );
@@ -23,6 +23,7 @@ service cloud.firestore {
 
     function isOwnerOf(bizId) {
       return bizId is string &&
+             request.auth.token.email_verified == true &&
              exists(/databases/$(database)/documents/businesses/$(bizId)) &&
              get(/databases/$(database)/documents/businesses/$(bizId)).data.ownerEmail == request.auth.token.email;
     }
@@ -75,11 +76,18 @@ service cloud.firestore {
 
     // Businesses Collection (Tenants)
     match /businesses/{businessId} {
-      allow get: if true;
-      allow list: if true;
+      allow get: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource != null && request.auth.token.email_verified == true && resource.data.ownerEmail != null && resource.data.ownerEmail == request.auth.token.email) ||
+        hasTenantAccess(businessId)
+      );
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (request.auth.token.email_verified == true && resource.data.ownerEmail != null && resource.data.ownerEmail == request.auth.token.email)
+      );
       allow create: if isEmailVerified() && (
         isSuperAdmin() ||
-        (request.resource.data.ownerEmail != null && request.resource.data.ownerEmail == request.auth.token.email)
+        (request.resource.data.id != 'biz-demo' && request.resource.data.ownerEmail != null && request.resource.data.ownerEmail == request.auth.token.email)
       );
       allow update: if isEmailVerified() && (
         isSuperAdmin() ||
@@ -94,11 +102,17 @@ service cloud.firestore {
 
     // Products Collection (Tenant catalog items - Firestore single source of truth)
     match /products/{productId} {
-      allow get: if true;
-      allow list: if true;
+      allow get: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource != null && (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)))
+      );
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo')
+      );
       allow create: if isSignedIn() && (
         isSuperAdmin() ||
-        (request.resource.data.businessId is string && hasTenantAccess(request.resource.data.businessId))
+        (request.resource.data.businessId is string && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
       );
       allow update: if isSignedIn() && (
         isSuperAdmin() ||
@@ -115,11 +129,17 @@ service cloud.firestore {
 
     // Categories Collection (Tenant product categories)
     match /categories/{categoryId} {
-      allow get: if true;
-      allow list: if true;
+      allow get: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource != null && (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)))
+      );
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo')
+      );
       allow create: if isSignedIn() && (
         isSuperAdmin() ||
-        (request.resource.data.businessId is string && hasTenantAccess(request.resource.data.businessId))
+        (request.resource.data.businessId is string && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
       );
       allow update: if isSignedIn() && (
         isSuperAdmin() ||
@@ -136,11 +156,17 @@ service cloud.firestore {
 
     // Locations Collection (Tenant store branches & till registers)
     match /locations/{locationId} {
-      allow get: if true;
-      allow list: if true;
+      allow get: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource != null && (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)))
+      );
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo')
+      );
       allow create: if isSignedIn() && (
         isSuperAdmin() ||
-        (request.resource.data.businessId is string && hasTenantAccess(request.resource.data.businessId))
+        (request.resource.data.businessId is string && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
       );
       allow update: if isSignedIn() && (
         isSuperAdmin() ||
@@ -157,11 +183,17 @@ service cloud.firestore {
 
     // Cashiers / Staff Collection (Tenant cashiers & staff accounts)
     match /cashiers/{cashierId} {
-      allow get: if true;
-      allow list: if true;
+      allow get: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource != null && (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)))
+      );
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo')
+      );
       allow create: if isSignedIn() && (
         isSuperAdmin() ||
-        (request.resource.data.businessId is string && hasTenantAccess(request.resource.data.businessId))
+        (request.resource.data.businessId is string && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
       );
       allow update: if isSignedIn() && (
         isSuperAdmin() ||
@@ -204,12 +236,15 @@ service cloud.firestore {
     match /transactions/{transactionId} {
       allow get: if isSignedIn() && (
         isSuperAdmin() ||
-        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+        (resource != null && (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)))
       );
-      allow list: if isSignedIn();
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo')
+      );
       allow create: if isSignedIn() && (
         isSuperAdmin() ||
-        (request.resource.data.businessId is string && hasTenantAccess(request.resource.data.businessId))
+        (request.resource.data.businessId is string && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
       );
       allow update: if isSignedIn() && (
         isSuperAdmin() ||
@@ -228,12 +263,15 @@ service cloud.firestore {
     match /customers/{customerId} {
       allow get: if isSignedIn() && (
         isSuperAdmin() ||
-        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+        (resource != null && (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)))
       );
-      allow list: if isSignedIn();
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo')
+      );
       allow create: if isSignedIn() && (
         isSuperAdmin() ||
-        (request.resource.data.businessId is string && hasTenantAccess(request.resource.data.businessId))
+        (request.resource.data.businessId is string && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
       );
       allow update: if isSignedIn() && (
         isSuperAdmin() ||
@@ -252,12 +290,15 @@ service cloud.firestore {
     match /suppliers/{supplierId} {
       allow get: if isSignedIn() && (
         isSuperAdmin() ||
-        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+        (resource != null && (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)))
       );
-      allow list: if isSignedIn();
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo')
+      );
       allow create: if isSignedIn() && (
         isSuperAdmin() ||
-        (request.resource.data.businessId is string && hasTenantAccess(request.resource.data.businessId))
+        (request.resource.data.businessId is string && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
       );
       allow update: if isSignedIn() && (
         isSuperAdmin() ||
@@ -276,12 +317,15 @@ service cloud.firestore {
     match /stock_transfers/{transferId} {
       allow get: if isSignedIn() && (
         isSuperAdmin() ||
-        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+        (resource != null && (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)))
       );
-      allow list: if isSignedIn();
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo')
+      );
       allow create: if isSignedIn() && (
         isSuperAdmin() ||
-        (request.resource.data.businessId is string && hasTenantAccess(request.resource.data.businessId))
+        (request.resource.data.businessId is string && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
       );
       allow update: if isSignedIn() && (
         isSuperAdmin() ||
@@ -300,12 +344,15 @@ service cloud.firestore {
     match /sync_logs/{syncLogId} {
       allow get: if isSignedIn() && (
         isSuperAdmin() ||
-        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+        (resource != null && (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)))
       );
-      allow list: if isSignedIn();
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo')
+      );
       allow create: if isSignedIn() && (
         isSuperAdmin() ||
-        (request.resource.data.businessId is string && hasTenantAccess(request.resource.data.businessId))
+        (request.resource.data.businessId is string && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
       );
       allow update: if isSignedIn() && (
         isSuperAdmin() ||
@@ -324,12 +371,15 @@ service cloud.firestore {
     match /purged_sales_backups/{backupId} {
       allow get: if isSignedIn() && (
         isSuperAdmin() ||
-        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+        (resource != null && (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)))
       );
-      allow list: if isSignedIn();
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo')
+      );
       allow create: if isSignedIn() && (
         isSuperAdmin() ||
-        (request.resource.data.businessId is string && hasTenantAccess(request.resource.data.businessId))
+        (request.resource.data.businessId is string && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
       );
       allow update: if isSignedIn() && (
         isSuperAdmin() ||

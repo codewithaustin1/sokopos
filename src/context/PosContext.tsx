@@ -97,7 +97,7 @@ import {
   saveCategoryToFirestore,
   updateCategoryInFirestore,
   deleteCategoryFromFirestore,
-  subscribeToTenantCategories,
+  getTenantCategoriesFromFirestore,
   saveLocationToFirestore,
   updateLocationInFirestore,
   deleteLocationFromFirestore,
@@ -105,7 +105,7 @@ import {
   updateCashierInFirestore,
   deleteCashierFromFirestore,
   getTenantCashiersFromFirestore,
-  getAllCashiersFromFirestore,
+  findCashierInFirestoreByIdentity,
   saveTransactionToFirestore,
   saveStockTransferToFirestore,
   saveSyncLogToFirestore,
@@ -116,25 +116,29 @@ import {
   deleteBusinessFromFirestore,
   purgeTenantAllDataFromFirestore,
   getBusinessesFromFirestore,
+  getBusinessByIdFromFirestore,
+  getBusinessesByOwnerEmailFromFirestore,
   resolveBusinessUniquenessConflicts,
   deleteBusinessConflictsFromFirestore,
   saveUserProfileToFirestore,
   getFreshTenantProductsFromFirestore,
   subscribeToTenantProducts,
   subscribeToTenantLocations,
-  subscribeToTenantCashiers,
   subscribeToTenantTransactions,
+  getTenantTransactionsRangeFromFirestore,
+  flushPendingDocsBatch,
+  isDemoBusinessId,
   seedInitialTenantDataToFirestore,
   getPlatformSettingsFromFirestore,
   savePlatformSettingsToFirestore,
   saveCustomerToFirestore,
   updateCustomerInFirestore,
   deleteCustomerFromFirestore,
-  subscribeToTenantCustomers,
+  getTenantCustomersFromFirestore,
   saveSupplierToFirestore,
   updateSupplierInFirestore,
   deleteSupplierFromFirestore,
-  subscribeToTenantSuppliers,
+  getTenantSuppliersFromFirestore,
 } from '../lib/firestoreService';
 import {
   hashPinOnServer,
@@ -187,6 +191,7 @@ interface PosContextType {
   updateBusinessProfile: (updates: Partial<Business>) => void;
   updateBusinessStatus: (businessId: string, status: 'active' | 'suspended') => Promise<void>;
   performSystemCleanup: () => Promise<{ removedCount: number; removedBusinesses: string[] }>;
+  refreshAllBusinessesForSuperAdmin: (force?: boolean) => Promise<Business[]>;
   isRealGoogleAccount: (email?: string | null) => boolean;
 
   // Business Profile Settings & Branch Management
@@ -258,6 +263,8 @@ interface PosContextType {
   createSystemUser: (user: Omit<Cashier, 'id' | 'businessId'>) => Promise<boolean>;
   updateSystemUser: (id: string, updates: Partial<Cashier>) => Promise<boolean>;
   deleteSystemUser: (id: string) => void;
+  refreshTenantStaff: (force?: boolean) => Promise<void>;
+  isStaffLoading: boolean;
 
   // Live Role Privileges & Access Control (RBAC)
   rolePermissions: RolePermissionsMap;
@@ -318,6 +325,7 @@ interface PosContextType {
   addCategory: (category: Omit<Category, 'id' | 'businessId' | 'createdAt'>) => Promise<Category>;
   updateCategory: (id: string, updates: Partial<Category>) => Promise<void>;
   deleteCategory: (id: string) => Promise<boolean>;
+  refreshTenantCategories: (force?: boolean) => Promise<void>;
   addProduct: (product: Omit<Product, 'id' | 'businessId'> & { id?: string }) => void;
   updateProduct: (id: string, updates: Partial<Product>) => void;
   deleteProduct: (id: string) => void;
@@ -333,6 +341,8 @@ interface PosContextType {
   updateSupplier: (id: string, updates: Partial<Supplier>) => Promise<void>;
   deleteSupplier: (id: string) => Promise<boolean>;
   getProductsForSupplier: (supplierId: string) => Product[];
+  refreshTenantSuppliers: (force?: boolean) => Promise<void>;
+  isSuppliersLoading: boolean;
 
   // Fresh Inventory from Firestore Server (Bypassing Local Cache)
   fetchFreshInventoryFromServer: (businessIdOverride?: string, showFeedback?: boolean) => Promise<Product[]>;
@@ -380,12 +390,17 @@ interface PosContextType {
   deleteCustomer: (id: string) => Promise<boolean>;
   adjustCustomerCredit: (customerId: string, amountChange: number, reason: string, referenceId?: string) => Promise<void>;
   redeemCustomerLoyaltyPoints: (customerId: string, pointsToRedeem: number) => Promise<boolean>;
+  refreshTenantCustomers: (force?: boolean) => Promise<void>;
+  isCustomersLoading: boolean;
 
   // Barcode Scanning
   handleBarcodeScanned: (barcode: string) => { success: boolean; message: string; product?: Product };
 
   // Transactions & Checkout (Scoped to Current Business)
   transactions: Transaction[];
+  loadHistoricalTransactions: (startIso: string, endIso: string) => Promise<number>;
+  isLoadingOlderTransactions: boolean;
+  olderTransactionsLoadedFrom: string | null;
   activeReceipt: Transaction | null;
   setActiveReceipt: (tx: Transaction | null) => void;
   activeRefundReceipt: { refund: RefundRecord; originalTx: Transaction } | null;
@@ -710,11 +725,16 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
     const now = new Date().toISOString();
 
-    // Verify against our database to prevent duplicate account creation using the same Google account
+    // Verify strictly against owner's businesses and stable tenant ID (no full-collection scan)
     let candidateBusinesses = [...businesses];
     try {
-      const remoteBizs = await getBusinessesFromFirestore();
-      if (Array.isArray(remoteBizs) && remoteBizs.length > 0) {
+      const stableId = getStableBusinessIdForEmail(normalizedEmail);
+      const [ownerMatches, stableBiz] = await Promise.all([
+        getBusinessesByOwnerEmailFromFirestore(normalizedEmail),
+        getBusinessByIdFromFirestore(stableId),
+      ]);
+      const remoteBizs = [...ownerMatches, ...(stableBiz ? [stableBiz] : [])];
+      if (remoteBizs.length > 0) {
         const map = new Map<string, Business>();
         candidateBusinesses.forEach((b) => map.set(b.id, b));
         remoteBizs.forEach((b) => map.set(b.id, b));
@@ -1940,11 +1960,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return false;
     }
 
-    // Build global staff directory across ALL businesses (in-memory + Firestore if online)
+    // Check targeted cashier identity across Firestore (no full-collection scan)
     let globalUsers: Cashier[] = [...allSystemUsers];
-    if (isOnline) {
+    if (isOnline && auth.currentUser) {
       try {
-        const remoteCashiers = await getAllCashiersFromFirestore();
+        const remoteCashiers = await findCashierInFirestoreByIdentity(rawUsername, rawCode);
         if (remoteCashiers && remoteCashiers.length > 0) {
           const map = new Map<string, Cashier>();
           globalUsers.forEach((u) => map.set(u.id, u));
@@ -1952,7 +1972,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           globalUsers = Array.from(map.values());
         }
       } catch (err) {
-        console.warn('Global staff uniqueness check fallback to local state:', err);
+        console.warn('Targeted staff uniqueness check fallback to local state:', err);
       }
     }
 
@@ -2082,11 +2102,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return false;
     }
 
-    // Build global staff directory across ALL businesses for uniqueness checks
+    // Check targeted cashier identity across Firestore for uniqueness
     let globalUsers: Cashier[] = [...allSystemUsers];
-    if (isOnline && (normalizedUsername !== undefined || cleanCode !== undefined)) {
+    if (isOnline && auth.currentUser && (normalizedUsername !== undefined || cleanCode !== undefined)) {
       try {
-        const remoteCashiers = await getAllCashiersFromFirestore();
+        const remoteCashiers = await findCashierInFirestoreByIdentity(normalizedUsername, normalizedCode);
         if (remoteCashiers && remoteCashiers.length > 0) {
           const map = new Map<string, Cashier>();
           globalUsers.forEach((u) => map.set(u.id, u));
@@ -2094,7 +2114,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           globalUsers = Array.from(map.values());
         }
       } catch (err) {
-        console.warn('Global staff uniqueness check fallback on update:', err);
+        console.warn('Targeted staff uniqueness check fallback on update:', err);
       }
     }
 
@@ -2630,22 +2650,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     [activeBusinessId, showToast]
   );
 
-  // Automated Fresh Inventory Fetch once per authenticated Firebase login (onSnapshot keeps it live thereafter)
-  const lastLoggedInUserRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (currentUser && currentUser.id && auth.currentUser) {
-      // Whenever an authenticated user logs in or switches tenant account
-      const sessionKey = `${currentUser.id}:${currentUser.businessId}`;
-      if (lastLoggedInUserRef.current !== sessionKey) {
-        lastLoggedInUserRef.current = sessionKey;
-        fetchFreshInventoryFromServer(currentUser.businessId, false).catch((err) =>
-          console.warn('Auto-fresh inventory on login notice:', err)
-        );
-      }
-    } else {
-      lastLoggedInUserRef.current = null;
-    }
-  }, [currentUser, firebaseUser, fetchFreshInventoryFromServer]);
+  // Manual server inventory refresh only (live onSnapshot stream handles initial & automatic updates)
 
   const addProduct = (product: Omit<Product, 'id' | 'businessId'> & { id?: string }) => {
     const finalCategory = (!product.category || !product.category.trim()) ? 'All' : product.category.trim();
@@ -2973,22 +2978,41 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setSelectedCustomer(null);
   }, [activeBusinessId]);
 
-  // Real-time Firestore customer synchronization
-  useEffect(() => {
-    if (!isOnline || !auth.currentUser) return;
-    const unsubscribe = subscribeToTenantCustomers(activeBusinessId, (remoteCustomers) => {
-      if (remoteCustomers && remoteCustomers.length > 0) {
-        setAllCustomers((prev) => {
-          const others = prev.filter((c) => c.businessId !== activeBusinessId);
-          const map = new Map<string, Customer>();
-          prev.filter((c) => c.businessId === activeBusinessId).forEach((c) => map.set(c.id, c));
-          remoteCustomers.forEach((rc) => map.set(rc.id, rc));
-          return [...others, ...Array.from(map.values())];
-        });
+  // On-demand, session-cached (15-min TTL) customer directory fetcher
+  const ON_DEMAND_CACHE_TTL_MS = 15 * 60 * 1000;
+  const lastCustomersFetchRef = useRef<Record<string, number>>({});
+  const [isCustomersLoading, setIsCustomersLoading] = useState(false);
+
+  const refreshTenantCustomers = useCallback(
+    async (force = false) => {
+      if (!isOnline || !auth.currentUser || !activeBusinessId || isDemoBusinessId(activeBusinessId)) {
+        return;
       }
-    });
-    return () => unsubscribe();
-  }, [activeBusinessId, isOnline]);
+      const lastFetched = lastCustomersFetchRef.current[activeBusinessId] || 0;
+      if (!force && Date.now() - lastFetched < ON_DEMAND_CACHE_TTL_MS) {
+        return;
+      }
+      setIsCustomersLoading(true);
+      try {
+        const remoteCustomers = await getTenantCustomersFromFirestore(activeBusinessId);
+        lastCustomersFetchRef.current[activeBusinessId] = Date.now();
+        if (remoteCustomers && remoteCustomers.length > 0) {
+          setAllCustomers((prev) => {
+            const others = prev.filter((c) => c.businessId !== activeBusinessId);
+            const map = new Map<string, Customer>();
+            prev.filter((c) => c.businessId === activeBusinessId).forEach((c) => map.set(c.id, c));
+            remoteCustomers.forEach((rc) => map.set(rc.id, rc));
+            return [...others, ...Array.from(map.values())];
+          });
+        }
+      } catch (err) {
+        console.warn('On-demand customer fetch notice:', err);
+      } finally {
+        setIsCustomersLoading(false);
+      }
+    },
+    [activeBusinessId, isOnline]
+  );
 
   const addCustomer = async (
     data: Omit<Customer, 'id' | 'businessId' | 'totalSpent' | 'visitCount' | 'firstVisitAt' | 'lastVisitAt' | 'createdAt'>
@@ -3230,22 +3254,40 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setSelectedSupplier(null);
   }, [activeBusinessId]);
 
-  // Real-time Firestore supplier synchronization
-  useEffect(() => {
-    if (!isOnline || !auth.currentUser) return;
-    const unsubscribe = subscribeToTenantSuppliers(activeBusinessId, (remoteSuppliers) => {
-      if (remoteSuppliers && remoteSuppliers.length > 0) {
-        setAllSuppliers((prev) => {
-          const others = prev.filter((s) => s.businessId !== activeBusinessId);
-          const map = new Map<string, Supplier>();
-          prev.filter((s) => s.businessId === activeBusinessId).forEach((s) => map.set(s.id, s));
-          remoteSuppliers.forEach((rs) => map.set(rs.id, rs));
-          return [...others, ...Array.from(map.values())];
-        });
+  // On-demand, session-cached (15-min TTL) supplier directory fetcher
+  const lastSuppliersFetchRef = useRef<Record<string, number>>({});
+  const [isSuppliersLoading, setIsSuppliersLoading] = useState(false);
+
+  const refreshTenantSuppliers = useCallback(
+    async (force = false) => {
+      if (!isOnline || !auth.currentUser || !activeBusinessId || isDemoBusinessId(activeBusinessId)) {
+        return;
       }
-    });
-    return () => unsubscribe();
-  }, [activeBusinessId, isOnline]);
+      const lastFetched = lastSuppliersFetchRef.current[activeBusinessId] || 0;
+      if (!force && Date.now() - lastFetched < ON_DEMAND_CACHE_TTL_MS) {
+        return;
+      }
+      setIsSuppliersLoading(true);
+      try {
+        const remoteSuppliers = await getTenantSuppliersFromFirestore(activeBusinessId);
+        lastSuppliersFetchRef.current[activeBusinessId] = Date.now();
+        if (remoteSuppliers && remoteSuppliers.length > 0) {
+          setAllSuppliers((prev) => {
+            const others = prev.filter((s) => s.businessId !== activeBusinessId);
+            const map = new Map<string, Supplier>();
+            prev.filter((s) => s.businessId === activeBusinessId).forEach((s) => map.set(s.id, s));
+            remoteSuppliers.forEach((rs) => map.set(rs.id, rs));
+            return [...others, ...Array.from(map.values())];
+          });
+        }
+      } catch (err) {
+        console.warn('On-demand supplier fetch notice:', err);
+      } finally {
+        setIsSuppliersLoading(false);
+      }
+    },
+    [activeBusinessId, isOnline]
+  );
 
   const addSupplier = async (
     data: Omit<Supplier, 'id' | 'businessId' | 'createdAt'>
@@ -5524,90 +5566,119 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return;
       }
 
-      setSyncStatus('syncing');
-      // Background and user cloud sync should not trigger retail barcode scanner sound
-
-      if (!isSilent) {
-        await new Promise((res) => setTimeout(res, 500));
+      // Demo sandbox runs 100% locally with zero Firestore reads/writes
+      if (isDemoBusinessId(activeBusinessId)) {
+        setSyncStatus('synced');
+        if (!isSilent) {
+          showToast('Demo sandbox runs locally without cloud writes.', 'info');
+        }
+        return;
       }
 
-      if (isOnline) {
+      const pendingTxs = allTransactions.filter(
+        (tx) => tx.businessId === activeBusinessId && !tx.syncedToCloud
+      );
+      const pendingProds = allProducts.filter(
+        (prod) => prod.businessId === activeBusinessId && prod.isPendingCloudSync
+      );
+      const pendingLocs = allLocations.filter(
+        (loc) => loc.businessId === activeBusinessId && loc.isPendingCloudSync
+      );
+      const pendingCashiers = allSystemUsers.filter(
+        (u) => u.businessId === activeBusinessId && u.isPendingCloudSync
+      );
+
+      const totalPending =
+        pendingTxs.length + pendingProds.length + pendingLocs.length + pendingCashiers.length;
+
+      // Idle short-circuit: avoid React state churn, localStorage writes, and Firestore ops when queue is empty
+      if (totalPending === 0) {
+        if (!isSilent) {
+          soundFx.playSuccess();
+          setLastSyncTime(new Date().toISOString());
+          setSyncStatus('synced');
+          showToast('All store records are already synchronized with Firestore.', 'success');
+        }
+        return;
+      }
+
+      setSyncStatus('syncing');
+
+      if (!isSilent) {
+        await new Promise((res) => setTimeout(res, 300));
+      }
+
+      const nowIso = new Date().toISOString();
+      if (isOnline && auth.currentUser) {
         try {
-          // 1. Flush un-synced transactions
-          const activeTenantTxs = allTransactions.filter(
-            (tx) => tx.businessId === activeBusinessId
-          );
-          for (const t of activeTenantTxs) {
-            if (!t.syncedToCloud) {
-              await saveTransactionToFirestore({ ...t, syncedToCloud: true });
-            }
-          }
-
-          // 2. Flush un-synced products
-          const activeTenantProds = allProducts.filter(
-            (prod) => prod.businessId === activeBusinessId
-          );
-          for (const p of activeTenantProds) {
-            if (p.isPendingCloudSync) {
-              await saveProductToFirestore({ ...p, isPendingCloudSync: false });
-            }
-          }
-
-          // 3. Flush un-synced locations
-          const activeTenantLocs = allLocations.filter(
-            (loc) => loc.businessId === activeBusinessId
-          );
-          for (const l of activeTenantLocs) {
-            if (l.isPendingCloudSync) {
-              await saveLocationToFirestore({ ...l, isPendingCloudSync: false });
-            }
-          }
-
-          // 4. Flush un-synced cashiers/users
-          const activeTenantCashiers = allSystemUsers.filter(
-            (u) => u.businessId === activeBusinessId
-          );
-          for (const c of activeTenantCashiers) {
-            if (c.isPendingCloudSync) {
-              await saveCashierToFirestore({ ...c, isPendingCloudSync: false });
-            }
-          }
+          await flushPendingDocsBatch([
+            ...pendingTxs.map((t) => ({
+              collectionName: 'transactions' as const,
+              id: t.id,
+              data: { ...t, syncedToCloud: true, syncTimestamp: t.syncTimestamp || nowIso },
+            })),
+            ...pendingProds.map((p) => ({
+              collectionName: 'products' as const,
+              id: p.id,
+              data: { ...p, isPendingCloudSync: false },
+            })),
+            ...pendingLocs.map((l) => ({
+              collectionName: 'locations' as const,
+              id: l.id,
+              data: { ...l, isPendingCloudSync: false },
+            })),
+            ...pendingCashiers.map((c) => ({
+              collectionName: 'cashiers' as const,
+              id: c.id,
+              data: { ...c, isPendingCloudSync: false },
+            })),
+          ]);
         } catch (syncErr) {
-          console.warn('Firestore auto-sync reconciliation notice:', syncErr);
+          console.warn('Firestore auto-sync batch reconciliation notice:', syncErr);
         }
       }
 
-      setAllTransactions((prev) =>
-        prev.map((t) =>
-          t.businessId === activeBusinessId
-            ? {
-                ...t,
-                syncedToCloud: true,
-                syncTimestamp: t.syncTimestamp || new Date().toISOString(),
-              }
-            : t
-        )
-      );
+      if (pendingTxs.length > 0) {
+        setAllTransactions((prev) =>
+          prev.map((t) =>
+            t.businessId === activeBusinessId && !t.syncedToCloud
+              ? { ...t, syncedToCloud: true, syncTimestamp: t.syncTimestamp || nowIso }
+              : t
+          )
+        );
+      }
 
-      setAllProducts((prev) =>
-        prev.map((p) =>
-          p.businessId === activeBusinessId ? { ...p, isPendingCloudSync: false } : p
-        )
-      );
+      if (pendingProds.length > 0) {
+        setAllProducts((prev) =>
+          prev.map((p) =>
+            p.businessId === activeBusinessId && p.isPendingCloudSync
+              ? { ...p, isPendingCloudSync: false }
+              : p
+          )
+        );
+      }
 
-      setAllLocations((prev) =>
-        prev.map((l) =>
-          l.businessId === activeBusinessId ? { ...l, isPendingCloudSync: false } : l
-        )
-      );
+      if (pendingLocs.length > 0) {
+        setAllLocations((prev) =>
+          prev.map((l) =>
+            l.businessId === activeBusinessId && l.isPendingCloudSync
+              ? { ...l, isPendingCloudSync: false }
+              : l
+          )
+        );
+      }
 
-      setAllSystemUsers((prev) =>
-        prev.map((u) =>
-          u.businessId === activeBusinessId ? { ...u, isPendingCloudSync: false } : u
-        )
-      );
+      if (pendingCashiers.length > 0) {
+        setAllSystemUsers((prev) =>
+          prev.map((u) =>
+            u.businessId === activeBusinessId && u.isPendingCloudSync
+              ? { ...u, isPendingCloudSync: false }
+              : u
+          )
+        );
+      }
 
-      setLastSyncTime(new Date().toISOString());
+      setLastSyncTime(nowIso);
       setSyncStatus('synced');
       if (!isSilent) {
         soundFx.playSuccess();
@@ -5631,10 +5702,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // Automated background sync interval: flushes pending offline writes every 30 seconds
-  // Live inventory updates are already streamed via onSnapshot (subscribeToTenantProducts), avoiding redundant full-catalog polling reads.
+  // Automated background sync interval: flushes pending offline writes every 30 seconds (no-op when queue is empty)
   useEffect(() => {
-    const hasActiveSession = Boolean(currentUser && auth.currentUser);
+    const hasActiveSession = Boolean(currentUser && auth.currentUser && !isDemoBusinessId(activeBusinessId));
     if (!isOnline || !hasActiveSession || !activeBusinessId) return;
 
     const intervalId = setInterval(() => {
@@ -5655,11 +5725,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       triggerCloudSync(true).catch((err) =>
         console.warn('Auto-sync on network reconnect error:', err)
       );
-      if (activeBusinessId && auth.currentUser) {
-        fetchFreshInventoryFromServer(activeBusinessId, false).catch((err) =>
-          console.warn('Auto-fresh inventory on reconnect error:', err)
-        );
-      }
     };
 
     const handleOffline = () => {
@@ -5669,7 +5734,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     const handleVisibilityOrFocus = () => {
-      const hasActiveSession = Boolean(currentUser && auth.currentUser);
+      const hasActiveSession = Boolean(currentUser && auth.currentUser && !isDemoBusinessId(activeBusinessId));
       if (document.visibilityState === 'visible' && navigator.onLine && hasActiveSession && activeBusinessId) {
         triggerCloudSync(true).catch((err) =>
           console.warn('Auto-sync on visibility/focus error:', err)
@@ -5688,110 +5753,241 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('focus', handleVisibilityOrFocus);
     };
-  }, [triggerCloudSync, showToast, activeBusinessId, currentUser, fetchFreshInventoryFromServer]);
+  }, [triggerCloudSync, showToast, activeBusinessId, currentUser]);
 
   // 13.b Firestore Row-Level Security State & Tenant Data Synchronization
   const [isFirestoreConnected, setIsFirestoreConnected] = useState<boolean>(false);
   const firestoreDbId = (firebaseConfig as any).firestoreDatabaseId || 'ai-studio-sokopospointofsa-5314257a-dae6-432a-bde0-81ab935cc7ad';
   const firestoreRlsStatus = 'Row-Level Security Active: request.auth.token.businessId == resource.data.businessId';
 
-  // Test Firestore Connection and initial tenant hydration when Firebase user authenticates
+  const hasVerifiedConnectionRef = useRef<boolean>(false);
+  const lastBusinessesFetchRef = useRef<number>(0);
+  const lastCategoriesFetchRef = useRef<Record<string, number>>({});
+  const lastStaffFetchRef = useRef<Record<string, number>>({});
+  const [isStaffLoading, setIsStaffLoading] = useState<boolean>(false);
+  const [isLoadingOlderTransactions, setIsLoadingOlderTransactions] = useState<boolean>(false);
+  const [olderTransactionsLoadedFrom, setOlderTransactionsLoadedFrom] = useState<string | null>(null);
+
+  useEffect(() => {
+    setOlderTransactionsLoadedFrom(null);
+  }, [activeBusinessId]);
+
+  const refreshAllBusinessesForSuperAdmin = useCallback(
+    async (force = false): Promise<Business[]> => {
+      if (!isOnline || !auth.currentUser) return businesses;
+      const email = (auth.currentUser.email || '').trim().toLowerCase();
+      if (email !== SUPER_ADMIN_EMAIL.toLowerCase()) return businesses;
+      if (!force && Date.now() - lastBusinessesFetchRef.current < ON_DEMAND_CACHE_TTL_MS) {
+        return businesses;
+      }
+      try {
+        const remoteBizs = await getBusinessesFromFirestore();
+        lastBusinessesFetchRef.current = Date.now();
+        if (remoteBizs && remoteBizs.length > 0) {
+          const validRemote = remoteBizs.filter(
+            (b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'
+          );
+          if (validRemote.length > 0) {
+            setBusinesses((prev) => {
+              const combined = [
+                ...prev.filter((b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'),
+                ...validRemote,
+              ];
+              const { uniqueBusinesses } = resolveBusinessUniquenessConflicts(combined);
+              return uniqueBusinesses.length > 0 ? uniqueBusinesses : validRemote;
+            });
+            return validRemote;
+          }
+        }
+      } catch (err) {
+        console.warn('Super Admin businesses refresh notice:', err);
+      }
+      return businesses;
+    },
+    [isOnline, businesses]
+  );
+
+  const refreshTenantCategories = useCallback(
+    async (force = false) => {
+      if (!isOnline || !auth.currentUser || !activeBusinessId || isDemoBusinessId(activeBusinessId)) return;
+      const lastFetched = lastCategoriesFetchRef.current[activeBusinessId] || 0;
+      if (!force && Date.now() - lastFetched < ON_DEMAND_CACHE_TTL_MS) return;
+      try {
+        const remoteCats = await getTenantCategoriesFromFirestore(activeBusinessId);
+        lastCategoriesFetchRef.current[activeBusinessId] = Date.now();
+        if (Array.isArray(remoteCats) && remoteCats.length > 0) {
+          setAllCategories((prev) => {
+            const currentTenantLocal = prev.filter((c) => c.businessId === activeBusinessId);
+            const otherTenants = prev.filter((c) => c.businessId !== activeBusinessId);
+            const pendingOffline = currentTenantLocal.filter((c) => c.isPendingCloudSync);
+            const map = new Map<string, Category>();
+            remoteCats.forEach((r) => map.set(r.id, { ...r, isPendingCloudSync: false }));
+            pendingOffline.forEach((c) => {
+              if (!map.has(c.id)) map.set(c.id, c);
+            });
+            return [...Array.from(map.values()), ...otherTenants];
+          });
+        }
+      } catch (err) {
+        console.warn('On-demand categories fetch notice:', err);
+      }
+    },
+    [activeBusinessId, isOnline]
+  );
+
+  const refreshTenantStaff = useCallback(
+    async (force = false) => {
+      if (!isOnline || !auth.currentUser || !activeBusinessId || isDemoBusinessId(activeBusinessId)) return;
+      const lastFetched = lastStaffFetchRef.current[activeBusinessId] || 0;
+      if (!force && Date.now() - lastFetched < ON_DEMAND_CACHE_TTL_MS) return;
+      setIsStaffLoading(true);
+      try {
+        const remoteCashiers = await getTenantCashiersFromFirestore(activeBusinessId);
+        lastStaffFetchRef.current[activeBusinessId] = Date.now();
+        if (Array.isArray(remoteCashiers)) {
+          setAllSystemUsers((prev) => {
+            const currentTenantLocal = prev.filter((u) => u.businessId === activeBusinessId);
+            const otherTenants = prev.filter((u) => u.businessId !== activeBusinessId);
+            const pendingOffline = currentTenantLocal.filter((u) => u.isPendingCloudSync);
+            const map = new Map<string, Cashier>();
+            remoteCashiers.forEach((r) => map.set(r.id, { ...r, isPendingCloudSync: false }));
+            pendingOffline.forEach((u) => {
+              if (!map.has(u.id)) map.set(u.id, u);
+            });
+            const tenantResult =
+              remoteCashiers.length > 0 || pendingOffline.length > 0
+                ? Array.from(map.values())
+                : currentTenantLocal;
+            return [...tenantResult, ...otherTenants];
+          });
+        }
+      } catch (err) {
+        console.warn('On-demand staff fetch notice:', err);
+      } finally {
+        setIsStaffLoading(false);
+      }
+    },
+    [activeBusinessId, isOnline]
+  );
+
+  const loadHistoricalTransactions = useCallback(
+    async (startIso: string, endIso: string): Promise<number> => {
+      if (!isOnline || !auth.currentUser || !activeBusinessId || isDemoBusinessId(activeBusinessId)) {
+        return 0;
+      }
+      setIsLoadingOlderTransactions(true);
+      try {
+        const olderTxs = await getTenantTransactionsRangeFromFirestore(
+          activeBusinessId,
+          startIso,
+          endIso,
+          1000
+        );
+        if (olderTxs.length > 0) {
+          setAllTransactions((prev) => {
+            const currentTenantLocal = prev.filter((t) => t.businessId === activeBusinessId);
+            const otherTenants = prev.filter((t) => t.businessId !== activeBusinessId);
+            const map = new Map<string, Transaction>();
+            currentTenantLocal.forEach((t) => map.set(t.id, t));
+            olderTxs.forEach((r) => map.set(r.id, { ...r, syncedToCloud: true }));
+            const merged = Array.from(map.values()).sort(
+              (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+            );
+            return [...merged, ...otherTenants];
+          });
+        }
+        setOlderTransactionsLoadedFrom((prev) => (!prev || startIso < prev ? startIso : prev));
+        return olderTxs.length;
+      } catch (err) {
+        console.warn('Historical transaction query notice:', err);
+        return 0;
+      } finally {
+        setIsLoadingOlderTransactions(false);
+      }
+    },
+    [activeBusinessId, isOnline]
+  );
+
+  // Test Firestore Connection once and load strictly the signed-in user's business profile (no full-collection scan)
   useEffect(() => {
     if (!firebaseUser || !auth.currentUser) {
       return;
     }
     let cancelled = false;
-    testFirebaseConnection().then((connected) => {
+
+    const runInitialBootSync = async () => {
+      const connected = hasVerifiedConnectionRef.current ? true : await testFirebaseConnection();
       if (cancelled) return;
+      hasVerifiedConnectionRef.current = connected;
       setIsFirestoreConnected(connected);
-      if (connected && auth.currentUser) {
-        getBusinessesFromFirestore()
-          .then((remoteBizs) => {
-            if (cancelled) return;
-            if (remoteBizs && remoteBizs.length > 0) {
-              const validRemote = remoteBizs.filter(
-                (b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'
-              );
-              if (validRemote.length > 0) {
-                setBusinesses((prev) => {
-                  const combined = [
-                    ...prev.filter((b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'),
-                    ...validRemote,
-                  ];
-                  const { uniqueBusinesses } = resolveBusinessUniquenessConflicts(combined);
-                  return uniqueBusinesses.length > 0 ? uniqueBusinesses : validRemote;
-                });
 
-                const targetBiz = validRemote[0];
+      if (!connected || !auth.currentUser) return;
+      const userEmail = (auth.currentUser.email || '').toLowerCase().trim();
+      if (!userEmail) return;
 
-                setActiveBusinessIdState((prev) => {
-                  // Never evict or overwrite the Super Admin's dedicated business
-                  const userEmail = (auth.currentUser?.email || '').toLowerCase().trim();
-                  if (userEmail === SUPER_ADMIN_EMAIL.toLowerCase() || prev === 'biz-upfront') {
-                    localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, 'biz-upfront');
-                    return 'biz-upfront';
-                  }
-                  if (!prev || prev === 'biz-soko' || prev === 'biz-quickmart') {
-                    if (targetBiz) {
-                      localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBiz.id);
-                      return targetBiz.id;
-                    }
-                  }
-                  return prev;
-                });
+      try {
+        const isSA = userEmail === SUPER_ADMIN_EMAIL.toLowerCase();
+        const remoteBizs = isSA
+          ? (await getBusinessByIdFromFirestore('biz-upfront').then((b) => (b ? [b] : [])))
+          : await getBusinessesByOwnerEmailFromFirestore(userEmail);
+
+        if (cancelled) return;
+        if (remoteBizs.length > 0) {
+          const validRemote = remoteBizs.filter(
+            (b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'
+          );
+          if (validRemote.length > 0) {
+            setBusinesses((prev) => {
+              const combined = [
+                ...prev.filter((b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'),
+                ...validRemote,
+              ];
+              const { uniqueBusinesses } = resolveBusinessUniquenessConflicts(combined);
+              return uniqueBusinesses.length > 0 ? uniqueBusinesses : validRemote;
+            });
+
+            const targetBiz = validRemote[0];
+            setActiveBusinessIdState((prev) => {
+              if (isSA || prev === 'biz-upfront') {
+                localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, 'biz-upfront');
+                return 'biz-upfront';
               }
-            } else {
-              // Only run initial seed check if businesses collection was empty
-              seedInitialTenantDataToFirestore({
-                businesses: INITIAL_BUSINESSES,
-                products: INITIAL_PRODUCTS,
-                categories: INITIAL_CATEGORIES,
-                locations: INITIAL_LOCATIONS,
-                cashiers: INITIAL_SYSTEM_USERS,
-                transactions: INITIAL_TRANSACTIONS,
-              }).catch((err) => console.warn('Tenant data initial seed check:', err));
-            }
-          })
-          .catch((err) => console.warn('Remote businesses load note:', err));
+              if (!prev || prev === 'biz-soko' || prev === 'biz-quickmart') {
+                if (targetBiz) {
+                  localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBiz.id);
+                  return targetBiz.id;
+                }
+              }
+              return prev;
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Scoped remote business load note:', err);
       }
-    });
+    };
+
+    runInitialBootSync();
     return () => {
       cancelled = true;
     };
   }, [firebaseUser]);
 
-  // Real-time Firestore Tenant Subscriptions with Row-Level Security Scoping
-  // Rule from SKILL.md: Only attach onSnapshot listeners if auth is ready and user is authenticated
+  // Real-time Firestore Tenant Subscriptions (3 core live streams: products, locations, 30-day transactions)
+  // Categories, staff, customers, and suppliers load on demand with 15-min TTL session caching.
   useEffect(() => {
-    if (!isOnline || isFirebaseAuthLoading || !activeBusinessId) return;
-    if (!auth.currentUser) return; // Only attach listeners when user is authenticated in Firebase Auth
+    if (!isOnline || isFirebaseAuthLoading || !activeBusinessId || isDemoBusinessId(activeBusinessId)) return;
+    if (!auth.currentUser) return;
 
     let unsubProducts: (() => void) | undefined;
-    let unsubCategories: (() => void) | undefined;
     let unsubLocations: (() => void) | undefined;
-    let unsubCashiers: (() => void) | undefined;
     let unsubTransactions: (() => void) | undefined;
 
+    // Session-cached 1x fetches for static metadata (categories & staff)
+    refreshTenantCategories(false).catch(() => {});
+    refreshTenantStaff(false).catch(() => {});
+
     try {
-      unsubCategories = subscribeToTenantCategories(activeBusinessId, (remoteCats) => {
-        if (Array.isArray(remoteCats) && remoteCats.length > 0) {
-          setAllCategories((prev) => {
-            const currentTenantLocal = prev.filter((c) => c.businessId === activeBusinessId);
-            const otherTenants = prev.filter((c) => c.businessId !== activeBusinessId);
-
-            const pendingOffline = currentTenantLocal.filter((c) => c.isPendingCloudSync);
-            const map = new Map<string, Category>();
-            remoteCats.forEach((r) => map.set(r.id, { ...r, isPendingCloudSync: false }));
-            pendingOffline.forEach((c) => {
-              if (!map.has(c.id)) {
-                map.set(c.id, c);
-              }
-            });
-            return [...Array.from(map.values()), ...otherTenants];
-          });
-        }
-      });
-
       unsubProducts = subscribeToTenantProducts(activeBusinessId, (remoteProds, isFromCache) => {
         if (!isFromCache) {
           setIsInventoryFreshFromServer(true);
@@ -5802,17 +5998,17 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             const currentTenantLocal = prev.filter((p) => p.businessId === activeBusinessId);
             const otherTenants = prev.filter((p) => p.businessId !== activeBusinessId);
 
-            // Any offline items created or edited while offline
             const pendingOffline = currentTenantLocal.filter((p) => p.isPendingCloudSync);
             if (pendingOffline.length > 0) {
-              pendingOffline.forEach((p) => {
-                saveProductToFirestore({ ...p, isPendingCloudSync: false }).catch((err) =>
-                  console.warn('Auto-sync offline product to Firestore:', err)
-                );
-              });
+              flushPendingDocsBatch(
+                pendingOffline.map((p) => ({
+                  collectionName: 'products' as const,
+                  id: p.id,
+                  data: { ...p, isPendingCloudSync: false },
+                }))
+              ).catch((err) => console.warn('Auto-sync offline products batch:', err));
             }
 
-            // Remote products from Firestore are authoritative
             const map = new Map<string, Product>();
             remoteProds.forEach((r) => map.set(r.id, { ...r, isPendingCloudSync: false }));
             pendingOffline.forEach((p) => {
@@ -5838,11 +6034,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
             const pendingOffline = currentTenantLocal.filter((l) => l.isPendingCloudSync);
             if (pendingOffline.length > 0) {
-              pendingOffline.forEach((l) => {
-                saveLocationToFirestore({ ...l, isPendingCloudSync: false }).catch((err) =>
-                  console.warn('Auto-sync offline location to Firestore:', err)
-                );
-              });
+              flushPendingDocsBatch(
+                pendingOffline.map((l) => ({
+                  collectionName: 'locations' as const,
+                  id: l.id,
+                  data: { ...l, isPendingCloudSync: false },
+                }))
+              ).catch((err) => console.warn('Auto-sync offline locations batch:', err));
             }
 
             const map = new Map<string, Location>();
@@ -5862,80 +6060,49 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       });
 
-      unsubCashiers = subscribeToTenantCashiers(activeBusinessId, (remoteCashiers) => {
-        if (Array.isArray(remoteCashiers)) {
-          setAllSystemUsers((prev) => {
-            const currentTenantLocal = prev.filter((u) => u.businessId === activeBusinessId);
-            const otherTenants = prev.filter((u) => u.businessId !== activeBusinessId);
+      unsubTransactions = subscribeToTenantTransactions(
+        activeBusinessId,
+        (remoteTxs) => {
+          if (Array.isArray(remoteTxs)) {
+            setAllTransactions((prev) => {
+              const currentTenantLocal = prev.filter((t) => t.businessId === activeBusinessId);
+              const otherTenants = prev.filter((t) => t.businessId !== activeBusinessId);
 
-            const pendingOffline = currentTenantLocal.filter((u) => u.isPendingCloudSync);
-            if (pendingOffline.length > 0) {
-              pendingOffline.forEach((u) => {
-                saveCashierToFirestore({ ...u, isPendingCloudSync: false }).catch((err) =>
-                  console.warn('Auto-sync offline cashier to Firestore:', err)
-                );
-              });
-            }
+              const map = new Map<string, Transaction>();
+              currentTenantLocal.forEach((t) => map.set(t.id, t));
+              remoteTxs.forEach((r) => map.set(r.id, { ...r, syncedToCloud: true }));
 
-            const map = new Map<string, Cashier>();
-            remoteCashiers.forEach((r) => map.set(r.id, { ...r, isPendingCloudSync: false }));
-            pendingOffline.forEach((u) => {
-              if (!map.has(u.id)) {
-                map.set(u.id, u);
+              const pendingOffline = Array.from(map.values()).filter((t) => !t.syncedToCloud);
+              if (pendingOffline.length > 0) {
+                flushPendingDocsBatch(
+                  pendingOffline.map((tx) => ({
+                    collectionName: 'transactions' as const,
+                    id: tx.id,
+                    data: { ...tx, syncedToCloud: true },
+                  }))
+                ).catch((err) => console.warn('Auto-sync offline transactions batch:', err));
               }
+
+              const mergedTenantTxs = Array.from(map.values()).sort(
+                (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+              );
+
+              return [...mergedTenantTxs, ...otherTenants];
             });
-
-            const tenantResult = (remoteCashiers.length > 0 || pendingOffline.length > 0)
-              ? Array.from(map.values())
-              : currentTenantLocal;
-
-            return [...tenantResult, ...otherTenants];
-          });
-        }
-      });
-
-      unsubTransactions = subscribeToTenantTransactions(activeBusinessId, (remoteTxs) => {
-        if (Array.isArray(remoteTxs)) {
-          setAllTransactions((prev) => {
-            const currentTenantLocal = prev.filter((t) => t.businessId === activeBusinessId);
-            const otherTenants = prev.filter((t) => t.businessId !== activeBusinessId);
-
-            const map = new Map<string, Transaction>();
-            // 1. Preserve ALL local in-memory counter transactions first so they are never purged
-            currentTenantLocal.forEach((t) => map.set(t.id, t));
-            // 2. Merge remote authoritative transactions from Firestore
-            remoteTxs.forEach((r) => map.set(r.id, { ...r, syncedToCloud: true }));
-
-            // Any offline transactions that need upload
-            const pendingOffline = Array.from(map.values()).filter((t) => !t.syncedToCloud);
-            if (pendingOffline.length > 0) {
-              pendingOffline.forEach((tx) => {
-                saveTransactionToFirestore({ ...tx, syncedToCloud: true }).catch((err) =>
-                  console.warn('Auto-sync offline transaction to Firestore:', err)
-                );
-              });
-            }
-
-            const mergedTenantTxs = Array.from(map.values()).sort(
-              (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-            );
-
-            return [...mergedTenantTxs, ...otherTenants];
-          });
-        }
-      });
+          }
+        },
+        { windowDays: 30, maxDocs: 500 }
+      );
     } catch (subErr) {
       console.warn('Firestore subscription notice:', subErr);
     }
 
     return () => {
       if (unsubProducts) unsubProducts();
-      if (unsubCategories) unsubCategories();
       if (unsubLocations) unsubLocations();
-      if (unsubCashiers) unsubCashiers();
       if (unsubTransactions) unsubTransactions();
     };
-  }, [activeBusinessId, isOnline, isFirebaseAuthLoading, firebaseUser]);
+  }, [activeBusinessId, isOnline, isFirebaseAuthLoading, firebaseUser, refreshTenantCategories, refreshTenantStaff]);
 
   const seedTenantDataToFirestoreAction = async () => {
     if (!auth.currentUser) {
@@ -6031,7 +6198,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
       setIsFirebaseAuthLoading(false);
 
-      // Async background tasks: non-blocking profile save and inventory freshness warmup
+      // Async background tasks: non-blocking profile save (live onSnapshot streams catalog)
       saveUserProfileToFirestore({
         uid: firebaseUser.uid,
         email: firebaseUser.email,
@@ -6039,10 +6206,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         businessId: targetBizId,
         displayName: firebaseUser.displayName || '',
       });
-
-      fetchFreshInventoryFromServer(targetBizId, false).catch((err) =>
-        console.warn('Fresh inventory fetch on Google OAuth login notice:', err)
-      );
 
       soundFx.playSuccess();
       if (customStoreName && isExistingAccount) {
@@ -6469,13 +6632,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         displayName: authUser.name,
       });
 
-      // Always fetch inventory fresh from Firestore server on every successful login (not served from cache)
-      if (auth.currentUser) {
-        fetchFreshInventoryFromServer(targetBizId, false).catch((err) =>
-          console.warn('Fresh inventory fetch on token exchange notice:', err)
-        );
-      }
-
       soundFx.playSuccess();
       showToast(`OAuth token validated & verified for ${authUser.email}`, 'success');
       return true;
@@ -6637,13 +6793,17 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       u.code?.trim().toLowerCase().replace(/^#/, '') === cleanCode;
 
     let candidateUsers = allSystemUsers.filter(matchesIdentity);
+    let serverVerifiedLookup: Awaited<ReturnType<typeof verifyStaffPinViaServer>> | null = null;
 
-    // If candidate not in memory and online, query ALL cashiers across Firestore so any business staff can sign in
+    // If candidate not in memory and online, try targeted identity lookup (if signed in) or server credential vault
     if (candidateUsers.length === 0 && isOnline) {
       try {
-        let remoteCashiers = await getAllCashiersFromFirestore();
-        if (!remoteCashiers || remoteCashiers.length === 0) {
-          remoteCashiers = await getTenantCashiersFromFirestore(activeBusinessId);
+        let remoteCashiers: Cashier[] = [];
+        if (auth.currentUser) {
+          remoteCashiers = await findCashierInFirestoreByIdentity(trimmedInput, cleanCode);
+          if (!remoteCashiers || remoteCashiers.length === 0) {
+            remoteCashiers = await getTenantCashiersFromFirestore(activeBusinessId);
+          }
         }
         if (remoteCashiers && remoteCashiers.length > 0) {
           setAllSystemUsers((prev) => {
@@ -6654,8 +6814,59 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           });
           candidateUsers = remoteCashiers.filter(matchesIdentity);
         }
-      } catch (err) {
-        console.warn('Fresh remote cashiers check on login:', err);
+
+        // Fresh staff terminal with no Firebase Google session: verify directly via server vault
+        if (candidateUsers.length === 0) {
+          const directVerify = await verifyStaffPinViaServer({
+            pin,
+            usernameOrCode: trimmedInput,
+          });
+          if (directVerify.isValid && directVerify.cashierId && directVerify.businessId) {
+            serverVerifiedLookup = directVerify;
+            const resolvedName = directVerify.name || usernameOrId;
+            const synthesizedUser: Cashier = {
+              id: directVerify.cashierId,
+              businessId: directVerify.businessId,
+              name: resolvedName,
+              initials: resolvedName
+                .split(' ')
+                .map((p) => p[0])
+                .join('')
+                .substring(0, 2)
+                .toUpperCase() || 'ST',
+              role: (directVerify.role as Cashier['role']) || 'cashier',
+              code: directVerify.code || usernameOrId,
+              username: directVerify.username || trimmedInput,
+              pin: PROTECTED_PIN_MASK,
+              assignedLocationId: '',
+              avatarColor: 'bg-blue-600',
+              shiftStartedAt: new Date().toISOString(),
+            };
+            setAllSystemUsers((prev) => {
+              const map = new Map<string, Cashier>();
+              prev.forEach((u) => map.set(u.id, u));
+              map.set(synthesizedUser.id, synthesizedUser);
+              return Array.from(map.values());
+            });
+            candidateUsers = [synthesizedUser];
+          } else if (
+            directVerify.error &&
+            (directVerify.error.includes('Access Blocked') ||
+              directVerify.error.includes('locked') ||
+              directVerify.error.includes('Invalid PIN'))
+          ) {
+            soundFx.playError();
+            showToast(directVerify.error, 'error');
+            return false;
+          }
+        }
+      } catch (err: any) {
+        if (err?.message?.includes('locked') || err?.message?.includes('Too many')) {
+          soundFx.playError();
+          showToast(err.message, 'error');
+          return false;
+        }
+        console.warn('Targeted remote cashiers check on login:', err);
       }
     }
 
@@ -6670,31 +6881,39 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       // Validate staff PIN strictly through protected /api/auth/verify-pin server route
       let isValid = false;
+      let verifiedBusinessName = serverVerifiedLookup?.businessName;
+      let verifiedBusinessStatus = serverVerifiedLookup?.businessStatus;
       try {
-        const verifyRes = await verifyStaffPinViaServer({
-          pin,
-          cashierId: matchedUser.id,
-          businessId: matchedUser.businessId,
-          usernameOrCode: matchedUser.username || matchedUser.code,
-          fallbackHash: matchedUser.pin,
-        });
+        if (serverVerifiedLookup && serverVerifiedLookup.cashierId === matchedUser.id) {
+          isValid = serverVerifiedLookup.isValid;
+        } else {
+          const verifyRes = await verifyStaffPinViaServer({
+            pin,
+            cashierId: matchedUser.id,
+            businessId: matchedUser.businessId,
+            usernameOrCode: matchedUser.username || matchedUser.code,
+            fallbackHash: matchedUser.pin,
+          });
+          verifiedBusinessName = verifiedBusinessName || verifyRes.businessName;
+          verifiedBusinessStatus = verifiedBusinessStatus || verifyRes.businessStatus;
 
-        // Demo PIN bypass ONLY applies when explicitly in a demo flow or logging into a biz-demo account
-        const isDemoMatch =
-          isExplicitDemoUser &&
-          pin === '1234' &&
-          (matchedUser.businessId === 'biz-demo' ||
-            matchedUser.code === '#7000' ||
-            matchedUser.id === appointedDemoCashierId ||
-            matchedUser.isAppointedDemo);
+          // Demo PIN bypass ONLY applies when explicitly in a demo flow or logging into a biz-demo account
+          const isDemoMatch =
+            isExplicitDemoUser &&
+            pin === '1234' &&
+            (matchedUser.businessId === 'biz-demo' ||
+              matchedUser.code === '#7000' ||
+              matchedUser.id === appointedDemoCashierId ||
+              matchedUser.isAppointedDemo);
 
-        isValid = verifyRes.isValid || isDemoMatch;
+          isValid = verifyRes.isValid || isDemoMatch;
 
-        if (!isValid && verifyRes.error) {
-          if (verifyRes.error.includes('Access Blocked') || verifyRes.error.includes('locked')) {
-            soundFx.playError();
-            showToast(verifyRes.error, 'error');
-            return false;
+          if (!isValid && verifyRes.error) {
+            if (verifyRes.error.includes('Access Blocked') || verifyRes.error.includes('locked')) {
+              soundFx.playError();
+              showToast(verifyRes.error, 'error');
+              return false;
+            }
           }
         }
       } catch (err: any) {
@@ -6734,32 +6953,36 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               : targetBizLocations[0]?.id || matchedUser.assignedLocationId);
 
         let biz = businesses.find((b) => b.id === targetBizId);
-        if (!biz && isOnline) {
+        if (!biz && isOnline && auth.currentUser && !isDemoBusinessId(targetBizId)) {
           try {
-            const remoteBizs = await getBusinessesFromFirestore();
-            if (remoteBizs && remoteBizs.length > 0) {
+            const singleBiz = await getBusinessByIdFromFirestore(targetBizId);
+            if (singleBiz) {
               setBusinesses((prev) => {
                 const map = new Map<string, Business>();
                 prev.forEach((b) => map.set(b.id, b));
-                remoteBizs.forEach((b) => map.set(b.id, b));
+                map.set(singleBiz.id, singleBiz);
                 return Array.from(map.values());
               });
-              biz = remoteBizs.find((b) => b.id === targetBizId);
+              biz = singleBiz;
             }
           } catch (e) {
-            console.warn('Fetch remote business for staff session:', e);
+            console.warn('Fetch remote business by ID for staff session:', e);
           }
         }
 
         // Strict Check: Check if business is active or suspended
-        if (biz && biz.status === 'suspended') {
+        if ((biz && biz.status === 'suspended') || verifiedBusinessStatus === 'suspended') {
           soundFx.playError();
           showToast(
-            `Access Blocked: The business account "${biz.name}" is currently suspended. Please contact the business owner.`,
+            `Access Blocked: The business account "${biz?.name || verifiedBusinessName || targetBizId}" is currently suspended. Please contact the business owner.`,
             'error'
           );
           return false;
         }
+
+        const resolvedBizName = isDemoSessionActive
+          ? 'SokoPoS Demo Mart (Sandbox)'
+          : (biz?.name || verifiedBusinessName || 'SokoPoS Terminal Store');
 
         // Strict Session Lockdown: Bound strictly to targetBizId and matchedUser.role with masked PIN
         const authUser: AuthUser = {
@@ -6770,7 +6993,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           authProvider: 'credentials',
           role: matchedUser.role as UserRole,
           businessId: targetBizId,
-          businessName: isDemoSessionActive ? 'SokoPoS Demo Mart (Sandbox)' : (biz?.name || 'SokoPoS Terminal Store'),
+          businessName: resolvedBizName,
           username: matchedUser.username,
           pin: PROTECTED_PIN_MASK,
           assignedLocationId: targetLocationId,
@@ -6802,14 +7025,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setActiveReceipt(null);
         setActiveRefundReceipt(null);
 
-        // Fetch fresh inventory strictly scoped to this business
-        fetchFreshInventoryFromServer(targetBizId, false).catch((err) =>
-          console.warn('Fresh inventory fetch on credentials login notice:', err)
-        );
-
         soundFx.playSuccess();
         showToast(
-          `Shift started for ${matchedUser.name} (${matchedUser.role}) at ${biz?.name || 'Assigned Store'}.`,
+          `Shift started for ${matchedUser.name} (${matchedUser.role}) at ${resolvedBizName}.`,
           'success'
         );
         return true;
@@ -7804,6 +8022,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updateBusinessProfile,
         updateBusinessStatus,
         performSystemCleanup,
+        refreshAllBusinessesForSuperAdmin,
         isRealGoogleAccount,
 
         isBusinessSettingsOpen,
@@ -7860,6 +8079,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         createSystemUser,
         updateSystemUser,
         deleteSystemUser,
+        refreshTenantStaff,
+        isStaffLoading,
 
         rolePermissions,
         updateRolePermissions,
@@ -7908,6 +8129,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addCategory,
         updateCategory,
         deleteCategory,
+        refreshTenantCategories,
         addProduct,
         updateProduct,
         deleteProduct,
@@ -7923,6 +8145,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updateSupplier,
         deleteSupplier,
         getProductsForSupplier,
+        refreshTenantSuppliers,
+        isSuppliersLoading,
 
         fetchFreshInventoryFromServer,
         isInventoryFreshFromServer,
@@ -7953,10 +8177,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         deleteCustomer,
         adjustCustomerCredit,
         redeemCustomerLoyaltyPoints,
+        refreshTenantCustomers,
+        isCustomersLoading,
 
         handleBarcodeScanned,
 
         transactions,
+        loadHistoricalTransactions,
+        isLoadingOlderTransactions,
+        olderTransactionsLoadedFrom,
         storeSalesBackups,
         resetStoreSalesToZero,
         downloadSalesBackup,

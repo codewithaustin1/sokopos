@@ -177,6 +177,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
     pricingTiers,
     updatePricingTier,
     resetPricingTiersToDefault,
+    refreshAllBusinessesForSuperAdmin,
   } = usePos();
 
   const isSuperAdminUser = isSuperAdminEmail(currentUser?.email);
@@ -197,6 +198,12 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
   const [subStatusFilter, setSubStatusFilter] = useState<'all' | 'active' | 'suspended'>('all');
   const [subPlanFilter, setSubPlanFilter] = useState<'all' | 'starter' | 'professional' | 'enterprise'>('all');
   const [togglingBizId, setTogglingBizId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen && isSuperAdminUser) {
+      refreshAllBusinessesForSuperAdmin(false).catch(() => {});
+    }
+  }, [isOpen, isSuperAdminUser, refreshAllBusinessesForSuperAdmin]);
 
   useEffect(() => {
     if (isOpen && defaultTab) {

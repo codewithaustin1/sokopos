@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Users,
   UserPlus,
@@ -14,6 +14,7 @@ import {
   Loader2,
   Star,
   Sparkles,
+  RefreshCw,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { Cashier } from '../types';
@@ -33,7 +34,13 @@ export const StaffManagementView: React.FC = () => {
     openBusinessSettings,
     appointedDemoCashierId,
     appointDemoCashier,
+    refreshTenantStaff,
+    isStaffLoading,
   } = usePos();
+
+  useEffect(() => {
+    refreshTenantStaff(false).catch(() => {});
+  }, [refreshTenantStaff]);
 
   const isOwnerOrAdmin = currentUser.role === 'business_owner' || isSuperAdmin;
 
@@ -196,6 +203,15 @@ export const StaffManagementView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => refreshTenantStaff(true)}
+            disabled={isStaffLoading}
+            className="p-2.5 bg-white hover:bg-slate-50 text-slate-600 rounded-xl border border-slate-200 transition cursor-pointer disabled:opacity-50"
+            title="Refresh staff accounts from cloud"
+          >
+            <RefreshCw className={`w-4 h-4 ${isStaffLoading ? 'animate-spin text-blue-600' : ''}`} />
+          </button>
           {activeStaffSubTab === 'users' ? (
             <>
               <button

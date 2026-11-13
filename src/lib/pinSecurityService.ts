@@ -15,6 +15,10 @@ export interface VerifyPinResult {
   businessId?: string;
   role?: string;
   name?: string;
+  code?: string;
+  username?: string;
+  businessName?: string;
+  businessStatus?: string;
   error?: string;
 }
 
@@ -207,6 +211,10 @@ export async function verifyStaffPinViaServer(params: {
         businessId: data.businessId,
         role: data.role,
         name: data.name,
+        code: data.code,
+        username: data.username,
+        businessName: data.businessName,
+        businessStatus: data.businessStatus,
       };
     }
   } catch (err: any) {

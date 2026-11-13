@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Building2,
   Search,
@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   ChevronRight,
   TrendingUp,
+  RefreshCw,
 } from 'lucide-react';
 import { Supplier, Product } from '../types';
 import { usePos } from '../context/PosContext';
@@ -34,7 +35,13 @@ export const SupplierManagementView: React.FC = () => {
     currentLocation,
     currentBusiness,
     showToast,
+    refreshTenantSuppliers,
+    isSuppliersLoading,
   } = usePos();
+
+  useEffect(() => {
+    refreshTenantSuppliers(false).catch(() => {});
+  }, [refreshTenantSuppliers]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTermFilter, setSelectedTermFilter] = useState<string>('all');
@@ -136,6 +143,16 @@ export const SupplierManagementView: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => refreshTenantSuppliers(true)}
+            disabled={isSuppliersLoading}
+            className="p-2 bg-white hover:bg-slate-50 text-slate-600 rounded-xl border border-slate-200 transition cursor-pointer disabled:opacity-50"
+            title="Refresh suppliers from cloud"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSuppliersLoading ? 'animate-spin text-blue-600' : ''}`} />
+          </button>
+
           {/* AI Invoice Digitization Trigger */}
           <button
             id="btn-supplier-ai-invoice"

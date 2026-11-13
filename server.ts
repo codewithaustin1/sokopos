@@ -621,6 +621,22 @@ Sitemap: ${origin}/sitemap.xml
           });
         }
 
+        let businessName: string | undefined;
+        let businessStatus: string | undefined;
+        if (targetCred.businessId && targetCred.businessId !== 'biz-demo') {
+          const bizDoc = await getFirestoreDoc('businesses', targetCred.businessId).catch(() => null);
+          if (bizDoc) {
+            businessName = typeof bizDoc.name === 'string' ? bizDoc.name : undefined;
+            businessStatus = typeof bizDoc.status === 'string' ? bizDoc.status : undefined;
+            if (businessStatus === 'suspended') {
+              return res.status(403).json({
+                valid: false,
+                error: `Access Blocked: The business account "${businessName || targetCred.businessId}" is currently suspended. Please contact the business owner.`,
+              });
+            }
+          }
+        }
+
         return res.json({
           valid: true,
           cashierId: targetCred.cashierId,
@@ -629,6 +645,8 @@ Sitemap: ${origin}/sitemap.xml
           role: targetCred.role,
           code: targetCred.code,
           username: targetCred.username,
+          businessName,
+          businessStatus,
         });
       }
 
@@ -1377,6 +1395,47 @@ Extract:
     }
   }
 
+  async function queryFirestoreDocs(
+    collection: string,
+    fieldPath: string,
+    value: string | number | boolean,
+    pageSize = 100
+  ): Promise<Record<string, any>[]> {
+    const token = await getGcpAccessToken();
+    if (!token) return [];
+    try {
+      const runQueryUrl = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(firebaseProjectId)}/databases/${encodeURIComponent(firestoreDatabaseId)}/documents:runQuery`;
+      const resp = await fetch(runQueryUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          structuredQuery: {
+            from: [{ collectionId: collection }],
+            where: {
+              fieldFilter: {
+                field: { fieldPath },
+                op: 'EQUAL',
+                value: toFirestoreValue(value),
+              },
+            },
+            limit: pageSize,
+          },
+        }),
+      });
+      if (!resp.ok) return [];
+      const rows: any = await resp.json().catch(() => []);
+      if (!Array.isArray(rows)) return [];
+      return rows
+        .map((r: any) => (r?.document ? fromFirestoreDoc(r.document) : null))
+        .filter(Boolean) as Record<string, any>[];
+    } catch {
+      return [];
+    }
+  }
+
   const processedAffiliateRefs = new Set<string>();
 
   async function creditAffiliateCommissionOnPayment(params: {
@@ -1401,8 +1460,8 @@ Extract:
     const referredByCode = business?.referredByCode ? String(business.referredByCode).trim().toUpperCase() : '';
     if (!referredByCode) return;
 
-    // 3. Find matching active affiliate
-    const affiliates = await listFirestoreDocs('affiliates');
+    // 3. Find matching active affiliate via indexed runQuery
+    const affiliates = await queryFirestoreDocs('affiliates', 'code', referredByCode, 5);
     const affiliate = affiliates.find(
       (a) => String(a.code || '').trim().toUpperCase() === referredByCode && a.status === 'active'
     );
@@ -1415,9 +1474,9 @@ Extract:
       return;
     }
 
-    // 5. Check if this business already has prior commission entries (renewal vs first)
-    const allCommissions = await listFirestoreDocs('affiliate_commissions');
-    const priorForBiz = allCommissions.some((c) => c.businessId === businessId && c.affiliateId === affiliate.id);
+    // 5. Check if this business already has prior commission entries via indexed runQuery
+    const bizCommissions = await queryFirestoreDocs('affiliate_commissions', 'businessId', businessId, 20);
+    const priorForBiz = bizCommissions.some((c) => c.affiliateId === affiliate.id);
 
     const rate = typeof affiliate.commissionRate === 'number' && affiliate.commissionRate > 0
       ? affiliate.commissionRate
@@ -1465,7 +1524,7 @@ Extract:
       if (!code || code.length < 3) {
         return res.json({ valid: false });
       }
-      const affiliates = await listFirestoreDocs('affiliates');
+      const affiliates = await queryFirestoreDocs('affiliates', 'code', code, 5);
       const match = affiliates.find(
         (a) => String(a.code || '').trim().toUpperCase() === code && a.status === 'active'
       );
@@ -1491,8 +1550,8 @@ Extract:
       }
 
       const normalizedEmail = String(email).trim().toLowerCase();
-      const allBusinesses = await listFirestoreDocs('businesses');
-      const matchedBiz = allBusinesses.find(
+      const matchedBusinesses = await queryFirestoreDocs('businesses', 'ownerEmail', normalizedEmail, 5);
+      const matchedBiz = matchedBusinesses.find(
         (b) => String(b.ownerEmail || '').trim().toLowerCase() === normalizedEmail
       );
       const hasBusiness = Boolean(matchedBiz);
@@ -1506,8 +1565,8 @@ Extract:
 
       let existing = await getFirestoreDoc('affiliates', String(uid));
       if (!existing) {
-        const allAffiliates = await listFirestoreDocs('affiliates');
-        existing = allAffiliates.find(
+        const byEmail = await queryFirestoreDocs('affiliates', 'email', normalizedEmail, 5);
+        existing = byEmail.find(
           (a) => String(a.email || '').trim().toLowerCase() === normalizedEmail
         ) || null;
       }
@@ -1542,7 +1601,6 @@ Extract:
         });
       }
 
-      const allAffiliates = await listFirestoreDocs('affiliates');
       const cleanBase = (preferredCode || name || 'SOKO')
         .toString()
         .replace(/[^a-zA-Z0-9]/g, '')
@@ -1550,8 +1608,9 @@ Extract:
         .slice(0, 6) || 'SOKO';
 
       let candidateCode = `${cleanBase}${Math.floor(100 + Math.random() * 900)}`;
-      const existingCodes = new Set(allAffiliates.map((a) => String(a.code || '').toUpperCase()));
-      while (existingCodes.has(candidateCode)) {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const collision = await queryFirestoreDocs('affiliates', 'code', candidateCode, 1);
+        if (collision.length === 0) break;
         candidateCode = `${cleanBase}${Math.floor(100 + Math.random() * 900)}`;
       }
 
@@ -1601,14 +1660,14 @@ Extract:
 
       let affiliate = uid ? await getFirestoreDoc('affiliates', uid) : null;
       if (!affiliate && email) {
-        const allAffiliates = await listFirestoreDocs('affiliates');
-        affiliate = allAffiliates.find(
+        const byEmail = await queryFirestoreDocs('affiliates', 'email', email, 5);
+        affiliate = byEmail.find(
           (a) => String(a.email || '').trim().toLowerCase() === email
         ) || null;
       }
       if (!affiliate && uid) {
-        const allAffiliates = await listFirestoreDocs('affiliates');
-        affiliate = allAffiliates.find(
+        const byUid = await queryFirestoreDocs('affiliates', 'uid', uid, 5);
+        affiliate = byUid.find(
           (a) => String(a.uid || '') === uid
         ) || null;
       }
@@ -1617,28 +1676,26 @@ Extract:
         return res.json({ enrolled: false, affiliate: null, commissions: [], payouts: [] });
       }
 
-      const [allCommissions, allPayouts, allBusinesses] = await Promise.all([
-        listFirestoreDocs('affiliate_commissions'),
-        listFirestoreDocs('affiliate_payouts'),
-        listFirestoreDocs('businesses'),
+      const affEmail = String(affiliate.email || email || '').trim().toLowerCase();
+      const affCode = String(affiliate.code || '').trim().toUpperCase();
+
+      const [commissionsRaw, payoutsRaw, ownerBusinesses, referredBusinesses] = await Promise.all([
+        queryFirestoreDocs('affiliate_commissions', 'affiliateId', String(affiliate.id), 200),
+        queryFirestoreDocs('affiliate_payouts', 'affiliateId', String(affiliate.id), 100),
+        affEmail ? queryFirestoreDocs('businesses', 'ownerEmail', affEmail, 5) : Promise.resolve([]),
+        affCode ? queryFirestoreDocs('businesses', 'referredByCode', affCode, 200) : Promise.resolve([]),
       ]);
 
-      const matchedBiz = allBusinesses.find(
-        (b) => String(b.ownerEmail || '').trim().toLowerCase() === String(affiliate.email || '').trim().toLowerCase()
+      const matchedBiz = ownerBusinesses.find(
+        (b) => String(b.ownerEmail || '').trim().toLowerCase() === affEmail
       );
       const hasBusiness = Boolean(matchedBiz);
 
-      const commissions = allCommissions
-        .filter((c) => c.affiliateUid === uid || c.affiliateId === affiliate.id || (email && c.affiliateEmail === email))
+      const commissions = commissionsRaw
         .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
 
-      const payouts = allPayouts
-        .filter((p) => p.affiliateUid === uid || p.affiliateId === affiliate.id || (email && p.affiliateEmail === email))
+      const payouts = payoutsRaw
         .sort((a, b) => String(b.requestedAt || '').localeCompare(String(a.requestedAt || '')));
-
-      const referredStores = allBusinesses.filter(
-        (b) => String(b.referredByCode || '').toUpperCase() === String(affiliate.code || '').toUpperCase()
-      );
 
       return res.json({
         enrolled: true,
@@ -1648,11 +1705,11 @@ Extract:
           businessId: matchedBiz?.id || affiliate.businessId,
           businessName: matchedBiz?.name || affiliate.businessName,
           accountType: hasBusiness ? 'hybrid' : (affiliate.accountType || 'partner'),
-          referralCount: Math.max(Number(affiliate.referralCount || 0), referredStores.length),
+          referralCount: Math.max(Number(affiliate.referralCount || 0), referredBusinesses.length),
         },
         commissions,
         payouts,
-        referredStoresCount: referredStores.length,
+        referredStoresCount: referredBusinesses.length,
       });
     } catch (err: any) {
       console.error('Error in /api/affiliates/me:', err);

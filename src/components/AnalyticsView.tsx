@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   BarChart,
   Bar,
@@ -24,6 +24,8 @@ import {
   FileText,
   BarChart3,
   Printer,
+  History,
+  Loader2,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { DateRange, TimeRangePreset } from '../types/reporting';
@@ -52,6 +54,10 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ onNavigateToReport
     openBusinessSettings,
     canResetStore,
     showToast,
+    loadHistoricalTransactions,
+    isLoadingOlderTransactions,
+    olderTransactionsLoadedFrom,
+    isDemoSession,
   } = usePos();
 
   // Active view mode: Overview Dashboard vs Dedicated Reporting Suite
@@ -60,8 +66,23 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ onNavigateToReport
   // Location selector (All Locations vs specific location)
   const [selectedLocationId, setSelectedLocationId] = useState<string>('all');
 
-  // Global Time-Range Selector State (shared across both Overview & Reporting Suite)
+  // Global Time-Range Selector State (shared across both Overview & Reports)
   const [dateRange, setDateRange] = useState<DateRange>(() => calculateDateRange('today'));
+
+  useEffect(() => {
+    if (isDemoSession) return;
+    const thirtyDaysAgoMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const needsOlderHistory =
+      dateRange.preset === 'all' || dateRange.start.getTime() < thirtyDaysAgoMs;
+
+    if (!needsOlderHistory) return;
+
+    const startIso = dateRange.start.toISOString();
+    const endIso = dateRange.end.toISOString();
+    if (!olderTransactionsLoadedFrom || startIso < olderTransactionsLoadedFrom) {
+      loadHistoricalTransactions(startIso, endIso).catch(() => {});
+    }
+  }, [dateRange, isDemoSession, olderTransactionsLoadedFrom, loadHistoricalTransactions]);
 
   const currency = currentBusiness?.currency || currentLocation?.currency || 'KES';
 
@@ -185,16 +206,20 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ onNavigateToReport
       {/* Analytics Main Top Header Bar */}
       <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3.5 sm:py-4 flex flex-col xl:flex-row xl:items-center justify-between gap-4 shrink-0 shadow-2xs">
         <div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-baseline gap-2.5">
             <h2 className="text-base sm:text-lg font-black text-slate-800">
               {viewMode === 'overview' ? 'Sales & Real-Time Analytics' : 'Retail Reporting Suite & Compliance'}
             </h2>
-            <span className="text-[10px] bg-blue-50 text-blue-700 font-bold px-2 py-0.5 rounded-full border border-blue-100">
-              Live Cloud Telemetry
-            </span>
+            {!isDemoSession && (
+              <span className="text-[11px] font-medium text-slate-500 tabular-nums">
+                {olderTransactionsLoadedFrom
+                  ? `30-day live window + archive (${new Date(olderTransactionsLoadedFrom).toLocaleDateString()})`
+                  : '30-day live window'}
+              </span>
+            )}
           </div>
           <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
-            Synchronized with Firestore • {currentBusiness.name} ({currentLocation.name})
+            {currentBusiness.name} ({currentLocation.name})
           </p>
         </div>
 
@@ -259,6 +284,28 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ onNavigateToReport
             currentRange={dateRange}
             onChange={(newRange) => setDateRange(newRange)}
           />
+
+          {!isDemoSession && (
+            <button
+              type="button"
+              id="analytics-load-older-history-btn"
+              onClick={() =>
+                loadHistoricalTransactions(dateRange.start.toISOString(), dateRange.end.toISOString()).catch(() => {})
+              }
+              disabled={isLoadingOlderTransactions}
+              title="Fetch older transaction history on demand"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition cursor-pointer disabled:opacity-50"
+            >
+              {isLoadingOlderTransactions ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+              ) : (
+                <History className="w-3.5 h-3.5 text-slate-500" />
+              )}
+              <span className="hidden sm:inline">
+                {isLoadingOlderTransactions ? 'Loading...' : 'Load older history'}
+              </span>
+            </button>
+          )}
 
           {/* Quick Access Store Reset to Clean Zero (Owner / Super-Admin only) */}
           {canResetStore(currentBusiness?.id || '').allowed && (

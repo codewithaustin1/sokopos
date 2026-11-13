@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Users,
   Search,
@@ -23,6 +23,7 @@ import {
   Building2,
   BadgePercent,
   Clock,
+  RefreshCw,
 } from 'lucide-react';
 import { Customer } from '../types';
 import { usePos } from '../context/PosContext';
@@ -45,7 +46,13 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
     selectedCustomer,
     showToast,
     openBusinessSettings,
+    refreshTenantCustomers,
+    isCustomersLoading,
   } = usePos();
+
+  useEffect(() => {
+    refreshTenantCustomers(false).catch(() => {});
+  }, [refreshTenantCustomers]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTagFilter, setSelectedTagFilter] = useState<string>('all');
@@ -251,6 +258,16 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => refreshTenantCustomers(true)}
+              disabled={isCustomersLoading}
+              className="p-2 bg-white hover:bg-slate-50 text-slate-600 rounded-xl border border-slate-200 transition cursor-pointer disabled:opacity-50"
+              title="Refresh customers from cloud"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isCustomersLoading ? 'animate-spin text-blue-600' : ''}`} />
+            </button>
+
             <button
               type="button"
               id="customer-view-loyalty-settings-btn"

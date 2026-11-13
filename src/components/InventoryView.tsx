@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Plus,
   Search,
@@ -46,7 +46,12 @@ export const InventoryView: React.FC = () => {
     isInventoryLoading,
     inventoryLastFetchedAt,
     can,
+    refreshTenantSuppliers,
   } = usePos();
+
+  useEffect(() => {
+    refreshTenantSuppliers(false).catch(() => {});
+  }, [refreshTenantSuppliers]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All Categories');
