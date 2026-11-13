@@ -335,208 +335,170 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         <button
           type="button"
           onClick={() => setMobileActiveView('catalog')}
-          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+          className={`flex-1 min-h-[40px] py-2 px-3 rounded-lg text-xs font-semibold transition-colors duration-150 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
             mobileActiveView === 'catalog'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              ? 'bg-blue-600 text-white'
+              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
           }`}
         >
-          <ShoppingBag className="w-3.5 h-3.5" />
-          <span>Catalog ({filteredProducts.length})</span>
+          <ShoppingBag className="w-3.5 h-3.5 shrink-0" />
+          <span className="tabular-nums">Catalog ({filteredProducts.length})</span>
         </button>
 
         <button
           type="button"
           onClick={() => setMobileActiveView('cart')}
-          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer relative ${
+          className={`flex-1 min-h-[40px] py-2 px-3 rounded-lg text-xs font-semibold transition-colors duration-150 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
             mobileActiveView === 'cart'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              ? 'bg-blue-600 text-white'
+              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
           }`}
         >
-          <div className="flex items-center gap-1">
-            <ShoppingCart className="w-3.5 h-3.5" />
-            <span>Cart ({totalCartCount})</span>
-            {totalCartCount > 0 && (
-              <span className={`text-[10px] font-black ml-1 ${mobileActiveView === 'cart' ? 'text-blue-100' : 'text-emerald-600'}`}>
-                • {currentLocation.currency} {cartTotal.toFixed(0)}
-              </span>
-            )}
-          </div>
+          <ShoppingCart className="w-3.5 h-3.5 shrink-0" />
+          <span className="tabular-nums">Cart ({totalCartCount})</span>
+          {totalCartCount > 0 && (
+            <span className={`text-[11px] font-mono tabular-nums ${mobileActiveView === 'cart' ? 'text-blue-100' : 'text-slate-500'}`}>
+              · {currentLocation.currency} {cartTotal.toFixed(0)}
+            </span>
+          )}
         </button>
       </div>
 
       {/* Products Workspace (Left / 62% on desktop, full screen on mobile catalog view) */}
       <div
-        className={`flex-1 md:w-[62%] p-3 sm:p-4 flex flex-col gap-2.5 sm:gap-3 border-r border-slate-200 bg-slate-50 overflow-hidden relative min-h-0 ${
+        className={`flex-1 md:w-[62%] p-3 sm:p-4 flex flex-col gap-3 border-r border-slate-200 bg-slate-50 overflow-hidden relative min-h-0 ${
           mobileActiveView === 'catalog' ? 'flex' : 'hidden md:flex'
         }`}
       >
-        {/* Search & Category Header */}
-        <div className="flex flex-col gap-2 shrink-0">
-          <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3 items-stretch sm:items-center justify-between">
-            {/* Quick Search with Barcode Enter support & Ctrl+F shortcut */}
-            <div ref={searchContainerRef} className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 sm:top-3 pointer-events-none" />
-              <input
-                id="register-search-input"
-                ref={searchInputRef}
-                type="text"
-                placeholder={t('reg_search_placeholder', 'Search product, SKU or scan barcode...')}
-                value={searchQuery}
-                onFocus={() => setIsSearchFocused(true)}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={handleSearchKeyDown}
-                className="w-full bg-white border border-slate-300 rounded-xl py-2 pl-9 pr-32 text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 shadow-2xs transition"
-              />
-              <div className="absolute right-1.5 top-1.5 bottom-1.5 flex items-center gap-1">
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchQuery('');
-                      searchInputRef.current?.focus();
-                    }}
-                    title="Clear search"
-                    className="p-1 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-md transition cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                <span
-                  className="hidden sm:inline-flex items-center text-[10px] font-mono font-bold text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-2xs pointer-events-none"
-                  title="Keyboard shortcut: Ctrl+F"
-                >
-                  Ctrl+F
-                </span>
+        {/* Search & Branch Context */}
+        <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between shrink-0">
+          {/* Quick Search with Barcode Enter support & Ctrl+F shortcut */}
+          <div ref={searchContainerRef} className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              id="register-search-input"
+              ref={searchInputRef}
+              type="text"
+              placeholder={t('reg_search_placeholder', 'Search product, SKU or scan barcode...')}
+              value={searchQuery}
+              onFocus={() => setIsSearchFocused(true)}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
+              className="w-full min-h-[40px] bg-white border border-slate-300 rounded-lg py-2 pl-9 pr-36 text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition"
+            />
+            <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+              {searchQuery && (
                 <button
                   type="button"
-                  onClick={openBarcodeScanner}
-                  className="px-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-[10px] font-bold flex items-center gap-1 border border-blue-200 cursor-pointer h-full"
+                  onClick={() => {
+                    setSearchQuery('');
+                    searchInputRef.current?.focus();
+                  }}
+                  title="Clear search"
+                  className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-md transition cursor-pointer"
                 >
-                  <Scan className="w-3 h-3" /> {t('action_scan', 'Scan')} (F2)
+                  <X className="w-3.5 h-3.5" />
                 </button>
-              </div>
-
-              {/* Recent Searches Dropdown Popover */}
-              {isSearchFocused && (
-                <div className="absolute top-full left-0 right-0 mt-1.5 z-40 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
-                  <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-100 text-[11px]">
-                    <div className="flex items-center gap-1.5 font-bold text-slate-600 uppercase tracking-wider">
-                      <Clock className="w-3.5 h-3.5 text-blue-600" />
-                      <span>Recent Searches</span>
-                    </div>
-                    {recentSearches.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={clearAllRecentSearches}
-                        className="text-[10px] font-bold text-slate-400 hover:text-red-600 transition cursor-pointer hover:underline"
-                      >
-                        Clear All
-                      </button>
-                    )}
-                  </div>
-
-                  {recentSearches.length > 0 ? (
-                    <div className="max-h-56 overflow-y-auto py-1">
-                      {recentSearches.map((term) => {
-                        const matchCount = (products || []).filter(
-                          (p) =>
-                            p.name.toLowerCase().includes(term.toLowerCase()) ||
-                            p.sku.toLowerCase().includes(term.toLowerCase()) ||
-                            p.barcode.includes(term)
-                        ).length;
-
-                        return (
-                          <div
-                            key={term}
-                            onClick={() => handleSelectRecentSearch(term)}
-                            className="flex items-center justify-between px-3 py-1.5 hover:bg-blue-50/70 transition cursor-pointer group text-xs"
-                          >
-                            <div className="flex items-center gap-2 min-w-0 flex-1">
-                              <Clock className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 shrink-0" />
-                              <span className="font-semibold text-slate-700 group-hover:text-blue-700 truncate">
-                                {term}
-                              </span>
-                              <span className="text-[10px] font-medium text-slate-400 bg-slate-100 group-hover:bg-blue-100/70 group-hover:text-blue-600 px-1.5 py-0.5 rounded shrink-0">
-                                {matchCount} {matchCount === 1 ? 'match' : 'matches'}
-                              </span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={(e) => removeRecentSearch(term, e)}
-                              title={`Remove "${term}" from history`}
-                              className="p-1 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded transition shrink-0 ml-2 cursor-pointer"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="px-3 py-3 text-center text-slate-400 text-xs">
-                      <p className="font-medium text-slate-500">No recent searches yet</p>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        Products searched by name, SKU or barcode will appear here for fast re-selection.
-                      </p>
-                    </div>
-                  )}
-                </div>
               )}
-            </div>
-
-            <div className="text-[11px] font-semibold text-slate-500 whitespace-nowrap hidden lg:block">
-              Location: <span className="font-bold text-slate-800">{currentLocation.name}</span>
-            </div>
-          </div>
-
-          {/* Quick-Access Recent Search Chips (visible when catalog is displayed without a search query) */}
-          {recentSearches.length > 0 && !searchQuery && (
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none text-xs">
-              <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-0.5">
-                <Clock className="w-3 h-3 text-slate-400" />
-                <span>Recent:</span>
-              </div>
-              {recentSearches.slice(0, 6).map((term) => (
-                <div
-                  key={`chip-${term}`}
-                  className="inline-flex items-center bg-white border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 rounded-lg pl-2 pr-1 py-0.5 shadow-2xs text-[11px] font-semibold text-slate-700 transition cursor-pointer shrink-0 group"
-                  onClick={() => handleSelectRecentSearch(term)}
-                  title={`Filter catalog by "${term}"`}
-                >
-                  <span className="group-hover:text-blue-700 truncate max-w-[120px]">{term}</span>
-                  <button
-                    type="button"
-                    onClick={(e) => removeRecentSearch(term, e)}
-                    className="ml-1 p-0.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded transition cursor-pointer"
-                    title={`Remove "${term}"`}
-                  >
-                    <X className="w-2.5 h-2.5" />
-                  </button>
-                </div>
-              ))}
+              <span
+                className="hidden sm:inline-flex items-center text-[10px] font-mono text-slate-400 pointer-events-none px-1"
+                title="Keyboard shortcut: Ctrl+F"
+              >
+                Ctrl+F
+              </span>
               <button
                 type="button"
-                onClick={clearAllRecentSearches}
-                className="text-[10px] font-medium text-slate-400 hover:text-red-600 transition shrink-0 ml-1 hover:underline cursor-pointer"
-                title="Clear all recent searches"
+                onClick={openBarcodeScanner}
+                className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors duration-150 cursor-pointer whitespace-nowrap"
               >
-                Clear
+                <Scan className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <span>{t('action_scan', 'Scan')} (F2)</span>
               </button>
             </div>
-          )}
+
+            {/* Recent Searches Dropdown Popover */}
+            {isSearchFocused && (
+              <div className="absolute top-full left-0 right-0 mt-1.5 z-40 bg-white rounded-xl shadow-lg border border-slate-200 py-1.5 overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-100 text-[11px]">
+                  <div className="flex items-center gap-1.5 font-semibold text-slate-500 uppercase tracking-wider">
+                    <Clock className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Recent Searches</span>
+                  </div>
+                  {recentSearches.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={clearAllRecentSearches}
+                      className="text-[11px] font-medium text-slate-400 hover:text-red-600 transition cursor-pointer"
+                    >
+                      Clear All
+                    </button>
+                  )}
+                </div>
+
+                {recentSearches.length > 0 ? (
+                  <div className="max-h-56 overflow-y-auto py-1">
+                    {recentSearches.map((term) => {
+                      const matchCount = (products || []).filter(
+                        (p) =>
+                          p.name.toLowerCase().includes(term.toLowerCase()) ||
+                          p.sku.toLowerCase().includes(term.toLowerCase()) ||
+                          p.barcode.includes(term)
+                      ).length;
+
+                      return (
+                        <div
+                          key={term}
+                          onClick={() => handleSelectRecentSearch(term)}
+                          className="flex items-center justify-between px-3 py-2 hover:bg-slate-50 transition-colors cursor-pointer group text-xs"
+                        >
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <Clock className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 shrink-0" />
+                            <span className="font-medium text-slate-700 group-hover:text-blue-700 truncate">
+                              {term}
+                            </span>
+                            <span className="text-[11px] text-slate-400 tabular-nums shrink-0">
+                              · {matchCount} {matchCount === 1 ? 'match' : 'matches'}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => removeRecentSearch(term, e)}
+                            title={`Remove "${term}" from history`}
+                            className="p-1 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded transition shrink-0 ml-2 cursor-pointer"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="px-3 py-3 text-center text-slate-400 text-xs">
+                    <p className="font-medium text-slate-500">No recent searches yet</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Products searched by name, SKU or barcode will appear here.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="text-xs text-slate-500 whitespace-nowrap hidden lg:block">
+            Branch: <span className="font-semibold text-slate-800">{currentLocation.name}</span>
+          </div>
         </div>
 
-        {/* Category Filter Chips */}
-        <div className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-1 shrink-0 scrollbar-none touch-pan-x">
+        {/* Category Filter Tabs */}
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5 shrink-0 scrollbar-none touch-pan-x">
           {categories.map((cat) => (
             <button
               key={cat}
+              type="button"
               onClick={() => setSelectedCategory(cat)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap shadow-2xs cursor-pointer ${
+              className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600 ${
                 selectedCategory === cat
-                  ? 'bg-blue-600 text-white shadow-xs'
+                  ? 'bg-blue-600 text-white'
                   : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
               }`}
             >
@@ -546,15 +508,15 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         </div>
 
         {/* Product Cards Grid */}
-        <div className="flex-1 overflow-y-auto pr-0.5 sm:pr-1 pb-16 md:pb-0">
+        <div className="flex-1 overflow-y-auto pr-0.5 sm:pr-1 pb-20 md:pb-0">
           {filteredProducts.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center p-8 text-slate-400">
               <ShoppingBag className="w-12 h-12 mb-3 stroke-1 text-slate-300" />
-              <p className="text-sm font-bold text-slate-600">No items match your criteria</p>
+              <p className="text-sm font-semibold text-slate-600">No items match your criteria</p>
               <p className="text-xs text-slate-400 mt-1">Try another category or clear the search query</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-3 gap-2 sm:gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-3 gap-2.5 sm:gap-3">
               {filteredProducts.map((prod) => {
                 const stock = prod.stockByLocation[currentLocation.id] ?? 0;
                 const isOutOfStock = stock <= 0;
@@ -571,52 +533,53 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                       addToCart(prod);
                     }}
                     title={isOutOfStock ? `Cannot sell ${prod.name}: 0 stock available` : `Add ${prod.name} to cart`}
-                    className={`border rounded-xl p-2.5 sm:p-3.5 flex flex-col justify-between shadow-2xs transition select-none relative ${
+                    className={`border rounded-xl p-3 sm:p-3.5 flex flex-col justify-between transition-colors duration-150 select-none relative ${
                       isOutOfStock
                         ? 'bg-slate-50/90 border-red-200/80 opacity-60 cursor-not-allowed'
                         : inCart
-                        ? 'bg-blue-50/20 border-blue-500 ring-2 ring-blue-500/20 cursor-pointer hover:border-blue-500 hover:shadow-md'
-                        : 'bg-white border-slate-200 cursor-pointer hover:border-blue-500 hover:shadow-md group'
+                        ? 'bg-blue-50/20 border-blue-500 ring-1 ring-blue-500/30 cursor-pointer hover:border-blue-600'
+                        : 'bg-white border-slate-200 cursor-pointer hover:border-blue-400 group'
                     }`}
                   >
                     {inCart && (
-                      <div className="absolute top-2 right-2 bg-blue-600 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow-xs">
+                      <div className="absolute top-2.5 right-2.5 bg-blue-600 text-white text-[11px] font-mono font-bold tabular-nums min-w-[22px] h-[22px] px-1.5 rounded-md flex items-center justify-center">
                         {inCart.quantity}
                       </div>
                     )}
 
                     <div>
-                      <div className="flex items-start justify-between gap-1 pr-4">
-                        <h4 className={`text-xs font-bold leading-snug line-clamp-2 ${isOutOfStock ? 'text-slate-500' : 'text-slate-800 group-hover:text-blue-600 transition'}`}>
+                      <div className="flex items-start justify-between gap-1 pr-6">
+                        <h4 className={`text-xs font-bold leading-snug line-clamp-2 ${isOutOfStock ? 'text-slate-500' : 'text-slate-800 group-hover:text-blue-600 transition-colors'}`}>
                           {prod.name}
                         </h4>
                       </div>
-                      <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-400">
+                      <div className="flex items-center gap-1 mt-1 text-[11px] text-slate-400">
                         <span className="font-mono">{prod.sku}</span>
-                        <span>•</span>
+                        <span>·</span>
                         <span className="truncate">{prod.category}</span>
                       </div>
                     </div>
 
-                    <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-end justify-between gap-1">
-                      <div>
+                    <div className="mt-3 pt-2 border-t border-slate-100 flex items-baseline justify-between gap-2">
+                      <div className="min-w-0">
                         {isOutOfStock ? (
-                          <span className="text-[9px] sm:text-[10px] bg-red-100 text-red-700 font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5">
-                            <AlertTriangle className="w-2.5 h-2.5 shrink-0" /> Zero Stock (Cannot Sell)
+                          <span className="text-[11px] text-red-600 font-semibold inline-flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 shrink-0" />
+                            <span>Out of stock</span>
                           </span>
                         ) : isLowStock ? (
-                          <span className="text-[9px] sm:text-[10px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded">
-                            Qty: {stock}
+                          <span className="text-[11px] text-amber-700 font-semibold tabular-nums">
+                            Qty: {stock} (Low)
                           </span>
                         ) : (
-                          <span className="text-[9px] sm:text-[10px] bg-slate-100 text-slate-600 font-semibold px-1.5 py-0.5 rounded">
+                          <span className="text-[11px] text-slate-500 font-medium tabular-nums">
                             Qty: {stock}
                           </span>
                         )}
                       </div>
 
-                      <div className="text-right">
-                        <div className={`text-xs sm:text-sm font-black tracking-tight ${isOutOfStock ? 'text-slate-400 line-through' : 'text-blue-600'}`}>
+                      <div className="text-right shrink-0">
+                        <div className={`text-xs sm:text-sm font-bold font-mono tabular-nums tracking-tight ${isOutOfStock ? 'text-slate-400 line-through' : 'text-blue-600'}`}>
                           {currentLocation.currency} {prod.sellingPrice.toFixed(2)}
                         </div>
                       </div>
@@ -631,45 +594,47 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
       {/* Cart & Checkout Sidebar (Right / 38% on desktop, full screen on mobile cart view) */}
       <div
-        className={`md:w-[38%] bg-white flex flex-col justify-between border-t md:border-t-0 md:border-l border-slate-200 shadow-lg md:shadow-none h-full min-h-0 overflow-hidden relative ${
+        className={`md:w-[38%] bg-white flex flex-col justify-between border-t md:border-t-0 md:border-l border-slate-200 h-full min-h-0 overflow-hidden relative ${
           mobileActiveView === 'cart' ? 'flex flex-1' : 'hidden md:flex'
         }`}
       >
         {/* Cart Header */}
-        <div className="p-3 sm:p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/80 shrink-0">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="font-black text-slate-800 text-sm">{t('reg_cart_title', 'Active Order')}</h2>
-              <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+        <div className="p-3 sm:p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/80 shrink-0 gap-2">
+          <div className="min-w-0">
+            <h2 className="font-bold text-slate-900 text-sm truncate">
+              {t('reg_cart_title', 'Active Order')}
+              <span className="text-slate-400 font-normal"> · </span>
+              <span className="text-blue-600 font-semibold tabular-nums">
                 {totalCartCount} {totalCartCount === 1 ? t('reg_item', 'item') : t('reg_items', 'items')}
               </span>
-            </div>
-            <p className="text-[10px] text-slate-400 mt-0.5">
+            </h2>
+            <p className="text-[11px] text-slate-400 mt-0.5 truncate">
               {currentLocation.terminalName}
-              <span className="text-blue-600 font-semibold md:hidden ml-1">• Swipe left to void</span>
+              <span className="text-blue-600 font-medium md:hidden ml-1">· Swipe left to void</span>
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 shrink-0">
             <button
               type="button"
               onClick={() => openReturnsModal(null)}
-              className="text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer"
+              className="min-h-[36px] px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 rounded-lg transition-colors duration-150 flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
               title="Open Returns & Refunds Desk"
             >
-              <RotateCcw className="w-3 h-3 text-amber-700" />
+              <RotateCcw className="w-3.5 h-3.5 text-slate-500 shrink-0" />
               <span>{t('nav_returns', 'Returns')}</span>
             </button>
             <button
               type="button"
               onClick={() => setMobileActiveView('catalog')}
-              className="md:hidden text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg hover:bg-blue-100 transition cursor-pointer"
+              className="md:hidden min-h-[36px] px-2.5 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer whitespace-nowrap"
             >
-              + Add Items
+              + Add
             </button>
             {cart.length > 0 && (
               <button
+                type="button"
                 onClick={handleOpenCartVoid}
-                className="text-xs text-red-600 font-bold hover:bg-red-50 px-2.5 py-1 rounded-lg transition cursor-pointer"
+                className="min-h-[36px] px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-150 cursor-pointer whitespace-nowrap"
                 title="Cancel sale and record audited cart void"
               >
                 {t('reg_clear_cart', 'Clear (Void)')}
@@ -684,40 +649,40 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             <button
               type="button"
               onClick={() => setIsCustomerSelectOpen(true)}
-              className="w-full flex items-center justify-between px-3 py-2 bg-white hover:bg-slate-100/80 border border-dashed border-slate-300 hover:border-blue-400 rounded-xl text-xs font-bold text-slate-600 hover:text-blue-700 transition cursor-pointer group shadow-2xs"
+              className="w-full min-h-[40px] flex items-center justify-between px-3 py-2 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 rounded-lg text-xs font-medium text-slate-700 transition-colors duration-150 cursor-pointer group"
               title="Assign sale to customer account for loyalty & store credit"
             >
               <span className="flex items-center gap-2 truncate">
                 <User className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 shrink-0" />
                 <span className="truncate">{t('reg_walk_in', 'Walk-in Customer (Unassigned)')}</span>
               </span>
-              <span className="text-[10px] text-blue-600 bg-blue-50 group-hover:bg-blue-100 px-2 py-0.5 rounded-md font-bold shrink-0">
-                + Assign
+              <span className="text-xs text-blue-600 font-semibold shrink-0 ml-2">
+                Assign
               </span>
             </button>
           ) : (
-            <div className="bg-white border border-blue-200 rounded-xl p-2.5 flex items-center justify-between gap-2 shadow-2xs">
+            <div className="bg-white border border-blue-200 rounded-lg p-2.5 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-7 h-7 rounded-lg bg-blue-600 text-white font-black text-xs flex items-center justify-center shrink-0">
+                <div className="w-7 h-7 rounded-md bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
                   {selectedCustomer.name.slice(0, 2).toUpperCase()}
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-black text-slate-900 truncate">
+                    <span className="text-xs font-bold text-slate-900 truncate">
                       {selectedCustomer.name}
                     </span>
-                    <span className="text-[10px] font-mono text-slate-400 truncate">
+                    <span className="text-[11px] font-mono text-slate-400 truncate">
                       {selectedCustomer.phone}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 text-[10px] mt-0.5">
-                    <span className="text-amber-700 font-bold flex items-center gap-0.5">
-                      <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500" />
+                  <div className="flex items-center gap-2 text-[11px] mt-0.5 tabular-nums">
+                    <span className="text-amber-700 font-semibold inline-flex items-center gap-1">
+                      <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
                       {selectedCustomer.loyaltyPoints || 0} pts
                     </span>
-                    <span className="text-slate-300">•</span>
+                    <span className="text-slate-300">·</span>
                     <span
-                      className={`font-bold font-mono ${
+                      className={`font-semibold font-mono ${
                         (selectedCustomer.storeCreditBalance || 0) < 0
                           ? 'text-red-600'
                           : (selectedCustomer.storeCreditBalance || 0) > 0
@@ -739,7 +704,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsCustomerSelectOpen(true)}
-                  className="px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                  className="px-2 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-md transition cursor-pointer"
                   title="Change customer"
                 >
                   Change
@@ -747,7 +712,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedCustomer(null)}
-                  className="p-1 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition cursor-pointer"
+                  className="p-1 text-slate-400 hover:text-red-600 rounded-md hover:bg-red-50 transition cursor-pointer"
                   title="Remove customer assignment (Walk-in)"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -762,14 +727,14 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
           {cart.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center p-8 text-center text-slate-400">
               <ShoppingBag className="w-10 h-10 mb-2 stroke-1 text-slate-300" />
-              <div className="text-xs font-bold text-slate-600">{t('reg_empty_cart', 'Your cart is empty')}</div>
-              <p className="text-[11px] text-slate-400 mt-1 max-w-[200px]">
+              <div className="text-xs font-semibold text-slate-600">{t('reg_empty_cart', 'Your cart is empty')}</div>
+              <p className="text-[11px] text-slate-400 mt-1 max-w-[220px]">
                 {t('reg_empty_cart_sub', 'Scan a barcode, search, or click any product card to start checkout.')}
               </p>
               <button
                 type="button"
                 onClick={() => setMobileActiveView('catalog')}
-                className="mt-3 md:hidden text-xs font-bold text-white bg-blue-600 px-4 py-2 rounded-xl"
+                className="mt-3 md:hidden min-h-[40px] text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors"
               >
                 Browse Catalog
               </button>
@@ -792,129 +757,90 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         </div>
 
         {/* Totals & Checkout Box - Permanently Sticky at Bottom */}
-        <div className="shrink-0 sticky bottom-0 z-20 bg-white border-t border-slate-200 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] p-3 sm:p-4 space-y-1.5 sm:space-y-2">
+        <div className="shrink-0 sticky bottom-0 z-20 bg-white border-t border-slate-200 p-3 sm:p-4 space-y-1.5 sm:space-y-2">
           {cartDiscount > 0 && (
-            <div className="flex justify-between text-xs text-emerald-600 font-bold">
+            <div className="flex justify-between text-xs text-emerald-700 font-semibold">
               <span className="flex items-center gap-1">
                 <Tag className="w-3.5 h-3.5" />
                 <span>{t('reg_discount', 'Discount')}</span>
               </span>
-              <span className="font-mono">
+              <span className="font-mono tabular-nums">
                 - {currentLocation.currency} {cartDiscount.toFixed(2)}
               </span>
             </div>
           )}
           <div className="flex justify-between text-xs text-slate-500">
             <span>{t('reg_subtotal', 'Subtotal (Net)')}</span>
-            <span className="font-semibold text-slate-700">
+            <span className="font-mono font-medium tabular-nums text-slate-700">
               {currentLocation.currency} {cartSubtotal.toFixed(2)}
             </span>
           </div>
           <div className="flex justify-between items-center text-xs text-slate-500">
-            <span className="flex items-center gap-1.5">
-              <span>{currentBusiness?.taxSettings?.taxLabel || 'VAT'}</span>
-              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200">
-                {currentBusiness?.taxSettings?.pricingType === 'exclusive' ? 'Exclusive' : 'Inclusive'}
+            <span>
+              {currentBusiness?.taxSettings?.taxLabel || 'VAT'}
+              <span className="text-slate-400">
+                {' '}· {currentBusiness?.taxSettings?.pricingType === 'exclusive' ? 'Exclusive' : 'Inclusive'}
+                {cartTaxBreakdown && cartTaxBreakdown.length > 1 ? ` · ${cartTaxBreakdown.length} Rates` : ''}
               </span>
-              {cartTaxBreakdown && cartTaxBreakdown.length > 1 && (
-                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200" title="Multiple dynamic VAT/GST rates applied">
-                  {cartTaxBreakdown.length} Rates
-                </span>
-              )}
             </span>
-            <span className="font-semibold text-slate-700 font-mono">
+            <span className="font-mono font-medium tabular-nums text-slate-700">
               {currentLocation.currency} {cartTax.toFixed(2)}
             </span>
           </div>
-          <div className="flex justify-between text-sm sm:text-base font-black text-slate-900 pt-2 border-t border-slate-200">
+          <div className="flex justify-between items-baseline text-sm sm:text-base font-bold text-slate-900 pt-2 border-t border-slate-200">
             <span>{t('reg_total', 'Total Payable')}</span>
-            <span className="text-blue-600 font-black">
+            <span className="text-blue-600 font-mono font-bold tabular-nums">
               {currentLocation.currency} {cartTotal.toFixed(2)}
             </span>
           </div>
 
           {hasCents(cartTotal) && (
-            <div className="text-[10px] text-slate-500 font-medium flex justify-between items-center bg-slate-50 border border-slate-200/80 px-2 py-1 rounded-md">
-              <span className="text-slate-600">
-                Cash: <strong className="text-emerald-700">{currentLocation.currency} {roundCashHalfUp(cartTotal).toFixed(2)}</strong> (half-up)
+            <div className="text-[11px] text-slate-500 flex justify-between items-center pt-0.5 tabular-nums">
+              <span>
+                Cash: <strong className="font-mono text-slate-700">{currentLocation.currency} {roundCashHalfUp(cartTotal).toFixed(2)}</strong>
               </span>
-              <span className="text-slate-400">•</span>
-              <span className="text-slate-600">
-                Electronic: <strong className="text-blue-700">{currentLocation.currency} {cartTotal.toFixed(2)}</strong> (exact)
+              <span>
+                Electronic: <strong className="font-mono text-slate-700">{currentLocation.currency} {cartTotal.toFixed(2)}</strong>
               </span>
             </div>
           )}
 
-          <div className="flex items-center gap-2 mt-1 sm:mt-2">
-            {/* Direct Exact Cash 1-tap checkout */}
+          {/* Checkout Buttons: Secondary Exact Cash + Sole Primary Pay CTA */}
+          <div className="flex items-center gap-2 pt-1">
             <button
               id="register-exact-cash-btn"
               type="button"
               disabled={cart.length === 0}
               onClick={() => settleExactCash()}
-              className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-slate-300 text-white font-black py-3 sm:py-3.5 px-3 rounded-xl shadow-xs transition text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed shrink-0"
+              className="bg-white hover:bg-slate-50 active:bg-slate-100 border border-slate-300 disabled:opacity-50 disabled:bg-slate-50 text-slate-800 font-bold min-h-[46px] px-3.5 sm:px-4 rounded-xl transition-colors duration-150 text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-blue-600"
               title="Instant single-tap cash checkout with standard half-up rounding (Shortcut: F1)"
             >
-              <Banknote className="w-4 h-4 text-emerald-100 shrink-0" />
+              <Banknote className="w-4 h-4 text-slate-500 shrink-0" />
               <span className="hidden sm:inline">{t('pay_exact_amount', 'Exact Cash')}</span>
               <span className="sm:hidden">{t('pay_cash', 'Cash')}</span>
-              <kbd className="hidden xl:inline-block text-[10px] bg-emerald-700/80 border border-emerald-500/40 text-emerald-100 px-1.5 py-0.5 rounded font-mono font-bold shrink-0">
+              <kbd className="hidden xl:inline-block text-[10px] text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
                 F1
               </kbd>
             </button>
 
-            {/* Prominent Sticky Pay Button */}
             <button
               id="register-settle-btn"
               type="button"
               disabled={cart.length === 0}
               onClick={onProceedToPayment}
-              className={`flex-1 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-slate-300 text-white font-black py-3 sm:py-3.5 px-4 rounded-xl shadow-md hover:shadow-lg active:scale-[0.99] transition text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed group ${
-                cart.length > 0 ? 'primary-cta-shimmer' : ''
-              }`}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-slate-300 text-white font-bold min-h-[46px] px-5 rounded-xl transition-colors duration-150 text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed whitespace-nowrap group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
               title="Pay / Proceed to Checkout (Shortcuts: Space, Enter)"
             >
-              <span className="text-sm font-black truncate">
+              <span className="text-sm font-bold font-mono tabular-nums truncate">
                 {t('reg_pay_button', 'Pay')} {currentLocation.currency} {cartTotal.toFixed(2)}
               </span>
-              <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform shrink-0" />
-              <kbd className="hidden xl:inline-block text-[10px] bg-blue-700/80 border border-blue-500/40 text-blue-100 px-1.5 py-0.5 rounded font-mono font-bold shrink-0">
-                ↵
-              </kbd>
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform duration-150 shrink-0" />
             </button>
           </div>
 
-          {/* Cashier Speed Shortcuts Legend */}
-          <div className="hidden lg:flex items-center justify-center flex-wrap gap-x-2 gap-y-1 pt-2 text-[10px] text-slate-400 font-medium">
-            <span className="inline-flex items-center gap-1">
-              <kbd className="font-mono bg-slate-100 border border-slate-300 rounded px-1 text-slate-600 font-bold">Space / ↵</kbd>
-              <span>Settle</span>
-            </span>
-            <span>•</span>
-            <span className="inline-flex items-center gap-1">
-              <kbd className="font-mono bg-slate-100 border border-slate-300 rounded px-1 text-slate-600 font-bold">F1</kbd>
-              <span>Exact Cash</span>
-            </span>
-            <span>•</span>
-            <span className="inline-flex items-center gap-1">
-              <kbd className="font-mono bg-slate-100 border border-slate-300 rounded px-1 text-slate-600 font-bold">F2</kbd>
-              <span>M-Pesa</span>
-            </span>
-            <span>•</span>
-            <span className="inline-flex items-center gap-1">
-              <kbd className="font-mono bg-slate-100 border border-slate-300 rounded px-1 text-slate-600 font-bold">F3</kbd>
-              <span>Card</span>
-            </span>
-            <span>•</span>
-            <span className="inline-flex items-center gap-1">
-              <kbd className="font-mono bg-slate-100 border border-slate-300 rounded px-1 text-slate-600 font-bold">+/-</kbd>
-              <span>Qty</span>
-            </span>
-            <span>•</span>
-            <span className="inline-flex items-center gap-1">
-              <kbd className="font-mono bg-slate-100 border border-slate-300 rounded px-1 text-slate-600 font-bold">Esc</kbd>
-              <span>Close</span>
-            </span>
+          {/* Single-Line Keyboard Shortcut Hint */}
+          <div className="hidden lg:block text-center pt-1 text-[11px] text-slate-400">
+            Space / Enter: Pay · F1: Exact Cash · F2: M-Pesa · F10: All shortcuts
           </div>
         </div>
       </div>
@@ -954,50 +880,48 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         onSelectCustomer={(c) => setSelectedCustomer(c)}
       />
 
-      {/* Mobile Sticky Floating Cart Action Pill (Thumb-Zone Checkout) */}
+      {/* Mobile Sticky Floating Cart Action Bar (Thumb-Zone Checkout) */}
       {cart.length > 0 && mobileActiveView === 'catalog' && (
         <aside
           id="mobile-sticky-cart-pill"
           aria-label="Active order quick checkout bar"
-          className="md:hidden fixed bottom-16 inset-x-3 sm:inset-x-4 z-40 animate-in slide-in-from-bottom-5 duration-200 safe-bottom"
+          className="md:hidden fixed bottom-16 inset-x-3 sm:inset-x-4 z-40 safe-bottom"
         >
-          <div className="bg-slate-900/95 backdrop-blur-md text-white rounded-2xl p-2.5 pl-3.5 flex items-center justify-between shadow-[0_12px_32px_rgba(0,0,0,0.4)] border border-slate-700/80">
-            {/* Tapping summary switches view to Cart */}
+          <div className="bg-slate-900 text-white rounded-xl p-2 pl-3 flex items-center justify-between shadow-lg border border-slate-700/80">
             <button
               type="button"
               onClick={() => {
                 Haptics.light();
                 setMobileActiveView('cart');
               }}
-              className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer active:opacity-85 py-0.5"
+              className="flex items-center gap-2.5 min-w-0 flex-1 min-h-[44px] text-left cursor-pointer active:opacity-85"
               title="Inspect Active Cart"
             >
-              <div className="w-9 h-9 rounded-xl bg-blue-600/30 text-blue-400 flex items-center justify-center font-black shrink-0 border border-blue-500/40">
+              <div className="w-9 h-9 rounded-lg bg-blue-600/30 text-blue-300 flex items-center justify-center shrink-0">
                 <ShoppingCart className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <div className="text-xs font-black text-white flex items-center gap-1.5 truncate">
-                  <span>🛒 {totalCartCount} Item{totalCartCount !== 1 ? 's' : ''}</span>
-                  <span className="text-slate-400">•</span>
+                <div className="text-xs font-bold text-white flex items-center gap-1.5 truncate tabular-nums">
+                  <span>{totalCartCount} item{totalCartCount !== 1 ? 's' : ''}</span>
+                  <span className="text-slate-400">·</span>
                   <span className="text-emerald-400 font-mono">
                     {currentLocation.currency} {cartTotal.toFixed(2)}
                   </span>
                 </div>
-                <div className="text-[10px] text-slate-400 truncate flex items-center gap-0.5">
+                <div className="text-[11px] text-slate-400 truncate flex items-center gap-0.5">
                   <span>Tap to view order</span>
                   <ChevronRight className="w-3 h-3 text-slate-500 inline" />
                 </div>
               </div>
             </button>
 
-            {/* Direct Pay Action Trigger */}
             <button
               type="button"
               onClick={() => {
                 Haptics.light();
                 onProceedToPayment();
               }}
-              className="bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-black text-xs px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 shadow-md active:scale-95 transition cursor-pointer shrink-0 ml-2"
+              className="bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-xs min-h-[44px] px-4 rounded-lg flex items-center gap-1.5 transition-colors duration-150 cursor-pointer shrink-0 ml-2 whitespace-nowrap"
               title="Pay / Proceed to Checkout"
             >
               <span>Pay</span>

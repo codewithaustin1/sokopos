@@ -51,8 +51,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       label: t('nav_sell', 'Sell'),
       icon: ShoppingCart,
       badge: cartItemCount > 0 ? `${cartItemCount}` : null,
-      badgeColor: 'bg-blue-500 text-white',
-      activeBadgeColor: 'bg-white text-blue-600',
+      badgeTone: 'neutral' as const,
       allowed: can('sell'),
     },
     {
@@ -61,8 +60,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       label: t('nav_customers', 'Customers'),
       icon: Users,
       badge: null,
-      badgeColor: '',
-      activeBadgeColor: '',
+      badgeTone: 'neutral' as const,
       allowed: can('viewCustomers') || can('manageCustomers'),
     },
     {
@@ -71,8 +69,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       label: t('nav_inventory', 'Inventory'),
       icon: Package,
       badge: null,
-      badgeColor: '',
-      activeBadgeColor: '',
+      badgeTone: 'neutral' as const,
       allowed: can('viewInventory'),
     },
     {
@@ -81,8 +78,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       label: t('nav_suppliers', 'Suppliers'),
       icon: Truck,
       badge: null,
-      badgeColor: '',
-      activeBadgeColor: '',
+      badgeTone: 'neutral' as const,
       allowed: can('manageSuppliers'),
     },
     {
@@ -91,8 +87,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       label: t('nav_shifts', 'Shifts & Till'),
       icon: Clock,
       badge: null,
-      badgeColor: '',
-      activeBadgeColor: '',
+      badgeTone: 'neutral' as const,
       allowed: can('openShift') || can('viewShiftTotals'),
     },
     {
@@ -101,8 +96,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       label: t('nav_analytics', 'Analytics'),
       icon: AnalyticsIcon,
       badge: null,
-      badgeColor: '',
-      activeBadgeColor: '',
+      badgeTone: 'neutral' as const,
       allowed: can('viewAnalytics'),
     },
     {
@@ -111,8 +105,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       label: t('nav_reports', 'Reports'),
       icon: FileText,
       badge: null,
-      badgeColor: '',
-      activeBadgeColor: '',
+      badgeTone: 'neutral' as const,
       allowed: can('viewReports'),
     },
     {
@@ -121,8 +114,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       label: t('nav_cloud_sync', 'Cloud Sync'),
       icon: Radio,
       badge: pendingOfflineCount > 0 ? `${pendingOfflineCount}` : null,
-      badgeColor: 'bg-amber-500 text-white',
-      activeBadgeColor: 'bg-amber-400 text-slate-950 font-black',
+      badgeTone: 'warning' as const,
       allowed: true,
     },
   ];
@@ -133,16 +125,16 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
     <aside
       id="left-vertical-sidebar-nav"
       className={`hidden lg:flex flex-col h-full bg-white border-r border-slate-200 transition-all duration-200 ease-in-out select-none shrink-0 z-20 ${
-        isCollapsed ? 'w-18' : 'w-56 xl:w-60'
+        isCollapsed ? 'w-16' : 'w-56 xl:w-60'
       }`}
       aria-label="Vertical Navigation"
     >
       {/* Navigation Items Area */}
-      <div className="flex-1 py-3.5 px-2.5 space-y-4 overflow-y-auto">
+      <div className="flex-1 py-3.5 px-2.5 space-y-5 overflow-y-auto">
         {/* Main Operations Section */}
         <div>
           {!isCollapsed && (
-            <div className="px-2.5 pb-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400">
+            <div className="px-3 pb-1.5 text-[11px] font-semibold text-slate-400">
               Operations
             </div>
           )}
@@ -153,22 +145,19 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
               return (
                 <button
                   key={item.id}
+                  type="button"
                   id={`sidebar-nav-${item.id}`}
                   onClick={() => setCurrentTab(item.tab)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer group ${
+                  className={`w-full min-h-[40px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
                     isActive
-                      ? 'bg-blue-600 text-white shadow-xs'
+                      ? 'bg-blue-600 text-white'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                   } ${isCollapsed ? 'justify-center px-2' : ''}`}
                   title={item.label}
                 >
                   <Icon
-                    className={`w-4 h-4 shrink-0 transition ${
-                      isActive
-                        ? 'text-white'
-                        : item.id === 'cloud-sync'
-                        ? 'text-emerald-600'
-                        : 'text-slate-500 group-hover:text-slate-800'
+                    className={`w-4 h-4 shrink-0 transition-colors duration-150 ${
+                      isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-700'
                     }`}
                   />
                   {!isCollapsed && (
@@ -176,8 +165,12 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
                   )}
                   {!isCollapsed && item.badge && (
                     <span
-                      className={`text-[10px] font-black px-1.5 py-0.2 rounded-full leading-none shrink-0 ${
-                        isActive ? item.activeBadgeColor : item.badgeColor
+                      className={`text-[11px] font-mono tabular-nums font-bold px-1.5 py-0.5 rounded-md leading-none shrink-0 ${
+                        isActive
+                          ? 'bg-white/20 text-white'
+                          : item.badgeTone === 'warning'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-slate-100 text-slate-700'
                       }`}
                     >
                       {item.badge}
@@ -189,16 +182,17 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
 
             {/* Returns & Refunds Operation Action */}
             <button
+              type="button"
               id="sidebar-nav-returns"
               onClick={() => openReturnsModal(null)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer text-slate-600 hover:text-amber-900 hover:bg-amber-50 group ${
+              className={`w-full min-h-[40px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer text-slate-600 hover:text-slate-900 hover:bg-slate-100 group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
                 isCollapsed ? 'justify-center px-2' : ''
               }`}
               title="Returns & Refunds"
             >
-              <RotateCcw className="w-4 h-4 shrink-0 text-amber-600 group-hover:text-amber-700 transition" />
+              <RotateCcw className="w-4 h-4 shrink-0 text-slate-400 group-hover:text-slate-700 transition-colors duration-150" />
               {!isCollapsed && (
-                <span className="flex-1 text-left truncate text-slate-700 group-hover:text-amber-900">
+                <span className="flex-1 text-left truncate">
                   {t('nav_returns', 'Returns & Refunds')}
                 </span>
               )}
@@ -208,29 +202,28 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
 
         {/* Administration Section (Owner / Super-Admin) */}
         {isOwnerOrAdmin && (
-          <div className="pt-2 border-t border-slate-100">
+          <div className="pt-3 border-t border-slate-100">
             {!isCollapsed && (
-              <div className="px-2.5 pb-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400">
+              <div className="px-3 pb-1.5 text-[11px] font-semibold text-slate-400">
                 Administration
               </div>
             )}
             <nav className="space-y-1">
               {/* Staff Users Tab */}
               <button
+                type="button"
                 id="sidebar-nav-staff"
                 onClick={() => setCurrentTab('staff')}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer group ${
+                className={`w-full min-h-[40px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
                   currentTab === 'staff'
-                    ? 'bg-blue-600 text-white shadow-xs'
+                    ? 'bg-blue-600 text-white'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                 } ${isCollapsed ? 'justify-center px-2' : ''}`}
                 title="Staff Users"
               >
                 <Users
-                  className={`w-4 h-4 shrink-0 transition ${
-                    currentTab === 'staff'
-                      ? 'text-white'
-                      : 'text-purple-600 group-hover:text-purple-700'
+                  className={`w-4 h-4 shrink-0 transition-colors duration-150 ${
+                    currentTab === 'staff' ? 'text-white' : 'text-slate-400 group-hover:text-slate-700'
                   }`}
                 />
                 {!isCollapsed && (
@@ -240,20 +233,19 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
 
               {/* Store Settings Tab */}
               <button
+                type="button"
                 id="sidebar-nav-settings"
                 onClick={() => setCurrentTab('settings')}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer group ${
+                className={`w-full min-h-[40px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
                   currentTab === 'settings'
-                    ? 'bg-blue-600 text-white shadow-xs'
+                    ? 'bg-blue-600 text-white'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                 } ${isCollapsed ? 'justify-center px-2' : ''}`}
                 title="Store Settings"
               >
                 <Settings
-                  className={`w-4 h-4 shrink-0 transition ${
-                    currentTab === 'settings'
-                      ? 'text-white'
-                      : 'text-blue-600 group-hover:text-blue-700'
+                  className={`w-4 h-4 shrink-0 transition-colors duration-150 ${
+                    currentTab === 'settings' ? 'text-white' : 'text-slate-400 group-hover:text-slate-700'
                   }`}
                 />
                 {!isCollapsed && (
@@ -263,51 +255,40 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
 
               {/* Refer & Earn (Affiliate Partner Portal) */}
               <button
+                type="button"
                 id="sidebar-nav-affiliates"
                 onClick={() => setIsAffiliateModalOpen(true)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer group text-slate-600 hover:text-emerald-800 hover:bg-emerald-50 ${
+                className={`w-full min-h-[40px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group text-slate-600 hover:text-slate-900 hover:bg-slate-100 whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
                   isCollapsed ? 'justify-center px-2' : ''
                 }`}
                 title="Refer & Earn (20% Recurring)"
               >
-                <Share2 className="w-4 h-4 shrink-0 text-emerald-600 group-hover:text-emerald-700" />
+                <Share2 className="w-4 h-4 shrink-0 text-slate-400 group-hover:text-slate-700 transition-colors duration-150" />
                 {!isCollapsed && (
-                  <span className="flex-1 text-left truncate">Refer & Earn (20%)</span>
+                  <span className="flex-1 text-left truncate">Refer & Earn</span>
                 )}
               </button>
 
               {/* Super-Admin Console Tab (Super Admin Only) */}
               {isSuperAdmin && (
                 <button
+                  type="button"
                   id="sidebar-nav-superadmin"
                   onClick={() => setCurrentTab('super-admin')}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer group ${
+                  className={`w-full min-h-[40px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
                     currentTab === 'super-admin'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-amber-900 hover:bg-amber-50'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                   } ${isCollapsed ? 'justify-center px-2' : ''}`}
                   title="Super-Admin Console"
                 >
                   <ShieldAlert
-                    className={`w-4 h-4 shrink-0 transition ${
-                      currentTab === 'super-admin'
-                        ? 'text-white'
-                        : 'text-amber-600 group-hover:text-amber-700'
+                    className={`w-4 h-4 shrink-0 transition-colors duration-150 ${
+                      currentTab === 'super-admin' ? 'text-white' : 'text-slate-400 group-hover:text-slate-700'
                     }`}
                   />
                   {!isCollapsed && (
                     <span className="flex-1 text-left truncate">{t('nav_super_admin', 'Super-Admin')}</span>
-                  )}
-                  {!isCollapsed && (
-                    <span
-                      className={`text-[9px] font-black px-1.5 py-0.2 rounded uppercase ${
-                        currentTab === 'super-admin'
-                          ? 'bg-white text-blue-600'
-                          : 'bg-amber-100 text-amber-800'
-                      }`}
-                    >
-                      Root
-                    </span>
                   )}
                 </button>
               )}
@@ -323,7 +304,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
           type="button"
           id="sidebar-collapse-toggle-btn"
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="w-full flex items-center justify-center gap-1.5 py-1.5 text-slate-400 hover:text-slate-700 text-[11px] font-semibold transition rounded-lg hover:bg-slate-100 cursor-pointer"
+          className="w-full min-h-[36px] flex items-center justify-center gap-1.5 py-1.5 px-2 text-slate-500 hover:text-slate-800 text-xs font-medium transition-colors duration-150 rounded-lg hover:bg-slate-100 cursor-pointer whitespace-nowrap"
           title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {isCollapsed ? (

@@ -2630,13 +2630,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     [activeBusinessId, showToast]
   );
 
-  // Automated Fresh Inventory Fetch on Every Successful Login
+  // Automated Fresh Inventory Fetch once per authenticated Firebase login (onSnapshot keeps it live thereafter)
   const lastLoggedInUserRef = useRef<string | null>(null);
   useEffect(() => {
-    if (currentUser && currentUser.id) {
-      // Whenever a user logs in or switches tenant account
-      if (lastLoggedInUserRef.current !== currentUser.id) {
-        lastLoggedInUserRef.current = currentUser.id;
+    if (currentUser && currentUser.id && auth.currentUser) {
+      // Whenever an authenticated user logs in or switches tenant account
+      const sessionKey = `${currentUser.id}:${currentUser.businessId}`;
+      if (lastLoggedInUserRef.current !== sessionKey) {
+        lastLoggedInUserRef.current = sessionKey;
         fetchFreshInventoryFromServer(currentUser.businessId, false).catch((err) =>
           console.warn('Auto-fresh inventory on login notice:', err)
         );
@@ -5630,25 +5631,20 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // Automated background sync interval: triggers every 30 seconds for ANY active session (Owner or Staff)
+  // Automated background sync interval: flushes pending offline writes every 30 seconds
+  // Live inventory updates are already streamed via onSnapshot (subscribeToTenantProducts), avoiding redundant full-catalog polling reads.
   useEffect(() => {
-    const hasActiveSession = Boolean(currentUser || auth.currentUser);
+    const hasActiveSession = Boolean(currentUser && auth.currentUser);
     if (!isOnline || !hasActiveSession || !activeBusinessId) return;
 
     const intervalId = setInterval(() => {
-      // 1. Flush any pending offline transactions, stock deductions, or cashier events
       triggerCloudSync(true).catch((err) =>
         console.warn('Background auto-sync tick:', err)
-      );
-
-      // 2. Fetch fresh live inventory directly from Firestore server to guarantee multi-device accuracy
-      fetchFreshInventoryFromServer(activeBusinessId, false).catch((err) =>
-        console.warn('Periodic fresh inventory sync tick:', err)
       );
     }, 30000);
 
     return () => clearInterval(intervalId);
-  }, [isOnline, currentUser, activeBusinessId, triggerCloudSync, fetchFreshInventoryFromServer]);
+  }, [isOnline, currentUser, activeBusinessId, triggerCloudSync]);
 
   // Automated sync on network reconnect (online/offline) and tab focus/visibility
   useEffect(() => {
@@ -5659,7 +5655,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       triggerCloudSync(true).catch((err) =>
         console.warn('Auto-sync on network reconnect error:', err)
       );
-      if (activeBusinessId) {
+      if (activeBusinessId && auth.currentUser) {
         fetchFreshInventoryFromServer(activeBusinessId, false).catch((err) =>
           console.warn('Auto-fresh inventory on reconnect error:', err)
         );
@@ -5673,13 +5669,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     const handleVisibilityOrFocus = () => {
-      const hasActiveSession = Boolean(currentUser || auth.currentUser);
+      const hasActiveSession = Boolean(currentUser && auth.currentUser);
       if (document.visibilityState === 'visible' && navigator.onLine && hasActiveSession && activeBusinessId) {
         triggerCloudSync(true).catch((err) =>
           console.warn('Auto-sync on visibility/focus error:', err)
-        );
-        fetchFreshInventoryFromServer(activeBusinessId, false).catch((err) =>
-          console.warn('Auto-fresh inventory on focus error:', err)
         );
       }
     };
@@ -5702,14 +5695,19 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const firestoreDbId = (firebaseConfig as any).firestoreDatabaseId || 'ai-studio-sokopospointofsa-5314257a-dae6-432a-bde0-81ab935cc7ad';
   const firestoreRlsStatus = 'Row-Level Security Active: request.auth.token.businessId == resource.data.businessId';
 
-  // Test Firestore Connection and initial tenant seed on mount
+  // Test Firestore Connection and initial tenant hydration when Firebase user authenticates
   useEffect(() => {
+    if (!firebaseUser || !auth.currentUser) {
+      return;
+    }
+    let cancelled = false;
     testFirebaseConnection().then((connected) => {
+      if (cancelled) return;
       setIsFirestoreConnected(connected);
       if (connected && auth.currentUser) {
-        // Fetch businesses from Firestore only when authenticated
         getBusinessesFromFirestore()
           .then((remoteBizs) => {
+            if (cancelled) return;
             if (remoteBizs && remoteBizs.length > 0) {
               const validRemote = remoteBizs.filter(
                 (b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'
@@ -5741,50 +5739,25 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                   }
                   return prev;
                 });
-
-                if (targetBiz) {
-                  getTenantCashiersFromFirestore(targetBiz.id)
-                    .then((remoteCashiers) => {
-                      if (remoteCashiers && remoteCashiers.length > 0) {
-                        setAllSystemUsers((prev) => {
-                          const otherTenants = prev.filter((u) => u.businessId !== targetBiz.id);
-                          const map = new Map<string, Cashier>();
-                          prev.filter((u) => u.businessId === targetBiz.id).forEach((u) => map.set(u.id, u));
-                          remoteCashiers.forEach((r) => map.set(r.id, { ...r, isPendingCloudSync: false }));
-                          return [...Array.from(map.values()), ...otherTenants];
-                        });
-                      }
-                    })
-                    .catch((e) => console.warn('Mount cashiers sync notice:', e));
-                }
               }
+            } else {
+              // Only run initial seed check if businesses collection was empty
+              seedInitialTenantDataToFirestore({
+                businesses: INITIAL_BUSINESSES,
+                products: INITIAL_PRODUCTS,
+                categories: INITIAL_CATEGORIES,
+                locations: INITIAL_LOCATIONS,
+                cashiers: INITIAL_SYSTEM_USERS,
+                transactions: INITIAL_TRANSACTIONS,
+              }).catch((err) => console.warn('Tenant data initial seed check:', err));
             }
           })
           .catch((err) => console.warn('Remote businesses load note:', err));
-
-        getAllCashiersFromFirestore()
-          .then((allRemoteCashiers) => {
-            if (allRemoteCashiers && allRemoteCashiers.length > 0) {
-              setAllSystemUsers((prev) => {
-                const map = new Map<string, Cashier>();
-                prev.forEach((u) => map.set(u.id, u));
-                allRemoteCashiers.forEach((r) => map.set(r.id, { ...r, isPendingCloudSync: false }));
-                return Array.from(map.values());
-              });
-            }
-          })
-          .catch((e) => console.warn('Mount all cashiers sync notice:', e));
-
-        seedInitialTenantDataToFirestore({
-          businesses: INITIAL_BUSINESSES,
-          products: INITIAL_PRODUCTS,
-          categories: INITIAL_CATEGORIES,
-          locations: INITIAL_LOCATIONS,
-          cashiers: INITIAL_SYSTEM_USERS,
-          transactions: INITIAL_TRANSACTIONS,
-        }).catch((err) => console.warn('Tenant data initial seed check:', err));
       }
     });
+    return () => {
+      cancelled = true;
+    };
   }, [firebaseUser]);
 
   // Real-time Firestore Tenant Subscriptions with Row-Level Security Scoping

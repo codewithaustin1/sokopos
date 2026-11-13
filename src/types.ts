@@ -746,7 +746,7 @@ export interface AffiliatePayout {
   affiliateName: string;
   mpesaPhone: string;
   amountKes: number;
-  status: 'pending' | 'paid' | 'rejected';
+  status: 'pending' | 'approved' | 'paid' | 'rejected';
   mpesaReceiptNumber?: string;
   notes?: string;
   reviewedBy?: string;

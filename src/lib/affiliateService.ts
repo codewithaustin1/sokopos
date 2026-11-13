@@ -146,7 +146,7 @@ export async function fetchAdminAffiliateOverview(): Promise<AdminAffiliateOverv
 
 export async function reviewAffiliatePayout(params: {
   payoutId: string;
-  action: 'paid' | 'rejected';
+  action: 'approved' | 'paid' | 'rejected';
   mpesaReceiptNumber?: string;
   reviewedBy?: string;
   notes?: string;

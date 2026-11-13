@@ -3,7 +3,6 @@ import {
   X,
   Copy,
   Check,
-  Users,
   Wallet,
   ArrowUpRight,
   RefreshCw,
@@ -12,7 +11,10 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock,
+  XCircle,
   Share2,
+  History,
+  FileText,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import {
@@ -59,7 +61,7 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
 
   // Dashboard state
   const [copied, setCopied] = useState(false);
-  const [activeLedgerTab, setActiveLedgerTab] = useState<'commissions' | 'payouts'>('commissions');
+  const [payoutStatusFilter, setPayoutStatusFilter] = useState<'all' | 'pending' | 'approved' | 'paid' | 'rejected'>('all');
   const [commissionFilter, setCommissionFilter] = useState<'all' | 'initial' | 'renewal'>('all');
 
   // Payout request form
@@ -67,65 +69,12 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
   const [payoutPhone, setPayoutPhone] = useState('');
   const [isRequestingPayout, setIsRequestingPayout] = useState(false);
 
-  // Diagnostic Logs state for tracing affiliate profile initialization & currentUser mapping
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
-  const [diagnosticLogs, setDiagnosticLogs] = useState<Array<{
-    id: string;
-    timestamp: string;
-    level: 'info' | 'success' | 'warn' | 'error';
-    step: string;
-    details: string;
-    payload?: any;
-  }>>([]);
-
-  const addDiagnosticLog = useCallback((step: string, details: string, level: 'info' | 'success' | 'warn' | 'error' = 'info', payload?: any) => {
-    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 });
-    setDiagnosticLogs((prev) => [
-      {
-        id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-        timestamp: timeStr,
-        level,
-        step,
-        details,
-        payload,
-      },
-      ...prev.slice(0, 49), // Keep last 50 logs
-    ]);
-  }, []);
-
-  // Initialize mapping audit log on open or auth change
-  useEffect(() => {
-    if (isOpen) {
-      addDiagnosticLog(
-        'currentUser_Mapping',
-        'Mapped currentUser & Firebase Auth context for Affiliate Profile initialization',
-        'info',
-        {
-          authUid: auth.currentUser?.uid || null,
-          authEmail: auth.currentUser?.email || null,
-          authEmailVerified: auth.currentUser?.emailVerified ?? null,
-          currentUserId: currentUser?.id || null,
-          currentUserEmail: currentUser?.email || null,
-          currentUserName: currentUser?.name || null,
-          currentUserRole: currentUser?.role || null,
-          currentBusinessId: currentBusiness?.id || null,
-          currentBusinessName: currentBusiness?.name || null,
-          resolvedUid: uid || 'MISSING_UID',
-          resolvedEmail: email || 'MISSING_EMAIL',
-          isOwner,
-        }
-      );
-    }
-  }, [isOpen, currentUser, currentBusiness, uid, email, isOwner, addDiagnosticLog]);
-
   const loadDashboard = useCallback(async () => {
     if (!uid && !email) {
-      addDiagnosticLog('LoadDashboard', 'Missing both UID and Email. Cannot query affiliate dashboard.', 'warn', { uid, email });
       return;
     }
     setIsLoading(true);
     setError(null);
-    addDiagnosticLog('FetchDashboard_Start', `Querying affiliate dashboard for uid: "${uid}", email: "${email}"`, 'info');
     try {
       const data = await fetchAffiliateDashboard(uid, email);
       setAffiliate(data.affiliate);
@@ -137,20 +86,13 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
       if (data.affiliate?.availableBalanceKes && data.affiliate.availableBalanceKes >= 500) {
         setPayoutAmount(String(data.affiliate.availableBalanceKes));
       }
-      addDiagnosticLog(
-        'FetchDashboard_Success',
-        data.affiliate ? `Affiliate profile loaded successfully (Code: ${data.affiliate.code})` : 'User is not enrolled as an affiliate yet.',
-        data.affiliate ? 'success' : 'info',
-        data
-      );
     } catch (err: any) {
       const errMsg = err?.message || 'Unable to load partner dashboard.';
       setError(errMsg);
-      addDiagnosticLog('FetchDashboard_Error', errMsg, 'error', err);
     } finally {
       setIsLoading(false);
     }
-  }, [uid, email, addDiagnosticLog]);
+  }, [uid, email]);
 
   useEffect(() => {
     if (isOpen && (uid || email)) {
@@ -184,26 +126,16 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
   const handleEnroll = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!uid || !email) {
-      addDiagnosticLog('Enroll_Blocked', 'Enrollment attempted with missing UID or Email', 'warn', { uid, email });
       onRequestAuth?.();
       return;
     }
     if (enrollPhone.replace(/\D/g, '').length < 9) {
-      addDiagnosticLog('Enroll_ValidationError', 'Invalid phone number length', 'warn', { enrollPhone });
       setError('Enter a valid Safaricom M-Pesa phone number for commission payouts.');
       return;
     }
 
     setIsEnrolling(true);
     setError(null);
-    addDiagnosticLog('Enroll_Start', `Submitting affiliate enrollment for uid: "${uid}", email: "${email}"`, 'info', {
-      uid,
-      email,
-      name: enrollName.trim() || email.split('@')[0],
-      mpesaPhone: enrollPhone.trim(),
-      accountType: isOwner ? 'owner' : 'public_partner',
-      preferredCode: preferredCode.trim() || undefined,
-    });
 
     try {
       const res = await enrollAffiliate({
@@ -219,19 +151,16 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
       if (!res.success || !res.affiliate) {
         const errStr = res.error || 'Could not activate partner account.';
         setError(errStr);
-        addDiagnosticLog('Enroll_Error', errStr, 'error', res);
         return;
       }
 
       setAffiliate(res.affiliate);
       setPayoutPhone(res.affiliate.mpesaPhone);
       showToast(`Partner code ${res.affiliate.code} activated!`, 'success');
-      addDiagnosticLog('Enroll_Success', `Affiliate profile created/updated successfully with code: ${res.affiliate.code}`, 'success', res.affiliate);
     } catch (enrollErr: any) {
       setIsEnrolling(false);
       const errMsg = enrollErr?.message || 'Enrollment network error.';
       setError(errMsg);
-      addDiagnosticLog('Enroll_Exception', errMsg, 'error', enrollErr);
     }
   };
 
@@ -274,6 +203,11 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
     return true;
   });
 
+  const filteredPayouts = payouts.filter((p) => {
+    if (payoutStatusFilter === 'all') return true;
+    return p.status === payoutStatusFilter;
+  });
+
   return (
     <div
       id="affiliate-portal-modal"
@@ -298,20 +232,6 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => setShowDiagnostics((prev) => !prev)}
-              className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                showDiagnostics
-                  ? 'bg-amber-100 text-amber-900 border-amber-300'
-                  : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
-              }`}
-              title="Toggle Profile Initialization Diagnostic Logs"
-            >
-              <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-              <span>Diagnostics ({diagnosticLogs.length})</span>
-            </button>
-
             {affiliate && (
               <button
                 type="button"
@@ -336,104 +256,6 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
 
         {/* Body */}
         <div className="p-6 overflow-y-auto flex-1 space-y-6 bg-slate-50/50">
-          {showDiagnostics && (
-            <div className="bg-slate-900 text-slate-100 rounded-xl p-4 border border-amber-500/50 space-y-4 mb-6 shadow-xl">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-amber-400" />
-                  <h3 className="text-xs font-bold tracking-wide uppercase text-amber-300">
-                    Affiliate & currentUser Mapping Diagnostics Tracing
-                  </h3>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setDiagnosticLogs([])}
-                    className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-300 transition cursor-pointer"
-                  >
-                    Clear Logs
-                  </button>
-                  <button
-                    type="button"
-                    onClick={loadDashboard}
-                    className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-[11px] text-white transition cursor-pointer font-semibold"
-                  >
-                    Re-test Init
-                  </button>
-                </div>
-              </div>
-
-              {/* Context Mapping Overview Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] bg-slate-950/60 p-3 rounded-lg border border-slate-800 font-mono">
-                <div>
-                  <span className="text-slate-400 block text-[10px]">Auth UID:</span>
-                  <span className="text-emerald-400 truncate block">{auth.currentUser?.uid || 'null'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[10px]">Current User ID:</span>
-                  <span className="text-blue-400 truncate block">{currentUser?.id || 'null'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[10px]">Resolved UID:</span>
-                  <span className="text-amber-400 truncate block">{uid || 'MISSING'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[10px]">Email:</span>
-                  <span className="text-cyan-400 truncate block">{email || 'MISSING'}</span>
-                </div>
-              </div>
-
-              {/* Diagnostic Logs Table */}
-              <div className="max-h-60 overflow-y-auto rounded-lg border border-slate-800 bg-slate-950">
-                {diagnosticLogs.length === 0 ? (
-                  <div className="p-4 text-center text-xs text-slate-500">No diagnostic logs recorded yet.</div>
-                ) : (
-                  <table className="w-full text-left text-[11px] font-mono">
-                    <thead className="bg-slate-900 text-slate-400 sticky top-0 border-b border-slate-800">
-                      <tr>
-                        <th className="py-2 px-3">Time</th>
-                        <th className="py-2 px-3">Level</th>
-                        <th className="py-2 px-3">Step</th>
-                        <th className="py-2 px-3">Details</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/60">
-                      {diagnosticLogs.map((log) => (
-                        <tr key={log.id} className="hover:bg-slate-900/50">
-                          <td className="py-2 px-3 text-slate-500 tabular-nums whitespace-nowrap">{log.timestamp}</td>
-                          <td className="py-2 px-3 whitespace-nowrap">
-                            <span
-                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                log.level === 'success'
-                                  ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                                  : log.level === 'error'
-                                  ? 'bg-red-950 text-red-400 border border-red-800'
-                                  : log.level === 'warn'
-                                  ? 'bg-amber-950 text-amber-400 border border-amber-800'
-                                  : 'bg-blue-950 text-blue-400 border border-blue-800'
-                              }`}
-                            >
-                              {log.level}
-                            </span>
-                          </td>
-                          <td className="py-2 px-3 font-semibold text-slate-200 whitespace-nowrap">{log.step}</td>
-                          <td className="py-2 px-3 text-slate-300">
-                            <div>{log.details}</div>
-                            {log.payload && (
-                              <pre className="mt-1 text-[10px] text-slate-400 bg-slate-900/80 p-1.5 rounded overflow-x-auto max-h-24">
-                                {JSON.stringify(log.payload, null, 2)}
-                              </pre>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </div>
-          )}
-
           {!uid ? (
             <div className="bg-white border border-slate-200 rounded-xl p-8 text-center space-y-4 max-w-lg mx-auto">
               <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center mx-auto">
@@ -652,169 +474,251 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
               </div>
 
               {/* M-Pesa Payout Request Bar */}
-              <form
-                onSubmit={handleRequestPayout}
-                className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-end gap-3"
-              >
-                <div className="flex-1">
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Withdraw Amount (Min KES 500)
-                  </label>
-                  <input
-                    type="number"
-                    min={500}
-                    max={Math.max(500, affiliate.availableBalanceKes || 0)}
-                    value={payoutAmount}
-                    onChange={(e) => setPayoutAmount(e.target.value)}
-                    placeholder="e.g. 1500"
-                    className="w-full px-3 py-2 text-xs font-mono tabular-nums bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
+              <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                    <Wallet className="w-4 h-4 text-emerald-600" />
+                    <span>Request M-Pesa Commission Payout</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    Minimum threshold: <strong className="text-slate-800 font-mono">KES 500</strong>
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">M-Pesa Phone</label>
-                  <input
-                    type="tel"
-                    required
-                    value={payoutPhone}
-                    onChange={(e) => setPayoutPhone(e.target.value)}
-                    placeholder="07XXXXXXXX"
-                    className="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={isRequestingPayout || (affiliate.availableBalanceKes || 0) < 500}
-                  className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shrink-0 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isRequestingPayout ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Phone className="w-3.5 h-3.5" />}
-                  <span>Request M-Pesa Payout</span>
-                </button>
-              </form>
 
-              {/* Ledger Tabs */}
-              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                <form onSubmit={handleRequestPayout} className="flex flex-col sm:flex-row sm:items-end gap-3">
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-slate-700">Withdraw Amount (KES)</label>
+                      <button
+                        type="button"
+                        onClick={() => setPayoutAmount(String(affiliate.availableBalanceKes || 0))}
+                        className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 cursor-pointer"
+                      >
+                        Max (KES {Number(affiliate.availableBalanceKes || 0).toLocaleString()})
+                      </button>
+                    </div>
+                    <input
+                      type="number"
+                      min={500}
+                      max={Math.max(500, affiliate.availableBalanceKes || 0)}
+                      value={payoutAmount}
+                      onChange={(e) => setPayoutAmount(e.target.value)}
+                      placeholder="e.g. 1500"
+                      className="w-full px-3 py-2 text-xs font-mono tabular-nums bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">M-Pesa Phone Number</label>
+                    <input
+                      type="tel"
+                      required
+                      value={payoutPhone}
+                      onChange={(e) => setPayoutPhone(e.target.value)}
+                      placeholder="07XXXXXXXX"
+                      className="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isRequestingPayout || (affiliate.availableBalanceKes || 0) < 500}
+                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-bold text-xs flex items-center justify-center gap-1.5 shrink-0 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
+                  >
+                    {isRequestingPayout ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Phone className="w-3.5 h-3.5" />}
+                    <span>Request Payout</span>
+                  </button>
+                </form>
+
+                {(affiliate.availableBalanceKes || 0) < 500 && (
+                  <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                    Your available balance (KES {Number(affiliate.availableBalanceKes || 0).toLocaleString()}) is below the KES 500 minimum threshold. Share your referral link to earn more commissions!
+                  </p>
+                )}
+              </div>
+
+              {/* Payout History Section */}
+              <div id="affiliate-payout-history" className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                 <div className="px-4 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
-                    <button
-                      type="button"
-                      onClick={() => setActiveLedgerTab('commissions')}
-                      className={`px-3 py-1.5 text-xs font-semibold rounded-md transition cursor-pointer ${
-                        activeLedgerTab === 'commissions' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
-                      }`}
-                    >
-                      Commissions ({commissions.length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveLedgerTab('payouts')}
-                      className={`px-3 py-1.5 text-xs font-semibold rounded-md transition cursor-pointer ${
-                        activeLedgerTab === 'payouts' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
-                      }`}
-                    >
-                      M-Pesa Payouts ({payouts.length})
-                    </button>
+                  <div className="flex items-center gap-2">
+                    <History className="w-4 h-4 text-emerald-600" />
+                    <h3 className="text-xs font-bold text-slate-900">
+                      Payout History ({payouts.length})
+                    </h3>
                   </div>
 
-                  {activeLedgerTab === 'commissions' && (
-                    <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
-                      {(['all', 'initial', 'renewal'] as const).map((f) => (
-                        <button
-                          key={f}
-                          type="button"
-                          onClick={() => setCommissionFilter(f)}
-                          className={`px-2.5 py-1 text-[11px] font-medium rounded-md capitalize transition cursor-pointer ${
-                            commissionFilter === f ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
-                          }`}
-                        >
-                          {f === 'all' ? 'All' : f === 'initial' ? 'First Payment' : 'Renewals'}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                    {(['all', 'pending', 'approved', 'paid', 'rejected'] as const).map((statusKey) => (
+                      <button
+                        key={statusKey}
+                        type="button"
+                        onClick={() => setPayoutStatusFilter(statusKey)}
+                        className={`px-2.5 py-1 text-[11px] font-medium rounded-md capitalize transition cursor-pointer ${
+                          payoutStatusFilter === statusKey ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
+                        }`}
+                      >
+                        {statusKey === 'all' ? 'All' : statusKey}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                {activeLedgerTab === 'commissions' ? (
-                  filteredCommissions.length === 0 ? (
-                    <div className="py-10 px-4 text-center text-xs text-slate-500">
-                      No commissions recorded yet. Share your referral link to start earning 20% recurring commissions.
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
-                          <tr>
-                            <th className="py-2.5 px-4 font-semibold">Date</th>
-                            <th className="py-2.5 px-4 font-semibold">Store</th>
-                            <th className="py-2.5 px-4 font-semibold">Type</th>
-                            <th className="py-2.5 px-4 font-semibold text-right">Subscription</th>
-                            <th className="py-2.5 px-4 font-semibold text-right">Commission</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {filteredCommissions.map((c) => (
-                            <tr key={c.id} className="hover:bg-slate-50/70">
-                              <td className="py-2.5 px-4 text-slate-500 font-mono tabular-nums">
-                                {new Date(c.createdAt).toLocaleDateString()}
-                              </td>
-                              <td className="py-2.5 px-4 font-medium text-slate-900">
-                                {c.businessName} <span className="text-slate-400">· {c.planId}</span>
-                              </td>
-                              <td className="py-2.5 px-4 text-slate-600">
-                                {c.isRenewal ? 'Renewal' : 'Initial Activation'}
-                              </td>
-                              <td className="py-2.5 px-4 text-right font-mono tabular-nums text-slate-600">
-                                KES {Number(c.grossAmountKes).toLocaleString()}
-                              </td>
-                              <td className="py-2.5 px-4 text-right font-mono tabular-nums font-bold text-emerald-700">
-                                +KES {Number(c.commissionAmountKes).toLocaleString()}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )
-                ) : payouts.length === 0 ? (
+                {filteredPayouts.length === 0 ? (
                   <div className="py-10 px-4 text-center text-xs text-slate-500">
-                    No payout requests yet. Once your available balance reaches KES 500, you can request an M-Pesa withdrawal above.
+                    {payouts.length === 0
+                      ? 'No payout requests yet. Once your available balance reaches KES 500, you can request an M-Pesa withdrawal above.'
+                      : `No ${payoutStatusFilter} payout requests found.`}
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs">
                       <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
                         <tr>
-                          <th className="py-2.5 px-4 font-semibold">Requested</th>
-                          <th className="py-2.5 px-4 font-semibold">M-Pesa Phone</th>
-                          <th className="py-2.5 px-4 font-semibold">Status</th>
-                          <th className="py-2.5 px-4 font-semibold">Receipt</th>
+                          <th className="py-2.5 px-4 font-semibold">Date</th>
                           <th className="py-2.5 px-4 font-semibold text-right">Amount</th>
+                          <th className="py-2.5 px-4 font-semibold">M-Pesa Number</th>
+                          <th className="py-2.5 px-4 font-semibold">Status</th>
+                          <th className="py-2.5 px-4 font-semibold">Super Admin Notes</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {payouts.map((p) => (
-                          <tr key={p.id} className="hover:bg-slate-50/70">
+                        {filteredPayouts.map((p) => {
+                          const statusBadge =
+                            p.status === 'paid'
+                              ? {
+                                  label: 'Paid',
+                                  classes: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                                  icon: <Check className="w-3 h-3" />,
+                                }
+                              : p.status === 'approved'
+                              ? {
+                                  label: 'Approved',
+                                  classes: 'bg-blue-50 text-blue-700 border-blue-200',
+                                  icon: <CheckCircle2 className="w-3 h-3" />,
+                                }
+                              : p.status === 'rejected'
+                              ? {
+                                  label: 'Rejected',
+                                  classes: 'bg-red-50 text-red-700 border-red-200',
+                                  icon: <XCircle className="w-3 h-3" />,
+                                }
+                              : {
+                                  label: 'Pending',
+                                  classes: 'bg-amber-50 text-amber-700 border-amber-200',
+                                  icon: <Clock className="w-3 h-3" />,
+                                };
+
+                          return (
+                            <tr key={p.id} className="hover:bg-slate-50/70 align-top">
+                              <td className="py-3 px-4 text-slate-600 font-mono tabular-nums whitespace-nowrap">
+                                <div>{new Date(p.requestedAt).toLocaleDateString()}</div>
+                                <div className="text-[10px] text-slate-400">
+                                  {new Date(p.requestedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                              </td>
+                              <td className="py-3 px-4 text-right font-mono tabular-nums font-bold text-slate-900 whitespace-nowrap">
+                                KES {Number(p.amountKes).toLocaleString()}
+                              </td>
+                              <td className="py-3 px-4 font-mono text-slate-700 whitespace-nowrap">
+                                {p.mpesaPhone || '—'}
+                              </td>
+                              <td className="py-3 px-4 whitespace-nowrap">
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${statusBadge.classes}`}
+                                >
+                                  {statusBadge.icon}
+                                  <span>{statusBadge.label}</span>
+                                </span>
+                                {p.reviewedAt && (
+                                  <div className="text-[10px] text-slate-400 font-mono mt-1">
+                                    Updated {new Date(p.reviewedAt).toLocaleDateString()}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 text-slate-600 max-w-xs">
+                                {p.notes ? (
+                                  <p className="text-xs text-slate-700 leading-relaxed">{p.notes}</p>
+                                ) : (
+                                  <span className="text-slate-400 italic">
+                                    {p.status === 'pending'
+                                      ? 'Awaiting Super Admin review'
+                                      : p.status === 'approved'
+                                      ? 'Approved for M-Pesa disbursement'
+                                      : 'No notes provided'}
+                                  </span>
+                                )}
+                                {p.mpesaReceiptNumber && (
+                                  <div className="mt-1 text-[11px] font-mono text-emerald-700">
+                                    M-Pesa Ref: {p.mpesaReceiptNumber}
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Commissions Ledger Section */}
+              <div id="affiliate-commissions-ledger" className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-slate-600" />
+                    <h3 className="text-xs font-bold text-slate-900">
+                      Commissions Ledger ({commissions.length})
+                    </h3>
+                  </div>
+
+                  <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                    {(['all', 'initial', 'renewal'] as const).map((f) => (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => setCommissionFilter(f)}
+                        className={`px-2.5 py-1 text-[11px] font-medium rounded-md capitalize transition cursor-pointer ${
+                          commissionFilter === f ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
+                        }`}
+                      >
+                        {f === 'all' ? 'All' : f === 'initial' ? 'First Payment' : 'Renewals'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {filteredCommissions.length === 0 ? (
+                  <div className="py-10 px-4 text-center text-xs text-slate-500">
+                    No commissions recorded yet. Share your referral link to start earning 20% recurring commissions.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
+                        <tr>
+                          <th className="py-2.5 px-4 font-semibold">Date</th>
+                          <th className="py-2.5 px-4 font-semibold">Store</th>
+                          <th className="py-2.5 px-4 font-semibold">Type</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Subscription</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Commission</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredCommissions.map((c) => (
+                          <tr key={c.id} className="hover:bg-slate-50/70">
                             <td className="py-2.5 px-4 text-slate-500 font-mono tabular-nums">
-                              {new Date(p.requestedAt).toLocaleDateString()}
+                              {new Date(c.createdAt).toLocaleDateString()}
                             </td>
-                            <td className="py-2.5 px-4 font-mono text-slate-700">{p.mpesaPhone}</td>
-                            <td className="py-2.5 px-4">
-                              <span
-                                className={`font-semibold capitalize ${
-                                  p.status === 'paid'
-                                    ? 'text-emerald-700'
-                                    : p.status === 'rejected'
-                                    ? 'text-red-600'
-                                    : 'text-amber-700'
-                                }`}
-                              >
-                                {p.status}
-                              </span>
+                            <td className="py-2.5 px-4 font-medium text-slate-900">
+                              {c.businessName} <span className="text-slate-400">· {c.planId}</span>
                             </td>
-                            <td className="py-2.5 px-4 font-mono text-slate-500">
-                              {p.mpesaReceiptNumber || '—'}
+                            <td className="py-2.5 px-4 text-slate-600">
+                              {c.isRenewal ? 'Renewal' : 'Initial Activation'}
                             </td>
-                            <td className="py-2.5 px-4 text-right font-mono tabular-nums font-bold text-slate-900">
-                              KES {Number(p.amountKes).toLocaleString()}
+                            <td className="py-2.5 px-4 text-right font-mono tabular-nums text-slate-600">
+                              KES {Number(c.grossAmountKes).toLocaleString()}
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-mono tabular-nums font-bold text-emerald-700">
+                              +KES {Number(c.commissionAmountKes).toLocaleString()}
                             </td>
                           </tr>
                         ))}

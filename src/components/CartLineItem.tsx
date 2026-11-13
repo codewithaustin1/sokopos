@@ -121,7 +121,7 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
           className="flex flex-col items-center justify-center gap-1 w-full h-full text-white font-black text-[11px] active:bg-red-700"
           title="Remove line item"
         >
-          <Trash2 className="w-5 h-5 animate-pulse" />
+          <Trash2 className="w-5 h-5" />
           <span>Remove</span>
         </button>
       </div>
@@ -148,7 +148,7 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
             {item.productName}
           </h4>
           <div className="flex items-center flex-wrap gap-1.5 mt-0.5">
-            <span className="text-[11px] text-slate-400 font-mono">
+            <span className="text-[11px] text-slate-500 font-mono tabular-nums">
               {currency} {item.unitPrice.toFixed(2)}
             </span>
             {discountBadge ? (
@@ -158,10 +158,10 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
                   e.stopPropagation();
                   onOpenDiscountModal(item);
                 }}
-                className="inline-flex items-center gap-1 text-[10px] bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-black px-1.5 py-0.5 rounded shadow-2xs transition cursor-pointer"
+                className="inline-flex items-center gap-1 text-[11px] text-emerald-700 hover:bg-emerald-50 font-semibold px-1.5 py-0.5 rounded-md transition-colors cursor-pointer"
                 title="Click to edit or remove discount"
               >
-                <Tag className="w-2.5 h-2.5" />
+                <Tag className="w-3 h-3" />
                 <span>{discountBadge}</span>
               </button>
             ) : (
@@ -171,16 +171,16 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
                   e.stopPropagation();
                   onOpenDiscountModal(item);
                 }}
-                className="opacity-70 group-hover/item:opacity-100 text-[10px] text-blue-600 hover:text-blue-800 hover:bg-blue-50 font-bold px-1.5 py-0.5 rounded transition flex items-center gap-0.5 cursor-pointer"
+                className="text-[11px] text-slate-500 hover:text-blue-600 hover:bg-slate-100 font-medium px-1.5 py-0.5 rounded-md transition-colors flex items-center gap-0.5 cursor-pointer"
                 title="Quick tap to apply discount"
               >
-                <Tag className="w-2.5 h-2.5" />
-                <span>+ Discount</span>
+                <Tag className="w-3 h-3" />
+                <span>Discount</span>
               </button>
             )}
             {item.discountReason && (
-              <span className="text-[9px] text-slate-400 italic truncate max-w-[120px]">
-                ({item.discountReason})
+              <span className="text-[11px] text-slate-400 truncate max-w-[120px]">
+                · {item.discountReason}
               </span>
             )}
           </div>
@@ -202,7 +202,7 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
             </button>
 
             {/* Quantity Number */}
-            <span className="min-w-[34px] sm:min-w-[28px] text-center text-sm sm:text-xs font-black text-slate-900 font-mono select-none px-1">
+            <span className="min-w-[34px] sm:min-w-[28px] text-center text-sm sm:text-xs font-bold text-slate-900 font-mono tabular-nums select-none px-1">
               {item.quantity}
             </span>
 
@@ -220,11 +220,11 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
 
           {/* Line Subtotal */}
           <div className="text-right min-w-[65px] sm:min-w-[75px]">
-            <div className="text-xs sm:text-sm font-black text-slate-900 font-mono">
+            <div className="text-xs sm:text-sm font-bold text-slate-900 font-mono tabular-nums">
               {currency} {lineTotal.toFixed(2)}
             </div>
             {discountBadge && (
-              <div className="text-[9px] text-emerald-600 font-bold line-through opacity-70 font-mono">
+              <div className="text-[10px] text-slate-400 line-through font-mono tabular-nums">
                 {currency} {(item.unitPrice * item.quantity).toFixed(2)}
               </div>
             )}

@@ -55,7 +55,41 @@ export interface FirestoreErrorInfo {
   };
 }
 
+const QUOTA_COOLDOWN_MS = 5 * 60 * 1000; // 5-minute cooldown when Firestore daily quota is exhausted
+let firestoreQuotaCooldownUntil = 0;
+let hasLoggedQuotaWarning = false;
+
+export function isFirestoreQuotaError(error: unknown): boolean {
+  if (!error) return false;
+  const code = (error as any)?.code || '';
+  const msg = error instanceof Error ? error.message : String(error);
+  return (
+    code === 'resource-exhausted' ||
+    msg.includes('Quota limit exceeded') ||
+    msg.includes('Quota exceeded') ||
+    msg.includes('Free daily read units per project')
+  );
+}
+
+export function isFirestoreQuotaCooldownActive(): boolean {
+  return Date.now() < firestoreQuotaCooldownUntil;
+}
+
+export function markFirestoreQuotaExceeded(): void {
+  firestoreQuotaCooldownUntil = Date.now() + QUOTA_COOLDOWN_MS;
+  if (!hasLoggedQuotaWarning) {
+    hasLoggedQuotaWarning = true;
+    console.warn(
+      '[SokoPoS Offline-First] Firestore daily read quota reached. Continuing seamlessly with local cached storage.'
+    );
+  }
+}
+
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+  if (isFirestoreQuotaError(error)) {
+    markFirestoreQuotaExceeded();
+    throw error instanceof Error ? error : new Error(String(error));
+  }
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -117,12 +151,16 @@ export function sanitizeForFirestore<T>(data: T): T {
 // Tenant Businesses Firestore API
 // -------------------------------------------------------------
 export async function getBusinessesFromFirestore(): Promise<Business[]> {
-  if (!db) return [];
+  if (!db || isFirestoreQuotaCooldownActive()) return [];
   const path = 'businesses';
   try {
     const snap = await getDocs(collection(db, path));
     return snap.docs.map((d) => d.data() as Business);
   } catch (error) {
+    if (isFirestoreQuotaError(error)) {
+      markFirestoreQuotaExceeded();
+      return [];
+    }
     handleFirestoreError(error, OperationType.LIST, path);
     return [];
   }
@@ -348,13 +386,17 @@ export async function saveUserProfileToFirestore(user: {
 // Tenant Products Firestore API (Row-Level Security Scoped)
 // -------------------------------------------------------------
 export async function getTenantProductsFromFirestore(businessId: string): Promise<Product[]> {
-  if (!db || !businessId) return [];
+  if (!db || !businessId || !auth.currentUser || isFirestoreQuotaCooldownActive()) return [];
   const path = 'products';
   try {
     const q = query(collection(db, path), where('businessId', '==', businessId));
     const snap = await getDocs(q);
     return snap.docs.map((d) => d.data() as Product);
   } catch (error) {
+    if (!auth.currentUser || isFirestoreQuotaError(error)) {
+      if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+      return [];
+    }
     handleFirestoreError(error, OperationType.LIST, path);
     return [];
   }
@@ -365,18 +407,29 @@ export async function getTenantProductsFromFirestore(businessId: string): Promis
  * strictly bypassing any local client IndexedDB or memory cache.
  */
 export async function getFreshTenantProductsFromFirestore(businessId: string): Promise<Product[]> {
-  if (!db || !businessId) return [];
+  if (!db || !businessId || !auth.currentUser || isFirestoreQuotaCooldownActive()) return [];
   const path = 'products';
   try {
     const q = query(collection(db, path), where('businessId', '==', businessId));
     const snap = await getDocsFromServer(q);
     return snap.docs.map((d) => d.data() as Product);
   } catch (error) {
+    if (!auth.currentUser) {
+      return [];
+    }
+    if (isFirestoreQuotaError(error)) {
+      markFirestoreQuotaExceeded();
+      return [];
+    }
     console.warn('Direct server fetch from Firestore failed, falling back:', error);
     try {
       const fallbackSnap = await getDocs(query(collection(db, path), where('businessId', '==', businessId)));
       return fallbackSnap.docs.map((d) => d.data() as Product);
     } catch (fallbackErr) {
+      if (!auth.currentUser || isFirestoreQuotaError(fallbackErr)) {
+        if (isFirestoreQuotaError(fallbackErr)) markFirestoreQuotaExceeded();
+        return [];
+      }
       handleFirestoreError(fallbackErr, OperationType.LIST, path);
       return [];
     }
@@ -387,7 +440,7 @@ export function subscribeToTenantProducts(
   businessId: string,
   onData: (products: Product[], isFromCache?: boolean) => void
 ): Unsubscribe {
-  if (!db || !businessId) {
+  if (!db || !businessId || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
     return () => {};
   }
   const path = 'products';
@@ -401,6 +454,10 @@ export function subscribeToTenantProducts(
       onData(prods, isFromCache);
     },
     (error) => {
+      if (!auth.currentUser || isFirestoreQuotaError(error)) {
+        if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+        return;
+      }
       try {
         handleFirestoreError(error, OperationType.GET, path);
       } catch (err) {
@@ -447,13 +504,17 @@ export async function deleteProductFromFirestore(productId: string): Promise<voi
 // Tenant Categories Firestore API (Unique per Shop)
 // -------------------------------------------------------------
 export async function getTenantCategoriesFromFirestore(businessId: string): Promise<Category[]> {
-  if (!db || !businessId) return [];
+  if (!db || !businessId || !auth.currentUser || isFirestoreQuotaCooldownActive()) return [];
   const path = 'categories';
   try {
     const q = query(collection(db, path), where('businessId', '==', businessId));
     const snap = await getDocs(q);
     return snap.docs.map((d) => d.data() as Category);
   } catch (error) {
+    if (!auth.currentUser || isFirestoreQuotaError(error)) {
+      if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+      return [];
+    }
     handleFirestoreError(error, OperationType.LIST, path);
     return [];
   }
@@ -463,7 +524,7 @@ export function subscribeToTenantCategories(
   businessId: string,
   onData: (categories: Category[]) => void
 ): Unsubscribe {
-  if (!db || !businessId) {
+  if (!db || !businessId || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
     return () => {};
   }
   const path = 'categories';
@@ -474,6 +535,10 @@ export function subscribeToTenantCategories(
       onData(snap.docs.map((d) => d.data() as Category));
     },
     (error) => {
+      if (!auth.currentUser || isFirestoreQuotaError(error)) {
+        if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+        return;
+      }
       try {
         handleFirestoreError(error, OperationType.GET, path);
       } catch (err) {
@@ -520,13 +585,17 @@ export async function deleteCategoryFromFirestore(categoryId: string): Promise<v
 // Tenant Locations Firestore API
 // -------------------------------------------------------------
 export async function getTenantLocationsFromFirestore(businessId: string): Promise<Location[]> {
-  if (!db || !businessId) return [];
+  if (!db || !businessId || !auth.currentUser || isFirestoreQuotaCooldownActive()) return [];
   const path = 'locations';
   try {
     const q = query(collection(db, path), where('businessId', '==', businessId));
     const snap = await getDocs(q);
     return snap.docs.map((d) => d.data() as Location);
   } catch (error) {
+    if (!auth.currentUser || isFirestoreQuotaError(error)) {
+      if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+      return [];
+    }
     handleFirestoreError(error, OperationType.LIST, path);
     return [];
   }
@@ -536,7 +605,7 @@ export function subscribeToTenantLocations(
   businessId: string,
   onData: (locations: Location[]) => void
 ): Unsubscribe {
-  if (!db || !businessId) {
+  if (!db || !businessId || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
     return () => {};
   }
   const path = 'locations';
@@ -547,6 +616,10 @@ export function subscribeToTenantLocations(
       onData(snap.docs.map((d) => d.data() as Location));
     },
     (error) => {
+      if (!auth.currentUser || isFirestoreQuotaError(error)) {
+        if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+        return;
+      }
       try {
         handleFirestoreError(error, OperationType.GET, path);
       } catch (err) {
@@ -593,25 +666,33 @@ export async function deleteLocationFromFirestore(locationId: string): Promise<v
 // Tenant Cashiers / Staff Firestore API
 // -------------------------------------------------------------
 export async function getTenantCashiersFromFirestore(businessId: string): Promise<Cashier[]> {
-  if (!db || !businessId) return [];
+  if (!db || !businessId || !auth.currentUser || isFirestoreQuotaCooldownActive()) return [];
   const path = 'cashiers';
   try {
     const q = query(collection(db, path), where('businessId', '==', businessId));
     const snap = await getDocs(q);
     return snap.docs.map((d) => d.data() as Cashier);
   } catch (error) {
+    if (!auth.currentUser || isFirestoreQuotaError(error)) {
+      if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+      return [];
+    }
     handleFirestoreError(error, OperationType.LIST, path);
     return [];
   }
 }
 
 export async function getAllCashiersFromFirestore(): Promise<Cashier[]> {
-  if (!db) return [];
+  if (!db || isFirestoreQuotaCooldownActive()) return [];
   const path = 'cashiers';
   try {
     const snap = await getDocs(collection(db, path));
     return snap.docs.map((d) => d.data() as Cashier);
   } catch (error) {
+    if (isFirestoreQuotaError(error)) {
+      markFirestoreQuotaExceeded();
+      return [];
+    }
     handleFirestoreError(error, OperationType.LIST, path);
     return [];
   }
@@ -621,7 +702,7 @@ export function subscribeToTenantCashiers(
   businessId: string,
   onData: (cashiers: Cashier[]) => void
 ): Unsubscribe {
-  if (!db || !businessId) {
+  if (!db || !businessId || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
     return () => {};
   }
   const path = 'cashiers';
@@ -632,6 +713,10 @@ export function subscribeToTenantCashiers(
       onData(snap.docs.map((d) => d.data() as Cashier));
     },
     (error) => {
+      if (!auth.currentUser || isFirestoreQuotaError(error)) {
+        if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+        return;
+      }
       try {
         handleFirestoreError(error, OperationType.GET, path);
       } catch (err) {
@@ -711,13 +796,17 @@ export async function deleteCashierFromFirestore(cashierId: string): Promise<voi
 // Tenant Transactions Firestore API
 // -------------------------------------------------------------
 export async function getTenantTransactionsFromFirestore(businessId: string): Promise<Transaction[]> {
-  if (!db || !auth.currentUser) return [];
+  if (!db || !auth.currentUser || isFirestoreQuotaCooldownActive()) return [];
   const path = 'transactions';
   try {
     const q = query(collection(db, path), where('businessId', '==', businessId));
     const snap = await getDocs(q);
     return snap.docs.map((d) => d.data() as Transaction);
   } catch (error) {
+    if (!auth.currentUser || isFirestoreQuotaError(error)) {
+      if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+      return [];
+    }
     handleFirestoreError(error, OperationType.LIST, path);
   }
 }
@@ -726,7 +815,7 @@ export function subscribeToTenantTransactions(
   businessId: string,
   onData: (transactions: Transaction[]) => void
 ): Unsubscribe {
-  if (!db || !auth.currentUser) {
+  if (!db || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
     return () => {};
   }
   const path = 'transactions';
@@ -737,6 +826,10 @@ export function subscribeToTenantTransactions(
       onData(snap.docs.map((d) => d.data() as Transaction));
     },
     (error) => {
+      if (!auth.currentUser || isFirestoreQuotaError(error)) {
+        if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+        return;
+      }
       try {
         handleFirestoreError(error, OperationType.GET, path);
       } catch (err) {
@@ -834,7 +927,7 @@ export async function seedInitialTenantDataToFirestore(params: {
   transactions: Transaction[];
 }): Promise<{ seeded: boolean; counts: Record<string, number> }> {
   const counts = { businesses: 0, products: 0, categories: 0, locations: 0, cashiers: 0, transactions: 0 };
-  if (!db) {
+  if (!db || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
     return { seeded: false, counts };
   }
   try {
@@ -890,6 +983,7 @@ export async function seedInitialTenantDataToFirestore(params: {
 // Platform Global Settings & Branding (Super Admin)
 // -------------------------------------------------------------
 export async function getPlatformSettingsFromFirestore(): Promise<PlatformSettings | null> {
+  if (!db || isFirestoreQuotaCooldownActive()) return null;
   try {
     const snap = await getDoc(doc(db, 'platform_settings', 'global'));
     if (snap.exists()) {
@@ -897,6 +991,10 @@ export async function getPlatformSettingsFromFirestore(): Promise<PlatformSettin
     }
     return null;
   } catch (error) {
+    if (isFirestoreQuotaError(error)) {
+      markFirestoreQuotaExceeded();
+      return null;
+    }
     console.warn('Failed to load platform settings from Firestore:', error);
     return null;
   }
@@ -955,7 +1053,7 @@ export function subscribeToTenantCustomers(
   businessId: string,
   onUpdate: (customers: Customer[]) => void
 ): Unsubscribe {
-  if (!db || !auth.currentUser) {
+  if (!db || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
     return () => {};
   }
   const q = query(collection(db, 'customers'), where('businessId', '==', businessId));
@@ -967,6 +1065,10 @@ export function subscribeToTenantCustomers(
       onUpdate(customers);
     },
     (error) => {
+      if (!auth.currentUser || isFirestoreQuotaError(error)) {
+        if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+        return;
+      }
       console.warn('Firestore customer real-time subscription error:', error);
     }
   );
@@ -1031,7 +1133,7 @@ export function subscribeToTenantSuppliers(
   businessId: string,
   onUpdate: (suppliers: Supplier[]) => void
 ): Unsubscribe {
-  if (!db || !auth.currentUser) {
+  if (!db || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
     return () => {};
   }
   const q = query(collection(db, 'suppliers'), where('businessId', '==', businessId));
@@ -1043,6 +1145,10 @@ export function subscribeToTenantSuppliers(
       onUpdate(suppliers);
     },
     (error) => {
+      if (!auth.currentUser || isFirestoreQuotaError(error)) {
+        if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+        return;
+      }
       console.warn('Firestore supplier real-time subscription error:', error);
     }
   );

@@ -23,6 +23,7 @@ export const SuperAdminAffiliatesTab: React.FC = () => {
   const [commissions, setCommissions] = useState<AffiliateCommission[]>([]);
   const [payouts, setPayouts] = useState<AffiliatePayout[]>([]);
   const [receiptInputs, setReceiptInputs] = useState<Record<string, string>>({});
+  const [noteInputs, setNoteInputs] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
@@ -43,8 +44,9 @@ export const SuperAdminAffiliatesTab: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  const handleReviewPayout = async (payoutId: string, action: 'paid' | 'rejected') => {
+  const handleReviewPayout = async (payoutId: string, action: 'approved' | 'paid' | 'rejected') => {
     const receipt = (receiptInputs[payoutId] || '').trim();
+    const notes = (noteInputs[payoutId] || '').trim();
     if (action === 'paid' && !receipt) {
       showToast('Enter the M-Pesa transaction receipt code before marking Paid.', 'error');
       return;
@@ -55,6 +57,7 @@ export const SuperAdminAffiliatesTab: React.FC = () => {
       payoutId,
       action,
       mpesaReceiptNumber: receipt,
+      notes: notes || undefined,
       reviewedBy: currentUser?.email || 'Super Admin',
     });
     setBusyId(null);
@@ -63,7 +66,14 @@ export const SuperAdminAffiliatesTab: React.FC = () => {
       showToast(res.error || 'Failed to update payout.', 'error');
       return;
     }
-    showToast(action === 'paid' ? 'Payout marked Paid.' : 'Payout rejected and balance refunded.', 'success');
+    showToast(
+      action === 'approved'
+        ? 'Payout approved and queued for disbursement.'
+        : action === 'paid'
+        ? 'Payout marked Paid.'
+        : 'Payout rejected and balance refunded.',
+      'success'
+    );
     loadData();
   };
 
@@ -98,7 +108,7 @@ export const SuperAdminAffiliatesTab: React.FC = () => {
     }
   };
 
-  const pendingPayouts = payouts.filter((p) => p.status === 'pending');
+  const pendingPayouts = payouts.filter((p) => p.status === 'pending' || p.status === 'approved');
   const totalLiability = affiliates.reduce((sum, a) => sum + Number(a.availableBalanceKes || 0), 0);
   const totalPaid = affiliates.reduce((sum, a) => sum + Number(a.paidOutKes || 0), 0);
 
@@ -129,7 +139,7 @@ export const SuperAdminAffiliatesTab: React.FC = () => {
           <div className="text-xl font-bold font-mono tabular-nums text-slate-900 mt-1">{affiliates.length}</div>
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-4">
-          <div className="text-xs text-slate-500">Pending Payouts</div>
+          <div className="text-xs text-slate-500">Open Payouts</div>
           <div className="text-xl font-bold font-mono tabular-nums text-amber-700 mt-1">{pendingPayouts.length}</div>
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-4">
@@ -166,7 +176,7 @@ export const SuperAdminAffiliatesTab: React.FC = () => {
                   <th className="py-2.5 px-4 font-semibold">M-Pesa Phone</th>
                   <th className="py-2.5 px-4 font-semibold text-right">Amount</th>
                   <th className="py-2.5 px-4 font-semibold">Status</th>
-                  <th className="py-2.5 px-4 font-semibold">M-Pesa Receipt / Action</th>
+                  <th className="py-2.5 px-4 font-semibold">Notes & M-Pesa Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -184,6 +194,8 @@ export const SuperAdminAffiliatesTab: React.FC = () => {
                         className={
                           p.status === 'paid'
                             ? 'text-emerald-700'
+                            : p.status === 'approved'
+                            ? 'text-blue-700'
                             : p.status === 'rejected'
                             ? 'text-red-600'
                             : 'text-amber-700'
@@ -193,8 +205,17 @@ export const SuperAdminAffiliatesTab: React.FC = () => {
                       </span>
                     </td>
                     <td className="py-2.5 px-4">
-                      {p.status === 'pending' ? (
-                        <div className="flex items-center gap-2">
+                      {p.status === 'pending' || p.status === 'approved' ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="Admin note (optional)"
+                            value={noteInputs[p.id] ?? p.notes ?? ''}
+                            onChange={(e) =>
+                              setNoteInputs((prev) => ({ ...prev, [p.id]: e.target.value }))
+                            }
+                            className="px-2.5 py-1 text-[11px] border border-slate-300 rounded-md w-44"
+                          />
                           <input
                             type="text"
                             placeholder="M-Pesa Code (e.g. SLK8...)"
@@ -202,8 +223,19 @@ export const SuperAdminAffiliatesTab: React.FC = () => {
                             onChange={(e) =>
                               setReceiptInputs((prev) => ({ ...prev, [p.id]: e.target.value.toUpperCase() }))
                             }
-                            className="px-2.5 py-1 text-[11px] font-mono border border-slate-300 rounded-md w-40"
+                            className="px-2.5 py-1 text-[11px] font-mono border border-slate-300 rounded-md w-36"
                           />
+                          {p.status === 'pending' && (
+                            <button
+                              type="button"
+                              disabled={busyId === p.id}
+                              onClick={() => handleReviewPayout(p.id, 'approved')}
+                              className="px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-semibold text-[11px] flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                            >
+                              {busyId === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                              <span>Approve</span>
+                            </button>
+                          )}
                           <button
                             type="button"
                             disabled={busyId === p.id}
@@ -224,7 +256,10 @@ export const SuperAdminAffiliatesTab: React.FC = () => {
                           </button>
                         </div>
                       ) : (
-                        <span className="font-mono text-slate-500">{p.mpesaReceiptNumber || '—'}</span>
+                        <div className="space-y-0.5">
+                          <div className="font-mono text-slate-600">{p.mpesaReceiptNumber || '—'}</div>
+                          {p.notes && <div className="text-[11px] text-slate-500">{p.notes}</div>}
+                        </div>
                       )}
                     </td>
                   </tr>

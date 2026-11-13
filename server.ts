@@ -1735,32 +1735,46 @@ Extract:
     }
   });
 
-  // Super Admin: Approve (Mark Paid) or Reject M-Pesa Payout
+  // Super Admin: Approve, Mark Paid, or Reject M-Pesa Payout
   app.post('/api/affiliates/admin/payout-review', async (req, res) => {
     try {
       const { payoutId, action, mpesaReceiptNumber, reviewedBy, notes } = req.body || {};
-      if (!payoutId || (action !== 'paid' && action !== 'rejected')) {
-        return res.status(400).json({ error: 'payoutId and valid action (paid | rejected) are required.' });
+      if (!payoutId || (action !== 'approved' && action !== 'paid' && action !== 'rejected')) {
+        return res.status(400).json({ error: 'payoutId and valid action (approved | paid | rejected) are required.' });
       }
 
       const payout = await getFirestoreDoc('affiliate_payouts', String(payoutId));
       if (!payout) {
         return res.status(404).json({ error: 'Payout request not found.' });
       }
-      if (payout.status !== 'pending') {
+      if (payout.status === 'paid' || payout.status === 'rejected') {
         return res.status(400).json({ error: `Payout is already ${payout.status}.` });
+      }
+      if (action === 'approved' && payout.status === 'approved') {
+        return res.status(400).json({ error: 'Payout is already approved.' });
       }
 
       const nowIso = new Date().toISOString();
       const affiliate = await getFirestoreDoc('affiliates', String(payout.affiliateId));
+      const resolvedNotes =
+        typeof notes === 'string' && notes.trim().length > 0
+          ? notes.trim()
+          : typeof payout.notes === 'string'
+          ? payout.notes
+          : '';
 
       await patchFirestoreDoc(
         'affiliate_payouts',
         String(payoutId),
         {
           status: action,
-          mpesaReceiptNumber: action === 'paid' ? String(mpesaReceiptNumber || '').trim() : '',
-          notes: notes ? String(notes).trim() : '',
+          mpesaReceiptNumber:
+            action === 'paid'
+              ? String(mpesaReceiptNumber || '').trim()
+              : action === 'approved'
+              ? String(payout.mpesaReceiptNumber || '')
+              : '',
+          notes: resolvedNotes,
           reviewedBy: String(reviewedBy || 'Super Admin'),
           reviewedAt: nowIso,
         },

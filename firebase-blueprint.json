@@ -324,8 +324,9 @@
         "affiliateName": { "type": "string" },
         "mpesaPhone": { "type": "string" },
         "amountKes": { "type": "number" },
-        "status": { "type": "string", "enum": ["pending", "paid", "rejected"] },
+        "status": { "type": "string", "enum": ["pending", "approved", "paid", "rejected"] },
         "mpesaReceiptNumber": { "type": "string" },
+        "notes": { "type": "string" },
         "reviewedBy": { "type": "string" },
         "requestedAt": { "type": "string" },
         "reviewedAt": { "type": "string" }

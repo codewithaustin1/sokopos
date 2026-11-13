@@ -15,15 +15,33 @@ import { usePos } from '../context/PosContext';
 
 interface ScannerStatusBadgeProps {
   onScan?: (code: string) => void;
+  variant?: 'pill' | 'menu-item';
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
 }
 
-export const ScannerStatusBadge: React.FC<ScannerStatusBadgeProps> = ({ onScan }) => {
-  const { handleBarcodeScanned, showToast, currentLocation } = usePos();
-  const [isOpen, setIsOpen] = useState(false);
+export const ScannerStatusBadge: React.FC<ScannerStatusBadgeProps> = ({
+  onScan,
+  variant = 'pill',
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
+}) => {
+  const { handleBarcodeScanned, showToast } = usePos();
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isOpen = controlledOpen !== undefined ? controlledOpen : internalOpen;
+  const setIsOpen = (next: boolean) => {
+    if (onOpenChange) {
+      onOpenChange(next);
+    } else {
+      setInternalOpen(next);
+    }
+  };
   const [testInputText, setTestInputText] = useState('Customer searching soda...');
   const [isSimulating, setIsSimulating] = useState(false);
 
-  const { isListening, lastScan, totalScans, simulateBurst } = useBackgroundScanner({
+  const { lastScan, totalScans, simulateBurst } = useBackgroundScanner({
     onBarcodeScanned: (barcode) => {
       if (onScan) {
         onScan(barcode);
@@ -46,24 +64,38 @@ export const ScannerStatusBadge: React.FC<ScannerStatusBadgeProps> = ({ onScan }
 
   return (
     <>
-      {/* Header Compact Trigger Pill */}
-      <button
-        id="header-scanner-status-pill"
-        type="button"
-        onClick={() => setIsOpen(true)}
-        className="flex items-center gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1.5 rounded-lg text-[11px] font-bold border transition cursor-pointer bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
-        title="Hardware Scanner Status: Background Listener is Active & Monitoring"
-      >
-        <span className="relative flex h-2 w-2">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-        </span>
-        <Scan className="w-3.5 h-3.5 text-blue-600 hidden xs:inline" />
-        <span className="font-semibold text-slate-700">Scanner</span>
-        <span className="hidden md:inline-block text-[10px] bg-emerald-100 text-emerald-800 px-1 rounded font-bold">
-          Active
-        </span>
-      </button>
+      {!hideTrigger && (
+        variant === 'menu-item' ? (
+          <button
+            id="header-scanner-status-pill"
+            type="button"
+            onClick={() => setIsOpen(true)}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-left text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors duration-150 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600"
+            title="Hardware Scanner Diagnostics & Test"
+          >
+            <span className="flex items-center gap-2.5 min-w-0">
+              <Scan className="w-4 h-4 text-slate-500 shrink-0" />
+              <span className="truncate">Hardware Scanner Diagnostics</span>
+            </span>
+            <span className="text-[11px] font-medium text-emerald-700 whitespace-nowrap shrink-0">
+              Ready
+            </span>
+          </button>
+        ) : (
+          <button
+            id="header-scanner-status-pill"
+            type="button"
+            onClick={() => setIsOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-semibold border transition-colors duration-150 cursor-pointer bg-white hover:bg-slate-50 text-slate-700 border-slate-200 whitespace-nowrap shrink-0"
+            title="Hardware Scanner Status: Background Listener is Active"
+          >
+            <Scan className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+            <span>Scanner</span>
+            <span className="text-slate-400" aria-hidden="true">·</span>
+            <span className="text-emerald-700 font-medium">Ready</span>
+          </button>
+        )
+      )}
 
       {/* Diagnostics & Verification Modal */}
       {isOpen && (
