@@ -1,18 +1,10 @@
 import React, { useState } from 'react';
 import {
-  Star,
-  Coins,
-  Check,
   Save,
-  HelpCircle,
-  TrendingUp,
-  Receipt,
-  Sparkles,
-  Calculator,
-  Percent,
   CheckCircle2,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
+import { SettingsSectionHeader } from './common/SettingsSectionHeader';
 
 export const LoyaltySettingsPanel: React.FC = () => {
   const {
@@ -59,11 +51,12 @@ export const LoyaltySettingsPanel: React.FC = () => {
 
     setIsSaving(true);
     try {
-      await updateLoyaltySettings({
+      const ok = await updateLoyaltySettings({
         enabled,
         spendPerPoint: safeSpendPerPoint,
         pointsPerCurrencyUnit: safePointsPerCurrency,
       });
+      if (!ok) return;
       setHasSaved(true);
       showToast('Loyalty point values and earning rules saved successfully', 'success');
       setTimeout(() => setHasSaved(false), 3000);
@@ -76,81 +69,62 @@ export const LoyaltySettingsPanel: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 max-w-4xl animate-in fade-in duration-200">
-      {/* Top Banner & Status */}
-      <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-200/80 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex items-start gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm shadow-amber-500/20">
-            <Star className="w-5 h-5 fill-white" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
-                Loyalty Points Valuation & Rules
-              </h2>
-              <span
-                className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                  enabled
-                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                    : 'bg-slate-200 text-slate-700'
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 sm:p-6 space-y-6">
+      <SettingsSectionHeader
+        title="Loyalty Program & Point Valuation"
+        description="Configure how customers earn and redeem loyalty points. Printed and digital receipts display previous and updated balances automatically."
+        meta={
+          <span className={enabled ? 'text-emerald-700 dark:text-emerald-400 font-medium' : 'text-slate-500'}>
+            {enabled ? 'Program Active' : 'Program Paused'} · {effectiveCashbackRate.toFixed(2)}% Rebate
+          </span>
+        }
+        actions={
+          <div className="flex items-center gap-2.5">
+            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+              Enable Rewards
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={enabled}
+              id="toggle-loyalty-program-btn"
+              onClick={() => setEnabled(!enabled)}
+              className={`w-11 h-6 flex items-center rounded-full p-0.5 transition-colors cursor-pointer ${
+                enabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
+              }`}
+            >
+              <div
+                className={`bg-white w-5 h-5 rounded-full shadow-xs transform transition-transform ${
+                  enabled ? 'translate-x-5' : 'translate-x-0'
                 }`}
-              >
-                {enabled ? 'Program Active' : 'Program Paused'}
-              </span>
-            </div>
-            <p className="text-xs text-slate-600 mt-0.5">
-              Set what each point is worth and how customers earn rewards. Customer receipts will automatically display their previous and current points balance.
+              />
+            </button>
+          </div>
+        }
+      />
+
+      {/* Earning & Redemption Rules */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Rule 1: Sales Amount to Earn 1 Point */}
+        <div className="space-y-3">
+          <div>
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Earning Rate
+            </h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Customer spend required to earn 1 loyalty point.
             </p>
           </div>
-        </div>
 
-        {/* Master Program Toggle */}
-        <div className="flex items-center gap-3 shrink-0 bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-xs font-bold text-slate-700">Enable Rewards:</span>
-          <button
-            type="button"
-            id="toggle-loyalty-program-btn"
-            onClick={() => setEnabled(!enabled)}
-            className={`w-12 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer ${
-              enabled ? 'bg-amber-500' : 'bg-slate-300'
-            }`}
-          >
-            <div
-              className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
-                enabled ? 'translate-x-6' : 'translate-x-0'
-              }`}
-            />
-          </button>
-        </div>
-      </div>
-
-      {/* Main Configuration Grid: Earning & Redemption Rules */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-        {/* Rule 1: Sales Amount to Earn 1 Point */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-4 shadow-2xs">
-          <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-              <Coins className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-sm font-black text-slate-900">
-                1. Cash Sales Required to Earn 1 Point
-              </h3>
-              <p className="text-[11px] text-slate-500">
-                How much a client must spend to be awarded 1 point
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
-              <span>Spend per 1 Loyalty Point:</span>
-              <span className="text-[11px] font-mono font-bold text-blue-600">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center justify-between">
+              <span>Spend per 1 Point</span>
+              <span className="font-mono tabular-nums text-blue-600 dark:text-blue-400 font-medium">
                 {currency} {safeSpendPerPoint} = 1 pt
               </span>
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">
+              <span className="absolute left-3 top-2.5 text-xs font-medium text-slate-400">
                 {currency}
               </span>
               <input
@@ -160,58 +134,51 @@ export const LoyaltySettingsPanel: React.FC = () => {
                 step="1"
                 value={spendPerPoint}
                 onChange={(e) => setSpendPerPoint(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                className="w-full pl-12 pr-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white transition"
+                className="w-full pl-12 pr-4 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-sm font-mono tabular-nums font-semibold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            <p className="text-[11px] text-slate-500">
-              Example: If set to <span className="font-bold text-slate-700">100</span>, a sale of KES 500 earns 5 points.
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              At {currency} {safeSpendPerPoint}, a {currency} 500 sale awards{' '}
+              <span className="font-mono tabular-nums font-medium text-slate-700 dark:text-slate-200">
+                {Math.floor(500 / safeSpendPerPoint)}
+              </span>{' '}
+              pts.
             </p>
           </div>
 
-          {/* Quick Presets */}
-          <div className="pt-2">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-              Quick Earning Presets:
-            </div>
-            <div className="grid grid-cols-4 gap-1.5">
-              {[50, 100, 200, 500].map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  onClick={() => setSpendPerPoint(preset)}
-                  className={`py-1.5 px-2 rounded-lg text-xs font-bold transition cursor-pointer text-center border ${
-                    spendPerPoint === preset
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
-                      : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                  }`}
-                >
-                  {currency} {preset}
-                </button>
-              ))}
-            </div>
+          <div className="grid grid-cols-4 gap-1.5 pt-1">
+            {[50, 100, 200, 500].map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => setSpendPerPoint(preset)}
+                className={`py-1.5 px-2 rounded-lg text-xs font-medium tabular-nums transition cursor-pointer text-center border whitespace-nowrap ${
+                  spendPerPoint === preset
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                {currency} {preset}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Rule 2: Points Worth 1 Shilling / Currency Unit */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-4 shadow-2xs">
-          <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
-            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-              <Star className="w-4 h-4 fill-amber-500" />
-            </div>
-            <div>
-              <h3 className="text-sm font-black text-slate-900">
-                2. Points Redemption Value (Per 1 {currency})
-              </h3>
-              <p className="text-[11px] text-slate-500">
-                Number of points equal to 1 shilling / currency unit
-              </p>
-            </div>
+        {/* Rule 2: Points Redemption Value */}
+        <div className="space-y-3">
+          <div>
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Redemption Rate
+            </h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Number of points required to equal 1 {currency} in checkout value.
+            </p>
           </div>
 
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
-              <span>Points equal to 1 {currency}:</span>
-              <span className="text-[11px] font-mono font-bold text-amber-700">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center justify-between">
+              <span>Points equal to 1 {currency}</span>
+              <span className="font-mono tabular-nums text-blue-600 dark:text-blue-400 font-medium">
                 {safePointsPerCurrency} pts = 1 {currency}
               </span>
             </label>
@@ -225,172 +192,155 @@ export const LoyaltySettingsPanel: React.FC = () => {
                 onChange={(e) =>
                   setPointsPerCurrencyUnit(Math.max(1, parseInt(e.target.value, 10) || 1))
                 }
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-bold text-slate-900 focus:outline-none focus:border-amber-500 focus:bg-white transition"
+                className="w-full px-3.5 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-sm font-mono tabular-nums font-semibold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <span className="absolute right-3 top-2.5 text-xs font-bold text-slate-400">
+              <span className="absolute right-3 top-2.5 text-xs font-medium text-slate-400">
                 Points
               </span>
             </div>
-            <p className="text-[11px] text-slate-500">
-              Each point is worth{' '}
-              <strong className="text-amber-800">
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Each point equals{' '}
+              <span className="font-mono tabular-nums font-medium text-slate-700 dark:text-slate-200">
                 {currency} {singlePointValue.toFixed(2)}
-              </strong>{' '}
-              (e.g., 10 points = 1 shilling).
+              </span>{' '}
+              in redeemable store credit.
             </p>
           </div>
 
-          {/* Quick Presets */}
-          <div className="pt-2">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-              Quick Value Presets:
-            </div>
-            <div className="grid grid-cols-4 gap-1.5">
-              {[
-                { pts: 1, label: '1 pt = 1/-' },
-                { pts: 5, label: '5 pts = 1/-' },
-                { pts: 10, label: '10 pts = 1/-' },
-                { pts: 20, label: '20 pts = 1/-' },
-              ].map(({ pts, label }) => (
-                <button
-                  key={pts}
-                  type="button"
-                  onClick={() => setPointsPerCurrencyUnit(pts)}
-                  className={`py-1.5 px-2 rounded-lg text-xs font-bold transition cursor-pointer text-center border ${
-                    pointsPerCurrencyUnit === pts
-                      ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
-                      : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                  }`}
-                  title={`${pts} points = 1 ${currency}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+          <div className="grid grid-cols-4 gap-1.5 pt-1">
+            {[
+              { pts: 1, label: '1 = 1/-' },
+              { pts: 5, label: '5 = 1/-' },
+              { pts: 10, label: '10 = 1/-' },
+              { pts: 20, label: '20 = 1/-' },
+            ].map(({ pts, label }) => (
+              <button
+                key={pts}
+                type="button"
+                onClick={() => setPointsPerCurrencyUnit(pts)}
+                className={`py-1.5 px-2 rounded-lg text-xs font-medium tabular-nums transition cursor-pointer text-center border whitespace-nowrap ${
+                  pointsPerCurrencyUnit === pts
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                }`}
+                title={`${pts} points = 1 ${currency}`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Program Economics & Cashback Return Meter */}
-      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-emerald-600" />
-            <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">
-              Program Economics & Customer Reward Rate
-            </h4>
-          </div>
-          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-            {effectiveCashbackRate.toFixed(2)}% Effective Rebate
+      {/* Program Economics Summary Strip */}
+      <div className="pt-5 border-t border-slate-200 dark:border-slate-800">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+            Program Economics Summary
+          </h4>
+          <span className="text-xs font-mono tabular-nums font-medium text-emerald-700 dark:text-emerald-400">
+            {effectiveCashbackRate.toFixed(2)}% Effective Customer Rebate
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
-          <div className="bg-white p-3 rounded-xl border border-slate-200">
-            <span className="text-slate-400 text-[10px] uppercase font-bold block">Spend for 1 Point</span>
-            <span className="font-black text-slate-900 text-sm mt-0.5 block">
+        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50/70 dark:bg-slate-950/50">
+          <div className="p-3.5">
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Spend for 1 Point</span>
+            <span className="font-mono tabular-nums font-semibold text-slate-900 dark:text-slate-100 text-sm mt-0.5 block">
               {currency} {safeSpendPerPoint.toLocaleString()}
             </span>
-            <span className="text-[10px] text-slate-500">Sales amount to earn 1 pt</span>
           </div>
 
-          <div className="bg-white p-3 rounded-xl border border-slate-200">
-            <span className="text-slate-400 text-[10px] uppercase font-bold block">1 Point Cash Worth</span>
-            <span className="font-black text-amber-700 text-sm mt-0.5 block">
+          <div className="p-3.5">
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 block">1 Point Cash Value</span>
+            <span className="font-mono tabular-nums font-semibold text-slate-900 dark:text-slate-100 text-sm mt-0.5 block">
               {currency} {singlePointValue.toFixed(2)}
             </span>
-            <span className="text-[10px] text-slate-500">100 pts = {currency} {(100 * singlePointValue).toFixed(2)}</span>
           </div>
 
-          <div className="bg-white p-3 rounded-xl border border-slate-200">
-            <span className="text-slate-400 text-[10px] uppercase font-bold block">Total Spend for 1 {currency} Reward</span>
-            <span className="font-black text-emerald-700 text-sm mt-0.5 block">
+          <div className="p-3.5">
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Spend per 1 {currency} Reward</span>
+            <span className="font-mono tabular-nums font-semibold text-emerald-700 dark:text-emerald-400 text-sm mt-0.5 block">
               {currency} {spendForOneCurrencyReward.toLocaleString()}
             </span>
-            <span className="text-[10px] text-slate-500">Net customer payback margin</span>
           </div>
         </div>
       </div>
 
-      {/* Live Interactive Sale & Receipt Simulator */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-4 shadow-2xs">
+      {/* Live Sale & Receipt Simulator */}
+      <div className="pt-5 border-t border-slate-200 dark:border-slate-800 space-y-4">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Calculator className="w-4 h-4 text-blue-600" />
-            <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">
-              Live Sale & Receipt Preview Simulator
+          <div>
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Receipt Points Preview
             </h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Test how a sample purchase updates a customer&apos;s receipt balance.
+            </p>
           </div>
-          <span className="text-[10px] text-slate-400">Verifies receipt point calculations</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
-          {/* Test Input */}
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-700 block">
-              Simulate Customer Cash Sale Amount:
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
+          <div className="space-y-3">
+            <label className="text-xs font-medium text-slate-700 dark:text-slate-300 block">
+              Sample Sale Amount ({currency})
             </label>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-500">{currency}</span>
-              <input
-                type="number"
-                value={testSaleAmount}
-                onChange={(e) => setTestSaleAmount(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                className="w-32 px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-600"
-              />
-              <span className="text-xs text-slate-500">sale</span>
-            </div>
-
-            <div className="p-2.5 rounded-xl bg-blue-50/60 border border-blue-200/80 text-xs text-blue-900 space-y-1">
-              <div className="flex justify-between">
-                <span>Points Earned on this sale:</span>
-                <strong className="font-mono text-blue-800">+{simulatedEarnedPoints} pts</strong>
+            <input
+              type="number"
+              value={testSaleAmount}
+              onChange={(e) => setTestSaleAmount(Math.max(0, parseInt(e.target.value, 10) || 0))}
+              className="w-44 px-3.5 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-sm font-mono tabular-nums font-semibold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <div className="text-xs text-slate-600 dark:text-slate-400 space-y-1 pt-1">
+              <div className="flex justify-between max-w-xs">
+                <span>Points Earned:</span>
+                <span className="font-mono tabular-nums font-semibold text-slate-900 dark:text-slate-100">
+                  +{simulatedEarnedPoints} pts
+                </span>
               </div>
-              <div className="flex justify-between">
-                <span>Value of points earned:</span>
-                <strong className="font-mono text-emerald-700">
+              <div className="flex justify-between max-w-xs">
+                <span>Redeemable Value:</span>
+                <span className="font-mono tabular-nums font-semibold text-emerald-700 dark:text-emerald-400">
                   {currency} {simulatedRedeemValue.toFixed(2)}
-                </strong>
+                </span>
               </div>
             </div>
           </div>
 
-          {/* Simulated Printed Receipt Viewport */}
-          <div className="bg-amber-50/40 border border-amber-200/80 rounded-xl p-3 text-[11px] font-mono space-y-1 text-slate-800">
-            <div className="text-[10px] font-black uppercase tracking-wider text-amber-900 border-b border-amber-200 pb-1 flex items-center justify-between">
-              <span>Receipt Balance Printout</span>
-              <Receipt className="w-3.5 h-3.5 text-amber-700" />
+          <div className="border border-slate-200 dark:border-slate-800 rounded-lg p-3.5 text-xs font-mono tabular-nums space-y-1.5 bg-slate-50/70 dark:bg-slate-950/60 text-slate-700 dark:text-slate-300">
+            <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 pb-1.5">
+              Receipt Loyalty Slip
             </div>
-            <div className="flex justify-between text-slate-600">
-              <span>Customer:</span>
-              <span className="font-bold text-slate-900">David Mwangi</span>
+            <div className="flex justify-between">
+              <span>Customer</span>
+              <span className="font-sans font-medium text-slate-900 dark:text-slate-100">David Mwangi</span>
             </div>
-            <div className="flex justify-between text-slate-600">
-              <span>Previous Points Balance:</span>
-              <span className="font-bold text-slate-900">520 pts</span>
+            <div className="flex justify-between">
+              <span>Previous Balance</span>
+              <span>520 pts</span>
             </div>
-            <div className="flex justify-between text-emerald-700">
-              <span>+ Earned This Sale:</span>
-              <span className="font-bold">+{simulatedEarnedPoints} pts</span>
+            <div className="flex justify-between text-emerald-700 dark:text-emerald-400">
+              <span>Earned This Sale</span>
+              <span>+{simulatedEarnedPoints} pts</span>
             </div>
-            <div className="flex justify-between text-amber-900 font-black pt-1 border-t border-amber-200">
-              <span>Current Points Balance:</span>
-              <span className="text-xs font-black">{520 + simulatedEarnedPoints} pts</span>
+            <div className="flex justify-between font-semibold text-slate-900 dark:text-slate-100 pt-1.5 border-t border-slate-200 dark:border-slate-800">
+              <span>New Balance</span>
+              <span>{520 + simulatedEarnedPoints} pts</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Save Button & Timestamp */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-        <div className="text-[11px] text-slate-500">
+      {/* Save Action Footer */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+        <div className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
           {loyaltySettings.updatedAt ? (
             <span>
-              Last updated: {new Date(loyaltySettings.updatedAt).toLocaleString()}
-              {loyaltySettings.updatedBy && ` by ${loyaltySettings.updatedBy}`}
+              Last updated {new Date(loyaltySettings.updatedAt).toLocaleString()}
+              {loyaltySettings.updatedBy ? ` · ${loyaltySettings.updatedBy}` : ''}
             </span>
           ) : (
-            <span>Using default standard retail reward rules</span>
+            <span>Using default retail reward rules</span>
           )}
         </div>
 
@@ -399,25 +349,25 @@ export const LoyaltySettingsPanel: React.FC = () => {
           id="save-loyalty-settings-btn"
           onClick={handleSave}
           disabled={isSaving}
-          className={`flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-bold text-xs sm:text-sm text-white transition shadow-sm cursor-pointer ${
+          className={`inline-flex items-center justify-center gap-2 px-5 py-2 rounded-lg font-medium text-xs text-white transition cursor-pointer whitespace-nowrap ${
             hasSaved
               ? 'bg-emerald-600 hover:bg-emerald-700'
-              : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800'
+              : 'bg-blue-600 hover:bg-blue-700'
           }`}
         >
           {hasSaved ? (
             <>
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Saved Successfully</span>
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Saved</span>
             </>
           ) : isSaving ? (
             <>
-              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              <span>Saving Rules...</span>
+              <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              <span>Saving...</span>
             </>
           ) : (
             <>
-              <Save className="w-4 h-4" />
+              <Save className="w-3.5 h-3.5" />
               <span>Save Loyalty Rules</span>
             </>
           )}
@@ -426,3 +376,4 @@ export const LoyaltySettingsPanel: React.FC = () => {
     </div>
   );
 };
+

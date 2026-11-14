@@ -159,6 +159,22 @@ import {
   getItemDiscountedUnitPrice,
   hasDirectDiscountPermission,
 } from '../utils/discountUtils';
+import {
+  CanonicalTierId,
+  SubscriptionCapabilityKey,
+  SubscriptionEntitlements,
+  UpgradePromptRequest,
+  CAPABILITY_MIN_TIER,
+  CAPABILITY_LABELS,
+  normalizePlanTier,
+  getRequiredTierForBranchCount,
+  getRequiredTierForStaffCount,
+  getRequiredTierForProductCount,
+  resolveBusinessEntitlements,
+  isQuotaAtOrAboveLimit,
+  formatTierDisplayName,
+} from '../utils/subscriptionEntitlements';
+import { verifyServerPayment } from '../lib/paymentService';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 interface PosContextType {
@@ -192,7 +208,7 @@ interface PosContextType {
   loginWithGoogle: (email: string, name?: string, newBusinessName?: string) => boolean;
   loginWithCredentials: (username: string, pin: string, isDemo?: boolean) => Promise<boolean>;
   logout: () => boolean;
-  provisionBusiness: (name: string, ownerEmail: string, ownerName: string, plan: 'starter' | 'professional' | 'enterprise') => Business;
+  provisionBusiness: (name: string, ownerEmail: string, ownerName: string, plan: BusinessPlanTier) => Business;
   updateBusinessProfile: (updates: Partial<Business>) => void;
   applyBusinessLocalUpdate: (businessId: string, updates: Partial<Business>, syncToFirestore?: boolean) => void;
   updateBusinessStatus: (businessId: string, status: 'active' | 'suspended') => Promise<void>;
@@ -207,11 +223,16 @@ interface PosContextType {
   openBusinessSettings: (initialTab?: 'profile' | 'branches' | 'settlement' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset') => void;
   updateActiveUserCredentials: (newPin?: string, newUsername?: string) => Promise<boolean>;
 
-  // Pricing Architecture & Package Tiers
+  // Pricing Architecture, Package Tiers & Entitlement Enforcement
   pricingTiers: PricingTier[];
   updatePricingTier: (tierId: string, updates: Partial<PricingTier>) => void;
   resetPricingTiersToDefault: () => void;
   updateBusinessPlan: (businessId: string, plan: BusinessPlanTier) => Promise<void>;
+  entitlements: SubscriptionEntitlements;
+  upgradePrompt: UpgradePromptRequest | null;
+  openUpgradePrompt: (req: UpgradePromptRequest) => void;
+  closeUpgradePrompt: () => void;
+  requireCapability: (cap: SubscriptionCapabilityKey, customContext?: Partial<UpgradePromptRequest>) => boolean;
   isSubscriptionActive: boolean;
   isSubscriptionModalOpen: boolean;
   setIsSubscriptionModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -221,7 +242,7 @@ interface PosContextType {
   pendingCheckoutIntent: PendingCheckoutIntent | null;
   setPendingCheckoutIntent: (intent: PendingCheckoutIntent | null) => void;
   clearPendingCheckoutIntent: () => void;
-  activateBusinessSubscription: (businessId: string, plan: BusinessPlanTier, voucherCode?: string) => Promise<{ success: boolean; message: string }>;
+  activateBusinessSubscription: (businessId: string, plan: BusinessPlanTier, paymentReference?: string) => Promise<{ success: boolean; message: string }>;
   isPricingPageOpen: boolean;
   setIsPricingPageOpen: React.Dispatch<React.SetStateAction<boolean>>;
   openPricingPage: () => void;
@@ -231,7 +252,7 @@ interface PosContextType {
 
   // Loyalty Program Settings
   loyaltySettings: BusinessLoyaltySettings;
-  updateLoyaltySettings: (settings: Partial<BusinessLoyaltySettings>) => Promise<void>;
+  updateLoyaltySettings: (settings: Partial<BusinessLoyaltySettings>) => Promise<boolean>;
 
   // Hardware & Printing User Preferences
   autoPrintReceipt: boolean;
@@ -803,7 +824,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ownerName: displayName || 'Business Owner',
         createdAt: now,
         lastLoginAt: now,
-        plan: 'professional',
+        plan: 'free',
         status: 'active',
         currency: 'KES',
         taxNumber: `P0${Math.floor(100000000 + Math.random() * 900000000)}Z`,
@@ -849,7 +870,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (auth.currentUser) {
       (async () => {
         try {
-          await saveBusinessToFirestore(winner);
+          if (isExistingAccount && !isSuperAdminEmail) {
+            await updateBusinessInFirestore(winner.id, { lastLoginAt: winner.lastLoginAt });
+          } else {
+            await saveBusinessToFirestore(winner);
+          }
         } catch (e) {
           console.warn('Firestore sync winner note:', e);
         }
@@ -1063,25 +1088,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
   }, [businesses, activeBusinessId]);
 
-  // Tenant Loyalty Points Configuration (Controlled by Store Owner)
-  const loyaltySettings: BusinessLoyaltySettings = useMemo(() => {
-    return {
-      ...DEFAULT_LOYALTY_SETTINGS,
-      ...(currentBusiness?.loyaltySettings || {}),
-    };
-  }, [currentBusiness?.loyaltySettings]);
-
-  const updateLoyaltySettings = async (settings: Partial<BusinessLoyaltySettings>): Promise<void> => {
-    if (!currentBusiness) return;
-    const nextLoyalty: BusinessLoyaltySettings = {
-      ...loyaltySettings,
-      ...settings,
-      updatedAt: new Date().toISOString(),
-      updatedBy: currentUser?.email || currentUser?.name,
-    };
-    updateBusinessProfile({ loyaltySettings: nextLoyalty });
-  };
-
   const setActiveBusinessId = (bizId: string) => {
     if (!isSuperAdmin && currentUser && currentUser.businessId !== bizId) {
       showToast('Access denied: You cannot switch to another business tenant.', 'error');
@@ -1152,6 +1158,97 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   });
 
   const isDemoSession = Boolean(currentUser?.isDemoSession || activeBusinessId === 'biz-demo');
+
+  // 4c. Pricing Architecture & Subscription Entitlement Engine
+  const [pricingTiers, setPricingTiers] = useState<PricingTier[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.PRICING_TIERS);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch {
+        // fallback
+      }
+    }
+    return DEFAULT_PRICING_TIERS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.PRICING_TIERS, JSON.stringify(pricingTiers));
+  }, [pricingTiers]);
+
+  const updatePricingTier = (tierId: string, updates: Partial<PricingTier>) => {
+    setPricingTiers((prev) =>
+      prev.map((t) => (t.id === tierId ? { ...t, ...updates } : t))
+    );
+    showToast(`Pricing tier updated successfully`, 'success');
+  };
+
+  const resetPricingTiersToDefault = () => {
+    setPricingTiers(DEFAULT_PRICING_TIERS);
+    localStorage.setItem(STORAGE_KEYS.PRICING_TIERS, JSON.stringify(DEFAULT_PRICING_TIERS));
+    showToast('Pricing tiers reset to default architecture', 'info');
+  };
+
+  const entitlements = useMemo<SubscriptionEntitlements>(
+    () => resolveBusinessEntitlements(currentBusiness, pricingTiers),
+    [currentBusiness, pricingTiers]
+  );
+
+  const [upgradePrompt, setUpgradePrompt] = useState<UpgradePromptRequest | null>(null);
+
+  const openUpgradePrompt = useCallback((req: UpgradePromptRequest) => {
+    setUpgradePrompt(req);
+  }, []);
+
+  const closeUpgradePrompt = useCallback(() => {
+    setUpgradePrompt(null);
+  }, []);
+
+  const requireCapability = useCallback(
+    (cap: SubscriptionCapabilityKey, customContext?: Partial<UpgradePromptRequest>): boolean => {
+      if (isSuperAdmin || entitlements.capabilities[cap]) {
+        return true;
+      }
+      const meta = CAPABILITY_LABELS[cap];
+      const requiredTier = customContext?.requiredTier || CAPABILITY_MIN_TIER[cap];
+      soundFx.playError();
+      setUpgradePrompt({
+        title: customContext?.title || meta.title,
+        description: customContext?.description || meta.description,
+        requiredTier,
+        featureLabel: customContext?.featureLabel || meta.title,
+        quotaMetric: customContext?.quotaMetric,
+      });
+      return false;
+    },
+    [isSuperAdmin, entitlements.capabilities]
+  );
+
+  // Tenant Loyalty Points Configuration (Controlled by Store Owner)
+  const loyaltySettings: BusinessLoyaltySettings = useMemo(() => {
+    return {
+      ...DEFAULT_LOYALTY_SETTINGS,
+      ...(currentBusiness?.loyaltySettings || {}),
+    };
+  }, [currentBusiness?.loyaltySettings]);
+
+  const updateLoyaltySettings = async (settings: Partial<BusinessLoyaltySettings>): Promise<boolean> => {
+    if (!currentBusiness) return false;
+    if (!isSuperAdmin && !requireCapability('loyaltyAndStoreCredit')) {
+      return false;
+    }
+    const nextLoyalty: BusinessLoyaltySettings = {
+      ...loyaltySettings,
+      ...settings,
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentUser?.email || currentUser?.name,
+    };
+    updateBusinessProfile({ loyaltySettings: nextLoyalty });
+    return true;
+  };
 
   // 5. Super-Admin Audit Log
   const [superAdminAuditLogs, setSuperAdminAuditLogs] = useState<SuperAdminAuditEntry[]>(() => {
@@ -1642,6 +1739,23 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const addLocation = (loc: Omit<Location, 'id' | 'businessId' | 'isOnline' | 'lastSynced'>) => {
+    if (!isSuperAdmin && isQuotaAtOrAboveLimit(locations.length, entitlements.limits.maxBranches)) {
+      soundFx.playError();
+      const nextRequiredTier = getRequiredTierForBranchCount(locations.length + 1);
+      openUpgradePrompt({
+        title: 'Store Branch Limit Reached',
+        description: `Your ${entitlements.tierName} plan supports up to ${entitlements.limits.maxBranches} store branch${entitlements.limits.maxBranches === 1 ? '' : 'es'}. Upgrade to ${formatTierDisplayName(nextRequiredTier)} to add another branch.`,
+        requiredTier: nextRequiredTier,
+        featureLabel: 'Multi-Branch Store Locations',
+        quotaMetric: {
+          label: 'Store Branches',
+          used: locations.length,
+          limit: entitlements.limits.maxBranches,
+        },
+      });
+      return;
+    }
+
     const newLoc: Location = {
       ...loc,
       id: `loc-${Date.now()}`,
@@ -1957,6 +2071,23 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return false;
     }
 
+    if (!isSuperAdmin && isQuotaAtOrAboveLimit(systemUsers.length, entitlements.limits.maxStaffUsers)) {
+      soundFx.playError();
+      const nextRequiredTier = getRequiredTierForStaffCount(systemUsers.length + 1);
+      openUpgradePrompt({
+        title: 'Staff Account Limit Reached',
+        description: `Your ${entitlements.tierName} plan supports up to ${entitlements.limits.maxStaffUsers} staff seat${entitlements.limits.maxStaffUsers === 1 ? '' : 's'}. Upgrade to ${formatTierDisplayName(nextRequiredTier)} to add more team members.`,
+        requiredTier: nextRequiredTier,
+        featureLabel: 'Additional Staff Seats',
+        quotaMetric: {
+          label: 'Staff Accounts',
+          used: systemUsers.length,
+          limit: entitlements.limits.maxStaffUsers,
+        },
+      });
+      return false;
+    }
+
     // Edge Case 3: Shared logins are prohibited, as they render attribution meaningless
     const rawUsername = (user.username || user.name.toLowerCase().replace(/\s+/g, '.')).trim().toLowerCase();
     const GENERIC_PROHIBITED = ['cashier', 'shared', 'pos', 'terminal', 'till', 'store', 'user', 'staff', 'counter', 'operator', 'guest', 'general'];
@@ -2037,6 +2168,20 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     if (!credRes.success && credRes.status === 409) {
       showToast(credRes.error || 'Staff ID or Username is already in use in SokoPoS.', 'error');
+      return false;
+    }
+    if (!credRes.success && credRes.status === 403) {
+      const nextRequiredTier = getRequiredTierForStaffCount(systemUsers.length + 1);
+      openUpgradePrompt({
+        title: 'Staff Account Limit Reached',
+        description: credRes.error || `Your ${entitlements.tierName} plan has reached its staff seat limit.`,
+        requiredTier: nextRequiredTier,
+        featureLabel: 'Additional Staff Seats',
+        quotaMetric:
+          entitlements.limits.maxStaffUsers > 0
+            ? { label: 'Staff Accounts', used: systemUsers.length, limit: entitlements.limits.maxStaffUsers }
+            : undefined,
+      });
       return false;
     }
 
@@ -2668,6 +2813,23 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Manual server inventory refresh only (live onSnapshot stream handles initial & automatic updates)
 
   const addProduct = (product: Omit<Product, 'id' | 'businessId'> & { id?: string }) => {
+    if (!isSuperAdmin && isQuotaAtOrAboveLimit(products.length, entitlements.limits.maxProducts)) {
+      soundFx.playError();
+      const nextRequiredTier = getRequiredTierForProductCount(products.length + 1);
+      openUpgradePrompt({
+        title: 'SKU Catalog Limit Reached',
+        description: `Free Advisory accounts allow up to ${entitlements.limits.maxProducts} inventory SKUs (existing items remain readable). Upgrade to ${formatTierDisplayName(nextRequiredTier)} for an unlimited product catalog.`,
+        requiredTier: nextRequiredTier,
+        featureLabel: 'Unlimited Product Catalog',
+        quotaMetric: {
+          label: 'Inventory SKUs',
+          used: products.length,
+          limit: entitlements.limits.maxProducts,
+        },
+      });
+      return;
+    }
+
     const finalCategory = (!product.category || !product.category.trim()) ? 'All' : product.category.trim();
     const uniqueId = product.id || `prod-${Date.now()}-${Math.random().toString(36).substring(2, 8)}-${Math.floor(1000 + Math.random() * 9000)}`;
     const newProduct: Product = {
@@ -2817,6 +2979,26 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     items: Array<Omit<Product, 'id' | 'businessId'> & { id?: string }>
   ): number => {
     if (!Array.isArray(items) || items.length === 0) return 0;
+    if (
+      !isSuperAdmin &&
+      entitlements.limits.maxProducts > 0 &&
+      products.length + items.length > entitlements.limits.maxProducts
+    ) {
+      soundFx.playError();
+      const remaining = Math.max(0, entitlements.limits.maxProducts - products.length);
+      openUpgradePrompt({
+        title: 'Bulk Import Exceeds SKU Quota',
+        description: `Importing ${items.length} products would bring your catalog to ${products.length + items.length} SKUs, exceeding the ${entitlements.limits.maxProducts}-SKU Free Advisory cap (${remaining} slot${remaining === 1 ? '' : 's'} remaining).`,
+        requiredTier: 'starter',
+        featureLabel: 'Unlimited Product Catalog',
+        quotaMetric: {
+          label: 'Inventory SKUs',
+          used: products.length,
+          limit: entitlements.limits.maxProducts,
+        },
+      });
+      return 0;
+    }
     const now = Date.now();
     const createdProducts: Product[] = items.map((product, idx) => {
       const finalCategory = !product.category || !product.category.trim() ? 'All' : product.category.trim();
@@ -2990,6 +3172,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const transferStock = (productId: string, fromLocId: string, toLocId: string, quantity: number): boolean => {
+    if (!isSuperAdmin && !requireCapability('stockTransfers')) {
+      return false;
+    }
     const target = allProducts.find((p) => p.id === productId);
     if (!target) return false;
 
@@ -3288,6 +3473,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     reason: string,
     referenceId?: string
   ): Promise<void> => {
+    if (!isSuperAdmin && !requireCapability('loyaltyAndStoreCredit')) {
+      return;
+    }
     const cust = allCustomers.find((c) => c.id === customerId);
     if (!cust) return;
 
@@ -3337,6 +3525,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const redeemCustomerLoyaltyPoints = async (customerId: string, pointsToRedeem: number): Promise<boolean> => {
+    if (!isSuperAdmin && !requireCapability('loyaltyAndStoreCredit')) {
+      return false;
+    }
     const cust = allCustomers.find((c) => c.id === customerId);
     if (!cust || (cust.loyaltyPoints || 0) < pointsToRedeem) {
       soundFx.playError();
@@ -3441,6 +3632,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const addSupplier = async (
     data: Omit<Supplier, 'id' | 'businessId' | 'createdAt'>
   ): Promise<Supplier> => {
+    if (!isSuperAdmin && !requireCapability('suppliers')) {
+      throw new Error('Upgrade to Business or Premium to add suppliers and purchase orders.');
+    }
     const trimmedName = data.name.trim();
     const trimmedPhone = data.phone.trim();
     if (!trimmedName || !trimmedPhone) {
@@ -4257,6 +4451,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const updateRolePermissions = useCallback(
     async (newPermissions: RolePermissionsMap): Promise<boolean> => {
       if (!currentBusiness) return false;
+      if (!isSuperAdmin && !requireCapability('granularRbac')) {
+        return false;
+      }
       try {
         const updatedBiz: Business = { ...currentBusiness, rolePermissions: newPermissions };
         setBusinesses((prev) =>
@@ -4275,7 +4472,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return false;
       }
     },
-    [currentBusiness, activeBusinessId, isOnline, showToast]
+    [currentBusiness, activeBusinessId, isOnline, showToast, isSuperAdmin, requireCapability]
   );
 
   const resetRolePermissionsToDefault = useCallback(async (): Promise<boolean> => {
@@ -4914,6 +5111,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       isSupervisorOverride?: boolean;
       supervisorOverrideReason?: string;
     }): Promise<{ success: boolean; refundRecord?: RefundRecord; error?: string }> => {
+      if (!isSuperAdmin && !requireCapability('returnsAndRefunds')) {
+        return { success: false, error: 'Returns & Refunds require a Business or Premium subscription.' };
+      }
       // Strict Guardrail: Refund tendering requires an open shift session
       if (!activeShift || activeShift.status !== 'open') {
         soundFx.playError();
@@ -5249,10 +5449,16 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     ]
   );
 
-  const openReturnsModal = useCallback((tx?: Transaction | null) => {
-    setSelectedReturnTx(tx || null);
-    setIsReturnsModalOpen(true);
-  }, []);
+  const openReturnsModal = useCallback(
+    (tx?: Transaction | null) => {
+      if (!isSuperAdmin && !requireCapability('returnsAndRefunds')) {
+        return;
+      }
+      setSelectedReturnTx(tx || null);
+      setIsReturnsModalOpen(true);
+    },
+    [isSuperAdmin, requireCapability]
+  );
 
   const closeReturnsModal = useCallback(() => {
     setIsReturnsModalOpen(false);
@@ -6878,7 +7084,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ownerName: name || 'Business Owner',
         createdAt: now,
         lastLoginAt: now,
-        plan: 'professional',
+        plan: 'free',
         status: 'active',
         currency: 'KES',
         taxNumber: `P0${Math.floor(100000000 + Math.random() * 900000000)}Z`,
@@ -6912,7 +7118,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     ensureTenantDefaults(matchedBiz);
 
     if (auth.currentUser) {
-      saveBusinessToFirestore(matchedBiz).catch((e) => console.warn('Sync matched biz note:', e));
+      if (emailMatches.length > 0) {
+        updateBusinessInFirestore(matchedBiz.id, { lastLoginAt: matchedBiz.lastLoginAt }).catch((e) =>
+          console.warn('Sync matched biz lastLoginAt note:', e)
+        );
+      } else {
+        saveBusinessToFirestore(matchedBiz).catch((e) => console.warn('Sync matched biz note:', e));
+      }
       if (uniqueConflicts.length > 0) {
         deleteBusinessConflictsFromFirestore(uniqueConflicts).catch((e) =>
           console.warn('Purge conflicts note:', e)
@@ -7278,11 +7490,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     name: string,
     ownerEmail: string,
     ownerName: string,
-    plan: 'starter' | 'professional' | 'enterprise'
+    plan: BusinessPlanTier
   ): Business => {
     if (!isSuperAdmin) {
       throw new Error('Unauthorized: Only Super-Admin can provision business tenants.');
     }
+
+    const canonicalPlan = normalizePlanTier(plan);
 
     const trimmedEmail = ownerEmail.trim().toLowerCase();
     if (!isRealGoogleAccount(trimmedEmail)) {
@@ -7316,7 +7530,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ownerEmail: trimmedEmail,
       ownerName,
       createdAt: new Date().toISOString(),
-      plan,
+      plan: canonicalPlan,
       status: 'active',
       currency: 'KES',
       taxNumber: `P0${Math.floor(100000000 + Math.random() * 900000000)}Z`,
@@ -7821,19 +8035,60 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const updateBusinessProfile = (updates: Partial<Business>) => {
     if (!currentBusiness) return;
+
+    if (!isSuperAdmin) {
+      if (
+        updates.currency !== undefined &&
+        updates.currency !== currentBusiness.currency &&
+        !requireCapability('multiCurrency')
+      ) {
+        return;
+      }
+      if (updates.taxSettings !== undefined) {
+        const hasDynamicRules =
+          Boolean(updates.taxSettings.enableDynamicCategoryTax) ||
+          Boolean(updates.taxSettings.enableDynamicRegionalTax) ||
+          (updates.taxSettings.rules?.some((r) => !r.isDefault && r.isActive) ?? false);
+        if (hasDynamicRules && !requireCapability('advancedTaxRules')) {
+          return;
+        }
+      }
+      if (updates.hardwareSettings !== undefined) {
+        const headerChanged =
+          updates.hardwareSettings.printerHeaderNote !== undefined &&
+          updates.hardwareSettings.printerHeaderNote !== (currentBusiness.hardwareSettings?.printerHeaderNote || '');
+        const footerChanged =
+          updates.hardwareSettings.printerFooterNote !== undefined &&
+          updates.hardwareSettings.printerFooterNote !== (currentBusiness.hardwareSettings?.printerFooterNote || '');
+        if ((headerChanged || footerChanged) && !requireCapability('customReceiptBranding')) {
+          return;
+        }
+      }
+    }
+
+    // Never allow non-super-admins to tamper with protected billing/plan fields via profile updates
+    const safeUpdates: Partial<Business> = isSuperAdmin
+      ? updates
+      : (() => {
+          const { plan: _p, status: _s, subscription: _sub, ...rest } = updates;
+          return rest;
+        })();
+
+    if (Object.keys(safeUpdates).length === 0) return;
+
     const oldBiz = currentBusiness;
-    const updatedBiz: Business = { ...oldBiz, ...updates };
+    const updatedBiz: Business = { ...oldBiz, ...safeUpdates };
 
     setBusinesses((prev) =>
       prev.map((b) => (b.id === activeBusinessId ? updatedBiz : b))
     );
-    if (updates.taxNumber) {
+    if (safeUpdates.taxNumber) {
       setAllLocations((prev) =>
-        prev.map((loc) => (loc.businessId === activeBusinessId ? { ...loc, taxId: updates.taxNumber! } : loc))
+        prev.map((loc) => (loc.businessId === activeBusinessId ? { ...loc, taxId: safeUpdates.taxNumber! } : loc))
       );
     }
     if (isOnline) {
-      updateBusinessInFirestore(activeBusinessId, updates).catch((err) =>
+      updateBusinessInFirestore(activeBusinessId, safeUpdates).catch((err) =>
         console.warn('Firestore business update:', err)
       );
     }
@@ -7903,40 +8158,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
   };
 
-  // Pricing Architecture & Package Tiers Management
-  const [pricingTiers, setPricingTiers] = useState<PricingTier[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.PRICING_TIERS);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      } catch {
-        // fallback
-      }
-    }
-    return DEFAULT_PRICING_TIERS;
-  });
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.PRICING_TIERS, JSON.stringify(pricingTiers));
-  }, [pricingTiers]);
-
-  const updatePricingTier = (tierId: string, updates: Partial<PricingTier>) => {
-    setPricingTiers((prev) =>
-      prev.map((t) => (t.id === tierId ? { ...t, ...updates } : t))
-    );
-    showToast(`Pricing tier updated successfully`, 'success');
-  };
-
-  const resetPricingTiersToDefault = () => {
-    setPricingTiers(DEFAULT_PRICING_TIERS);
-    localStorage.setItem(STORAGE_KEYS.PRICING_TIERS, JSON.stringify(DEFAULT_PRICING_TIERS));
-    showToast('Pricing tiers reset to default architecture', 'info');
-  };
-
   const updateBusinessPlan = async (businessId: string, plan: BusinessPlanTier): Promise<void> => {
+    if (!isSuperAdmin) {
+      showToast('Access denied: Only verified Paystack checkout or Super Admin can change subscription tiers.', 'error');
+      return;
+    }
     const targetBiz = businesses.find((b) => b.id === businessId);
     if (!targetBiz) return;
 
@@ -8002,6 +8228,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [currentBusiness?.retailTheme, activeBusinessId]);
 
   const setRetailTheme = async (theme: RetailTheme): Promise<void> => {
+    if (!isSuperAdmin && theme !== 'classic' && !requireCapability('customReceiptBranding')) {
+      return;
+    }
     setRetailThemeState(theme);
     localStorage.setItem(STORAGE_KEYS.getTenantRetailThemeKey(activeBusinessId), theme);
     document.documentElement.setAttribute('data-retail-theme', theme);
@@ -8180,50 +8409,86 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const isSubscriptionActive = useMemo(() => {
     if (isSuperAdmin) return true;
-    if (!currentBusiness) return false;
-    if (currentBusiness.status === 'suspended' || currentBusiness.subscription?.status === 'expired') {
-      return false;
-    }
-    return currentBusiness.status === 'active';
-  }, [isSuperAdmin, currentBusiness]);
+    return entitlements.isActive;
+  }, [isSuperAdmin, entitlements.isActive]);
 
   const activateBusinessSubscription = useCallback(
     async (
       businessId: string,
       plan: BusinessPlanTier,
-      voucherCode?: string
+      paymentReference?: string
     ): Promise<{ success: boolean; message: string }> => {
       const targetId = businessId || currentBusiness?.id;
       if (!targetId) return { success: false, message: 'No target business tenant found' };
 
+      const normalizedTier = normalizePlanTier(plan);
       const now = new Date().toISOString();
-      const nextSubscription = {
+
+      // Super-Admin override: direct administrative provisioning without Paystack checkout
+      if (isSuperAdmin && (!paymentReference || !paymentReference.startsWith('SOKO-'))) {
+        const nextSubscription = {
+          status: 'active' as const,
+          plan: normalizedTier,
+          planId: normalizedTier,
+          activatedAt: now,
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        };
+        updateBusinessProfile({
+          plan: normalizedTier,
+          status: 'active',
+          subscription: nextSubscription,
+        });
+        showToast(`Package "${formatTierDisplayName(normalizedTier)}" activated by Super Admin.`, 'success');
+        return { success: true, message: `ADMIN-${Date.now()}` };
+      }
+
+      if (!paymentReference || !paymentReference.trim()) {
+        showToast('A verified Paystack payment reference is required to activate a subscription.', 'error');
+        return { success: false, message: 'Verified Paystack payment reference is required.' };
+      }
+
+      const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
+      const verifyRes = await verifyServerPayment(paymentReference.trim(), idToken);
+      if (!verifyRes.verified || verifyRes.status !== 'success') {
+        const errMsg = verifyRes.error || verifyRes.gatewayResponse || 'Server payment verification failed.';
+        showToast(errMsg, 'error');
+        return { success: false, message: errMsg };
+      }
+
+      const verifiedTier = normalizePlanTier(verifyRes.planId || normalizedTier);
+      const verifiedSubscription = verifyRes.activatedSubscription || {
         status: 'active' as const,
-        plan: plan,
-        planId: plan,
-        activatedAt: now,
+        plan: verifiedTier,
+        planId: verifiedTier,
+        activatedAt: verifyRes.paidAt || now,
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-        isSimulatedPayment: true,
+        lastPaymentReference: verifyRes.reference || paymentReference,
+        paymentProvider: verifyRes.provider || 'paystack',
       };
 
-      updateBusinessProfile({
-        plan: plan,
-        status: 'active',
-        subscription: nextSubscription,
-      });
+      // Update local state authoritatively; server /api/payments/verify handles Firestore write
+      applyBusinessLocalUpdate(
+        targetId,
+        {
+          plan: verifiedTier,
+          status: 'active',
+          subscription: verifiedSubscription as any,
+        },
+        false
+      );
 
       trackPlatformEvent('subscription_activated', {
         businessId: targetId,
         businessName: currentBusiness?.name,
-        planId: plan,
-        dedupeKey: `sub-act-${targetId}`,
+        planId: verifiedTier,
+        dedupeKey: `sub-act-${targetId}-${verifyRes.reference || paymentReference}`,
         dedupeTtlMs: 600_000,
       });
 
-      showToast(`Package "${plan.toUpperCase()}" successfully activated!`, 'success');
-      return { success: true, message: `SIM-MPESA-${Math.floor(100000 + Math.random() * 900000)}` };
+      showToast(`Package "${formatTierDisplayName(verifiedTier)}" verified and activated!`, 'success');
+      return { success: true, message: verifyRes.reference || paymentReference };
     },
-    [currentBusiness?.id, currentBusiness?.name, updateBusinessProfile, showToast]
+    [currentBusiness?.id, currentBusiness?.name, isSuperAdmin, applyBusinessLocalUpdate, updateBusinessProfile, showToast]
   );
 
   return (
@@ -8271,6 +8536,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updatePricingTier,
         resetPricingTiersToDefault,
         updateBusinessPlan,
+        entitlements,
+        upgradePrompt,
+        openUpgradePrompt,
+        closeUpgradePrompt,
+        requireCapability,
         isSubscriptionActive,
         isSubscriptionModalOpen,
         setIsSubscriptionModalOpen,

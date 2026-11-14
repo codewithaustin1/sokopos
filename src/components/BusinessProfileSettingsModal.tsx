@@ -9,21 +9,15 @@ import {
   Trash2,
   Edit2,
   Check,
-  X,
   AlertTriangle,
   MapPin,
-  Phone,
   Receipt,
   Lock,
-  Unlock,
   Eye,
   EyeOff,
   Save,
   CheckCircle2,
   Globe,
-  DollarSign,
-  Briefcase,
-  Layers,
   ChevronDown,
   ChevronUp,
   Moon,
@@ -32,7 +26,6 @@ import {
   Monitor,
   Sparkles,
   RotateCcw,
-  Archive,
   Download,
   ShieldAlert,
   History,
@@ -42,10 +35,9 @@ import {
   Wrench,
   Star,
   Tag,
-  CreditCard,
   ArrowRight,
   ArrowUpRight,
-  Zap,
+  ArrowLeft,
   Bluetooth,
   Smartphone,
   QrCode,
@@ -54,24 +46,150 @@ import {
   Landmark,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
-import { UserRole, Location, Cashier, RetailTheme, BusinessSecuritySettings } from '../types';
-import { RETAIL_THEMES, RetailThemeConfig } from '../data/retailThemes';
+import { Location, Cashier, BusinessSecuritySettings } from '../types';
+import { RETAIL_THEMES } from '../data/retailThemes';
 import { SUPER_ADMIN_EMAIL } from '../data/initialData';
 import { ResetStoreModal } from './ResetStoreModal';
 import { TaxManagementPanel } from './TaxManagementPanel';
 import { LoyaltySettingsPanel } from './LoyaltySettingsPanel';
 import { PaystackSubaccountPanel } from './common/PaystackSubaccountPanel';
+import { SettingsSectionHeader } from './common/SettingsSectionHeader';
 import {
   generateTotpSecret,
   generateOtpAuthUrl,
   generateQrCodeDataUrl,
   verifyTotpOnServer,
 } from '../lib/totpService';
+import {
+  normalizePlanTier,
+  formatTierDisplayName,
+  getRequiredTierForBranchCount,
+  getRequiredTierForStaffCount,
+  isQuotaAtOrAboveLimit,
+} from '../utils/subscriptionEntitlements';
+
+export type BusinessSettingsTabId =
+  | 'profile'
+  | 'branches'
+  | 'settlement'
+  | 'tax'
+  | 'loyalty'
+  | 'pricing'
+  | 'accounts'
+  | 'credentials'
+  | 'appearance'
+  | 'hardware'
+  | 'reset';
 
 export interface BusinessProfileSettingsViewProps {
-  initialTab?: 'profile' | 'branches' | 'settlement' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset';
+  initialTab?: BusinessSettingsTabId;
   onClose?: () => void;
 }
+
+interface NavItemConfig {
+  id: BusinessSettingsTabId;
+  domId: string;
+  label: string;
+  group: string;
+  icon: React.ComponentType<{ className?: string }>;
+  isExternal?: boolean;
+  isDanger?: boolean;
+}
+
+const NAV_GROUPS: Array<{
+  label: string;
+  items: NavItemConfig[];
+}> = [
+  {
+    label: 'Store & Catalog',
+    items: [
+      { id: 'profile', domId: 'tab-profile-btn', label: 'Store Profile', group: 'Store & Catalog', icon: Building2 },
+      { id: 'branches', domId: 'tab-branches-btn', label: 'Branches', group: 'Store & Catalog', icon: Store },
+      {
+        id: 'pricing',
+        domId: 'tab-pricing-btn',
+        label: 'Packages & Pricing',
+        group: 'Store & Catalog',
+        icon: Tag,
+        isExternal: true,
+      },
+    ],
+  },
+  {
+    label: 'Payments & Compliance',
+    items: [
+      {
+        id: 'settlement',
+        domId: 'tab-settlement-btn',
+        label: 'Paystack Settlement',
+        group: 'Payments & Compliance',
+        icon: Landmark,
+      },
+      {
+        id: 'tax',
+        domId: 'tab-tax-btn',
+        label: 'Taxes & eTIMS',
+        group: 'Payments & Compliance',
+        icon: Receipt,
+      },
+      {
+        id: 'loyalty',
+        domId: 'tab-loyalty-btn',
+        label: 'Loyalty Rewards',
+        group: 'Payments & Compliance',
+        icon: Star,
+      },
+    ],
+  },
+  {
+    label: 'Team & Access',
+    items: [
+      {
+        id: 'accounts',
+        domId: 'tab-accounts-btn',
+        label: 'Staff & Roles',
+        group: 'Team & Access',
+        icon: Users,
+      },
+      {
+        id: 'credentials',
+        domId: 'tab-credentials-btn',
+        label: 'Security & 2FA',
+        group: 'Team & Access',
+        icon: KeyRound,
+      },
+    ],
+  },
+  {
+    label: 'Hardware & System',
+    items: [
+      {
+        id: 'appearance',
+        domId: 'tab-appearance-btn',
+        label: 'Appearance',
+        group: 'Hardware & System',
+        icon: Palette,
+      },
+      {
+        id: 'hardware',
+        domId: 'tab-hardware-btn',
+        label: 'Printing & Hardware',
+        group: 'Hardware & System',
+        icon: Printer,
+      },
+      {
+        id: 'reset',
+        domId: 'tab-reset-store-btn',
+        label: 'Store Reset',
+        group: 'Hardware & System',
+        icon: RotateCcw,
+        isDanger: true,
+      },
+    ],
+  },
+];
+
+const ALL_NAV_ITEMS: NavItemConfig[] = NAV_GROUPS.flatMap((g) => g.items);
 
 export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewProps> = ({
   initialTab,
@@ -94,18 +212,15 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
     deleteSystemUser,
     currentUser,
     isSuperAdmin,
-    isBusinessSettingsOpen,
     setIsBusinessSettingsOpen,
     businessSettingsDefaultTab,
     updateActiveUserCredentials,
     showToast,
     isDarkMode,
     toggleDarkMode,
-    setIsDarkMode,
     retailTheme,
     setRetailTheme,
     autoPrintReceipt,
-    setAutoPrintReceipt,
     toggleAutoPrintReceipt,
     receiptFormat,
     setReceiptFormat,
@@ -121,9 +236,12 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
     canResetStore,
     openPricingPage,
     soundFx,
+    entitlements,
+    requireCapability,
+    openUpgradePrompt,
   } = usePos();
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'branches' | 'settlement' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset'>(
+  const [activeTab, setActiveTab] = useState<BusinessSettingsTabId>(
     initialTab || businessSettingsDefaultTab || 'profile'
   );
 
@@ -261,7 +379,6 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
       setIsAddingBranch(false);
     }
 
-    // Reset branch form
     setBranchName('');
     setBranchCode('');
     setBranchCity('Nairobi');
@@ -313,7 +430,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
         name: userName.trim(),
         initials,
         role: userRole,
-        username: (userUsername.trim() || userName.trim().toLowerCase().replace(/\s+/g, '.')),
+        username: userUsername.trim() || userName.trim().toLowerCase().replace(/\s+/g, '.'),
         assignedLocationId: userAssignedLocId || undefined,
       };
       if (userPin.trim()) {
@@ -340,7 +457,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
         name: userName.trim(),
         initials,
         code: `#${Math.floor(1000 + Math.random() * 9000)}`,
-        username: (userUsername.trim() || userName.trim().toLowerCase().replace(/\s+/g, '')),
+        username: userUsername.trim() || userName.trim().toLowerCase().replace(/\s+/g, ''),
         pin: userPin.trim(),
         role: userRole,
         avatarColor: 'bg-indigo-600',
@@ -366,7 +483,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
     setUserName(u.name);
     setUserRole(u.role);
     setUserUsername(u.username);
-    setUserPin(''); // Do not display raw bcrypt hash
+    setUserPin('');
     setUserAssignedLocId(u.assignedLocationId || '');
     setIsAddingUser(true);
   };
@@ -534,6 +651,15 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
     }
   };
 
+  const handleSelectNavItem = (item: NavItemConfig) => {
+    if (item.id === 'pricing') {
+      onClose?.();
+      openPricingPage();
+      return;
+    }
+    setActiveTab(item.id);
+  };
+
   const filteredBranches = (locations || []).filter(
     (l) =>
       l.name.toLowerCase().includes(branchSearch.toLowerCase()) ||
@@ -543,27 +669,72 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
 
   const isSuperAdminInspectingMerchant = Boolean(
     isSuperAdmin &&
-    currentBusiness &&
-    currentBusiness.ownerEmail &&
-    currentBusiness.ownerEmail.toLowerCase().trim() !== (currentUser?.email || SUPER_ADMIN_EMAIL).toLowerCase().trim()
+      currentBusiness &&
+      currentBusiness.ownerEmail &&
+      currentBusiness.ownerEmail.toLowerCase().trim() !== (currentUser?.email || SUPER_ADMIN_EMAIL).toLowerCase().trim()
   );
+
+  const activeNavMeta = ALL_NAV_ITEMS.find((item) => item.id === activeTab) || ALL_NAV_ITEMS[0];
+  const isPaystackVerified = Boolean(
+    currentBusiness?.paystackSubaccountCode?.startsWith('ACCT_') &&
+      currentBusiness?.paystackSubaccountStatus === 'verified'
+  );
+  const activeTaxRuleCount = currentBusiness?.taxSettings?.rules?.filter((r) => r.isActive).length ?? 3;
+  const loyaltyPointsPerUnit = currentBusiness?.loyaltySettings?.pointsPerCurrencyUnit || 10;
+
+  const getSidebarTrailingMeta = (itemId: BusinessSettingsTabId): React.ReactNode => {
+    switch (itemId) {
+      case 'branches':
+        return <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 tabular-nums">{locations.length}</span>;
+      case 'settlement':
+        return (
+          <span
+            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+              isPaystackVerified ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'
+            }`}
+            title={isPaystackVerified ? 'Paystack verified' : 'Not linked'}
+          />
+        );
+      case 'tax':
+        return <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 tabular-nums">{activeTaxRuleCount}</span>;
+      case 'loyalty':
+        return <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 tabular-nums">{loyaltyPointsPerUnit} pts</span>;
+      case 'accounts':
+        return <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 tabular-nums">{systemUsers.length}</span>;
+      case 'hardware':
+        return (
+          <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
+            {autoPrintReceipt ? 'Auto' : 'Manual'}
+          </span>
+        );
+      case 'pricing':
+        return <ArrowUpRight className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0" />;
+      default:
+        return null;
+    }
+  };
 
   return (
     <div
       id="business-profile-settings-view"
-      className="flex-1 h-full w-full flex flex-col overflow-hidden bg-slate-50 min-w-0 font-sans"
+      className="flex-1 h-full w-full flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-w-0 font-sans"
     >
-      {/* Top Header Bar */}
-      <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 bg-slate-900 text-white border-b border-slate-800 shrink-0 shadow-xs">
-        <div className="flex items-center gap-2.5 sm:gap-3">
-          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0">
-            <Building2 className="w-4 h-4 sm:w-5 sm:h-5" />
-          </div>
-          <div>
-            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-              <h2 className="text-base sm:text-lg font-bold tracking-tight text-white">
-                {currentBusiness?.name || 'Business Settings'}
+      {/* Unified Top Workspace Header */}
+      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-3 shrink-0">
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+              <span>Settings</span>
+              <span className="text-slate-300 dark:text-slate-600">/</span>
+              <span>{activeNavMeta.group}</span>
+              <span className="text-slate-300 dark:text-slate-600">/</span>
+              <span className="font-medium text-slate-800 dark:text-slate-200">{activeNavMeta.label}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 mt-0.5">
+              <h2 className="text-base sm:text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100 truncate">
+                {currentBusiness?.name || 'Store Settings'}
               </h2>
+              <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">·</span>
               <button
                 type="button"
                 id="modal-header-plan-pricing-link"
@@ -571,53 +742,58 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                   onClose?.();
                   openPricingPage();
                 }}
-                className="px-2 py-0.5 text-[10px] sm:text-[11px] font-semibold bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded border border-blue-400/30 uppercase tracking-wider transition cursor-pointer flex items-center gap-1 group"
+                className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline transition cursor-pointer"
                 title="View POS Packages & Plans on our Pricing Page"
               >
-                <span>{currentBusiness?.plan || 'Starter'} Plan</span>
-                <ArrowUpRight className="w-3 h-3 text-blue-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                <span>
+                  {formatTierDisplayName(
+                    normalizePlanTier(currentBusiness?.plan, currentBusiness?.subscription?.planId)
+                  )}
+                </span>
+                <ArrowUpRight className="w-3.5 h-3.5" />
               </button>
               {isSuperAdmin && (
-                <span className="px-1.5 py-0.5 text-[10px] sm:text-[11px] font-bold bg-amber-500/20 text-amber-300 rounded border border-amber-400/30">
-                  Super-Admin
-                </span>
+                <>
+                  <span className="text-slate-300 dark:text-slate-700">·</span>
+                  <span className="text-xs font-medium text-amber-600 dark:text-amber-400">Super-Admin</span>
+                </>
               )}
             </div>
-            <p className="text-[11px] sm:text-xs text-slate-400 hidden sm:block">
-              Tenant Architecture: Accounts, Roles, Credentials, Taxes & Multi-Branch Management
-            </p>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {onClose && (
+              <button
+                id="close-business-settings-btn"
+                type="button"
+                onClick={() => {
+                  onClose();
+                  setIsBusinessSettingsOpen(false);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition cursor-pointer text-xs font-medium"
+                title="Return to Register"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back to Register</span>
+              </button>
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {onClose && (
-            <button
-              id="close-business-settings-btn"
-              onClick={() => {
-                onClose();
-                setIsBusinessSettingsOpen(false);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 transition cursor-pointer text-xs font-bold"
-              title="Return to Register"
-            >
-              <X className="w-4 h-4" />
-              <span className="hidden sm:inline">Close</span>
-            </button>
-          )}
-        </div>
-      </div>
+      </header>
 
       {/* Super Admin Tenant Inspection Alert Bar */}
       {isSuperAdminInspectingMerchant && (
         <div
           id="superadmin-merchant-inspection-bar"
-          className="bg-amber-50 border-b border-amber-200 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2.5 text-xs text-amber-900 shrink-0"
+          className="bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-900/60 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2.5 text-xs text-amber-900 dark:text-amber-200 shrink-0"
         >
           <div className="flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+            <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
             <div>
-              <span className="font-bold text-amber-900">Tenant Inspection Mode:</span> You are viewing merchant store{' '}
-              <span className="font-semibold underline">{currentBusiness?.name}</span> (Owned by {currentBusiness?.ownerName || 'Merchant'} &lt;{currentBusiness?.ownerEmail}&gt;). You are authenticated as Super Admin{' '}
-              <span className="font-semibold">&lt;{currentUser?.email || SUPER_ADMIN_EMAIL}&gt;</span>.
+              <span className="font-semibold">Tenant Inspection Mode:</span> Viewing merchant store{' '}
+              <span className="font-semibold underline">{currentBusiness?.name}</span> (Owned by{' '}
+              {currentBusiness?.ownerName || 'Merchant'} &lt;{currentBusiness?.ownerEmail}&gt;) as Super Admin{' '}
+              <span className="font-medium">&lt;{currentUser?.email || SUPER_ADMIN_EMAIL}&gt;</span>.
             </div>
           </div>
           <button
@@ -626,7 +802,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
               setActiveBusinessId('biz-upfront');
               showToast('Switched active business to Upfront Retail Solutions', 'info');
             }}
-            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs shadow-xs transition flex items-center gap-1.5 shrink-0 cursor-pointer"
+            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-medium text-xs transition flex items-center gap-1.5 shrink-0 cursor-pointer"
             title="Switch back to Upfront Retail Solutions"
           >
             <Building2 className="w-3.5 h-3.5" />
@@ -635,225 +811,135 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
         </div>
       )}
 
-      {/* Tab Selection Bar with Horizontal Scrollbar where necessary */}
-      <div className="flex border-b border-slate-200 bg-white px-3 sm:px-6 gap-1 sm:gap-2 overflow-x-auto shrink-0 modal-scrollbar">
-          <button
-            id="tab-profile-btn"
-            onClick={() => setActiveTab('profile')}
-            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'profile'
-                ? 'border-blue-600 text-blue-600 bg-white'
-                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
-            }`}
-          >
-            <Building2 className="w-4 h-4" />
-            <span>Profile</span>
-          </button>
+      {/* Split Workspace: Grouped Left Rail + Scrollable Content Canvas */}
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0">
+        {/* Desktop Grouped Left Sidebar */}
+        <aside
+          aria-label="Store settings sections"
+          className="hidden lg:flex lg:flex-col w-64 shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 overflow-y-auto modal-scrollbar p-4 space-y-5"
+        >
+          {NAV_GROUPS.map((group) => (
+            <div key={group.label} className="space-y-1">
+              <div className="px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                {group.label}
+              </div>
+              <nav className="space-y-0.5">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      id={item.domId}
+                      type="button"
+                      onClick={() => handleSelectNavItem(item)}
+                      className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-xs transition cursor-pointer ${
+                        isActive
+                          ? item.isDanger
+                            ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-400 font-semibold border border-rose-200/80 dark:border-rose-800/60'
+                            : 'bg-blue-50/80 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400 font-semibold border border-blue-200/80 dark:border-blue-800/60'
+                          : item.isDanger
+                          ? 'text-slate-600 dark:text-slate-400 hover:text-rose-700 dark:hover:text-rose-400 hover:bg-rose-50/60 dark:hover:bg-rose-950/30 border border-transparent font-medium'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100/80 dark:hover:bg-slate-800/60 border border-transparent font-medium'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2.5 min-w-0">
+                        <Icon
+                          className={`w-4 h-4 shrink-0 ${
+                            isActive
+                              ? item.isDanger
+                                ? 'text-rose-600 dark:text-rose-400'
+                                : 'text-blue-600 dark:text-blue-400'
+                              : item.isDanger
+                              ? 'text-rose-500/80 dark:text-rose-400/80'
+                              : 'text-slate-400 dark:text-slate-500'
+                          }`}
+                        />
+                        <span className="truncate">{item.label}</span>
+                      </span>
+                      <span className="shrink-0">{getSidebarTrailingMeta(item.id)}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+          ))}
+        </aside>
 
-          <button
-            id="tab-branches-btn"
-            onClick={() => setActiveTab('branches')}
-            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'branches'
-                ? 'border-blue-600 text-blue-600 bg-white'
-                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
-            }`}
-          >
-            <Store className="w-4 h-4" />
-            <span>Branches</span>
-            <span className="ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-700 font-bold">
-              {locations.length}
-            </span>
-          </button>
-
-          <button
-            id="tab-settlement-btn"
-            onClick={() => setActiveTab('settlement')}
-            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'settlement'
-                ? 'border-blue-600 text-blue-600 bg-white'
-                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
-            }`}
-          >
-            <Landmark className="w-4 h-4" />
-            <span>Paystack Settlement</span>
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                currentBusiness?.paystackSubaccountCode?.startsWith('ACCT_') &&
-                currentBusiness?.paystackSubaccountStatus === 'verified'
-                  ? 'bg-emerald-500'
-                  : 'bg-amber-500'
-              }`}
-            />
-          </button>
-
-          <button
-            id="tab-tax-btn"
-            onClick={() => setActiveTab('tax')}
-            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'tax'
-                ? 'border-blue-600 text-blue-600 bg-white'
-                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
-            }`}
-          >
-            <Receipt className="w-4 h-4 text-emerald-600" />
-            <span>Taxes & VAT/GST</span>
-            <span className="ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
-              {currentBusiness?.taxSettings?.rules?.filter((r) => r.isActive).length ?? 3} Rates
-            </span>
-          </button>
-
-          <button
-            id="tab-loyalty-btn"
-            onClick={() => setActiveTab('loyalty')}
-            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'loyalty'
-                ? 'border-amber-500 text-amber-600 bg-white'
-                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
-            }`}
-          >
-            <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
-            <span>Loyalty Points</span>
-            <span className="ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 font-bold border border-amber-200">
-              {currentBusiness?.loyaltySettings?.pointsPerCurrencyUnit || 10} pts = 1/-
-            </span>
-          </button>
-
-          <button
-            type="button"
-            id="tab-pricing-btn"
-            onClick={() => {
-              onClose?.();
-              openPricingPage();
-            }}
-            className="flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 border-transparent text-slate-600 hover:text-purple-600 hover:bg-purple-50/60 transition whitespace-nowrap cursor-pointer group"
-            title="View POS Packages & Pricing on our dedicated Pricing Page"
-          >
-            <Tag className="w-4 h-4 text-purple-600 group-hover:scale-105 transition-transform" />
-            <span>POS Packages & Pricing</span>
-            <span className="ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full bg-purple-100 text-purple-800 font-extrabold border border-purple-200 uppercase">
-              {currentBusiness?.plan === 'professional' ? 'BUSINESS' : (currentBusiness?.plan?.toUpperCase() || 'BUSINESS')}
-            </span>
-            <ArrowUpRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-purple-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-          </button>
-
-          <button
-            id="tab-accounts-btn"
-            onClick={() => setActiveTab('accounts')}
-            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'accounts'
-                ? 'border-blue-600 text-blue-600 bg-white'
-                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            <span>Staff</span>
-            <span className="ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-700 font-bold">
-              {systemUsers.length}
-            </span>
-          </button>
-
-          <button
-            id="tab-credentials-btn"
-            onClick={() => setActiveTab('credentials')}
-            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'credentials'
-                ? 'border-blue-600 text-blue-600 bg-white'
-                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
-            }`}
-          >
-            <KeyRound className="w-4 h-4" />
-            <span>Security</span>
-          </button>
-
-          <button
-            id="tab-appearance-btn"
-            onClick={() => setActiveTab('appearance')}
-            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'appearance'
-                ? 'border-blue-600 text-blue-600 bg-white'
-                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
-            }`}
-          >
-            <Palette className="w-4 h-4" />
-            <span>Appearance</span>
-            <span
-              className={`ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                retailTheme !== 'classic'
-                  ? 'bg-blue-100 text-blue-800 border border-blue-200'
-                  : isDarkMode
-                  ? 'bg-blue-900/60 text-blue-300 border border-blue-700/50'
-                  : 'bg-slate-200 text-slate-700'
-              }`}
+        {/* Mobile / Tablet Compact Switcher */}
+        <div className="lg:hidden bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 py-2.5 shrink-0 space-y-2">
+          <div className="flex items-center gap-2">
+            <label htmlFor="mobile-settings-section-select" className="sr-only">
+              Select settings section
+            </label>
+            <select
+              id="mobile-settings-section-select"
+              value={activeTab}
+              onChange={(e) => {
+                const chosen = ALL_NAV_ITEMS.find((i) => i.id === e.target.value);
+                if (chosen) handleSelectNavItem(chosen);
+              }}
+              className="w-full px-3 py-2 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              {RETAIL_THEMES.find((t) => t.id === retailTheme)?.name.split(' ')[0] || 'Theme'}
-            </span>
-          </button>
-
-          <button
-            id="tab-hardware-btn"
-            onClick={() => setActiveTab('hardware')}
-            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'hardware'
-                ? 'border-blue-600 text-blue-600 bg-white'
-                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
-            }`}
-          >
-            <Printer className="w-4 h-4" />
-            <span>Printing & Hardware</span>
-            <span
-              className={`ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                autoPrintReceipt
-                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                  : 'bg-slate-200 text-slate-600'
-              }`}
-            >
-              {autoPrintReceipt ? 'Auto ON' : 'Manual'}
-            </span>
-          </button>
-
-          <button
-            id="tab-reset-store-btn"
-            onClick={() => setActiveTab('reset')}
-            className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-xs sm:text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'reset'
-                ? 'border-rose-600 text-rose-600 bg-white'
-                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
-            }`}
-          >
-            <RotateCcw className="w-4 h-4 text-rose-500" />
-            <span>Store Reset</span>
-            <span className="ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full bg-rose-100 text-rose-700 font-extrabold border border-rose-200">
-              Clean Zero
-            </span>
-          </button>
+              {NAV_GROUPS.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.items.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-1.5 overflow-x-auto modal-scrollbar pb-0.5">
+            {ALL_NAV_ITEMS.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  id={`${item.domId}-mobile`}
+                  type="button"
+                  onClick={() => handleSelectNavItem(item)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs whitespace-nowrap transition cursor-pointer shrink-0 ${
+                    isActive
+                      ? item.isDanger
+                        ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-400 font-semibold border border-rose-200 dark:border-rose-800'
+                        : 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400 font-semibold border border-blue-200 dark:border-blue-800'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent font-medium'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Main View Body (Scrollable with visible scrollbar) */}
-        <div className="flex-1 overflow-y-auto p-3.5 sm:p-6 lg:p-8 bg-slate-50 modal-scrollbar overscroll-contain">
+        {/* Main Scrollable Canvas */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-slate-50 dark:bg-slate-950 modal-scrollbar overscroll-contain">
           {/* ========================================================= */}
           {/* TAB 1: BUSINESS PROFILE */}
           {/* ========================================================= */}
           {activeTab === 'profile' && (
-            <div className="space-y-6 max-w-3xl mx-auto">
-              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-                <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-100">
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900">Legal Entity & Store Information</h3>
-                    <p className="text-xs text-slate-500">
-                      Configure your official business name, fiscal tax identifier, and reporting currency.
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-xs font-medium text-slate-400">Business Tenant ID</span>
-                    <div className="font-mono text-xs text-slate-700 font-semibold">{currentBusiness?.id}</div>
-                  </div>
-                </div>
+            <div className="space-y-6 max-w-4xl mx-auto">
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                <SettingsSectionHeader
+                  title="Legal Entity & Store Information"
+                  description="Configure your official business name, fiscal tax identifier, and reporting currency."
+                  meta={
+                    <span>
+                      Tenant ID: <span className="font-mono text-slate-700 dark:text-slate-300">{currentBusiness?.id}</span>
+                    </span>
+                  }
+                />
 
-                <form onSubmit={handleSaveProfile} className="space-y-4">
+                <form onSubmit={handleSaveProfile} className="space-y-5 mt-5">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                         Business Legal / Trading Name
                       </label>
                       <input
@@ -861,14 +947,14 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                         type="text"
                         value={profileName}
                         onChange={(e) => setProfileName(e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="e.g., Upfront Retail Solutions Ltd"
                         required
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                         Business Short Code
                       </label>
                       <input
@@ -876,7 +962,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                         type="text"
                         value={profileCode}
                         onChange={(e) => setProfileCode(e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase"
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase"
                         placeholder="e.g., UPFR"
                         maxLength={6}
                         required
@@ -884,11 +970,11 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                     </div>
 
                     <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="block text-xs font-semibold text-slate-700">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
                           Tax / KRA PIN / VAT Number
                         </label>
-                        <span className="text-[10px] text-blue-700 font-bold bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
+                        <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
                           Digitax eTIMS
                         </span>
                       </div>
@@ -897,20 +983,26 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                         type="text"
                         value={profileTaxNumber}
                         onChange={(e) => setProfileTaxNumber(e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase"
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase"
                         placeholder="e.g., P051234567Z"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                         Primary Store Currency
                       </label>
                       <select
                         id="select-business-currency"
                         value={profileCurrency}
-                        onChange={(e) => setProfileCurrency(e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        onChange={(e) => {
+                          const nextCur = e.target.value;
+                          if (nextCur !== 'KES' && nextCur !== currentBusiness?.currency && !requireCapability('multiCurrency')) {
+                            return;
+                          }
+                          setProfileCurrency(nextCur);
+                        }}
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="KES">KES - Kenyan Shilling (KSh)</option>
                         <option value="USD">USD - United States Dollar ($)</option>
@@ -923,107 +1015,107 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                   </div>
 
                   {/* Owner & Account Details */}
-                  <div className="pt-4 border-t border-slate-100">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                  <div className="pt-5 border-t border-slate-200 dark:border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                         {isSuperAdminInspectingMerchant ? 'Merchant Store Owner Account' : 'Registered Owner Account'}
                       </h4>
                       {isSuperAdminInspectingMerchant && (
-                        <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 rounded border border-amber-200">
+                        <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
                           Tenant Owner (External Merchant)
                         </span>
                       )}
                     </div>
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-sm">
-                            {currentBusiness?.ownerName ? currentBusiness.ownerName.substring(0, 2).toUpperCase() : 'BO'}
-                          </div>
-                          <div>
-                            <div className="text-sm font-semibold text-slate-900">
-                              {currentBusiness?.ownerName || 'Business Administrator'}
-                            </div>
-                            <div className="text-xs text-slate-500 font-mono">
-                              {currentBusiness?.ownerEmail || 'upfrontretaile@gmail.com'}
-                            </div>
-                          </div>
-                        </div>
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 rounded-lg border border-emerald-200">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          Google OAuth Verified
-                        </span>
-                      </div>
 
-                      {isSuperAdminInspectingMerchant && (
-                        <div className="pt-2.5 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs bg-amber-500/10 p-2.5 rounded-lg border border-amber-300/40">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
-                            <span className="text-amber-900 font-medium">
-                              Active Super-Admin Session: <strong>{currentUser?.email || SUPER_ADMIN_EMAIL}</strong>
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActiveBusinessId('biz-upfront');
-                              showToast('Switched back to Upfront Retail Solutions', 'info');
-                            }}
-                            className="text-blue-700 hover:text-blue-800 font-bold hover:underline cursor-pointer flex items-center gap-1"
-                          >
-                            <span>Return to Upfront Retail Solutions</span>
-                            <ArrowRight className="w-3 h-3" />
-                          </button>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3 px-4 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-lg bg-blue-600 text-white font-semibold flex items-center justify-center text-xs shrink-0">
+                          {currentBusiness?.ownerName ? currentBusiness.ownerName.substring(0, 2).toUpperCase() : 'BO'}
                         </div>
-                      )}
+                        <div>
+                          <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                            {currentBusiness?.ownerName || 'Business Administrator'}
+                          </div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400 font-mono">
+                            {currentBusiness?.ownerEmail || 'upfrontretaile@gmail.com'}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                        <CheckCircle2 className="w-4 h-4" />
+                        Google OAuth Verified
+                      </span>
                     </div>
+
+                    {isSuperAdminInspectingMerchant && (
+                      <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span className="text-amber-900 dark:text-amber-200 font-medium">
+                          Active Super-Admin Session: <strong>{currentUser?.email || SUPER_ADMIN_EMAIL}</strong>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveBusinessId('biz-upfront');
+                            showToast('Switched back to Upfront Retail Solutions', 'info');
+                          }}
+                          className="text-blue-600 dark:text-blue-400 font-semibold hover:underline cursor-pointer inline-flex items-center gap-1"
+                        >
+                          <span>Return to Upfront Retail Solutions</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="flex justify-end pt-2">
+                  <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-slate-800">
                     <button
                       id="save-business-profile-btn"
                       type="submit"
                       disabled={isSavingProfile}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl shadow-sm transition disabled:opacity-50 cursor-pointer"
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition disabled:opacity-50 cursor-pointer"
                     >
-                      <Save className="w-4 h-4" />
+                      <Save className="w-3.5 h-3.5" />
                       <span>{isSavingProfile ? 'Saving Changes...' : 'Save Profile Changes'}</span>
                     </button>
                   </div>
                 </form>
               </div>
 
-              {/* Subscription & Multi-Branch Architecture Overview */}
-              <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl p-6 text-white shadow-md">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-400/30">
-                      <Briefcase className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-white text-sm">Enterprise Multi-Store Architecture</h4>
-                      <p className="text-xs text-slate-400">
-                        Row-Level Security (RLS) partition active across all POS registers
-                      </p>
-                    </div>
+              {/* Tenant Architecture Summary Strip */}
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      Multi-Store Architecture
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Row-level tenant isolation active across all registered POS terminals.
+                    </p>
                   </div>
-                  <span className="px-2.5 py-1 text-xs font-bold bg-emerald-500/20 text-emerald-300 rounded border border-emerald-400/30">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                     Active Tenant
                   </span>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3 pt-3 border-t border-slate-700/60 text-center">
-                  <div className="p-2.5 rounded-lg bg-slate-800/80">
-                    <div className="text-lg font-bold text-white">{locations.length}</div>
-                    <div className="text-[11px] text-slate-400">Store Branches</div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800">
+                  <div className="px-6 py-4">
+                    <div className="text-xs text-slate-500 dark:text-slate-400">Store Branches</div>
+                    <div className="text-lg font-semibold text-slate-900 dark:text-slate-100 mt-0.5 tabular-nums">
+                      {locations.length}
+                    </div>
                   </div>
-                  <div className="p-2.5 rounded-lg bg-slate-800/80">
-                    <div className="text-lg font-bold text-white">{systemUsers.length}</div>
-                    <div className="text-[11px] text-slate-400">Staff Accounts</div>
+                  <div className="px-6 py-4">
+                    <div className="text-xs text-slate-500 dark:text-slate-400">Staff Accounts</div>
+                    <div className="text-lg font-semibold text-slate-900 dark:text-slate-100 mt-0.5 tabular-nums">
+                      {systemUsers.length}
+                    </div>
                   </div>
-                  <div className="p-2.5 rounded-lg bg-slate-800/80">
-                    <div className="text-lg font-bold text-white">Bcrypt 10x</div>
-                    <div className="text-[11px] text-slate-400">Credential Crypto</div>
+                  <div className="px-6 py-4">
+                    <div className="text-xs text-slate-500 dark:text-slate-400">Credential Hashing</div>
+                    <div className="text-lg font-semibold text-slate-900 dark:text-slate-100 mt-0.5 font-mono">
+                      Bcrypt 10x
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1031,309 +1123,352 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
           )}
 
           {/* ========================================================= */}
-          {/* TAB 2: STORE BRANCHES (CREATION & DELETION) */}
+          {/* TAB 2: STORE BRANCHES */}
           {/* ========================================================= */}
           {activeTab === 'branches' && (
-            <div className="space-y-6">
-              {/* Branch Header Controls */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Branch & Store Locations</h3>
-                  <p className="text-xs text-slate-500">
-                    Register physical stores, retail kiosks, and define terminal identifiers.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    placeholder="Search branches..."
-                    value={branchSearch}
-                    onChange={(e) => setBranchSearch(e.target.value)}
-                    className="px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-40 sm:w-48"
-                  />
-                  {!isAddingBranch && (
-                    <button
-                      id="btn-register-new-branch"
-                      onClick={() => {
-                        cancelBranchForm();
-                        setIsAddingBranch(true);
-                      }}
-                      className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition cursor-pointer"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>Register Branch</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Branch Add / Edit Form */}
-              {isAddingBranch && (
-                <div className="bg-white rounded-xl border-2 border-blue-500/30 p-5 shadow-md animate-fade-in">
-                  <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <Store className="w-5 h-5 text-blue-600" />
-                      <h4 className="font-bold text-sm text-slate-900">
-                        {editingBranchId ? 'Edit Store Branch' : 'Register New Store Branch'}
-                      </h4>
+            <div className="space-y-6 max-w-4xl mx-auto">
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-5">
+                <SettingsSectionHeader
+                  title="Branch & Store Locations"
+                  description="Register physical stores, retail kiosks, and define terminal identifiers."
+                  meta={<span>{locations.length} active locations</span>}
+                  actions={
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Search branches..."
+                        value={branchSearch}
+                        onChange={(e) => setBranchSearch(e.target.value)}
+                        className="px-3 py-1.5 text-xs bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 w-40 sm:w-48"
+                      />
+                      {!isAddingBranch && (
+                        <button
+                          id="btn-register-new-branch"
+                          type="button"
+                          onClick={() => {
+                            const maxBranches = isSuperAdmin ? -1 : entitlements.limits.maxBranches;
+                            if (isQuotaAtOrAboveLimit(locations.length, maxBranches)) {
+                              openUpgradePrompt({
+                                title: 'Branch Limit Reached',
+                                description: `Your ${entitlements.tierName} plan supports up to ${maxBranches} store ${
+                                  maxBranches === 1 ? 'branch' : 'branches'
+                                }. Existing branches remain active, and upgrading unlocks additional locations.`,
+                                requiredTier: getRequiredTierForBranchCount(locations.length + 1),
+                                featureLabel: 'Multi-Branch Store Locations',
+                                quotaMetric: {
+                                  label: 'Store Branches',
+                                  used: locations.length,
+                                  limit: maxBranches,
+                                },
+                              });
+                              return;
+                            }
+                            cancelBranchForm();
+                            setIsAddingBranch(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition cursor-pointer"
+                        >
+                          {!isSuperAdmin && isQuotaAtOrAboveLimit(locations.length, entitlements.limits.maxBranches) ? (
+                            <Lock className="w-3.5 h-3.5" />
+                          ) : (
+                            <Plus className="w-3.5 h-3.5" />
+                          )}
+                          <span>Register Branch</span>
+                        </button>
+                      )}
                     </div>
-                    <button
-                      onClick={cancelBranchForm}
-                      className="text-slate-400 hover:text-slate-600 text-xs font-medium cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                  </div>
+                  }
+                />
 
-                  <form onSubmit={handleSaveBranch} className="space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Branch Name *
-                        </label>
-                        <input
-                          id="branch-input-name"
-                          type="text"
-                          value={branchName}
-                          onChange={(e) => setBranchName(e.target.value)}
-                          placeholder="e.g., Westlands Mall Branch"
-                          className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          required
-                        />
+                {/* Branch Add / Edit Form */}
+                {isAddingBranch && (
+                  <div className="bg-slate-50 dark:bg-slate-950 rounded-xl border border-blue-500/40 p-5">
+                    <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-200 dark:border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <Store className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                        <h4 className="font-semibold text-sm text-slate-900 dark:text-slate-100">
+                          {editingBranchId ? 'Edit Store Branch' : 'Register New Store Branch'}
+                        </h4>
                       </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Branch Code *
-                        </label>
-                        <input
-                          id="branch-input-code"
-                          type="text"
-                          value={branchCode}
-                          onChange={(e) => setBranchCode(e.target.value)}
-                          placeholder="e.g., WST-02"
-                          className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg font-mono uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          required
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          City / Region *
-                        </label>
-                        <input
-                          id="branch-input-city"
-                          type="text"
-                          value={branchCity}
-                          onChange={(e) => setBranchCity(e.target.value)}
-                          placeholder="e.g., Nairobi"
-                          className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          required
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Physical Address / Street
-                        </label>
-                        <input
-                          id="branch-input-address"
-                          type="text"
-                          value={branchAddress}
-                          onChange={(e) => setBranchAddress(e.target.value)}
-                          placeholder="e.g., Ground Floor, Unit 14"
-                          className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Branch Contact Phone
-                        </label>
-                        <input
-                          id="branch-input-phone"
-                          type="tel"
-                          value={branchPhone}
-                          onChange={(e) => setBranchPhone(e.target.value)}
-                          placeholder="e.g., +254 712 345 678"
-                          className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Terminal Station Name
-                        </label>
-                        <input
-                          id="branch-input-terminal"
-                          type="text"
-                          value={branchTerminal}
-                          onChange={(e) => setBranchTerminal(e.target.value)}
-                          placeholder="e.g., Terminal 02 - POS Register"
-                          className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                       <button
                         type="button"
                         onClick={cancelBranchForm}
-                        className="px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+                        className="text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 text-xs font-medium cursor-pointer"
                       >
                         Cancel
                       </button>
-                      <button
-                        id="btn-submit-save-branch"
-                        type="submit"
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition cursor-pointer"
-                      >
-                        {editingBranchId ? 'Update Branch' : 'Create Store Branch'}
-                      </button>
                     </div>
-                  </form>
-                </div>
-              )}
 
-              {/* Branches Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {filteredBranches.map((loc) => {
-                  const isCurrentActive = currentLocation?.id === loc.id;
-                  const isOnlyBranch = locations.length <= 1;
+                    <form onSubmit={handleSaveBranch} className="space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            Branch Name *
+                          </label>
+                          <input
+                            id="branch-input-name"
+                            type="text"
+                            value={branchName}
+                            onChange={(e) => setBranchName(e.target.value)}
+                            placeholder="e.g., Westlands Mall Branch"
+                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            required
+                          />
+                        </div>
 
-                  return (
-                    <div
-                      key={loc.id}
-                      id={`branch-card-${loc.id}`}
-                      className={`relative bg-white rounded-xl border p-5 transition flex flex-col justify-between ${
-                        isCurrentActive
-                          ? 'border-blue-500 shadow-md ring-1 ring-blue-500/20'
-                          : 'border-slate-200 shadow-sm hover:border-slate-300'
-                      }`}
-                    >
-                      <div>
-                        {/* Top bar of card */}
-                        <div className="flex items-start justify-between gap-2 mb-3">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200 uppercase">
-                                {loc.code}
-                              </span>
-                              <h4 className="font-bold text-slate-900 text-sm">{loc.name}</h4>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            Branch Code *
+                          </label>
+                          <input
+                            id="branch-input-code"
+                            type="text"
+                            value={branchCode}
+                            onChange={(e) => setBranchCode(e.target.value)}
+                            placeholder="e.g., WST-02"
+                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg font-mono uppercase text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            City / Region *
+                          </label>
+                          <input
+                            id="branch-input-city"
+                            type="text"
+                            value={branchCity}
+                            onChange={(e) => setBranchCity(e.target.value)}
+                            placeholder="e.g., Nairobi"
+                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            Physical Address / Street
+                          </label>
+                          <input
+                            id="branch-input-address"
+                            type="text"
+                            value={branchAddress}
+                            onChange={(e) => setBranchAddress(e.target.value)}
+                            placeholder="e.g., Ground Floor, Unit 14"
+                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            Branch Contact Phone
+                          </label>
+                          <input
+                            id="branch-input-phone"
+                            type="tel"
+                            value={branchPhone}
+                            onChange={(e) => setBranchPhone(e.target.value)}
+                            placeholder="e.g., +254 712 345 678"
+                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            Terminal Station Name
+                          </label>
+                          <input
+                            id="branch-input-terminal"
+                            type="text"
+                            value={branchTerminal}
+                            onChange={(e) => setBranchTerminal(e.target.value)}
+                            placeholder="e.g., Terminal 02 - POS Register"
+                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+                        <button
+                          type="button"
+                          onClick={cancelBranchForm}
+                          className="px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded-lg transition cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          id="btn-submit-save-branch"
+                          type="submit"
+                          className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition cursor-pointer"
+                        >
+                          {editingBranchId ? 'Update Branch' : 'Create Store Branch'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                {/* Branches Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredBranches.map((loc) => {
+                    const isCurrentActive = currentLocation?.id === loc.id;
+                    const isOnlyBranch = locations.length <= 1;
+
+                    return (
+                      <div
+                        key={loc.id}
+                        id={`branch-card-${loc.id}`}
+                        className={`rounded-xl border p-4 transition flex flex-col justify-between ${
+                          isCurrentActive
+                            ? 'border-blue-600 dark:border-blue-500 bg-blue-50/30 dark:bg-blue-950/20'
+                            : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-start justify-between gap-2 mb-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
+                                  {loc.code}
+                                </span>
+                                <span className="text-slate-300 dark:text-slate-700">·</span>
+                                <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-sm truncate">
+                                  {loc.name}
+                                </h4>
+                              </div>
+                              <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                <MapPin className="w-3.5 h-3.5 shrink-0" />
+                                <span className="truncate">
+                                  {loc.city}
+                                  {loc.address ? ` · ${loc.address}` : ''}
+                                </span>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-1">
-                              <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                              <span>
-                                {loc.city} {loc.address ? `• ${loc.address}` : ''}
-                              </span>
-                            </div>
-                          </div>
 
-                          <div className="flex items-center gap-1.5">
-                            {isCurrentActive && (
-                              <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-100 text-blue-700 rounded-full border border-blue-200">
-                                Active Register
-                              </span>
-                            )}
-                            <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400 shrink-0">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                               Online
                             </span>
                           </div>
+
+                          <div className="grid grid-cols-2 gap-3 text-xs py-2.5 border-y border-slate-100 dark:border-slate-800 my-2">
+                            <div>
+                              <span className="text-slate-400 dark:text-slate-500 block text-[11px]">
+                                Terminal Station
+                              </span>
+                              <span className="font-medium text-slate-800 dark:text-slate-200">
+                                {loc.terminalName || 'Main POS Terminal'}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 dark:text-slate-500 block text-[11px]">
+                                Contact Phone
+                              </span>
+                              <span className="font-medium text-slate-800 dark:text-slate-200 tabular-nums">
+                                {loc.phone || 'Not recorded'}
+                              </span>
+                            </div>
+                          </div>
                         </div>
 
-                        {/* Details Grid */}
-                        <div className="grid grid-cols-2 gap-2 text-xs py-2 my-2 bg-slate-50 rounded-lg px-3 border border-slate-100">
+                        <div className="flex items-center justify-between pt-2">
                           <div>
-                            <span className="text-slate-400 block text-[10px]">Terminal Station:</span>
-                            <span className="font-semibold text-slate-700">
-                              {loc.terminalName || 'Main POS Terminal'}
-                            </span>
+                            {!isCurrentActive ? (
+                              <button
+                                id={`switch-register-btn-${loc.id}`}
+                                type="button"
+                                onClick={() => setCurrentLocationId(loc.id)}
+                                className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                              >
+                                Set as Active Terminal
+                              </button>
+                            ) : (
+                              <span className="text-xs text-blue-700 dark:text-blue-400 font-semibold inline-flex items-center gap-1">
+                                <Check className="w-3.5 h-3.5" /> Active Register
+                              </span>
+                            )}
                           </div>
-                          <div>
-                            <span className="text-slate-400 block text-[10px]">Contact Phone:</span>
-                            <span className="font-semibold text-slate-700">
-                              {loc.phone || 'No phone recorded'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
 
-                      {/* Actions Footer */}
-                      <div className="flex items-center justify-between pt-3 mt-2 border-t border-slate-100">
-                        <div>
-                          {!isCurrentActive ? (
+                          <div className="flex items-center gap-1">
                             <button
-                              id={`switch-register-btn-${loc.id}`}
-                              onClick={() => setCurrentLocationId(loc.id)}
-                              className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                              id={`edit-branch-btn-${loc.id}`}
+                              type="button"
+                              onClick={() => startEditBranch(loc)}
+                              className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                              title="Edit branch details"
                             >
-                              Set as Active POS Terminal
+                              <Edit2 className="w-3.5 h-3.5" />
                             </button>
-                          ) : (
-                            <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
-                              <Check className="w-3.5 h-3.5" /> Current Register
-                            </span>
-                          )}
-                        </div>
 
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            id={`edit-branch-btn-${loc.id}`}
-                            onClick={() => startEditBranch(loc)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition cursor-pointer"
-                            title="Edit branch details"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-
-                          <button
-                            id={`delete-branch-btn-${loc.id}`}
-                            onClick={() => deleteLocation(loc.id)}
-                            disabled={isOnlyBranch}
-                            className={`p-1.5 rounded-lg transition cursor-pointer ${
-                              isOnlyBranch
-                                ? 'text-slate-300 cursor-not-allowed'
-                                : 'text-rose-500 hover:text-rose-700 hover:bg-rose-50'
-                            }`}
-                            title={
-                              isOnlyBranch
-                                ? 'Cannot delete: A business profile must have at least one active branch'
-                                : 'Delete / Remove branch'
-                            }
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                            <button
+                              id={`delete-branch-btn-${loc.id}`}
+                              type="button"
+                              onClick={() => deleteLocation(loc.id)}
+                              disabled={isOnlyBranch}
+                              className={`p-1.5 rounded-lg transition ${
+                                isOnlyBranch
+                                  ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
+                                  : 'text-rose-500 hover:text-rose-700 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer'
+                              }`}
+                              title={
+                                isOnlyBranch
+                                  ? 'Cannot delete: A business profile must have at least one active branch'
+                                  : 'Delete / Remove branch'
+                              }
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* TAB: PAYSTACK SETTLEMENT SUBACCOUNT */}
+          {/* ========================================================= */}
+          {activeTab === 'settlement' && currentBusiness && (
+            <div className="max-w-4xl mx-auto">
+              <PaystackSubaccountPanel targetBusiness={currentBusiness} />
             </div>
           )}
 
           {/* ========================================================= */}
           {/* TAB: TAXES & VAT/GST DYNAMIC ENGINE */}
           {/* ========================================================= */}
-          {activeTab === 'tax' && <TaxManagementPanel />}
+          {activeTab === 'tax' && (
+            <div className="max-w-4xl mx-auto">
+              <TaxManagementPanel />
+            </div>
+          )}
 
           {/* ========================================================= */}
-          {/* TAB: LOYALTY POINTS & REWARDS VALUATION RULES */}
+          {/* TAB: LOYALTY POINTS & REWARDS */}
           {/* ========================================================= */}
-          {activeTab === 'loyalty' && <LoyaltySettingsPanel />}
+          {activeTab === 'loyalty' && (
+            <div className="max-w-4xl mx-auto">
+              <LoyaltySettingsPanel />
+            </div>
+          )}
 
           {/* ========================================================= */}
-          {/* TAB: POS PACKAGES & PRICING ARCHITECTURE (STARTER / BUSINESS / PREMIUM) */}
+          {/* TAB: POS PACKAGES & PRICING ARCHITECTURE */}
           {/* ========================================================= */}
           {activeTab === 'pricing' && (
-            <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center max-w-lg mx-auto shadow-sm my-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
-              <div className="w-14 h-14 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center mx-auto border border-purple-100 shadow-xs">
-                <Tag className="w-7 h-7" />
+            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 text-center max-w-lg mx-auto my-6 space-y-4">
+              <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 rounded-xl flex items-center justify-center mx-auto border border-slate-200 dark:border-slate-700">
+                <Tag className="w-6 h-6" />
               </div>
               <div className="space-y-1.5">
-                <h3 className="text-lg font-black text-slate-900">POS Packages & Pricing Plans</h3>
-                <p className="text-xs text-slate-500 leading-relaxed">
+                <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                  POS Packages & Pricing Plans
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                   All POS package tiers, M-Pesa billing options, branch sliders, and feature comparisons are centralized on our dedicated Pricing Page.
                 </p>
               </div>
@@ -1344,7 +1479,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                   onClose?.();
                   openPricingPage();
                 }}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white font-bold text-xs shadow-md shadow-purple-600/20 transition cursor-pointer"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition cursor-pointer"
               >
                 <span>Open Pricing & Packages Page</span>
                 <ArrowUpRight className="w-4 h-4" />
@@ -1352,113 +1487,106 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
             </div>
           )}
 
-
           {/* ========================================================= */}
-          {/* TAB 3: ACCOUNTS & ROLE-BASED DASHBOARD (RBAC) */}
+          {/* TAB 3: ACCOUNTS & ROLE-BASED ACCESS CONTROL (RBAC) */}
           {/* ========================================================= */}
           {activeTab === 'accounts' && (
-            <div className="space-y-6">
-              {/* RBAC Visual Role Matrix Card */}
-              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 mb-3 border-b border-slate-100">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck className="w-5 h-5 text-indigo-600" />
-                      <h3 className="text-sm font-bold text-slate-900">
-                        Role-Based Access Control (RBAC) Dashboard
-                      </h3>
-                    </div>
-                    <p className="text-xs text-slate-500">
-                      Enforce strict principle-of-least-privilege across store terminals and managers.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setShowRoleMatrix(!showRoleMatrix)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition cursor-pointer"
-                  >
-                    <span>{showRoleMatrix ? 'Hide Permission Matrix' : 'View Permission Matrix'}</span>
-                    {showRoleMatrix ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
+            <div className="space-y-6 max-w-4xl mx-auto">
+              {/* RBAC Overview & Permission Matrix */}
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-5">
+                <SettingsSectionHeader
+                  title="Role-Based Access Control (RBAC)"
+                  description="Enforce principle-of-least-privilege across store terminals, supervisors, and inventory clerks."
+                  actions={
+                    <button
+                      type="button"
+                      onClick={() => setShowRoleMatrix(!showRoleMatrix)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 transition cursor-pointer"
+                    >
+                      <span>{showRoleMatrix ? 'Hide Permission Matrix' : 'View Permission Matrix'}</span>
+                      {showRoleMatrix ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </button>
+                  }
+                />
 
-                {/* Role Badges Summary */}
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
-                  <div className="p-2.5 rounded-lg bg-purple-50 border border-purple-200">
-                    <span className="font-bold text-purple-900 block">Owner</span>
-                    <span className="text-[11px] text-purple-700">Full Business & Tenant Control</span>
+                {/* Clean 5-Column Role Summary Strip */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 border border-slate-200 dark:border-slate-800 rounded-lg divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800 text-xs overflow-hidden">
+                  <div className="p-3">
+                    <span className="font-semibold text-slate-900 dark:text-slate-100 block">Owner</span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">Full Tenant Control</span>
                   </div>
-                  <div className="p-2.5 rounded-lg bg-blue-50 border border-blue-200">
-                    <span className="font-bold text-blue-900 block">Manager</span>
-                    <span className="text-[11px] text-blue-700">Inventory & Staff Management</span>
+                  <div className="p-3">
+                    <span className="font-semibold text-slate-900 dark:text-slate-100 block">Manager</span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">Inventory & Staff</span>
                   </div>
-                  <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200">
-                    <span className="font-bold text-amber-900 block">Supervisor</span>
-                    <span className="text-[11px] text-amber-700">Voids, Overrides & Shift Drops</span>
+                  <div className="p-3">
+                    <span className="font-semibold text-slate-900 dark:text-slate-100 block">Supervisor</span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">Voids & Shift Drops</span>
                   </div>
-                  <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200">
-                    <span className="font-bold text-emerald-900 block">Cashier</span>
-                    <span className="text-[11px] text-emerald-700">Register Sales & Receipts</span>
+                  <div className="p-3">
+                    <span className="font-semibold text-slate-900 dark:text-slate-100 block">Cashier</span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">Sales & Receipts</span>
                   </div>
-                  <div className="p-2.5 rounded-lg bg-cyan-50 border border-cyan-200">
-                    <span className="font-bold text-cyan-900 block">Inv. Clerk</span>
-                    <span className="text-[11px] text-cyan-700">Stock Receiving & Transfers</span>
+                  <div className="p-3 col-span-2 sm:col-span-1">
+                    <span className="font-semibold text-slate-900 dark:text-slate-100 block">Inv. Clerk</span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">Stock & Transfers</span>
                   </div>
                 </div>
 
                 {/* Expanded Permission Matrix */}
                 {showRoleMatrix && (
-                  <div className="mt-4 pt-3 border-t border-slate-100 overflow-x-auto animate-fade-in">
+                  <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-lg">
                     <table className="w-full text-xs text-left border-collapse">
                       <thead>
-                        <tr className="bg-slate-100 text-slate-700 font-semibold">
-                          <th className="p-2">Capability / Operation</th>
-                          <th className="p-2 text-center">Owner</th>
-                          <th className="p-2 text-center">Manager</th>
-                          <th className="p-2 text-center">Supervisor</th>
-                          <th className="p-2 text-center">Cashier</th>
-                          <th className="p-2 text-center">Inv. Clerk</th>
+                        <tr className="bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800">
+                          <th className="p-2.5">Capability / Operation</th>
+                          <th className="p-2.5 text-center">Owner</th>
+                          <th className="p-2.5 text-center">Manager</th>
+                          <th className="p-2.5 text-center">Supervisor</th>
+                          <th className="p-2.5 text-center">Cashier</th>
+                          <th className="p-2.5 text-center">Inv. Clerk</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100 text-slate-600">
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
                         <tr>
-                          <td className="p-2 font-medium">POS Register Sales & Payments</td>
-                          <td className="p-2 text-center text-emerald-600 font-bold">✓</td>
-                          <td className="p-2 text-center text-emerald-600 font-bold">✓</td>
-                          <td className="p-2 text-center text-emerald-600 font-bold">✓</td>
-                          <td className="p-2 text-center text-emerald-600 font-bold">✓</td>
-                          <td className="p-2 text-center text-slate-300">-</td>
+                          <td className="p-2.5 font-medium">POS Register Sales & Payments</td>
+                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
+                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
+                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
+                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
+                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
                         </tr>
                         <tr>
-                          <td className="p-2 font-medium">Inventory Adjustment & Stock Counting</td>
-                          <td className="p-2 text-center text-emerald-600 font-bold">✓</td>
-                          <td className="p-2 text-center text-emerald-600 font-bold">✓</td>
-                          <td className="p-2 text-center text-slate-300">-</td>
-                          <td className="p-2 text-center text-slate-300">-</td>
-                          <td className="p-2 text-center text-emerald-600 font-bold">✓</td>
+                          <td className="p-2.5 font-medium">Inventory Adjustment & Stock Counting</td>
+                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
+                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
+                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
+                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
+                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
                         </tr>
                         <tr>
-                          <td className="p-2 font-medium">Branch Creation & Removal / Deletion</td>
-                          <td className="p-2 text-center text-emerald-600 font-bold">✓</td>
-                          <td className="p-2 text-center text-slate-300">-</td>
-                          <td className="p-2 text-center text-slate-300">-</td>
-                          <td className="p-2 text-center text-slate-300">-</td>
-                          <td className="p-2 text-center text-slate-300">-</td>
+                          <td className="p-2.5 font-medium">Branch Creation & Removal / Deletion</td>
+                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
+                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
+                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
+                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
+                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
                         </tr>
                         <tr>
-                          <td className="p-2 font-medium">Staff Account & PIN Provisioning</td>
-                          <td className="p-2 text-center text-emerald-600 font-bold">✓</td>
-                          <td className="p-2 text-center text-emerald-600 font-bold">✓</td>
-                          <td className="p-2 text-center text-slate-300">-</td>
-                          <td className="p-2 text-center text-slate-300">-</td>
-                          <td className="p-2 text-center text-slate-300">-</td>
+                          <td className="p-2.5 font-medium">Staff Account & PIN Provisioning</td>
+                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
+                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
+                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
+                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
+                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
                         </tr>
                         <tr>
-                          <td className="p-2 font-medium">Price Overrides & Transaction Voids</td>
-                          <td className="p-2 text-center text-emerald-600 font-bold">✓</td>
-                          <td className="p-2 text-center text-emerald-600 font-bold">✓</td>
-                          <td className="p-2 text-center text-emerald-600 font-bold">✓</td>
-                          <td className="p-2 text-center text-slate-300">-</td>
-                          <td className="p-2 text-center text-slate-300">-</td>
+                          <td className="p-2.5 font-medium">Price Overrides & Transaction Voids</td>
+                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
+                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
+                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
+                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
+                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
                         </tr>
                       </tbody>
                     </table>
@@ -1466,251 +1594,281 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                 )}
               </div>
 
-              {/* Accounts Header Controls */}
-              <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">User Accounts Roster</h3>
-                  <p className="text-xs text-slate-500">
-                    Accounts authorized to sign into terminals and registers for {currentBusiness?.name}.
-                  </p>
-                </div>
-                {!isAddingUser && (
-                  <button
-                    id="btn-provision-account"
-                    onClick={() => {
-                      cancelUserForm();
-                      setIsAddingUser(true);
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-sm transition cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Provision Account</span>
-                  </button>
-                )}
-              </div>
+              {/* User Accounts Roster */}
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-5">
+                <SettingsSectionHeader
+                  title="User Accounts Roster"
+                  description={`Accounts authorized to sign into terminals and registers for ${currentBusiness?.name || 'this store'}.`}
+                  meta={<span>{systemUsers.length} accounts</span>}
+                  actions={
+                    !isAddingUser ? (
+                      <button
+                        id="btn-provision-account"
+                        type="button"
+                        onClick={() => {
+                          const maxStaff = isSuperAdmin ? -1 : entitlements.limits.maxStaffUsers;
+                          if (isQuotaAtOrAboveLimit(systemUsers.length, maxStaff)) {
+                            openUpgradePrompt({
+                              title: 'Staff Account Limit Reached',
+                              description: `Your ${entitlements.tierName} plan supports up to ${maxStaff} staff ${
+                                maxStaff === 1 ? 'account' : 'accounts'
+                              }. Existing staff remain active, and upgrading adds more team seats.`,
+                              requiredTier: getRequiredTierForStaffCount(systemUsers.length + 1),
+                              featureLabel: 'Additional Staff Seats',
+                              quotaMetric: {
+                                label: 'Staff Accounts',
+                                used: systemUsers.length,
+                                limit: maxStaff,
+                              },
+                            });
+                            return;
+                          }
+                          cancelUserForm();
+                          setIsAddingUser(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition cursor-pointer"
+                      >
+                        {!isSuperAdmin && isQuotaAtOrAboveLimit(systemUsers.length, entitlements.limits.maxStaffUsers) ? (
+                          <Lock className="w-3.5 h-3.5" />
+                        ) : (
+                          <Plus className="w-3.5 h-3.5" />
+                        )}
+                        <span>Provision Account</span>
+                      </button>
+                    ) : undefined
+                  }
+                />
 
-              {/* Account Add / Edit Form */}
-              {isAddingUser && (
-                <div className="bg-white rounded-xl border-2 border-indigo-500/30 p-5 shadow-md animate-fade-in">
-                  <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <Users className="w-5 h-5 text-indigo-600" />
-                      <h4 className="font-bold text-sm text-slate-900">
-                        {editingUserId ? 'Edit Account Permissions' : 'Provision New System User'}
-                      </h4>
-                    </div>
-                    <button
-                      onClick={cancelUserForm}
-                      className="text-slate-400 hover:text-slate-600 text-xs font-medium cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-
-                  <form onSubmit={handleSaveUser} className="space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Full Name *
-                        </label>
-                        <input
-                          id="user-input-name"
-                          type="text"
-                          value={userName}
-                          onChange={(e) => setUserName(e.target.value)}
-                          placeholder="e.g., Jane Wanjiku"
-                          className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                          required
-                        />
+                {/* Account Add / Edit Form */}
+                {isAddingUser && (
+                  <div className="bg-slate-50 dark:bg-slate-950 rounded-xl border border-blue-500/40 p-5">
+                    <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-200 dark:border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                        <h4 className="font-semibold text-sm text-slate-900 dark:text-slate-100">
+                          {editingUserId ? 'Edit Account Permissions' : 'Provision New System User'}
+                        </h4>
                       </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Role *
-                        </label>
-                        <select
-                          id="user-select-role"
-                          value={userRole}
-                          onChange={(e) => setUserRole(e.target.value as Cashier['role'])}
-                          className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-                        >
-                          <option value="cashier">Cashier</option>
-                          <option value="supervisor">Supervisor</option>
-                          <option value="manager">Store Manager</option>
-                          <option value="inventory_clerk">Inventory Clerk</option>
-                          {isSuperAdmin && <option value="business_owner">Business Owner</option>}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Login Username / ID
-                        </label>
-                        <input
-                          id="user-input-username"
-                          type="text"
-                          value={userUsername}
-                          onChange={(e) => setUserUsername(e.target.value)}
-                          placeholder="e.g., jwanjiku"
-                          className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 lowercase"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          {editingUserId ? 'New PIN (Leave blank to keep)' : 'Terminal PIN (4+ digits) *'}
-                        </label>
-                        <input
-                          id="user-input-pin"
-                          type="password"
-                          maxLength={6}
-                          value={userPin}
-                          onChange={(e) => setUserPin(e.target.value.replace(/\D/g, ''))}
-                          placeholder="••••"
-                          className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg font-mono text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                          required={!editingUserId}
-                        />
-                      </div>
-
-                      <div className="sm:col-span-2">
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Branch Assignment
-                        </label>
-                        <select
-                          id="user-select-branch"
-                          value={userAssignedLocId}
-                          onChange={(e) => setUserAssignedLocId(e.target.value)}
-                          className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-                        >
-                          <option value="">All Branches (Roaming Access)</option>
-                          {locations.map((loc) => (
-                            <option key={loc.id} value={loc.id}>
-                              {loc.name} ({loc.city})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                       <button
                         type="button"
                         onClick={cancelUserForm}
-                        className="px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+                        className="text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 text-xs font-medium cursor-pointer"
                       >
                         Cancel
                       </button>
-                      <button
-                        id="btn-submit-save-user"
-                        type="submit"
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-sm transition cursor-pointer"
-                      >
-                        {editingUserId ? 'Update Account' : 'Provision User'}
-                      </button>
                     </div>
-                  </form>
-                </div>
-              )}
 
-              {/* Accounts Table */}
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                    <tr>
-                      <th className="p-3">User</th>
-                      <th className="p-3">Role</th>
-                      <th className="p-3">Username</th>
-                      <th className="p-3">Assigned Branch</th>
-                      <th className="p-3">PIN Security</th>
-                      <th className="p-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {systemUsers.map((u) => {
-                      const assignedLoc = locations.find((l) => l.id === u.assignedLocationId);
-                      const isSelf = currentUser?.id === u.id || currentUser?.username === u.username;
+                    <form onSubmit={handleSaveUser} className="space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            Full Name *
+                          </label>
+                          <input
+                            id="user-input-name"
+                            type="text"
+                            value={userName}
+                            onChange={(e) => setUserName(e.target.value)}
+                            placeholder="e.g., Jane Wanjiku"
+                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            required
+                          />
+                        </div>
 
-                      return (
-                        <tr key={u.id} className="hover:bg-slate-50/70 transition">
-                          <td className="p-3">
-                            <div className="flex items-center gap-2.5">
-                              <div
-                                className={`w-8 h-8 rounded-full text-white font-bold flex items-center justify-center text-xs ${
-                                  u.avatarColor || 'bg-slate-700'
-                                }`}
-                              >
-                                {u.initials || u.name.substring(0, 2).toUpperCase()}
-                              </div>
-                              <div>
-                                <div className="font-semibold text-slate-900 flex items-center gap-1.5">
-                                  <span>{u.name}</span>
-                                  {isSelf && (
-                                    <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.2 rounded font-semibold">
-                                      You
-                                    </span>
-                                  )}
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            Role *
+                          </label>
+                          <select
+                            id="user-select-role"
+                            value={userRole}
+                            onChange={(e) => setUserRole(e.target.value as Cashier['role'])}
+                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="cashier">Cashier</option>
+                            <option value="supervisor">Supervisor</option>
+                            <option value="manager">Store Manager</option>
+                            <option value="inventory_clerk">Inventory Clerk</option>
+                            {isSuperAdmin && <option value="business_owner">Business Owner</option>}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            Login Username / ID
+                          </label>
+                          <input
+                            id="user-input-username"
+                            type="text"
+                            value={userUsername}
+                            onChange={(e) => setUserUsername(e.target.value)}
+                            placeholder="e.g., jwanjiku"
+                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 lowercase"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            {editingUserId ? 'New PIN (Leave blank to keep)' : 'Terminal PIN (4+ digits) *'}
+                          </label>
+                          <input
+                            id="user-input-pin"
+                            type="password"
+                            maxLength={6}
+                            value={userPin}
+                            onChange={(e) => setUserPin(e.target.value.replace(/\D/g, ''))}
+                            placeholder="••••"
+                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg font-mono text-center tracking-widest text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            required={!editingUserId}
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            Branch Assignment
+                          </label>
+                          <select
+                            id="user-select-branch"
+                            value={userAssignedLocId}
+                            onChange={(e) => setUserAssignedLocId(e.target.value)}
+                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">All Branches (Roaming Access)</option>
+                            {locations.map((loc) => (
+                              <option key={loc.id} value={loc.id}>
+                                {loc.name} ({loc.city})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+                        <button
+                          type="button"
+                          onClick={cancelUserForm}
+                          className="px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded-lg transition cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          id="btn-submit-save-user"
+                          type="submit"
+                          className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition cursor-pointer"
+                        >
+                          {editingUserId ? 'Update Account' : 'Provision User'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                {/* Accounts Table */}
+                <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800">
+                      <tr>
+                        <th className="p-3">User</th>
+                        <th className="p-3">Role</th>
+                        <th className="p-3">Username</th>
+                        <th className="p-3">Assigned Branch</th>
+                        <th className="p-3">PIN Security</th>
+                        <th className="p-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {systemUsers.map((u) => {
+                        const assignedLoc = locations.find((l) => l.id === u.assignedLocationId);
+                        const isSelf = currentUser?.id === u.id || currentUser?.username === u.username;
+
+                        return (
+                          <tr key={u.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition">
+                            <td className="p-3">
+                              <div className="flex items-center gap-2.5">
+                                <div
+                                  className={`w-8 h-8 rounded-lg text-white font-semibold flex items-center justify-center text-xs shrink-0 ${
+                                    u.avatarColor || 'bg-slate-700'
+                                  }`}
+                                >
+                                  {u.initials || u.name.substring(0, 2).toUpperCase()}
                                 </div>
-                                <div className="text-[11px] text-slate-400 font-mono">{u.code}</div>
+                                <div>
+                                  <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                                    <span>{u.name}</span>
+                                    {isSelf && (
+                                      <span className="text-[11px] text-blue-600 dark:text-blue-400 font-medium">
+                                        · You
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[11px] text-slate-400 dark:text-slate-500 font-mono">
+                                    {u.code}
+                                  </div>
+                                </div>
                               </div>
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                u.role === 'business_owner'
-                                  ? 'bg-purple-100 text-purple-700 border border-purple-200'
-                                  : u.role === 'manager'
-                                  ? 'bg-blue-100 text-blue-700 border border-blue-200'
-                                  : u.role === 'supervisor'
-                                  ? 'bg-amber-100 text-amber-700 border border-amber-200'
-                                  : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                              }`}
-                            >
-                              {u.role.replace('_', ' ')}
-                            </span>
-                          </td>
-                          <td className="p-3 font-mono text-slate-700 font-medium">{u.username}</td>
-                          <td className="p-3 text-slate-600">
-                            {assignedLoc ? (
-                              <span className="font-medium text-slate-800">{assignedLoc.name}</span>
-                            ) : (
-                              <span className="text-slate-400 italic">All Branches</span>
-                            )}
-                          </td>
-                          <td className="p-3">
-                            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 font-medium">
-                              <Lock className="w-3 h-3 text-emerald-600" />
-                              Bcrypt Hashed
-                            </span>
-                          </td>
-                          <td className="p-3 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                onClick={() => startEditUser(u)}
-                                className="p-1.5 rounded text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer"
-                                title="Edit user"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => deleteSystemUser(u.id)}
-                                disabled={isSelf}
-                                className={`p-1.5 rounded transition cursor-pointer ${
-                                  isSelf
-                                    ? 'text-slate-300 cursor-not-allowed'
-                                    : 'text-rose-500 hover:text-rose-700 hover:bg-rose-50'
+                            </td>
+                            <td className="p-3">
+                              <span
+                                className={`text-xs font-medium capitalize ${
+                                  u.role === 'business_owner'
+                                    ? 'text-purple-700 dark:text-purple-400'
+                                    : u.role === 'manager'
+                                    ? 'text-blue-700 dark:text-blue-400'
+                                    : u.role === 'supervisor'
+                                    ? 'text-amber-700 dark:text-amber-400'
+                                    : 'text-emerald-700 dark:text-emerald-400'
                                 }`}
-                                title={isSelf ? 'Cannot delete your own account' : 'Delete user'}
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                                {u.role.replace('_', ' ')}
+                              </span>
+                            </td>
+                            <td className="p-3 font-mono text-slate-700 dark:text-slate-300">{u.username}</td>
+                            <td className="p-3 text-slate-600 dark:text-slate-400">
+                              {assignedLoc ? (
+                                <span className="font-medium text-slate-800 dark:text-slate-200">
+                                  {assignedLoc.name}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 dark:text-slate-500">All Branches</span>
+                              )}
+                            </td>
+                            <td className="p-3">
+                              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
+                                <Lock className="w-3 h-3" />
+                                Bcrypt Hashed
+                              </span>
+                            </td>
+                            <td className="p-3 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => startEditUser(u)}
+                                  className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                                  title="Edit user"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteSystemUser(u.id)}
+                                  disabled={isSelf}
+                                  className={`p-1.5 rounded-lg transition ${
+                                    isSelf
+                                      ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
+                                      : 'text-rose-500 hover:text-rose-700 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer'
+                                  }`}
+                                  title={isSelf ? 'Cannot delete your own account' : 'Delete user'}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -1719,27 +1877,26 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
           {/* TAB 4: CREDENTIAL & SECURITY SETTINGS */}
           {/* ========================================================= */}
           {activeTab === 'credentials' && (
-            <div className="space-y-6 max-w-2xl mx-auto">
+            <div className="space-y-6 max-w-4xl mx-auto">
               {/* Personal Active User PIN Update */}
-              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-                <div className="flex items-center gap-3 pb-4 mb-4 border-b border-slate-100">
-                  <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600">
-                    <KeyRound className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900">Your Terminal Access Credentials</h3>
-                    <p className="text-xs text-slate-500">
-                      Update the numeric PIN used to unlock register terminals and authorize supervisor actions.
-                    </p>
-                  </div>
-                </div>
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-5">
+                <SettingsSectionHeader
+                  title="Your Terminal Access Credentials"
+                  description="Update the numeric PIN used to unlock register terminals and authorize supervisor actions."
+                  meta={
+                    <span className="capitalize">
+                      {currentUser?.name} · {currentUser?.role?.replace('_', ' ')}
+                    </span>
+                  }
+                />
 
-                <div className="mb-4 p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-600 flex items-center justify-between">
+                <div className="py-2.5 px-3.5 bg-slate-50 dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <span className="text-slate-400 block text-[11px]">Logged in as:</span>
-                    <span className="font-bold text-slate-900">{currentUser?.name}</span> ({currentUser?.email || currentUser?.username})
+                    <span className="text-slate-400 dark:text-slate-500 mr-1.5">Signed in as:</span>
+                    <span className="font-semibold text-slate-900 dark:text-slate-100">{currentUser?.name}</span>{' '}
+                    <span className="font-mono">({currentUser?.email || currentUser?.username})</span>
                   </div>
-                  <span className="px-2 py-0.5 rounded font-mono text-[10px] bg-slate-200 text-slate-700 uppercase font-semibold">
+                  <span className="font-mono text-[11px] uppercase font-semibold text-slate-700 dark:text-slate-300">
                     {currentUser?.role}
                   </span>
                 </div>
@@ -1747,7 +1904,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                 <form onSubmit={handleUpdateCredentials} className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                         New 4-Digit PIN
                       </label>
                       <div className="relative">
@@ -1758,13 +1915,14 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                           value={newTerminalPin}
                           onChange={(e) => setNewTerminalPin(e.target.value.replace(/\D/g, ''))}
                           placeholder="••••"
-                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg font-mono text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg font-mono text-center tracking-widest text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                           required
                         />
                         <button
                           type="button"
                           onClick={() => setShowPin(!showPin)}
-                          className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                          className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 cursor-pointer"
+                          aria-label={showPin ? 'Hide PIN' : 'Show PIN'}
                         >
                           {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                         </button>
@@ -1772,7 +1930,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                         Confirm New PIN
                       </label>
                       <input
@@ -1782,7 +1940,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                         value={confirmTerminalPin}
                         onChange={(e) => setConfirmTerminalPin(e.target.value.replace(/\D/g, ''))}
                         placeholder="••••"
-                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg font-mono text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg font-mono text-center tracking-widest text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         required
                       />
                     </div>
@@ -1793,7 +1951,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                       id="save-new-pin-btn"
                       type="submit"
                       disabled={isUpdatingCredentials}
-                      className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-sm transition disabled:opacity-50 cursor-pointer"
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition disabled:opacity-50 cursor-pointer"
                     >
                       <Lock className="w-3.5 h-3.5" />
                       <span>{isUpdatingCredentials ? 'Hashing with Bcrypt...' : 'Update Terminal PIN'}</span>
@@ -1802,127 +1960,118 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                 </form>
               </div>
 
-              {/* Two-Step Verification (2FA) & Authenticator App (TOTP) Card */}
-              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-                <div className="flex items-start justify-between gap-4 pb-4 mb-5 border-b border-slate-100">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600">
-                      <ShieldCheck className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                        <span>Two-Step Verification (2FA)</span>
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            is2FaEnabled
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : 'bg-slate-100 text-slate-500 border border-slate-200'
-                          }`}
-                        >
-                          {is2FaEnabled ? 'Protected' : 'Off'}
-                        </span>
-                      </h3>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Add an extra layer of security to your store sign-in with Email OTP or an Authenticator App.
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Master Toggle Button */}
-                  <button
-                    type="button"
-                    onClick={() => handleToggle2Fa(!is2FaEnabled)}
-                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                      is2FaEnabled ? 'bg-blue-600' : 'bg-slate-300'
-                    }`}
-                    role="switch"
-                    aria-checked={is2FaEnabled}
-                    aria-label="Toggle Two-Step Verification"
-                  >
+              {/* Two-Step Verification (2FA) & Authenticator App (TOTP) */}
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-5">
+                <SettingsSectionHeader
+                  title="Two-Step Verification (2FA)"
+                  description="Protect store sign-ins with Email OTP or a time-based Authenticator App."
+                  meta={
                     <span
-                      aria-hidden="true"
-                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                        is2FaEnabled ? 'translate-x-5' : 'translate-x-0'
+                      className={
+                        is2FaEnabled
+                          ? 'text-emerald-700 dark:text-emerald-400 font-medium'
+                          : 'text-slate-500 dark:text-slate-400'
+                      }
+                    >
+                      {is2FaEnabled ? 'Protected' : 'Off'}
+                    </span>
+                  }
+                  actions={
+                    <button
+                      type="button"
+                      onClick={() => handleToggle2Fa(!is2FaEnabled)}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                        is2FaEnabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
                       }`}
-                    />
-                  </button>
-                </div>
+                      role="switch"
+                      aria-checked={is2FaEnabled}
+                      aria-label="Toggle Two-Step Verification"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                          is2FaEnabled ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  }
+                />
 
-                {/* 2FA Options (Active when enabled) */}
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-2">
+                    <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">
                       Primary Verification Method
                     </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      {/* Email OTP Option */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <button
                         type="button"
                         onClick={() => handleUpdate2FaMethod('email_otp')}
-                        className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                        className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
                           current2FaMethod === 'email_otp'
-                            ? 'border-blue-600 bg-blue-50/50 ring-1 ring-blue-500/20 shadow-xs'
-                            : 'border-slate-200 hover:border-slate-300 bg-white'
+                            ? 'border-blue-600 dark:border-blue-500 bg-blue-50/50 dark:bg-blue-950/30'
+                            : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900'
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1.5">
                           <div className="flex items-center gap-1.5">
-                            <Mail className="w-4 h-4 text-blue-600" />
-                            <span className="text-xs font-bold text-slate-900">Email OTP</span>
+                            <Mail className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                            <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">Email OTP</span>
                           </div>
                           {current2FaMethod === 'email_otp' && (
-                            <Check className="w-3.5 h-3.5 text-blue-600" />
+                            <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                           )}
                         </div>
-                        <p className="text-[11px] text-slate-500 leading-snug">
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
                           4-digit code sent to registered Gmail.
                         </p>
                       </button>
 
-                      {/* Authenticator App Option */}
                       <button
                         type="button"
                         onClick={() => handleUpdate2FaMethod('totp')}
-                        className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                        className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
                           current2FaMethod === 'totp'
-                            ? 'border-blue-600 bg-blue-50/50 ring-1 ring-blue-500/20 shadow-xs'
-                            : 'border-slate-200 hover:border-slate-300 bg-white'
+                            ? 'border-blue-600 dark:border-blue-500 bg-blue-50/50 dark:bg-blue-950/30'
+                            : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900'
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1.5">
                           <div className="flex items-center gap-1.5">
-                            <Smartphone className="w-4 h-4 text-emerald-600" />
-                            <span className="text-xs font-bold text-slate-900">Authenticator App</span>
+                            <Smartphone className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                              Authenticator App
+                            </span>
                           </div>
                           {current2FaMethod === 'totp' && (
-                            <Check className="w-3.5 h-3.5 text-blue-600" />
+                            <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                           )}
                         </div>
-                        <p className="text-[11px] text-slate-500 leading-snug">
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
                           6-digit code from Google/Microsoft Authenticator.
                         </p>
                       </button>
 
-                      {/* Both Option */}
                       <button
                         type="button"
                         onClick={() => handleUpdate2FaMethod('both')}
-                        className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                        className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
                           current2FaMethod === 'both'
-                            ? 'border-blue-600 bg-blue-50/50 ring-1 ring-blue-500/20 shadow-xs'
-                            : 'border-slate-200 hover:border-slate-300 bg-white'
+                            ? 'border-blue-600 dark:border-blue-500 bg-blue-50/50 dark:bg-blue-950/30'
+                            : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900'
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1.5">
                           <div className="flex items-center gap-1.5">
-                            <ShieldCheck className="w-4 h-4 text-purple-600" />
-                            <span className="text-xs font-bold text-slate-900">Both / Either</span>
+                            <ShieldCheck className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                            <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                              Both / Either
+                            </span>
                           </div>
                           {current2FaMethod === 'both' && (
-                            <Check className="w-3.5 h-3.5 text-blue-600" />
+                            <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                           )}
                         </div>
-                        <p className="text-[11px] text-slate-500 leading-snug">
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
                           Prompt with choice to use Email or App.
                         </p>
                       </button>
@@ -1930,72 +2079,74 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                   </div>
 
                   {/* Authenticator App Pairing Sub-panel */}
-                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/90 text-xs space-y-3">
+                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <Smartphone className="w-4 h-4 text-slate-700" />
-                        <span className="font-bold text-slate-900">Authenticator App (TOTP) Status</span>
+                        <Smartphone className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+                        <span className="font-semibold text-slate-900 dark:text-slate-100">
+                          Authenticator App (TOTP) Status
+                        </span>
                       </div>
                       {isTotpPaired ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-200">
-                          <CheckCircle2 className="w-3 h-3" /> Paired &amp; Active
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Paired &amp; Active
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                          Not Paired
-                        </span>
+                        <span className="text-xs font-medium text-amber-700 dark:text-amber-400">Not Paired</span>
                       )}
                     </div>
 
                     {isTotpPaired && !isSettingUpTotp ? (
                       <div className="space-y-3 pt-1">
-                        <p className="text-slate-600 text-xs">
-                          Your store owner account is paired with an Authenticator app (enrolled {securitySettings?.totpEnrolledAt ? new Date(securitySettings.totpEnrolledAt).toLocaleDateString() : 'Active'}). You can use Google Authenticator, Microsoft Authenticator, or Authy to sign in.
+                        <p className="text-slate-600 dark:text-slate-400 text-xs">
+                          Your store owner account is paired with an Authenticator app (enrolled{' '}
+                          {securitySettings?.totpEnrolledAt
+                            ? new Date(securitySettings.totpEnrolledAt).toLocaleDateString()
+                            : 'Active'}
+                          ).
                         </p>
-                        <div className="flex items-center gap-2 pt-1">
+                        <div className="flex flex-wrap items-center gap-2">
                           <button
                             type="button"
                             onClick={handleStartTotpEnrollment}
-                            className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 font-semibold text-slate-700 text-xs transition cursor-pointer"
+                            className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-700 font-medium text-slate-700 dark:text-slate-200 text-xs transition cursor-pointer"
                           >
                             Re-pair / Scan New Code
                           </button>
                           <button
                             type="button"
                             onClick={handleRemoveTotp}
-                            className="px-3 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 border border-rose-200 font-semibold text-xs transition cursor-pointer"
+                            className="px-3 py-1.5 rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 font-medium text-xs transition cursor-pointer"
                           >
                             Remove Authenticator
                           </button>
                         </div>
                       </div>
                     ) : isSettingUpTotp ? (
-                      /* Authenticator Setup / Pairing Flow */
-                      <div className="bg-white rounded-xl p-4 border border-slate-200 space-y-4 animate-in fade-in duration-150">
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                          <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
-                            <QrCode className="w-4 h-4 text-blue-600" />
+                      <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800 space-y-4">
+                        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2.5">
+                          <h4 className="font-semibold text-slate-900 dark:text-slate-100 text-xs flex items-center gap-1.5">
+                            <QrCode className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                             <span>Pair with Authenticator App</span>
                           </h4>
                           <button
                             type="button"
                             onClick={() => setIsSettingUpTotp(false)}
-                            className="text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
+                            className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 text-xs cursor-pointer"
                           >
                             Cancel
                           </button>
                         </div>
 
-                        {/* Step 1 & QR Code */}
                         <div className="flex flex-col sm:flex-row items-center gap-4">
                           {totpSetupQrUrl && (
-                            <div className="bg-white p-2 rounded-xl border border-slate-200 shadow-2xs shrink-0 text-center">
+                            <div className="bg-white p-2 rounded-xl border border-slate-200 shrink-0 text-center">
                               <img
                                 src={totpSetupQrUrl}
                                 alt="Authenticator App QR Code"
                                 className="w-36 h-36 mx-auto rounded-lg"
                               />
-                              <span className="text-[10px] text-slate-400 font-medium block mt-1">
+                              <span className="text-[10px] text-slate-500 font-medium block mt-1">
                                 Scan with phone camera
                               </span>
                             </div>
@@ -2003,22 +2154,27 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
 
                           <div className="space-y-2.5 flex-1 text-xs">
                             <div className="space-y-1">
-                              <strong className="text-slate-900 block font-bold">1. Scan QR Code</strong>
-                              <p className="text-slate-500 text-[11px] leading-relaxed">
-                                Open Google Authenticator, Microsoft Authenticator, or Authy on your phone and tap <strong>+ Add Account</strong> &gt; <strong>Scan QR Code</strong>.
+                              <strong className="text-slate-900 dark:text-slate-100 block font-semibold">
+                                1. Scan QR Code
+                              </strong>
+                              <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
+                                Open Google Authenticator, Microsoft Authenticator, or Authy and tap{' '}
+                                <strong>+ Add Account</strong> &gt; <strong>Scan QR Code</strong>.
                               </p>
                             </div>
 
                             <div className="space-y-1">
-                              <strong className="text-slate-900 block font-bold">Or enter key manually:</strong>
-                              <div className="flex items-center gap-2">
-                                <code className="px-2 py-1 bg-slate-100 rounded border border-slate-200 font-mono text-[11px] font-bold text-slate-800 tracking-wider select-all">
+                              <strong className="text-slate-900 dark:text-slate-100 block font-semibold">
+                                Or enter key manually:
+                              </strong>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <code className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 font-mono text-[11px] font-semibold text-slate-800 dark:text-slate-200 tracking-wider select-all">
                                   {totpSetupSecret}
                                 </code>
                                 <button
                                   type="button"
                                   onClick={handleCopySecret}
-                                  className="px-2 py-1 text-[10px] font-bold rounded bg-slate-200 hover:bg-slate-300 text-slate-700 transition flex items-center gap-1 cursor-pointer"
+                                  className="px-2 py-1 text-[11px] font-medium rounded bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition inline-flex items-center gap-1 cursor-pointer"
                                 >
                                   <Copy className="w-3 h-3" />
                                   <span>{hasCopiedSecret ? 'Copied' : 'Copy'}</span>
@@ -2028,9 +2184,11 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                           </div>
                         </div>
 
-                        {/* Step 2: Verification confirmation */}
-                        <form onSubmit={handleConfirmTotpCode} className="border-t border-slate-100 pt-3 space-y-3">
-                          <label className="block text-xs font-semibold text-slate-800">
+                        <form
+                          onSubmit={handleConfirmTotpCode}
+                          className="border-t border-slate-200 dark:border-slate-800 pt-3 space-y-3"
+                        >
+                          <label className="block text-xs font-medium text-slate-800 dark:text-slate-200">
                             2. Enter the 6-digit code shown in your Authenticator app to confirm:
                           </label>
 
@@ -2046,35 +2204,35 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                                 setTotpVerifyError(null);
                               }}
                               placeholder="000000"
-                              className="w-36 px-3 py-2 text-center text-lg font-black tracking-widest font-mono border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              className="w-36 px-3 py-2 text-center text-base font-bold tracking-widest font-mono bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                               required
                             />
                             <button
                               type="submit"
                               disabled={isConfirmingTotp || totpVerifyCode.length !== 6}
-                              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold text-xs rounded-lg transition cursor-pointer"
                             >
                               {isConfirmingTotp ? 'Verifying...' : 'Confirm & Activate'}
                             </button>
                           </div>
 
                           {totpVerifyError && (
-                            <p className="text-xs text-red-600 font-medium flex items-center gap-1">
-                              <AlertTriangle className="w-3.5 h-3.5" />
+                            <p className="text-xs text-rose-600 dark:text-rose-400 font-medium flex items-center gap-1">
+                              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                               <span>{totpVerifyError}</span>
                             </p>
                           )}
                         </form>
                       </div>
                     ) : (
-                      <div className="space-y-2 pt-1">
-                        <p className="text-slate-600 text-xs">
-                          Pair Google Authenticator, Microsoft Authenticator, or Authy to generate secure, time-based 6-digit codes that work completely offline even when mobile reception drops.
+                      <div className="space-y-2.5 pt-1">
+                        <p className="text-slate-600 dark:text-slate-400 text-xs">
+                          Pair Google Authenticator, Microsoft Authenticator, or Authy to generate offline time-based 6-digit codes.
                         </p>
                         <button
                           type="button"
                           onClick={handleStartTotpEnrollment}
-                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition shadow-xs cursor-pointer"
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition cursor-pointer"
                         >
                           <QrCode className="w-4 h-4" />
                           <span>Pair Authenticator App Now</span>
@@ -2084,19 +2242,19 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                   </div>
 
                   {/* Staff Logins Enforce Checkbox */}
-                  <div className="pt-2 border-t border-slate-100 flex items-start gap-2.5">
+                  <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-start gap-2.5">
                     <input
                       id="checkbox-enforce-staff-2fa"
                       type="checkbox"
                       checked={Boolean(securitySettings?.enforceForStaff)}
                       onChange={(e) => handleToggleStaffEnforce(e.target.checked)}
-                      className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      className="mt-0.5 rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer"
                     />
-                    <label htmlFor="checkbox-enforce-staff-2fa" className="text-xs text-slate-700 cursor-pointer">
-                      <strong className="block text-slate-900 font-semibold">
+                    <label htmlFor="checkbox-enforce-staff-2fa" className="text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                      <strong className="block text-slate-900 dark:text-slate-100 font-semibold">
                         Enforce 2-Step Verification for POS Terminal Staff
                       </strong>
-                      <span className="text-slate-500">
+                      <span className="text-slate-500 dark:text-slate-400">
                         When enabled, cashiers logging into shifts require an authorization code dispatched to the store owner Gmail or manager Authenticator app.
                       </span>
                     </label>
@@ -2105,37 +2263,37 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
               </div>
 
               {/* Security Diagnostics & Policies */}
-              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-3">
+                <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                   Cryptographic & Multi-Tenant Diagnostics
                 </h4>
-                <div className="space-y-2 text-xs">
-                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                      <span className="font-semibold text-slate-700">Cryptographic Salt Algorithm</span>
+                <div className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                  <div className="flex items-center justify-between py-2.5">
+                    <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 font-medium">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                      <span>Cryptographic Salt Algorithm</span>
                     </div>
-                    <span className="font-mono text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
-                      Bcrypt (10 Rounds)
-                    </span>
+                    <span className="font-mono text-slate-600 dark:text-slate-400">Bcrypt (10 Rounds)</span>
                   </div>
 
-                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <Lock className="w-4 h-4 text-emerald-600" />
-                      <span className="font-semibold text-slate-700">Database Tenant Isolation</span>
+                  <div className="flex items-center justify-between py-2.5">
+                    <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 font-medium">
+                      <Lock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                      <span>Database Tenant Isolation</span>
                     </div>
-                    <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                    <span className="text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5" /> Enforced by Firestore RLS
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <Globe className="w-4 h-4 text-blue-600" />
-                      <span className="font-semibold text-slate-700">Super-Admin Audit Trail</span>
+                  <div className="flex items-center justify-between py-2.5">
+                    <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 font-medium">
+                      <Globe className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      <span>Super-Admin Audit Trail</span>
                     </div>
-                    <span className="text-slate-600 font-medium">Logged on every branch/user mutation</span>
+                    <span className="text-slate-600 dark:text-slate-400 font-medium">
+                      Logged on every branch &amp; user mutation
+                    </span>
                   </div>
                 </div>
               </div>
@@ -2143,39 +2301,19 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
           )}
 
           {/* ========================================================= */}
-          {/* TAB 5: APPEARANCE & DIM RETAIL LIGHTING MODE */}
+          {/* TAB 5: APPEARANCE & RETAIL ACCENT PALETTES */}
           {/* ========================================================= */}
           {activeTab === 'appearance' && (
-            <div className="space-y-6 max-w-3xl mx-auto">
-              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-                <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-100">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-blue-600 shrink-0">
-                      <Palette className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-bold text-slate-900">
-                        Display Theme & Retail Lighting Environment
-                      </h3>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Optimize POS terminal visibility for low-glare night registers, bars, evening shifts, and dim store counters.
-                      </p>
-                    </div>
-                  </div>
-                  <span
-                    className={`px-2.5 py-1 text-xs font-bold rounded-lg border shrink-0 ${
-                      isDarkMode
-                        ? 'bg-blue-900/40 text-blue-300 border-blue-600/40'
-                        : 'bg-amber-50 text-amber-800 border-amber-200'
-                    }`}
-                  >
-                    {isDarkMode ? 'Low-Glare Dark Theme' : 'High-Visibility Light Theme'}
-                  </span>
-                </div>
+            <div className="space-y-6 max-w-4xl mx-auto">
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-6">
+                <SettingsSectionHeader
+                  title="Display Theme & Retail Lighting"
+                  description="Optimize POS terminal contrast for bright daytime counters or low-glare evening shifts."
+                  meta={<span>{isDarkMode ? 'Low-Glare Dark Theme' : 'High-Visibility Light Theme'}</span>}
+                />
 
-                {/* Minimalist Theme Selection Cards */}
-                <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Light Theme Card */}
+                {/* Light / Dark Mode Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div
                     id="settings-theme-light-card"
                     role="button"
@@ -2189,50 +2327,47 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                         if (isDarkMode) toggleDarkMode();
                       }
                     }}
-                    className={`p-5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between select-none ${
+                    className={`p-5 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between select-none ${
                       !isDarkMode
-                        ? 'border-blue-600 bg-blue-50/40 ring-2 ring-blue-500/20 shadow-sm'
-                        : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50'
+                        ? 'border-blue-600 bg-blue-50/30 dark:bg-blue-950/20'
+                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
                     }`}
                   >
                     <div>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2.5">
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                            !isDarkMode ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'
-                          }`}>
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400">
                             <Sun className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="text-sm font-bold text-slate-900">Light Theme</h4>
-                            <span className="text-[11px] text-slate-400">High ambient visibility</span>
+                            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Light Theme</h4>
+                            <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                              High ambient visibility
+                            </span>
                           </div>
                         </div>
                         {!isDarkMode ? (
-                          <span className="text-[11px] bg-blue-600 text-white font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <Check className="w-3 h-3" />
+                          <span className="text-xs text-blue-600 dark:text-blue-400 font-semibold inline-flex items-center gap-1">
+                            <Check className="w-3.5 h-3.5" />
                             <span>Active</span>
                           </span>
                         ) : (
-                          <span className="text-[11px] text-slate-400 font-semibold px-2 py-0.5 rounded-full border border-slate-200">
-                            Select
-                          </span>
+                          <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">Select</span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 mt-3 leading-relaxed">
-                        Crisp light backgrounds with high contrast for standard storefronts and daytime shifts.
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-3 leading-relaxed">
+                        Crisp light surfaces with high contrast for standard storefronts and daytime shifts.
                       </p>
-                      <div className="mt-3.5 p-2.5 rounded-xl bg-slate-100 border border-slate-200 text-[11px] space-y-1">
-                        <div className="flex justify-between font-bold text-slate-700">
+                      <div className="mt-3.5 p-2.5 rounded-lg bg-slate-100 border border-slate-200 text-[11px] space-y-1">
+                        <div className="flex justify-between font-semibold text-slate-700">
                           <span>Register Total</span>
-                          <span className="text-blue-600 font-black">KES 1,250.00</span>
+                          <span className="text-blue-600 font-bold tabular-nums">KES 1,250.00</span>
                         </div>
-                        <div className="text-[10px] text-slate-400">Sunlit storefronts • Day shifts</div>
+                        <div className="text-[10px] text-slate-500">Sunlit storefronts · Day shifts</div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Dark Theme Card (Dim Retail) */}
                   <div
                     id="settings-theme-dark-card"
                     role="button"
@@ -2246,108 +2381,81 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                         if (!isDarkMode) toggleDarkMode();
                       }
                     }}
-                    className={`p-5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between select-none ${
+                    className={`p-5 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between select-none ${
                       isDarkMode
-                        ? 'border-blue-500 bg-slate-900 ring-2 ring-blue-500/30 shadow-md text-white'
-                        : 'border-slate-200 bg-slate-900 hover:border-slate-400 text-white'
+                        ? 'border-blue-500 bg-slate-900 text-white'
+                        : 'border-slate-200 dark:border-slate-800 bg-slate-900 hover:border-slate-400 text-white'
                     }`}
                   >
                     <div>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2.5">
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                            isDarkMode ? 'bg-blue-950 text-blue-400 border border-blue-800' : 'bg-slate-800 text-slate-400'
-                          }`}>
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-slate-800 text-blue-400 border border-slate-700">
                             <Moon className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="text-sm font-bold text-white">Dim Retail Dark</h4>
-                            <span className="text-[11px] text-slate-400">Night counter & low glare</span>
+                            <h4 className="text-sm font-semibold text-white">Dim Retail Dark</h4>
+                            <span className="text-[11px] text-slate-400">Night counter &amp; low glare</span>
                           </div>
                         </div>
                         {isDarkMode ? (
-                          <span className="text-[11px] bg-blue-600 text-white font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <Check className="w-3 h-3" />
+                          <span className="text-xs text-blue-400 font-semibold inline-flex items-center gap-1">
+                            <Check className="w-3.5 h-3.5" />
                             <span>Active</span>
                           </span>
                         ) : (
-                          <span className="text-[11px] text-slate-400 font-semibold px-2 py-0.5 rounded-full border border-slate-700">
-                            Select
-                          </span>
+                          <span className="text-xs text-slate-400 font-medium">Select</span>
                         )}
                       </div>
                       <p className="text-xs text-slate-300 mt-3 leading-relaxed">
                         Midnight slate palette engineered for dim retail counters, bars, and evening shifts.
                       </p>
-                      <div className="mt-3.5 p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-[11px] space-y-1">
-                        <div className="flex justify-between font-bold text-slate-200">
+                      <div className="mt-3.5 p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] space-y-1">
+                        <div className="flex justify-between font-semibold text-slate-200">
                           <span>Night Total</span>
-                          <span className="text-blue-400 font-black">KES 1,250.00</span>
+                          <span className="text-blue-400 font-bold tabular-nums">KES 1,250.00</span>
                         </div>
-                        <div className="text-[10px] text-slate-500">Anti-reflection • Barcode friendly</div>
+                        <div className="text-[10px] text-slate-400">Anti-reflection · Barcode friendly</div>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Dim Retail Environment Operational Benefits */}
-                <div className="mt-5 p-4 rounded-xl bg-blue-50/50 border border-blue-100">
-                  <h4 className="text-xs font-bold text-blue-900 flex items-center gap-1.5 mb-2">
-                    <Sparkles className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    <span>Retail Advantages in Dim Environments</span>
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-[11px] text-slate-600">
-                    <div className="p-2.5 bg-white rounded-lg border border-blue-100/80">
-                      <strong className="text-slate-800 block mb-0.5">Glare Reduction</strong>
-                      Prevents high-intensity display reflection on counter glass and laser scanner lenses.
-                    </div>
-                    <div className="p-2.5 bg-white rounded-lg border border-blue-100/80">
-                      <strong className="text-slate-800 block mb-0.5">Cashier Eye Comfort</strong>
-                      Drastically decreases ocular strain and pupil dilation fatigue during 8+ hour evening shifts.
-                    </div>
-                    <div className="p-2.5 bg-white rounded-lg border border-blue-100/80">
-                      <strong className="text-slate-800 block mb-0.5">Barcode Scan Speed</strong>
-                      Dark UI reduces ambient scatter, helping camera & laser barcode scanners lock on faster.
-                    </div>
+                {/* Operational Benefits Strip */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 border border-slate-200 dark:border-slate-800 rounded-lg divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800 text-xs">
+                  <div className="p-3.5">
+                    <strong className="text-slate-900 dark:text-slate-100 block mb-0.5 font-semibold">
+                      Glare Reduction
+                    </strong>
+                    <span className="text-slate-500 dark:text-slate-400 text-[11px]">
+                      Prevents bright counter glass reflections and helps barcode scanners lock faster.
+                    </span>
+                  </div>
+                  <div className="p-3.5">
+                    <strong className="text-slate-900 dark:text-slate-100 block mb-0.5 font-semibold">
+                      Cashier Eye Comfort
+                    </strong>
+                    <span className="text-slate-500 dark:text-slate-400 text-[11px]">
+                      Reduces ocular strain during 8+ hour evening shifts and low-light stockrooms.
+                    </span>
+                  </div>
+                  <div className="p-3.5">
+                    <strong className="text-slate-900 dark:text-slate-100 block mb-0.5 font-semibold">
+                      Local Persistence
+                    </strong>
+                    <span className="text-slate-500 dark:text-slate-400 text-[11px]">
+                      Instantly applied terminal-wide and persisted in register local storage.
+                    </span>
                   </div>
                 </div>
 
-                {/* Storage & Persistence Details */}
-                <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between text-[11px] text-slate-400 px-1 gap-1">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    Theme choice automatically persisted in register local memory (key: sokopos_dark_mode_v2)
-                  </span>
-                  <span className="font-semibold text-slate-500">Instant application-wide switch</span>
-                </div>
-
-                {/* ========================================================= */}
-                {/* RETAIL DOMAIN ACCENT PALETTES SELECTOR */}
-                {/* ========================================================= */}
-                <div id="retail-domain-palettes-section" className="mt-8 pt-6 border-t border-slate-200">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-                          <Palette className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                            <span>Retail Domain Accent Palettes</span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-bold uppercase tracking-wider">
-                              Trade Styling
-                            </span>
-                          </h3>
-                          <p className="text-xs text-slate-500 mt-0.5">
-                            Tailor your terminal's accent colors to your specific trade environment — from fresh organic greens to warm bakery ambers and high-visibility industrial graphite.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-center">
-                      <span className="text-[11px] text-slate-500">Active Trade Palette:</span>
-                      <span className="px-2.5 py-1 text-xs font-bold rounded-md bg-slate-900 text-white flex items-center gap-1.5 shadow-xs">
+                {/* Retail Domain Accent Palettes */}
+                <div id="retail-domain-palettes-section" className="pt-6 border-t border-slate-200 dark:border-slate-800 space-y-5">
+                  <SettingsSectionHeader
+                    title="Retail Domain Accent Palettes"
+                    description="Tailor terminal accent colors to match your trade environment."
+                    meta={
+                      <span className="inline-flex items-center gap-1.5">
                         <span
                           className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
                           style={{
@@ -2355,12 +2463,13 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                               RETAIL_THEMES.find((t) => t.id === retailTheme)?.primaryColor || '#2563eb',
                           }}
                         />
-                        <span>{RETAIL_THEMES.find((t) => t.id === retailTheme)?.name.split(' (')[0] || 'Enterprise Classic'}</span>
+                        <span>
+                          Active: {RETAIL_THEMES.find((t) => t.id === retailTheme)?.name.split(' (')[0] || 'Classic'}
+                        </span>
                       </span>
-                    </div>
-                  </div>
+                    }
+                  />
 
-                  {/* 5 Retail Theme Cards */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
                     {RETAIL_THEMES.map((theme) => {
                       const isSelected = retailTheme === theme.id;
@@ -2368,19 +2477,23 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                         <div
                           key={theme.id}
                           id={`retail-palette-card-${theme.id}`}
-                          onClick={() => setRetailTheme(theme.id)}
-                          className={`group relative p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between hover:shadow-md ${
+                          onClick={() => {
+                            if (theme.id !== 'classic' && !requireCapability('customReceiptBranding')) {
+                              return;
+                            }
+                            setRetailTheme(theme.id);
+                          }}
+                          className={`group p-4 rounded-xl border transition cursor-pointer flex flex-col justify-between ${
                             isSelected
-                              ? 'border-blue-600 bg-white ring-2 ring-blue-500/20 shadow-sm'
-                              : 'border-slate-200 bg-slate-50/60 hover:border-slate-300 hover:bg-white'
+                              ? 'border-blue-600 dark:border-blue-500 bg-blue-50/20 dark:bg-blue-950/20'
+                              : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
                           }`}
                         >
                           <div>
-                            {/* Card Top: Header & Active Indicator */}
                             <div className="flex items-start justify-between gap-2 mb-2">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
                                 <div
-                                  className="w-7 h-7 rounded-lg flex items-center justify-center text-white shadow-xs shrink-0"
+                                  className="w-7 h-7 rounded-lg flex items-center justify-center text-white shrink-0"
                                   style={{ background: theme.swatchGradient }}
                                 >
                                   {theme.id === 'emerald' && <Leaf className="w-3.5 h-3.5" />}
@@ -2389,120 +2502,66 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                                   {theme.id === 'industrial' && <Wrench className="w-3.5 h-3.5" />}
                                   {theme.id === 'classic' && <Building2 className="w-3.5 h-3.5" />}
                                 </div>
-                                <div>
-                                  <h4 className="text-xs font-bold text-slate-900 leading-tight">
+                                <div className="min-w-0">
+                                  <h4 className="text-xs font-semibold text-slate-900 dark:text-slate-100 leading-tight truncate">
                                     {theme.name}
                                   </h4>
-                                  <p className="text-[10px] text-slate-500 font-medium">
+                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                                     {theme.subtitle}
                                   </p>
                                 </div>
                               </div>
 
-                              {isSelected ? (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-black bg-blue-600 text-white px-2 py-0.5 rounded-full shrink-0 shadow-xs">
-                                  <Check className="w-2.5 h-2.5 stroke-[3]" />
-                                  Active
-                                </span>
-                              ) : (
-                                <span className="text-[10px] font-semibold text-slate-400 group-hover:text-slate-600 transition shrink-0">
-                                  Select
-                                </span>
+                              {isSelected && (
+                                <Check className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
                               )}
                             </div>
 
-                            {/* Trade & Domain Description */}
-                            <p className="text-[11px] text-slate-600 leading-relaxed mb-3">
+                            <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed mb-3">
                               {theme.description}
                             </p>
 
-                            {/* Trade Target Chips */}
-                            <div className="flex flex-wrap gap-1 mb-3">
-                              {theme.tags.map((tag) => (
-                                <span
-                                  key={tag}
-                                  className="text-[9px] px-1.5 py-0.5 rounded font-medium bg-slate-100 text-slate-600 border border-slate-200/70"
-                                >
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
-
-                            {/* Color Swatch Demonstration */}
-                            <div className="p-2.5 rounded-lg bg-white border border-slate-200/80 mb-3 space-y-1.5">
-                              <div className="flex items-center justify-between text-[10px] text-slate-500">
-                                <span className="font-semibold">Palette Swatches:</span>
-                                <span className="font-mono text-[9px]">{theme.primaryColor}</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className="w-5 h-5 rounded-full border border-black/10 shadow-xs shrink-0"
-                                  style={{ backgroundColor: theme.primaryColor }}
-                                  title={`Primary: ${theme.primaryColor}`}
-                                />
-                                <div
-                                  className="w-5 h-5 rounded-full border border-black/10 shadow-xs shrink-0"
-                                  style={{ backgroundColor: theme.accentColor }}
-                                  title={`Accent: ${theme.accentColor}`}
-                                />
-                                <div
-                                  className="w-5 h-5 rounded-full border border-black/10 shadow-xs shrink-0"
-                                  style={{ backgroundColor: theme.highlightColor }}
-                                  title={`Highlight: ${theme.highlightColor}`}
-                                />
-                                <div
-                                  className="flex-1 h-5 rounded-md border border-slate-200 flex items-center justify-center text-[9px] font-bold text-slate-700"
-                                  style={{ backgroundColor: theme.lightBg }}
-                                >
-                                  Surface Tint
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Live Interactive UI Element Sample */}
-                            <div className="p-2 rounded-lg bg-slate-100/80 border border-slate-200 text-[10px] flex items-center justify-between">
-                              <div className="flex items-center gap-1.5 font-bold text-slate-700">
-                                <span>Cart Item</span>
-                                <span
-                                  className="px-1.5 py-0.2 rounded font-black text-[9px]"
-                                  style={{
-                                    backgroundColor: theme.lightBg,
-                                    color: theme.primaryColor,
-                                    border: `1px solid ${theme.lightBorder}`,
-                                  }}
-                                >
-                                  KES 750
-                                </span>
-                              </div>
-                              <span
-                                className="px-2 py-0.5 rounded text-[10px] font-bold text-white shadow-xs"
+                            <div className="flex items-center gap-2 py-2 border-y border-slate-100 dark:border-slate-800 mb-3">
+                              <div
+                                className="w-4 h-4 rounded-full border border-black/10 shrink-0"
                                 style={{ backgroundColor: theme.primaryColor }}
-                              >
-                                Charge
+                                title={`Primary: ${theme.primaryColor}`}
+                              />
+                              <div
+                                className="w-4 h-4 rounded-full border border-black/10 shrink-0"
+                                style={{ backgroundColor: theme.accentColor }}
+                                title={`Accent: ${theme.accentColor}`}
+                              />
+                              <div
+                                className="w-4 h-4 rounded-full border border-black/10 shrink-0"
+                                style={{ backgroundColor: theme.highlightColor }}
+                                title={`Highlight: ${theme.highlightColor}`}
+                              />
+                              <span className="ml-auto font-mono text-[10px] text-slate-400 dark:text-slate-500">
+                                {theme.primaryColor}
                               </span>
                             </div>
                           </div>
 
-                          {/* Action Button */}
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               setRetailTheme(theme.id);
                             }}
-                            className={`mt-3 w-full py-1.5 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                            className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-medium transition flex items-center justify-center gap-1.5 cursor-pointer ${
                               isSelected
-                                ? 'bg-slate-900 text-white cursor-default'
-                                : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                                ? 'bg-slate-900 dark:bg-slate-800 text-white'
+                                : 'bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
                             }`}
                           >
                             {isSelected ? (
                               <>
                                 <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                <span>Currently Active Palette</span>
+                                <span>Active Palette</span>
                               </>
                             ) : (
-                              <span>Apply {theme.name.split(' ')[0]} Palette</span>
+                              <span>Apply {theme.name.split(' ')[0]}</span>
                             )}
                           </button>
                         </div>
@@ -2511,38 +2570,34 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                   </div>
 
                   {/* Live POS Terminal Component Preview Strip */}
-                  <div className="mt-5 p-4 rounded-xl bg-slate-900 text-white border border-slate-800">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                  <div className="p-4 rounded-xl bg-slate-900 dark:bg-slate-950 text-white border border-slate-800 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <Monitor className="w-4 h-4 text-blue-400" />
-                        <h4 className="text-xs font-bold text-white tracking-wide uppercase">
-                          Active Terminal Accent Preview
-                        </h4>
+                        <h4 className="text-xs font-semibold text-white">Active Terminal Accent Preview</h4>
                       </div>
                       <span className="text-[11px] text-slate-400">
-                        Live visual preview of cashier buttons, badges, and focus rings
+                        Live preview of cashier buttons, category tabs, and scan focus rings
                       </span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                      {/* Register Checkout Action Button */}
-                      <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+                      <div className="p-2.5 rounded-lg bg-slate-950 dark:bg-slate-900 border border-slate-800">
                         <div className="text-[10px] text-slate-400 mb-1.5">Primary Register Action</div>
                         <button
                           type="button"
-                          className="w-full py-2 px-3 rounded-lg text-xs font-bold bg-blue-600 text-white shadow-sm flex items-center justify-center gap-1.5"
+                          className="w-full py-1.5 px-3 rounded-lg text-xs font-semibold bg-blue-600 text-white flex items-center justify-center gap-1.5 tabular-nums"
                         >
                           <Receipt className="w-3.5 h-3.5" />
                           <span>Charge KES 1,840.00</span>
                         </button>
                       </div>
 
-                      {/* Active Filter / Category Tab */}
-                      <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+                      <div className="p-2.5 rounded-lg bg-slate-950 dark:bg-slate-900 border border-slate-800">
                         <div className="text-[10px] text-slate-400 mb-1.5">Active Category Tab</div>
                         <div className="flex gap-1.5">
-                          <span className="flex-1 text-center py-1.5 px-2 rounded-md text-xs font-bold bg-blue-600 text-white">
-                            Selected Tab
+                          <span className="flex-1 text-center py-1.5 px-2 rounded-md text-xs font-semibold bg-blue-600 text-white">
+                            Selected
                           </span>
                           <span className="flex-1 text-center py-1.5 px-2 rounded-md text-xs font-medium bg-slate-800 text-slate-400">
                             Inactive
@@ -2550,35 +2605,31 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                         </div>
                       </div>
 
-                      {/* Product Price Tag Badge */}
-                      <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
-                        <div className="text-[10px] text-slate-400 mb-1.5">Counter Price Badge</div>
-                        <div className="flex items-center justify-between p-1.5 rounded-md bg-slate-900 border border-slate-800">
-                          <span className="text-xs font-medium text-slate-300">Fresh Produce</span>
-                          <span className="text-xs font-black text-blue-400">KES 420.00</span>
+                      <div className="p-2.5 rounded-lg bg-slate-950 dark:bg-slate-900 border border-slate-800">
+                        <div className="text-[10px] text-slate-400 mb-1.5">Counter Price Label</div>
+                        <div className="flex items-center justify-between p-1.5 rounded-md bg-slate-900 dark:bg-slate-950 border border-slate-800">
+                          <span className="text-xs text-slate-300">Fresh Produce</span>
+                          <span className="text-xs font-semibold text-blue-400 tabular-nums">KES 420.00</span>
                         </div>
                       </div>
 
-                      {/* Focus Ring & Input Highlight */}
-                      <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+                      <div className="p-2.5 rounded-lg bg-slate-950 dark:bg-slate-900 border border-slate-800">
                         <div className="text-[10px] text-slate-400 mb-1.5">Barcode Scan Field</div>
-                        <div className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-slate-900 border border-blue-500 ring-2 ring-blue-500/40 text-xs text-white">
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                          <span className="font-mono text-[11px] text-slate-200">600123456789</span>
+                        <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-slate-900 dark:bg-slate-950 border border-blue-500 ring-2 ring-blue-500/30 text-xs text-white">
+                          <span className="font-mono text-[11px] text-slate-200 tabular-nums">600123456789</span>
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Persistence & Cloud Sync Footer Note */}
-                  <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between text-[11px] text-slate-500 px-1 gap-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
                     <span className="flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span>Saved to business profile ({currentBusiness?.name || 'Current Business'}) and synced with Cloud Firestore</span>
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span>
+                        Synced with Cloud Firestore for {currentBusiness?.name || 'Current Business'}
+                      </span>
                     </span>
-                    <span className="text-slate-400 font-mono text-[10px]">
-                      tenantKey: {activeBusinessId}
-                    </span>
+                    <span className="font-mono text-[11px]">tenantKey: {activeBusinessId}</span>
                   </div>
                 </div>
               </div>
@@ -2589,111 +2640,89 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
           {/* TAB: HARDWARE & RECEIPT PRINTING PREFERENCES */}
           {/* ========================================================= */}
           {activeTab === 'hardware' && (
-            <div className="space-y-6 max-w-3xl mx-auto">
-              {/* Header Card */}
-              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border border-blue-200 flex items-center justify-center">
-                      <Printer className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-black text-slate-900">
-                        Printing & Hardware Preferences
-                      </h3>
-                      <p className="text-xs text-slate-500">
-                        Configure automatic thermal receipt printing, paper sizing, and checkout dispatch.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                      Tenant: {currentBusiness?.name || 'Current Shop'}
-                    </span>
-                    <span
-                      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
-                        autoPrintReceipt
-                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                          : 'bg-slate-100 text-slate-700 border border-slate-200'
-                      }`}
-                    >
+            <div className="space-y-6 max-w-4xl mx-auto">
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-6">
+                <SettingsSectionHeader
+                  title="Printing & Hardware Preferences"
+                  description="Configure automatic thermal receipt printing, Bluetooth pairing, and paper dimensions."
+                  meta={
+                    <>
+                      <span>Tenant: {currentBusiness?.name || 'Current Shop'}</span>
+                      <span>·</span>
                       <span
-                        className={`w-2 h-2 rounded-full ${
-                          autoPrintReceipt ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
-                        }`}
-                      />
-                      {autoPrintReceipt ? 'Auto-Print Active' : 'Manual Print Mode'}
-                    </span>
-                  </div>
-                </div>
+                        className={
+                          autoPrintReceipt
+                            ? 'text-emerald-700 dark:text-emerald-400 font-medium'
+                            : 'text-slate-500 dark:text-slate-400'
+                        }
+                      >
+                        {autoPrintReceipt ? 'Auto-Print Active' : 'Manual Print Mode'}
+                      </span>
+                    </>
+                  }
+                />
 
-                {/* Primary Feature Setting: Auto-Print on Checkout */}
-                <div className="mt-5 p-4 sm:p-5 rounded-xl bg-slate-50 border border-slate-200">
+                {/* Auto-Print on Checkout */}
+                <div className="p-4 sm:p-5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <h4 className="text-sm font-bold text-slate-900">
+                        <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                           Auto-Print on Checkout
                         </h4>
-                        <span className="text-[10px] px-2 py-0.5 rounded-md font-extrabold bg-blue-100 text-blue-800">
+                        <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">
                           Recommended
                         </span>
                       </div>
-                      <p className="text-xs text-slate-600 max-w-lg">
-                        Automatically invokes the browser's native print dialog for the receipt immediately once a transaction is successfully authorized, eliminating the need to click &quot;Print&quot; manually.
+                      <p className="text-xs text-slate-600 dark:text-slate-400 max-w-xl">
+                        Automatically invokes receipt printing immediately once a transaction is authorized, skipping manual print prompts.
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-3 shrink-0">
-                      <button
-                        id="settings-auto-print-switch"
-                        type="button"
-                        role="switch"
-                        aria-checked={autoPrintReceipt}
-                        onClick={toggleAutoPrintReceipt}
-                        className={`relative inline-flex h-6 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                          autoPrintReceipt ? 'bg-emerald-600' : 'bg-slate-300'
+                    <button
+                      id="settings-auto-print-switch"
+                      type="button"
+                      role="switch"
+                      aria-checked={autoPrintReceipt}
+                      onClick={toggleAutoPrintReceipt}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                        autoPrintReceipt ? 'bg-emerald-600' : 'bg-slate-300 dark:bg-slate-700'
+                      }`}
+                      title={autoPrintReceipt ? 'Disable Auto-Print' : 'Enable Auto-Print'}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                          autoPrintReceipt ? 'translate-x-5' : 'translate-x-0'
                         }`}
-                        title={autoPrintReceipt ? 'Disable Auto-Print' : 'Enable Auto-Print'}
-                      >
-                        <span
-                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                            autoPrintReceipt ? 'translate-x-6' : 'translate-x-0'
-                          }`}
-                        />
-                      </button>
-                    </div>
+                      />
+                    </button>
                   </div>
 
-                  {/* Flow Diagram */}
-                  <div className="mt-4 pt-3 border-t border-slate-200/80 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-                    <span className="font-semibold text-slate-700">Checkout Dispatch Sequence:</span>
-                    <span className="px-2 py-0.5 rounded bg-white border border-slate-200 font-mono text-slate-700">
-                      1. Confirm Tender
-                    </span>
+                  <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <span className="font-medium text-slate-700 dark:text-slate-300">Dispatch Flow:</span>
+                    <span className="font-mono text-slate-700 dark:text-slate-300">1. Confirm Tender</span>
                     <span>→</span>
-                    <span className="px-2 py-0.5 rounded bg-white border border-slate-200 font-mono text-slate-700">
-                      2. Authorize Sale
-                    </span>
+                    <span className="font-mono text-slate-700 dark:text-slate-300">2. Authorize Sale</span>
                     <span>→</span>
-                    <span className={`px-2 py-0.5 rounded border font-mono font-bold ${
-                      autoPrintReceipt
-                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                        : 'bg-slate-100 border-slate-200 text-slate-600'
-                    }`}>
-                      3. {autoPrintReceipt ? 'Browser Print Dialog Opens Automatically' : 'Receipt Modal Displays (Manual Print)'}
+                    <span
+                      className={`font-mono font-medium ${
+                        autoPrintReceipt
+                          ? 'text-emerald-700 dark:text-emerald-400'
+                          : 'text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      3. {autoPrintReceipt ? 'Print Dialog Opens Automatically' : 'Receipt Modal (Manual Print)'}
                     </span>
                   </div>
                 </div>
 
-                {/* Printer Connection Architecture Selection */}
-                <div className="mt-6 space-y-3">
+                {/* Printer Connection Architecture */}
+                <div className="space-y-3">
                   <div>
-                    <h4 className="text-sm font-bold text-slate-900">
+                    <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                       Printer Connection Architecture
                     </h4>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
                       Choose how SokoPoS communicates with your receipt printer hardware.
                     </p>
                   </div>
@@ -2703,24 +2732,24 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                       onClick={() => setPrinterType('system')}
                       className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
                         printerType === 'system'
-                          ? 'border-blue-600 bg-blue-50/40 shadow-xs'
-                          : 'border-slate-200 bg-white hover:border-slate-300'
+                          ? 'border-blue-600 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-950/20'
+                          : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
                       }`}
                     >
                       <div>
                         <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-xs font-black text-slate-900">
+                          <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
                             System Print Dialog
                           </span>
                           {printerType === 'system' && (
-                            <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                            <CheckCircle2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                           )}
                         </div>
-                        <p className="text-[11px] text-slate-600">
-                          Standard browser flow. Works with all printers recognized by your device (AirPrint, Mopria, PDF).
+                        <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                          Standard browser flow. Works with all OS-configured printers (AirPrint, Mopria, USB, PDF).
                         </p>
                       </div>
-                      <span className="mt-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                      <span className="mt-3 text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
                         Universal Compatibility
                       </span>
                     </div>
@@ -2729,42 +2758,42 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                       onClick={() => setPrinterType('bluetooth')}
                       className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
                         printerType === 'bluetooth'
-                          ? 'border-blue-600 bg-blue-50/40 shadow-xs'
-                          : 'border-slate-200 bg-white hover:border-slate-300'
+                          ? 'border-blue-600 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-950/20'
+                          : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
                       }`}
                     >
                       <div>
                         <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-xs font-black text-slate-900">
+                          <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
                             Direct Bluetooth (ESC/POS)
                           </span>
                           {printerType === 'bluetooth' && (
-                            <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                            <CheckCircle2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                           )}
                         </div>
-                        <p className="text-[11px] text-slate-600">
-                          Direct communication with mini thermal printers. Faster, silent, and works without driver apps.
+                        <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                          Direct communication with mini thermal printers without intermediate driver apps.
                         </p>
                       </div>
-                      <span className="mt-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                      <span className="mt-3 text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
                         Recommended for Mobile POS
                       </span>
                     </div>
                   </div>
                 </div>
 
-                {/* Direct Bluetooth Printer Pairing UI */}
+                {/* Conditional Direct Bluetooth Pairing */}
                 {printerType === 'bluetooth' && (
-                  <div className="mt-5 p-4 sm:p-5 rounded-xl bg-blue-50/30 border border-blue-200 animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <div className="space-y-1">
+                  <div className="p-4 sm:p-5 rounded-xl bg-blue-50/40 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/60 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="space-y-0.5">
                         <div className="flex items-center gap-2">
-                          <Bluetooth className="w-4 h-4 text-blue-600" />
-                          <h4 className="text-sm font-bold text-slate-900">
+                          <Bluetooth className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                          <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                             Bluetooth Printer Pairing
                           </h4>
                         </div>
-                        <p className="text-xs text-slate-600">
+                        <p className="text-xs text-slate-600 dark:text-slate-400">
                           Connect your handheld 58mm or 80mm Bluetooth thermal printer.
                         </p>
                       </div>
@@ -2773,7 +2802,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                         type="button"
                         id="pair-bluetooth-printer-btn"
                         onClick={() => connectBluetoothPrinter()}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs shadow-sm transition cursor-pointer shrink-0"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-xs transition cursor-pointer shrink-0"
                       >
                         <Plus className="w-3.5 h-3.5" />
                         <span>{bluetoothPrinterId ? 'Change Printer' : 'Pair New Printer'}</span>
@@ -2781,21 +2810,24 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                     </div>
 
                     {bluetoothPrinterName && (
-                      <div className="mt-3 flex items-center justify-between p-3 bg-white rounded-lg border border-blue-100 shadow-xs">
+                      <div className="flex items-center justify-between p-3 bg-white dark:bg-slate-900 rounded-lg border border-blue-200/70 dark:border-slate-700">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center">
+                          <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
                             <Printer className="w-4 h-4" />
                           </div>
                           <div>
-                            <div className="text-xs font-bold text-slate-900">{bluetoothPrinterName}</div>
-                            <div className="text-[10px] text-slate-500 font-mono uppercase tracking-tight">
-                              Active Pairing • {receiptFormat === '58mm' ? '32 Columns' : '48 Columns'}
+                            <div className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                              {bluetoothPrinterName}
+                            </div>
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                              Active Pairing · {receiptFormat === '58mm' ? '32 Columns' : '48 Columns'}
                             </div>
                           </div>
                         </div>
                         <button
+                          type="button"
                           onClick={() => setBluetoothPrinter(null, null)}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 transition"
+                          className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition cursor-pointer"
                           title="Unpair Printer"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -2805,109 +2837,106 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                   </div>
                 )}
 
-                {/* Thermal Receipt Paper Sizing Preference */}
-                <div className="mt-6 space-y-3">
+                {/* Receipt Paper Format & Thermal Width */}
+                <div className="space-y-3">
                   <div>
-                    <h4 className="text-sm font-bold text-slate-900">
+                    <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                       Receipt Paper Format & Thermal Width
                     </h4>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
                       Select the paper roll specification matching your countertop receipt printer hardware.
                     </p>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {/* 80mm Standard POS Thermal */}
                     <div
                       onClick={() => setReceiptFormat('80mm')}
                       className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
                         receiptFormat === '80mm'
-                          ? 'border-blue-600 bg-blue-50/40 shadow-xs'
-                          : 'border-slate-200 bg-white hover:border-slate-300'
+                          ? 'border-blue-600 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-950/20'
+                          : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
                       }`}
                     >
                       <div>
                         <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-xs font-black text-slate-900">
+                          <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
                             80mm Thermal (3&quot;)
                           </span>
                           {receiptFormat === '80mm' && (
-                            <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                            <CheckCircle2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                           )}
                         </div>
-                        <p className="text-[11px] text-slate-600">
+                        <p className="text-[11px] text-slate-600 dark:text-slate-400">
                           Standard commercial POS format (Epson TM-T88, Star Micronics, Rongta, Xprinter).
                         </p>
                       </div>
-                      <span className="mt-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                        Full Width • 48 Columns
+                      <span className="mt-3 text-[11px] font-medium text-slate-500 dark:text-slate-400 block tabular-nums">
+                        Full Width · 48 Columns
                       </span>
                     </div>
 
-                    {/* 58mm Compact Mobile Thermal */}
                     <div
                       onClick={() => setReceiptFormat('58mm')}
                       className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
                         receiptFormat === '58mm'
-                          ? 'border-blue-600 bg-blue-50/40 shadow-xs'
-                          : 'border-slate-200 bg-white hover:border-slate-300'
+                          ? 'border-blue-600 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-950/20'
+                          : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
                       }`}
                     >
                       <div>
                         <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-xs font-black text-slate-900">
+                          <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
                             58mm Mini (2&quot;)
                           </span>
                           {receiptFormat === '58mm' && (
-                            <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                            <CheckCircle2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                           )}
                         </div>
-                        <p className="text-[11px] text-slate-600">
+                        <p className="text-[11px] text-slate-600 dark:text-slate-400">
                           Compact handheld mobile Bluetooth and portable thermal belt clip printers.
                         </p>
                       </div>
-                      <span className="mt-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                        Narrow Slip • 32 Columns
+                      <span className="mt-3 text-[11px] font-medium text-slate-500 dark:text-slate-400 block tabular-nums">
+                        Narrow Slip · 32 Columns
                       </span>
                     </div>
 
-                    {/* Standard A4 / Document */}
                     <div
                       onClick={() => setReceiptFormat('standard')}
                       className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
                         receiptFormat === 'standard'
-                          ? 'border-blue-600 bg-blue-50/40 shadow-xs'
-                          : 'border-slate-200 bg-white hover:border-slate-300'
+                          ? 'border-blue-600 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-950/20'
+                          : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
                       }`}
                     >
                       <div>
                         <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-xs font-black text-slate-900">
+                          <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
                             Standard A4 / Letter
                           </span>
                           {receiptFormat === 'standard' && (
-                            <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                            <CheckCircle2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                           )}
                         </div>
-                        <p className="text-[11px] text-slate-600">
+                        <p className="text-[11px] text-slate-600 dark:text-slate-400">
                           Standard laser or inkjet full-page document invoices for B2B or trade counters.
                         </p>
                       </div>
-                      <span className="mt-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                        Page Invoice • PDF Export
+                      <span className="mt-3 text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
+                        Page Invoice · PDF Export
                       </span>
                     </div>
                   </div>
                 </div>
 
-                {/* Printer Diagnostics & Test Print */}
-                <div className="mt-6 pt-5 border-t border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                  <div className="space-y-0.5">
-                    <span className="text-xs font-bold text-slate-900 block">
+                {/* Test Print & Kiosk Note */}
+                <div className="pt-5 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <span className="text-xs font-semibold text-slate-900 dark:text-slate-100 block">
                       Hardware Connection Test
                     </span>
-                    <span className="text-[11px] text-slate-500 block">
-                      Verify that your browser can communicate with your printer and test page margins.
+                    <span className="text-xs text-slate-500 dark:text-slate-400 block">
+                      Verify browser printer communication and test receipt margins.
                     </span>
                   </div>
 
@@ -2918,286 +2947,220 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                       showToast('Invoking browser printer dialog for test slip...', 'info');
                       window.print();
                     }}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl font-bold text-xs transition cursor-pointer border border-slate-300"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg font-medium text-xs transition cursor-pointer border border-slate-200 dark:border-slate-700"
                   >
-                    <Printer className="w-4 h-4 text-slate-600" />
+                    <Printer className="w-3.5 h-3.5" />
                     <span>Test Browser Print Dialog</span>
                   </button>
                 </div>
 
-                {/* Commercial Silent Kiosk Printing Pro-Tip */}
-                <div className="mt-5 p-4 rounded-xl bg-amber-50/70 border border-amber-200/80">
-                  <h5 className="text-xs font-bold text-amber-900 flex items-center gap-1.5 mb-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Commercial Pro-Tip: 100% Silent Background Printing</span>
-                  </h5>
-                  <p className="text-[11px] text-amber-800 leading-relaxed">
-                    In enterprise POS registers, launch Google Chrome or Edge with the flag{' '}
-                    <code className="px-1.5 py-0.5 bg-white/90 rounded border border-amber-300 font-mono text-[10px] text-slate-800">
+                <div className="p-4 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/50 text-xs">
+                  <div className="font-semibold text-amber-900 dark:text-amber-300 mb-1">
+                    Silent Background Printing (Kiosk Flag)
+                  </div>
+                  <p className="text-amber-800 dark:text-amber-200/80 leading-relaxed">
+                    Launch Chrome or Edge with{' '}
+                    <code className="px-1.5 py-0.5 bg-white dark:bg-slate-900 rounded border border-amber-300 dark:border-amber-800 font-mono text-[11px] text-slate-800 dark:text-slate-200">
                       --kiosk-printing
-                    </code>
-                    . When combined with <strong>Auto-Print on Checkout</strong>, the thermal receipt prints instantly directly to your default ESC/POS printer with zero confirmation dialog popups required.
+                    </code>{' '}
+                    combined with Auto-Print on Checkout to send thermal receipts straight to your default ESC/POS printer without confirmation popups.
                   </p>
-                </div>
-
-                {/* Persistence Notice */}
-                <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-slate-500 px-1">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    Isolated per tenant: Applied strictly to <strong>{currentBusiness?.name}</strong> (ID: {currentBusiness?.id})
-                  </span>
-                  <span className="font-semibold text-slate-600">
-                    Tenant-Isolated & Cloud-Synced
-                  </span>
                 </div>
               </div>
             </div>
           )}
 
           {/* ========================================================= */}
-          {/* TAB: PAYSTACK SETTLEMENT SUBACCOUNT */}
+          {/* TAB 6: RESET STORE TO CLEAN ZERO */}
           {/* ========================================================= */}
-          {activeTab === 'settlement' && currentBusiness && (
-            <div className="max-w-3xl mx-auto">
-              <PaystackSubaccountPanel targetBusiness={currentBusiness} />
-            </div>
-          )}
+          {activeTab === 'reset' &&
+            (() => {
+              const authStatus = canResetStore(currentBusiness?.id || '');
+              const tenantTxs = (transactions || []).filter((tx) => tx.businessId === currentBusiness?.id);
+              const totalGross = tenantTxs.reduce((sum, tx) => sum + (tx.total || 0), 0);
+              const totalRefunded = tenantTxs.reduce((sum, tx) => sum + (tx.totalRefunded || 0), 0);
+              const totalNet = totalGross - totalRefunded;
+              const tenantBackups = (storeSalesBackups || []).filter((b) => b.businessId === currentBusiness?.id);
 
-          {/* ========================================================= */}
-          {/* TAB 6: RESET STORE TO CLEAN ZERO (CLEAR TEST SALES) */}
-          {/* ========================================================= */}
-          {activeTab === 'reset' && (() => {
-            const authStatus = canResetStore(currentBusiness?.id || '');
-            const tenantTxs = (transactions || []).filter((tx) => tx.businessId === currentBusiness?.id);
-            const totalGross = tenantTxs.reduce((sum, tx) => sum + (tx.total || 0), 0);
-            const totalRefunded = tenantTxs.reduce((sum, tx) => sum + (tx.totalRefunded || 0), 0);
-            const totalNet = totalGross - totalRefunded;
-            const tenantBackups = (storeSalesBackups || []).filter((b) => b.businessId === currentBusiness?.id);
-
-            return (
-              <div className="space-y-6 max-w-3xl mx-auto">
-                {/* Authorization Barrier */}
-                {!authStatus.allowed ? (
-                  <div className="bg-white rounded-xl border border-rose-200 p-8 shadow-sm text-center space-y-4">
-                    <div className="w-14 h-14 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
-                      <ShieldAlert className="w-8 h-8" />
-                    </div>
-                    <div className="space-y-1">
-                      <h3 className="text-lg font-black text-slate-900">
-                        Restricted Access: Store Owner or Super-Admin Only
-                      </h3>
-                      <p className="text-sm text-slate-600 max-w-md mx-auto">
-                        {authStatus.reason ||
-                          'Resetting store sales to clean zero is restricted to the verified Business Owner or a Platform Super-Admin.'}
-                      </p>
-                    </div>
-                    <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 text-xs text-slate-600 font-mono">
-                      <span>Logged in as: {currentUser?.name} ({currentUser?.email})</span>
-                      <span>•</span>
-                      <span>Role: {currentUser?.role}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    {/* Header Card */}
-                    <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center">
-                            <RotateCcw className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <h3 className="text-base font-black text-slate-900">
-                              Store Go-Live & Test Sales Reset
-                            </h3>
-                            <p className="text-xs text-slate-500">
-                              Prepare {currentBusiness?.name} for official retail trading by permanently clearing test sales.
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
-                            tenantTxs.length === 0
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              : 'bg-amber-100 text-amber-800 border border-amber-200'
-                          }`}>
-                            <span className={`w-2 h-2 rounded-full ${
-                              tenantTxs.length === 0 ? 'bg-emerald-600' : 'bg-amber-600'
-                            }`} />
-                            {tenantTxs.length === 0 ? 'Store Clean Zero' : `${tenantTxs.length} Test Sales`}
-                          </span>
-                        </div>
+              return (
+                <div className="space-y-6 max-w-4xl mx-auto">
+                  {!authStatus.allowed ? (
+                    <div className="bg-white dark:bg-slate-900 rounded-xl border border-rose-200 dark:border-rose-900/60 p-8 text-center space-y-4">
+                      <div className="w-12 h-12 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto border border-rose-200 dark:border-rose-900/60">
+                        <ShieldAlert className="w-6 h-6" />
                       </div>
-
-                      {/* Store Sales Status Metrics */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 my-5">
-                        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-center">
-                          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                            Test Transactions
-                          </div>
-                          <div className="text-2xl font-black text-slate-800 mt-1">
-                            {tenantTxs.length}
-                          </div>
-                          <div className="text-[10px] text-slate-400">Recorded orders</div>
-                        </div>
-
-                        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-center">
-                          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                            Gross Sales Volume
-                          </div>
-                          <div className="text-xl font-black text-slate-800 mt-1 truncate">
-                            {currentBusiness?.currency || 'KES'} {totalGross.toLocaleString()}
-                          </div>
-                          <div className="text-[10px] text-slate-400">Total transaction amount</div>
-                        </div>
-
-                        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-center">
-                          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                            Net Sales Impact
-                          </div>
-                          <div className="text-xl font-black text-slate-800 mt-1 truncate">
-                            {currentBusiness?.currency || 'KES'} {totalNet.toLocaleString()}
-                          </div>
-                          <div className="text-[10px] text-slate-400">Revenue to zero</div>
-                        </div>
-                      </div>
-
-                      {/* What is Safe & Preserved */}
-                      <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 space-y-2">
-                        <div className="flex items-center gap-2 text-xs font-black text-emerald-900">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          <span>Guaranteed Safe: Only sales records are wiped</span>
-                        </div>
-                        <p className="text-xs text-emerald-800 leading-relaxed">
-                          Your SKU product catalog, inventory stock counts across all branches, barcode registers,
-                          cashier logins, and business tax configurations are completely preserved and untouched.
+                      <div className="space-y-1">
+                        <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                          Restricted Access: Store Owner or Super-Admin Only
+                        </h3>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
+                          {authStatus.reason ||
+                            'Resetting store sales to clean zero is restricted to the verified Business Owner or a Platform Super-Admin.'}
                         </p>
                       </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 font-mono">
+                        {currentUser?.name} ({currentUser?.email}) · Role: {currentUser?.role}
+                      </div>
                     </div>
+                  ) : (
+                    <>
+                      {/* Store Go-Live Metrics */}
+                      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-5">
+                        <SettingsSectionHeader
+                          title="Store Go-Live & Test Sales Reset"
+                          description={`Prepare ${currentBusiness?.name || 'this store'} for official trading by clearing test transactions.`}
+                          meta={
+                            <span
+                              className={
+                                tenantTxs.length === 0
+                                  ? 'text-emerald-700 dark:text-emerald-400 font-medium'
+                                  : 'text-amber-700 dark:text-amber-400 font-medium'
+                              }
+                            >
+                              {tenantTxs.length === 0 ? 'Clean Zero' : `${tenantTxs.length} Test Sales`}
+                            </span>
+                          }
+                        />
 
-                    {/* Destructive Action Trigger Card */}
-                    <div className="bg-white rounded-xl border-2 border-rose-200 p-6 shadow-sm space-y-4">
-                      <div className="flex items-start gap-3.5">
-                        <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 mt-0.5">
-                          <Trash2 className="w-5 h-5" />
+                        <div className="grid grid-cols-1 sm:grid-cols-3 border border-slate-200 dark:border-slate-800 rounded-xl divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800">
+                          <div className="p-4">
+                            <div className="text-xs text-slate-500 dark:text-slate-400">Test Transactions</div>
+                            <div className="text-xl font-semibold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
+                              {tenantTxs.length}
+                            </div>
+                            <div className="text-[11px] text-slate-400 dark:text-slate-500">Recorded orders</div>
+                          </div>
+
+                          <div className="p-4">
+                            <div className="text-xs text-slate-500 dark:text-slate-400">Gross Sales Volume</div>
+                            <div className="text-xl font-semibold text-slate-900 dark:text-slate-100 mt-1 truncate tabular-nums">
+                              {currentBusiness?.currency || 'KES'} {totalGross.toLocaleString()}
+                            </div>
+                            <div className="text-[11px] text-slate-400 dark:text-slate-500">Total transaction value</div>
+                          </div>
+
+                          <div className="p-4">
+                            <div className="text-xs text-slate-500 dark:text-slate-400">Net Sales Impact</div>
+                            <div className="text-xl font-semibold text-slate-900 dark:text-slate-100 mt-1 truncate tabular-nums">
+                              {currentBusiness?.currency || 'KES'} {totalNet.toLocaleString()}
+                            </div>
+                            <div className="text-[11px] text-slate-400 dark:text-slate-500">Revenue to zero</div>
+                          </div>
                         </div>
-                        <div className="space-y-1">
-                          <h4 className="text-sm font-black text-rose-950">
-                            Reset Store to Clean Zero (Clear Test Sales)
-                          </h4>
-                          <p className="text-xs text-slate-600 leading-relaxed">
-                            This action clears all {tenantTxs.length} transaction records for <strong>{currentBusiness?.name}</strong>.
-                            Before wiping, the system automatically creates a timestamped JSON backup archive.
-                            Requires type-to-confirm verification.
+
+                        <div className="p-4 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/60 space-y-1">
+                          <div className="flex items-center gap-2 text-xs font-semibold text-emerald-900 dark:text-emerald-300">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            <span>Preserved Data: Only sales records are cleared</span>
+                          </div>
+                          <p className="text-xs text-emerald-800 dark:text-emerald-200/80 leading-relaxed">
+                            Your product catalog, branch inventory stock counts, barcode registers, staff logins, and tax rules remain completely intact.
                           </p>
                         </div>
                       </div>
 
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-100">
-                        <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
-                          <ShieldCheck className="w-4 h-4 text-blue-600" />
-                          <span>Secured by type-to-confirm, soft-delete archive & audit log</span>
+                      {/* Destructive Action Trigger Card */}
+                      <div className="bg-white dark:bg-slate-900 rounded-xl border border-rose-300 dark:border-rose-900/70 p-6 space-y-4">
+                        <div className="flex items-start gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60 flex items-center justify-center shrink-0">
+                            <Trash2 className="w-4 h-4" />
+                          </div>
+                          <div className="space-y-1">
+                            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                              Reset Store to Clean Zero (Clear Test Sales)
+                            </h4>
+                            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                              Clears all {tenantTxs.length} transaction records for{' '}
+                              <strong className="text-slate-900 dark:text-slate-100">{currentBusiness?.name}</strong> after creating an automatic JSON archive. Requires type-to-confirm verification.
+                            </p>
+                          </div>
                         </div>
-                        <button
-                          id="open-reset-store-modal-btn"
-                          onClick={() => setIsResetStoreModalOpen(true)}
-                          disabled={tenantTxs.length === 0}
-                          className={`flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm text-white shadow-sm transition cursor-pointer ${
-                            tenantTxs.length > 0
-                              ? 'bg-rose-600 hover:bg-rose-700 active:scale-[0.98]'
-                              : 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                          }`}
-                        >
-                          <RotateCcw className="w-4 h-4" />
-                          <span>{tenantTxs.length === 0 ? 'Store Already at Clean Zero' : 'Reset Store to Clean Zero'}</span>
-                        </button>
-                      </div>
-                    </div>
 
-                    {/* Previous Pre-Purge Backups Archive */}
-                    <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
-                      <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                        <div className="flex items-center gap-2">
-                          <Archive className="w-4 h-4 text-blue-600" />
-                          <h4 className="text-sm font-bold text-slate-900">
-                            Pre-Purge Backup Archive History
-                          </h4>
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                          <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                            <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                            <span>Secured by type-to-confirm, automatic backup &amp; audit log</span>
+                          </div>
+                          <button
+                            id="open-reset-store-modal-btn"
+                            type="button"
+                            onClick={() => setIsResetStoreModalOpen(true)}
+                            disabled={tenantTxs.length === 0}
+                            className={`inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-semibold text-xs transition ${
+                              tenantTxs.length > 0
+                                ? 'bg-rose-600 hover:bg-rose-700 text-white cursor-pointer'
+                                : 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-500 cursor-not-allowed'
+                            }`}
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>{tenantTxs.length === 0 ? 'Store Already at Clean Zero' : 'Reset Store to Clean Zero'}</span>
+                          </button>
                         </div>
-                        <span className="text-xs font-semibold text-slate-500">
-                          {tenantBackups.length} archived snapshots
-                        </span>
                       </div>
 
-                      {tenantBackups.length === 0 ? (
-                        <div className="text-center py-6 text-xs text-slate-500">
-                          <History className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                          No previous sales reset backups on record for this store.
-                        </div>
-                      ) : (
-                        <div className="divide-y divide-slate-100">
-                          {tenantBackups.map((b) => (
-                            <div
-                              key={b.id}
-                              className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
-                            >
-                              <div className="space-y-0.5">
-                                <div className="font-bold text-slate-800 flex items-center gap-2">
-                                  <span>{new Date(b.createdAt).toLocaleDateString()} at {new Date(b.createdAt).toLocaleTimeString()}</span>
-                                  <span className="font-mono text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
-                                    {b.id}
-                                  </span>
-                                </div>
-                                <div className="text-slate-500">
-                                  {b.transactionCount} transactions • {b.currency} {b.grossSales.toLocaleString()} gross • Purged by {b.purgedByName} ({b.purgedByRole})
-                                </div>
-                              </div>
-                              <button
-                                id={`download-backup-${b.id}`}
-                                onClick={() => downloadSalesBackup(b.id)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-xs border border-blue-200 transition cursor-pointer self-start sm:self-auto"
+                      {/* Pre-Purge Backup Archive History */}
+                      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+                        <SettingsSectionHeader
+                          title="Pre-Purge Backup Archive History"
+                          meta={<span>{tenantBackups.length} archived snapshots</span>}
+                        />
+
+                        {tenantBackups.length === 0 ? (
+                          <div className="text-center py-6 text-xs text-slate-500 dark:text-slate-400 space-y-2">
+                            <History className="w-7 h-7 text-slate-300 dark:text-slate-600 mx-auto" />
+                            <div>No previous sales reset backups on record for this store.</div>
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                            {tenantBackups.map((b) => (
+                              <div
+                                key={b.id}
+                                className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
                               >
-                                <Download className="w-3.5 h-3.5" />
-                                <span>Download JSON</span>
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-            );
-          })()}
+                                <div className="space-y-0.5">
+                                  <div className="font-semibold text-slate-800 dark:text-slate-200 flex flex-wrap items-center gap-2">
+                                    <span className="tabular-nums">
+                                      {new Date(b.createdAt).toLocaleDateString()} at{' '}
+                                      {new Date(b.createdAt).toLocaleTimeString()}
+                                    </span>
+                                    <span className="font-mono text-[11px] text-slate-400 dark:text-slate-500">
+                                      {b.id}
+                                    </span>
+                                  </div>
+                                  <div className="text-slate-500 dark:text-slate-400 tabular-nums">
+                                    {b.transactionCount} transactions · {b.currency} {b.grossSales.toLocaleString()} gross · Purged by{' '}
+                                    {b.purgedByName} ({b.purgedByRole})
+                                  </div>
+                                </div>
+                                <button
+                                  id={`download-backup-${b.id}`}
+                                  type="button"
+                                  onClick={() => downloadSalesBackup(b.id)}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium text-xs border border-slate-200 dark:border-slate-700 transition cursor-pointer self-start sm:self-auto"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                  <span>Download JSON</span>
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
         </div>
-
-        {/* View Footer */}
-        <div className="px-6 py-3 bg-slate-100 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span>Business Tenant: <strong>{currentBusiness?.name}</strong></span>
-          </div>
-          {onClose && (
-            <button
-              onClick={() => {
-                onClose();
-                setIsBusinessSettingsOpen(false);
-              }}
-              className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg transition cursor-pointer"
-            >
-              Back to POS
-            </button>
-          )}
-        </div>
-
-        {/* Reset Store Modal Dialog */}
-        <ResetStoreModal
-          isOpen={isResetStoreModalOpen}
-          onClose={() => setIsResetStoreModalOpen(false)}
-          businessId={currentBusiness?.id}
-        />
       </div>
+
+      {/* Reset Store Modal Dialog */}
+      <ResetStoreModal
+        isOpen={isResetStoreModalOpen}
+        onClose={() => setIsResetStoreModalOpen(false)}
+        businessId={currentBusiness?.id}
+      />
+    </div>
   );
 };
 

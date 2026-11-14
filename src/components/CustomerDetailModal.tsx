@@ -56,6 +56,7 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
     isSuperAdmin,
     currentUser,
     loyaltySettings,
+    requireCapability,
   } = usePos();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'ledger'>('overview');
@@ -82,6 +83,7 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
   const avgBasket = customer.visitCount > 0 ? customer.totalSpent / customer.visitCount : 0;
 
   const handleRedeemPoints = async () => {
+    if (!requireCapability('loyaltyAndStoreCredit')) return;
     const pts = parseInt(pointsToRedeemInput, 10);
     if (!pts || pts <= 0) {
       showToast('Please enter a valid number of loyalty points to redeem', 'warning');

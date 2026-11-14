@@ -89,14 +89,30 @@ service cloud.firestore {
       );
       allow create: if isEmailVerified() && (
         isSuperAdmin() ||
-        (request.resource.data.id != 'biz-demo' && request.auth.token.email is string && request.resource.data.ownerEmail is string && request.resource.data.ownerEmail.lower() == request.auth.token.email.lower())
+        (
+          request.resource.data.id != 'biz-demo' &&
+          request.auth.token.email is string &&
+          request.resource.data.ownerEmail is string &&
+          request.resource.data.ownerEmail.lower() == request.auth.token.email.lower() &&
+          (!('plan' in request.resource.data) || request.resource.data.plan == 'free') &&
+          (!('status' in request.resource.data) || request.resource.data.status == 'active') &&
+          !('subscription' in request.resource.data) &&
+          (!('paystackSubaccountStatus' in request.resource.data) || request.resource.data.paystackSubaccountStatus != 'verified')
+        )
       );
       allow update: if isEmailVerified() && (
         isSuperAdmin() ||
-        (request.auth.token.email is string && resource.data.ownerEmail is string && resource.data.ownerEmail.lower() == request.auth.token.email.lower()) ||
         (
-          hasTenantAccess(businessId) &&
+          (
+            (request.auth.token.email is string && resource.data.ownerEmail is string && resource.data.ownerEmail.lower() == request.auth.token.email.lower()) ||
+            hasTenantAccess(businessId)
+          ) &&
           !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'plan',
+            'status',
+            'subscription',
+            'referredByCode',
+            'referredAt',
             'paystackSubaccountCode',
             'paystackSettlementBank',
             'paystackSettlementAccountMask',
@@ -108,7 +124,12 @@ service cloud.firestore {
       );
       allow delete: if isEmailVerified() && (
         isSuperAdmin() ||
-        (request.auth.token.email is string && resource.data.ownerEmail is string && resource.data.ownerEmail.lower() == request.auth.token.email.lower())
+        (
+          businessId != 'biz-demo' &&
+          request.auth.token.email is string &&
+          resource.data.ownerEmail is string &&
+          resource.data.ownerEmail.lower() == request.auth.token.email.lower()
+        )
       );
     }
 

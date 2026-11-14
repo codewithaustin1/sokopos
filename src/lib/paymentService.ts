@@ -79,6 +79,7 @@ export interface VerifyPaymentResponse {
   flowType?: ClientPaymentFlowType;
   businessId?: string;
   planId?: string;
+  activatedSubscription?: Record<string, any>;
   metadata?: Record<string, any>;
   error?: string;
 }
@@ -187,9 +188,18 @@ export async function initiateServerPayment(
   }
 }
 
-export async function verifyServerPayment(reference: string): Promise<VerifyPaymentResponse> {
+export async function verifyServerPayment(
+  reference: string,
+  idToken?: string
+): Promise<VerifyPaymentResponse> {
   try {
-    const resp = await fetch(`/api/payments/verify/${encodeURIComponent(reference)}`);
+    const headers: Record<string, string> = {};
+    if (idToken) {
+      headers.Authorization = `Bearer ${idToken}`;
+    }
+    const resp = await fetch(`/api/payments/verify/${encodeURIComponent(reference)}`, {
+      headers,
+    });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok && !data?.status) {
       return {

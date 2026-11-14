@@ -30,20 +30,30 @@ export const SuperAdminBanner: React.FC<SuperAdminBannerProps> = ({
   if (!isSuperAdmin) return null;
 
   return (
-    <div className="bg-slate-900 text-slate-200 px-3 sm:px-4 py-1.5 text-xs font-medium flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 shadow-xs shrink-0 z-40">
+    <div className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 px-3 sm:px-6 py-2 text-xs flex flex-wrap items-center justify-between gap-2.5 border-b border-slate-200 dark:border-slate-800 shrink-0 z-40">
       {/* Left: Cross-Tenant Switcher */}
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 px-2.5 py-1 rounded-lg border border-slate-700/80 transition">
-          <Building2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-          <span className="text-[11px] font-bold text-slate-300">Tenant Scope:</span>
+      <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/80 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 transition max-w-full">
+          <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+          <label
+            htmlFor="superadmin-banner-tenant-select"
+            className="text-xs font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap shrink-0"
+          >
+            Tenant Scope:
+          </label>
           <select
+            id="superadmin-banner-tenant-select"
             value={activeBusinessId}
             onChange={(e) => setActiveBusinessId(e.target.value)}
-            className="bg-transparent font-bold cursor-pointer focus:outline-none text-xs text-white"
+            className="bg-transparent font-semibold cursor-pointer focus:outline-none text-xs text-slate-900 dark:text-slate-100 truncate max-w-[200px] sm:max-w-xs"
           >
             {businesses.map((biz) => (
-              <option key={biz.id} value={biz.id} className="text-slate-900 bg-white">
-                {biz.name} ({biz.code}){biz.status === 'suspended' ? ' [SUSPENDED]' : ''}
+              <option
+                key={biz.id}
+                value={biz.id}
+                className="text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900"
+              >
+                {biz.name} ({biz.code}){biz.status === 'suspended' ? ' [Suspended]' : ''}
               </option>
             ))}
           </select>
@@ -52,37 +62,38 @@ export const SuperAdminBanner: React.FC<SuperAdminBannerProps> = ({
 
       {/* Right: Tenant Management Controls */}
       <div className="flex items-center gap-2 flex-wrap">
-        {/* Write Audit Log Button */}
         <button
           type="button"
           onClick={onOpenAuditLog}
-          className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-white px-2.5 py-1 rounded-lg text-xs font-semibold transition border border-slate-700/80 shadow-2xs cursor-pointer"
+          className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-2.5 py-1.5 rounded-lg text-xs font-medium transition border border-slate-200 dark:border-slate-700 cursor-pointer whitespace-nowrap shrink-0"
         >
-          <FileText className="w-3.5 h-3.5 text-blue-400" />
-          <span>Write Audit Log ({superAdminAuditLogs.length})</span>
+          <FileText className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
+          <span>Audit Log</span>
+          <span className="font-mono tabular-nums text-slate-400 dark:text-slate-500">
+            ({superAdminAuditLogs.length})
+          </span>
         </button>
 
-        {/* Login Graphic Branding Button */}
         {onOpenBrandingModal && (
           <button
             type="button"
             onClick={onOpenBrandingModal}
-            className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-white px-2.5 py-1 rounded-lg text-xs font-semibold transition border border-slate-700/80 shadow-2xs cursor-pointer"
+            className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-2.5 py-1.5 rounded-lg text-xs font-medium transition border border-slate-200 dark:border-slate-700 cursor-pointer whitespace-nowrap shrink-0"
             title="Configure POS terminal login background graphic"
           >
-            <ImageIcon className="w-3.5 h-3.5 text-emerald-400" />
+            <ImageIcon
+              className={`w-3.5 h-3.5 ${
+                loginBgGraphic ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'
+              }`}
+            />
             <span>Login Graphic</span>
-            {loginBgGraphic && (
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Custom Graphic Active" />
-            )}
           </button>
         )}
 
-        {/* Provision Business Button */}
         <button
           type="button"
           onClick={onOpenProvisionModal}
-          className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1 rounded-lg text-xs font-bold transition shadow-2xs cursor-pointer"
+          className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer whitespace-nowrap shrink-0"
         >
           <PlusCircle className="w-3.5 h-3.5" />
           <span>Provision Tenant</span>

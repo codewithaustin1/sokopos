@@ -24,8 +24,20 @@
         "code": { "type": "string" },
         "ownerEmail": { "type": "string" },
         "ownerName": { "type": "string" },
-        "plan": { "type": "string" },
-        "status": { "type": "string" },
+        "plan": { "type": "string", "enum": ["free", "starter", "business", "premium", "professional", "pro", "enterprise"] },
+        "status": { "type": "string", "enum": ["active", "suspended"] },
+        "subscription": {
+          "type": "object",
+          "properties": {
+            "status": { "type": "string", "enum": ["active", "expired"] },
+            "plan": { "type": "string", "enum": ["free", "starter", "business", "premium"] },
+            "planId": { "type": "string" },
+            "activatedAt": { "type": "string" },
+            "expiresAt": { "type": "string" },
+            "lastPaymentReference": { "type": "string" },
+            "paymentProvider": { "type": "string" }
+          }
+        },
         "currency": { "type": "string" },
         "taxNumber": { "type": "string" },
         "createdAt": { "type": "string" },

@@ -43,3 +43,7 @@ Non-super-admin users cannot read, list, create, update, or delete data belongin
 10. **Tenant Self-Read**: Authenticated user with `businessId: "biz-1"` querying their own products -> ALLOWED.
 11. **Tenant Self-Transaction Write**: Authenticated user with `businessId: "biz-1"` saving a sale with matching `businessId: "biz-1"` -> ALLOWED.
 12. **Catch-All Wildcard Exploit**: Accessing an undefined collection or document -> REJECTED by Default Deny.
+13. **Client Self-Upgrade Tampering**: Business owner or tenant member attempting to directly update `plan`, `status`, `subscription`, or `paystackSubaccount*` on `/businesses/{businessId}` -> REJECTED (`403 PERMISSION_DENIED`).
+14. **Self-Signup Free Tier Lock**: Non-super-admin creating `/businesses/{businessId}` with `plan: "business"` or `"premium"`, or injecting a `subscription` object -> REJECTED (`403 PERMISSION_DENIED`).
+15. **Verified Payment / Webhook & Super-Admin Provisioning**: Server-side verified Paystack transaction (`/api/payments/verify/:reference` or webhook `charge.success` via ADC) or Super Admin updating `plan`, `status`, and `subscription` on `/businesses/{businessId}` -> ALLOWED.
+

@@ -19,6 +19,7 @@ import {
   manageBusinessPaystackSubaccount,
   SettlementBankOption,
 } from '../../lib/paymentService';
+import { SettingsSectionHeader } from './SettingsSectionHeader';
 
 interface PaystackSubaccountPanelProps {
   targetBusiness: Business;
@@ -250,76 +251,46 @@ export const PaystackSubaccountPanel: React.FC<PaystackSubaccountPanelProps> = (
 
   if (isDemoBiz) {
     return (
-      <div className="bg-white border border-slate-200 rounded-xl p-5 text-xs text-slate-600 space-y-2">
-        <div className="flex items-center gap-2 font-bold text-slate-800">
-          <Landmark className="w-4 h-4 text-slate-500" />
-          <span>Demo Sandbox Store</span>
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 sm:p-6 space-y-3">
+        <SettingsSectionHeader
+          title="Demo Sandbox Settlement"
+          description="The public demo store runs in an isolated simulator and cannot connect to a live Paystack settlement subaccount."
+          meta={<span className="text-slate-500">Sandbox Mode</span>}
+        />
+        <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+          <Landmark className="w-4 h-4 text-slate-400 shrink-0" />
+          <span>Sign in with a registered merchant account to link or provision a live Paystack subaccount.</span>
         </div>
-        <p className="text-slate-500 leading-relaxed">
-          The public demo store runs in an isolated simulator and cannot be connected to a live Paystack settlement subaccount.
-        </p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {/* Current Settlement Status Card */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              {isVerified ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              ) : (
-                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-              )}
-              <h3 className="text-sm font-bold text-slate-900">
-                {isVerified
-                  ? 'Paystack Subaccount Verified'
-                  : hasSubaccount
-                  ? 'Paystack Subaccount Inactive'
-                  : 'Paystack Settlement Not Configured'}
-              </h3>
-            </div>
-            {hasSubaccount ? (
-              <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="font-mono font-bold text-slate-900 tabular-nums">
-                  {targetBusiness.paystackSubaccountCode}
-                </span>
-                <span className="text-slate-300">·</span>
-                <span>{targetBusiness.paystackSettlementBank || 'Settlement Account'}</span>
-                {targetBusiness.paystackSettlementAccountMask && (
-                  <>
-                    <span className="text-slate-300">·</span>
-                    <span className="font-mono tabular-nums">{targetBusiness.paystackSettlementAccountMask}</span>
-                  </>
-                )}
-                <span className="text-slate-300">·</span>
-                <span className="text-emerald-700 font-semibold">100% Store Settlement</span>
-                <span className="text-slate-300">·</span>
-                <span className="text-slate-500">Subaccount bears Paystack fees</span>
-              </div>
-            ) : (
-              <p className="text-xs text-slate-500">
-                Live M-Pesa STK Push and Card checkouts at the POS register remain locked until an active Paystack{' '}
-                <span className="font-mono font-semibold text-slate-700">ACCT_</span> subaccount is linked.
-              </p>
-            )}
-            {targetBusiness.paystackSubaccountVerifiedAt && (
-              <p className="text-[11px] text-slate-400">
-                Last verified {new Date(targetBusiness.paystackSubaccountVerifiedAt).toLocaleString()}
-              </p>
-            )}
-          </div>
-
-          {hasSubaccount && (
-            <div className="flex items-center gap-2 shrink-0">
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 sm:p-6 space-y-6">
+      <SettingsSectionHeader
+        title="Paystack Settlement Account"
+        description="Route 100% of live POS M-Pesa STK and Card checkouts directly to your store payout account."
+        meta={
+          isVerified ? (
+            <span className="inline-flex items-center gap-1 font-medium text-emerald-700 dark:text-emerald-400">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Verified
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 font-medium text-amber-700 dark:text-amber-400">
+              <AlertCircle className="w-3.5 h-3.5" />
+              {hasSubaccount ? 'Inactive' : 'Not Configured'}
+            </span>
+          )
+        }
+        actions={
+          hasSubaccount && (
+            <>
               <button
                 type="button"
                 onClick={() => handleVerifyExisting(undefined, targetBusiness.paystackSubaccountCode)}
                 disabled={isSubmitting}
-                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-medium inline-flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isSubmitting ? 'animate-spin' : ''}`} />
                 <span>Re-verify</span>
@@ -329,7 +300,7 @@ export const PaystackSubaccountPanel: React.FC<PaystackSubaccountPanelProps> = (
                   type="button"
                   onClick={() => setIsConfirmingUnlink(true)}
                   disabled={isSubmitting}
-                  className="px-3 py-1.5 rounded-lg border border-rose-200 bg-white hover:bg-rose-50 text-rose-700 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                  className="px-3 py-1.5 rounded-lg border border-rose-200 dark:border-rose-800 bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-rose-700 dark:text-rose-400 text-xs font-medium inline-flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
                 >
                   <Unlink className="w-3.5 h-3.5" />
                   <span>Unlink</span>
@@ -340,7 +311,7 @@ export const PaystackSubaccountPanel: React.FC<PaystackSubaccountPanelProps> = (
                     type="button"
                     onClick={handleUnlink}
                     disabled={isSubmitting}
-                    className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold cursor-pointer disabled:opacity-50"
+                    className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-medium cursor-pointer disabled:opacity-50 whitespace-nowrap"
                   >
                     Confirm Unlink
                   </button>
@@ -348,50 +319,86 @@ export const PaystackSubaccountPanel: React.FC<PaystackSubaccountPanelProps> = (
                     type="button"
                     onClick={() => setIsConfirmingUnlink(false)}
                     disabled={isSubmitting}
-                    className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 text-xs font-semibold cursor-pointer"
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-medium cursor-pointer whitespace-nowrap"
                   >
                     Cancel
                   </button>
                 </div>
               )}
-            </div>
-          )}
-        </div>
+            </>
+          )
+        }
+      />
 
-        <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
-          <div className="flex items-center gap-1.5">
-            <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
-            <span>
-              SaaS subscription renewals route to the main platform account; POS register sales route 100% to this store&apos;s subaccount.
+      {/* Active Settlement Summary Row */}
+      <div className="space-y-2 text-xs">
+        {hasSubaccount ? (
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-slate-700 dark:text-slate-300">
+            <span className="font-mono font-semibold text-slate-900 dark:text-slate-100 tabular-nums">
+              {targetBusiness.paystackSubaccountCode}
             </span>
+            <span className="text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
+            <span>{targetBusiness.paystackSettlementBank || 'Settlement Account'}</span>
+            {targetBusiness.paystackSettlementAccountMask && (
+              <>
+                <span className="text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
+                <span className="font-mono tabular-nums">{targetBusiness.paystackSettlementAccountMask}</span>
+              </>
+            )}
+            <span className="text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
+            <span className="text-emerald-700 dark:text-emerald-400 font-medium">100% Store Settlement</span>
+            <span className="text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
+            <span className="text-slate-500 dark:text-slate-400">Merchant bears Paystack fees</span>
           </div>
+        ) : (
+          <p className="text-slate-600 dark:text-slate-400">
+            Live M-Pesa STK Push and Card checkouts remain locked until a Paystack{' '}
+            <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">ACCT_</span> subaccount is linked and verified.
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+          <span className="inline-flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            SaaS renewals route to the platform account; POS register sales route 100% to this store.
+          </span>
+          {targetBusiness.paystackSubaccountVerifiedAt && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span className="tabular-nums">
+                Verified {new Date(targetBusiness.paystackSubaccountVerifiedAt).toLocaleString()}
+              </span>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Mode Switcher + Forms */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+      {/* Mode Switcher + Destination Configuration */}
+      <div className="pt-5 border-t border-slate-200 dark:border-slate-800 space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h4 className="text-sm font-bold text-slate-900">Configure Settlement Destination</h4>
-            <p className="text-xs text-slate-500">
-              Link an existing Paystack subaccount code or provision a new one directly via Paystack API.
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Configure Settlement Destination
+            </h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Link an existing Paystack subaccount code or provision a new one via Paystack API.
             </p>
           </div>
-          <div className="inline-flex bg-slate-100 p-1 rounded-lg border border-slate-200 shrink-0">
+          <div className="inline-flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700 shrink-0 self-start sm:self-auto">
             <button
               type="button"
               onClick={() => {
                 setMode('paste');
                 setErrorMsg(null);
               }}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
                 mode === 'paste'
-                  ? 'bg-white text-slate-900 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
               }`}
             >
               <Link2 className="w-3.5 h-3.5" />
-              <span>Paste ACCT_ Code</span>
+              <span>Link Existing ACCT_</span>
             </button>
             <button
               type="button"
@@ -399,36 +406,36 @@ export const PaystackSubaccountPanel: React.FC<PaystackSubaccountPanelProps> = (
                 setMode('create');
                 setErrorMsg(null);
               }}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
                 mode === 'create'
-                  ? 'bg-white text-slate-900 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
               }`}
             >
               <PlusCircle className="w-3.5 h-3.5" />
-              <span>Auto-Create via API</span>
+              <span>Create via API</span>
             </button>
           </div>
         </div>
 
         {errorMsg && (
-          <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+          <div className="p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/70 text-xs text-rose-800 dark:text-rose-300 flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
             <span>{errorMsg}</span>
           </div>
         )}
 
         {statusMsg && (
-          <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-start gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+          <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/70 text-xs text-emerald-900 dark:text-emerald-300 flex items-start gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
             <span>{statusMsg}</span>
           </div>
         )}
 
         {mode === 'paste' ? (
           <form onSubmit={(e) => handleVerifyExisting(e)} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+            <div className="max-w-lg">
+              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                 Paystack Subaccount Code
               </label>
               <input
@@ -436,19 +443,19 @@ export const PaystackSubaccountPanel: React.FC<PaystackSubaccountPanelProps> = (
                 value={subaccountInput}
                 onChange={(e) => setSubaccountInput(e.target.value)}
                 placeholder="ACCT_xxxxxxxxxxxx"
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3.5 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm font-mono tabular-nums text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
               />
-              <p className="text-[11px] text-slate-500 mt-1">
-                SokoPoS validates this code live against Paystack and records only the masked payout account reference.
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
+                SokoPoS validates this code live against Paystack and stores only the masked payout account reference.
               </p>
             </div>
 
-            <div className="flex justify-end">
+            <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
               <button
                 type="submit"
                 disabled={isSubmitting || !subaccountInput.trim()}
-                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
+                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium inline-flex items-center gap-2 transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
               >
                 {isSubmitting ? (
                   <>
@@ -468,7 +475,7 @@ export const PaystackSubaccountPanel: React.FC<PaystackSubaccountPanelProps> = (
           <form onSubmit={handleCreateSubaccount} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                   Business Settlement Name
                 </label>
                 <input
@@ -476,13 +483,13 @@ export const PaystackSubaccountPanel: React.FC<PaystackSubaccountPanelProps> = (
                   value={settlementBizName}
                   onChange={(e) => setSettlementBizName(e.target.value)}
                   placeholder="Merchant Store Ltd"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3.5 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                   Destination Account / M-Pesa Number
                 </label>
                 <input
@@ -490,55 +497,57 @@ export const PaystackSubaccountPanel: React.FC<PaystackSubaccountPanelProps> = (
                   value={accountNumber}
                   onChange={(e) => setAccountNumber(e.target.value)}
                   placeholder="Account number, Till, or 07XXXXXXXX"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono tabular-nums text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3.5 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm font-mono tabular-nums text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
               </div>
 
               <div className="sm:col-span-2 space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-semibold text-slate-700">
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
                     Kenyan Bank or Mobile Money Institution
                   </label>
-                  <span className="text-[11px] text-slate-400">
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
                     {banksLoading ? 'Loading institutions...' : `${filteredBanks.length} institutions`}
                   </span>
                 </div>
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-                  <input
-                    type="text"
-                    value={bankSearch}
-                    onChange={(e) => setBankSearch(e.target.value)}
-                    placeholder="Filter banks or M-Pesa (e.g., Equity, KCB, Co-op, M-PESA)..."
-                    className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-800 bg-slate-50 focus:outline-none focus:bg-white focus:border-blue-500"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                    <input
+                      type="text"
+                      value={bankSearch}
+                      onChange={(e) => setBankSearch(e.target.value)}
+                      placeholder="Filter banks or M-Pesa (e.g., Equity, KCB, M-PESA)..."
+                      className="w-full pl-8 pr-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-xs text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-950 focus:outline-none focus:bg-white dark:focus:bg-slate-900 focus:border-blue-500"
+                    />
+                  </div>
+                  {banksError ? (
+                    <p className="text-xs text-rose-600 dark:text-rose-400 self-center">{banksError}</p>
+                  ) : (
+                    <select
+                      value={selectedBankCode}
+                      onChange={(e) => setSelectedBankCode(e.target.value)}
+                      disabled={banksLoading || filteredBanks.length === 0}
+                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    >
+                      {filteredBanks.length === 0 ? (
+                        <option value="">{banksLoading ? 'Fetching Paystack banks...' : 'No matching banks found'}</option>
+                      ) : (
+                        filteredBanks.map((b) => (
+                          <option key={`${b.code}-${b.name}`} value={b.code}>
+                            {b.name} ({b.type === 'mobile_money' ? 'Mobile Money' : b.code})
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  )}
                 </div>
-                {banksError ? (
-                  <p className="text-xs text-rose-600">{banksError}</p>
-                ) : (
-                  <select
-                    value={selectedBankCode}
-                    onChange={(e) => setSelectedBankCode(e.target.value)}
-                    disabled={banksLoading || filteredBanks.length === 0}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  >
-                    {filteredBanks.length === 0 ? (
-                      <option value="">{banksLoading ? 'Fetching Paystack banks...' : 'No matching banks found'}</option>
-                    ) : (
-                      filteredBanks.map((b) => (
-                        <option key={`${b.code}-${b.name}`} value={b.code}>
-                          {b.name} ({b.type === 'mobile_money' ? 'Mobile Money' : b.code})
-                        </option>
-                      ))
-                    )}
-                  </select>
-                )}
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                   Settlement Contact Email
                 </label>
                 <input
@@ -546,12 +555,12 @@ export const PaystackSubaccountPanel: React.FC<PaystackSubaccountPanelProps> = (
                   value={contactEmail}
                   onChange={(e) => setContactEmail(e.target.value)}
                   placeholder="owner@store.co.ke"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3.5 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                   Contact Phone (Optional)
                 </label>
                 <input
@@ -559,19 +568,19 @@ export const PaystackSubaccountPanel: React.FC<PaystackSubaccountPanelProps> = (
                   value={contactPhone}
                   onChange={(e) => setContactPhone(e.target.value)}
                   placeholder="+254712345678"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3.5 py-2 border border-slate-300 dark:border-slate-700 rounded-lg text-sm font-mono tabular-nums text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100">
-              <span className="text-[11px] text-slate-500">
-                Creates subaccount with 0% platform split; merchant pays Paystack transaction fees.
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                0% platform split · merchant pays standard Paystack transaction fees.
               </span>
               <button
                 type="submit"
                 disabled={isSubmitting || !selectedBankCode || !accountNumber.trim()}
-                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
+                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium inline-flex items-center gap-2 transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
               >
                 {isSubmitting ? (
                   <>
@@ -592,3 +601,4 @@ export const PaystackSubaccountPanel: React.FC<PaystackSubaccountPanelProps> = (
     </div>
   );
 };
+

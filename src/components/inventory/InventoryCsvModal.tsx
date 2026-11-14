@@ -6,6 +6,7 @@ import {
   downloadProductCsvTemplate,
   ParsedCsvProductRow,
 } from '../../utils/inventoryCsv';
+import { getRequiredTierForProductCount } from '../../utils/subscriptionEntitlements';
 
 interface InventoryCsvModalProps {
   isOpen: boolean;
@@ -21,6 +22,9 @@ export const InventoryCsvModal: React.FC<InventoryCsvModalProps> = ({ isOpen, on
     bulkAddProducts,
     bulkUpdateProducts,
     showToast,
+    entitlements,
+    isSuperAdmin,
+    openUpgradePrompt,
   } = usePos();
 
   const [fileName, setFileName] = useState<string | null>(null);
@@ -84,6 +88,23 @@ export const InventoryCsvModal: React.FC<InventoryCsvModalProps> = ({ isOpen, on
     }
 
     if (newDrafts.length > 0) {
+      const maxProducts = isSuperAdmin ? -1 : entitlements.limits.maxProducts;
+      if (maxProducts > 0 && products.length + newDrafts.length > maxProducts) {
+        openUpgradePrompt({
+          title: 'CSV Import Exceeds Product Limit',
+          description: `Importing ${newDrafts.length} new SKUs would bring your catalog to ${
+            products.length + newDrafts.length
+          } products, exceeding the ${maxProducts}-SKU cap on ${entitlements.tierName}.`,
+          requiredTier: getRequiredTierForProductCount(products.length + newDrafts.length),
+          featureLabel: 'Unlimited Product Catalog',
+          quotaMetric: {
+            label: 'Inventory SKUs',
+            used: products.length,
+            limit: maxProducts,
+          },
+        });
+        return;
+      }
       bulkAddProducts(newDrafts);
     }
     if (dupUpdates.length > 0) {

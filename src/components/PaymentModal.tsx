@@ -66,7 +66,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
     activeBusinessId,
     openBusinessSettings,
     isSuperAdmin,
+    entitlements,
+    requireCapability,
   } = usePos();
+
+  const canUseStoreCredit = isSuperAdmin || entitlements.capabilities.loyaltyAndStoreCredit;
 
   const isDemoMode = Boolean(
     currentUser?.isDemoSession ||
@@ -211,6 +215,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
   }, [isOpen, initialMethod, cartTotal, cashPayable, initializeSplitRows]);
 
   const handleSelectMethod = (method: PaymentMethod) => {
+    if (method === 'store_credit' && !requireCapability('loyaltyAndStoreCredit')) {
+      return;
+    }
     setSelectedMethod(method);
     if (method === 'cash') {
       setCashTendered(cashPayable.toString());
@@ -1080,6 +1087,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                 }`}
               >
                 <div className="absolute top-2 right-2 flex items-center gap-1">
+                  {!canUseStoreCredit && <Lock className="w-3 h-3 text-slate-400" />}
                   {selectedMethod === 'store_credit' && (
                     <span className="w-2 h-2 rounded-full bg-indigo-500" />
                   )}
@@ -1970,6 +1978,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                                 value={row.method}
                                 onChange={(e) => {
                                   const newMethod = e.target.value as any;
+                                  if (newMethod === 'store_credit' && !requireCapability('loyaltyAndStoreCredit')) {
+                                    return;
+                                  }
                                   setSplitRows((prev) =>
                                     prev.map((r) =>
                                       r.id === row.id
@@ -1993,7 +2004,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                                 <option value="cash">Cash Register</option>
                                 <option value="mpesa">M-Pesa STK / Till</option>
                                 <option value="card">Card Terminal</option>
-                                <option value="store_credit">Store Credit / Tab</option>
+                                <option value="store_credit">
+                                  Store Credit / Tab{!canUseStoreCredit ? ' (Business+)' : ''}
+                                </option>
                               </select>
                             </div>
 
@@ -2222,12 +2235,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                       type="button"
                       onClick={() => {
                         const usedMethods = new Set(splitRows.map((r) => r.method));
-                        const allMethods: ('cash' | 'mpesa' | 'card' | 'store_credit')[] = [
-                          'cash',
-                          'mpesa',
-                          'card',
-                          'store_credit',
-                        ];
+                        const allMethods: ('cash' | 'mpesa' | 'card' | 'store_credit')[] = canUseStoreCredit
+                          ? ['cash', 'mpesa', 'card', 'store_credit']
+                          : ['cash', 'mpesa', 'card'];
                         const nextMethod = allMethods.find((m) => !usedMethods.has(m)) || 'cash';
                         const rem = Math.max(0, splitRemaining);
                         setSplitRows((prev) => [

@@ -45,6 +45,7 @@ export const RolePrivilegesPanel: React.FC<RolePrivilegesPanelProps> = ({ classN
     currentBusiness,
     currentUser,
     isSuperAdmin,
+    requireCapability,
   } = usePos();
 
   // Local working copy of permissions for live editing before explicit Save
@@ -140,6 +141,7 @@ export const RolePrivilegesPanel: React.FC<RolePrivilegesPanelProps> = ({ classN
   };
 
   const handleSave = async () => {
+    if (!requireCapability('granularRbac')) return;
     setIsSaving(true);
     try {
       await updateRolePermissions(localMap);

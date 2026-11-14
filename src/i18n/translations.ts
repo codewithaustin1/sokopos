@@ -54,7 +54,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     action_refresh: 'Refresh',
 
     // Register / Sell Screen
-    reg_search_placeholder: 'Search item, SKU or barcode (Press / or F2)...',
+    reg_search_placeholder: 'Search item, SKU or barcode...',
     reg_all_items: 'All Items',
     reg_in_stock: 'In Stock',
     reg_low_stock: 'Low Stock',
@@ -210,7 +210,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     action_refresh: 'Actualiser',
 
     // Register / Sell Screen
-    reg_search_placeholder: 'Rechercher article, SKU ou code-barres (/ ou F2)...',
+    reg_search_placeholder: 'Rechercher article, SKU ou code-barres...',
     reg_all_items: 'Tous les articles',
     reg_in_stock: 'En stock',
     reg_low_stock: 'Stock faible',
@@ -366,7 +366,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     action_refresh: 'Onyesha Upya',
 
     // Register / Sell Screen
-    reg_search_placeholder: 'Tafuta bidhaa, SKU au msimbo (Bonyeza / au F2)...',
+    reg_search_placeholder: 'Tafuta bidhaa, SKU au msimbo...',
     reg_all_items: 'Bidhaa Zote',
     reg_in_stock: 'Zipo Ghalani',
     reg_low_stock: 'Bidhaa Chache',

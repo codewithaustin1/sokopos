@@ -13,6 +13,7 @@ import {
   Settings,
   ShieldAlert,
   Share2,
+  Lock,
 } from 'lucide-react';
 import { AnalyticsIcon } from './icons/AnalyticsIcon';
 import { usePos } from '../context/PosContext';
@@ -36,6 +37,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
     openReturnsModal,
     setIsAffiliateModalOpen,
     can,
+    entitlements,
     t,
   } = usePos();
 
@@ -80,6 +82,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       badge: null,
       badgeTone: 'neutral' as const,
       allowed: can('manageSuppliers'),
+      tierLocked: !isSuperAdmin && !entitlements.capabilities.suppliers,
     },
     {
       id: 'shifts',
@@ -98,6 +101,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       badge: null,
       badgeTone: 'neutral' as const,
       allowed: can('viewAnalytics'),
+      tierLocked: !isSuperAdmin && !entitlements.capabilities.analytics,
     },
     {
       id: 'reports',
@@ -163,6 +167,14 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
                   {!isCollapsed && (
                     <span className="flex-1 text-left truncate">{item.label}</span>
                   )}
+                  {!isCollapsed && item.tierLocked && (
+                    <Lock
+                      className={`w-3.5 h-3.5 shrink-0 ${
+                        isActive ? 'text-white/80' : 'text-slate-400'
+                      }`}
+                      aria-label="Requires plan upgrade"
+                    />
+                  )}
                   {!isCollapsed && item.badge && (
                     <span
                       className={`text-[11px] font-mono tabular-nums font-bold px-1.5 py-0.5 rounded-md leading-none shrink-0 ${
@@ -195,6 +207,9 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
                 <span className="flex-1 text-left truncate">
                   {t('nav_returns', 'Returns & Refunds')}
                 </span>
+              )}
+              {!isCollapsed && !isSuperAdmin && !entitlements.capabilities.returnsAndRefunds && (
+                <Lock className="w-3.5 h-3.5 shrink-0 text-slate-400" aria-label="Requires plan upgrade" />
               )}
             </button>
           </nav>

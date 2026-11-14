@@ -22,6 +22,7 @@ import {
   Calendar,
   Layers,
   ChevronRight,
+  Lock,
 } from 'lucide-react';
 import { Transaction, Product, Location, Cashier, Business, SuperAdminAuditEntry } from '../../types';
 import { DateRange, ReportType, REPORT_REGISTRY, ReportCategory, ReportMeta } from '../../types/reporting';
@@ -66,7 +67,22 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
   dateRange,
   selectedLocationId,
 }) => {
-  const { shiftHistory, adminActivityLogs, supervisorOverrideLogs, suppliers, soundFx, showToast, setActiveReceipt } = usePos();
+  const {
+    shiftHistory,
+    adminActivityLogs,
+    supervisorOverrideLogs,
+    suppliers,
+    soundFx,
+    showToast,
+    setActiveReceipt,
+    entitlements,
+    isSuperAdmin,
+    requireCapability,
+  } = usePos();
+  const canUseAdvancedReports = isSuperAdmin || entitlements.capabilities.advancedReportsAndExport;
+  const FREE_CORE_REPORT_IDS = new Set<ReportType>(['sales', 'stock', 'payment_methods', 'shift_till']);
+  const isReportLocked = (meta: ReportMeta) =>
+    !canUseAdvancedReports && !FREE_CORE_REPORT_IDS.has(meta.id);
   const audio = soundFx || directSoundFx;
   const [activeReportId, setActiveReportId] = useState<ReportType>('sales');
   const [phaseFilter, setPhaseFilter] = useState<'all' | ReportCategory>('phase1');
@@ -808,6 +824,7 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
   ]);
 
   const handleInstantCsv = () => {
+    if (!requireCapability('advancedReportsAndExport')) return;
     const filename = `${activeBusinessObj.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${activeMeta.id}_${Date.now()}`;
     const hasAction = reportPayload.tableHeaders.some((h) => h.toLowerCase() === 'action');
     const headers = hasAction ? reportPayload.tableHeaders.filter((h) => h.toLowerCase() !== 'action') : reportPayload.tableHeaders;
@@ -879,12 +896,19 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
           {filteredReportsList.map((r) => {
             const isSelected = r.id === activeReportId;
+            const locked = isReportLocked(r);
             return (
               <button
                 key={r.id}
                 type="button"
                 id={`report-select-${r.id}-btn`}
-                onClick={() => setActiveReportId(r.id)}
+                onClick={() => {
+                  if (locked) {
+                    requireCapability('advancedReportsAndExport');
+                    return;
+                  }
+                  setActiveReportId(r.id);
+                }}
                 className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition flex items-center gap-1.5 cursor-pointer shrink-0 border ${
                   isSelected
                     ? 'bg-blue-600 text-white border-blue-600 shadow-xs ring-2 ring-blue-500/20'
@@ -892,10 +916,14 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
                 }`}
               >
                 <span>{r.title}</span>
-                {r.category === 'phase1' && (
-                  <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-black ${isSelected ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800'}`}>
-                    Core
-                  </span>
+                {locked ? (
+                  <Lock className={`w-3 h-3 shrink-0 ${isSelected ? 'text-white/80' : 'text-slate-400'}`} />
+                ) : (
+                  r.category === 'phase1' && (
+                    <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-black ${isSelected ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800'}`}>
+                      Core
+                    </span>
+                  )
                 )}
               </button>
             );
@@ -929,7 +957,11 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
               className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer"
               title="Download RFC 4180 CSV spreadsheet"
             >
-              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              {!canUseAdvancedReports ? (
+                <Lock className="w-3.5 h-3.5 text-emerald-700" />
+              ) : (
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              )}
               <span>Export CSV</span>
             </button>
 
@@ -937,6 +969,7 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
               type="button"
               id="report-direct-quick-print-btn"
               onClick={() => {
+                if (!requireCapability('advancedReportsAndExport')) return;
                 audio?.playSuccess?.();
                 showToast(`Sending ${reportPayload.meta.title} directly to printer...`, 'info');
                 printReportDocument(reportPayload);
@@ -944,7 +977,11 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
               className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
               title="Quick Print directly to connected printer or Save as PDF"
             >
-              <Printer className="w-3.5 h-3.5 text-blue-400" />
+              {!canUseAdvancedReports ? (
+                <Lock className="w-3.5 h-3.5 text-slate-400" />
+              ) : (
+                <Printer className="w-3.5 h-3.5 text-blue-400" />
+              )}
               <span>Quick Print</span>
             </button>
 
@@ -952,13 +989,14 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
               type="button"
               id="report-open-print-btn"
               onClick={() => {
+                if (!requireCapability('advancedReportsAndExport')) return;
                 audio?.playBeep?.();
                 setIsPrintModalOpen(true);
               }}
               className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
               title="Preview A4 document, format pagination, and print or export PDF"
             >
-              <Printer className="w-4 h-4" />
+              {!canUseAdvancedReports ? <Lock className="w-3.5 h-3.5" /> : <Printer className="w-4 h-4" />}
               <span>Print / PDF (A4)</span>
             </button>
           </div>

@@ -121,7 +121,7 @@ export interface BusinessLoyaltySettings {
   updatedBy?: string;
 }
 
-export type BusinessPlanTier = 'starter' | 'professional' | 'enterprise' | 'business' | 'premium';
+export type BusinessPlanTier = 'free' | 'starter' | 'professional' | 'enterprise' | 'business' | 'premium';
 
 export interface Business {
   id: string;

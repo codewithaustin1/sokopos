@@ -36,6 +36,7 @@ import {
   DigitaxSaleResponse,
   DigitaxEtimsInfo,
 } from '../services/digitaxService';
+import { SettingsSectionHeader } from './common/SettingsSectionHeader';
 
 export const TaxManagementPanel: React.FC = () => {
   const {
@@ -46,6 +47,7 @@ export const TaxManagementPanel: React.FC = () => {
     showToast,
     logAdminActivity,
     soundFx,
+    requireCapability,
   } = usePos();
 
   // Current settings with safe defaults
@@ -206,6 +208,7 @@ export const TaxManagementPanel: React.FC = () => {
   };
 
   const handleOpenAddRule = () => {
+    if (!requireCapability('advancedTaxRules')) return;
     setRuleToEdit(null);
     setRuleName('');
     setRuleCode('B');
@@ -219,6 +222,7 @@ export const TaxManagementPanel: React.FC = () => {
   };
 
   const handleOpenEditRule = (rule: TaxRule) => {
+    if (!requireCapability('advancedTaxRules')) return;
     setRuleToEdit(rule);
     setRuleName(rule.name);
     setRuleCode(rule.code);
@@ -292,6 +296,7 @@ export const TaxManagementPanel: React.FC = () => {
   };
 
   const handleApplyPresetTemplate = (type: 'kra_standard' | 'flat_gst' | 'eac_standard') => {
+    if (!requireCapability('advancedTaxRules')) return;
     if (type === 'kra_standard') {
       setTaxSettings({
         ...taxSettings,
@@ -428,313 +433,69 @@ export const TaxManagementPanel: React.FC = () => {
     }
   };
 
+  const activeRuleCount = taxSettings.rules.filter((r) => r.isActive).length;
+
   return (
-    <div id="tax-management-panel" className="space-y-6 max-w-4xl mx-auto">
-      {/* Top Banner Overview */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-start gap-3.5">
-          <div className="w-11 h-11 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0">
-            <Receipt className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-base sm:text-lg font-black text-slate-900">
-                Tax, VAT/GST & Fiscal Rates
-              </h3>
-              <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                Dynamic Engine
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Define standard tax rates, category exemptions (zero-rated grains/produce), and regional branch rules applied dynamically at checkout
-            </p>
-          </div>
-        </div>
-
-        {/* Quick Presets Menu */}
-        <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
-          <button
-            type="button"
-            onClick={() => handleApplyPresetTemplate('kra_standard')}
-            className="px-3 py-1.5 rounded-xl border border-slate-300 hover:border-emerald-500 bg-slate-50 hover:bg-emerald-50/50 text-slate-700 hover:text-emerald-800 font-bold text-xs transition cursor-pointer flex items-center gap-1.5"
-            title="Load standard KRA ETR Class A (16%) and Class B (0% Zero-Rated Staples)"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-            <span>KRA ETR (16%)</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleApplyPresetTemplate('eac_standard')}
-            className="px-3 py-1.5 rounded-xl border border-slate-300 hover:border-purple-500 bg-slate-50 hover:bg-purple-50/50 text-slate-700 hover:text-purple-800 font-bold text-xs transition cursor-pointer flex items-center gap-1.5"
-            title="Load East African Community Harmonized 18% VAT Template"
-          >
-            <Percent className="w-3.5 h-3.5 text-purple-500" />
-            <span>18% EAC VAT</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleApplyPresetTemplate('flat_gst')}
-            className="px-3 py-1.5 rounded-xl border border-slate-300 hover:border-blue-500 bg-slate-50 hover:bg-blue-50/50 text-slate-700 hover:text-blue-800 font-bold text-xs transition cursor-pointer flex items-center gap-1.5"
-            title="Load 10% GST Template"
-          >
-            <Percent className="w-3.5 h-3.5 text-blue-500" />
-            <span>10% GST</span>
-          </button>
-        </div>
-      </div>
-
-      {/* KRA eTIMS Fiscal Engine Card (In Partnership with Digitax) */}
-      <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-blue-950 text-white rounded-2xl border border-blue-500/30 p-5 sm:p-6 shadow-xl relative overflow-hidden">
-        {/* Subtle Ambient Glow */}
-        <div className="absolute top-0 right-0 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-4 relative z-10">
-          <div className="flex items-start gap-3">
-            <div className="w-11 h-11 rounded-xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0">
-              <FileCheck className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h4 className="text-base sm:text-lg font-black tracking-tight text-white">
-                  KRA eTIMS Fiscal Compliance
-                </h4>
-                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-300 border border-blue-500/40 flex items-center gap-1">
-                  <ShieldCheck className="w-3 h-3 text-blue-400" />
-                  In Partnership with Digitax
-                </span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  API Active
-                </span>
-              </div>
-              <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
-                Automated electronic tax register invoicing, compliant Control Unit (CU) sequences, and certified QR code generation provided in direct integration partnership with <strong>Digitax</strong>.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 self-start md:self-auto flex-wrap">
+    <div
+      id="tax-management-panel"
+      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 sm:p-6 space-y-6"
+    >
+      <SettingsSectionHeader
+        title="Taxes, VAT & KRA eTIMS"
+        description="Configure standard tax rates, category exemptions, regional overrides, and automated KRA eTIMS invoice signing via Digitax."
+        meta={
+          <span className="tabular-nums">
+            {taxSettings.taxLabel} {(taxSettings.defaultTaxRate * 100).toFixed(1)}% · {activeRuleCount} active rules
+          </span>
+        }
+        actions={
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
-              id="test-digitax-ping-btn"
-              disabled={isTestingDigitax}
-              onClick={handleTestDigitaxPing}
-              className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs transition flex items-center gap-2 cursor-pointer shadow-md shadow-blue-600/30"
-              title="Ping Digitax eTIMS sandbox server to verify KRA transmission"
+              onClick={() => handleApplyPresetTemplate('kra_standard')}
+              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium text-xs transition cursor-pointer whitespace-nowrap"
+              title="Load standard KRA ETR Class A (16%) and Class B (0% Zero-Rated Staples)"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isTestingDigitax ? 'animate-spin' : ''}`} />
-              <span>{isTestingDigitax ? 'Testing Ping...' : 'Test Digitax Ping'}</span>
+              KRA ETR (16%)
             </button>
-
             <button
               type="button"
-              id="transmit-digitax-test-sale-btn"
-              disabled={isTransmittingTestSale}
-              onClick={handleTransmitTestSale}
-              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs transition flex items-center gap-2 cursor-pointer shadow-md shadow-emerald-600/30"
-              title="Transmit a live compliant test sale to KRA eTIMS via Digitax"
+              onClick={() => handleApplyPresetTemplate('eac_standard')}
+              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium text-xs transition cursor-pointer whitespace-nowrap"
+              title="Load East African Community Harmonized 18% VAT Template"
             >
-              <Zap className={`w-3.5 h-3.5 ${isTransmittingTestSale ? 'animate-spin' : ''}`} />
-              <span>{isTransmittingTestSale ? 'Signing with KRA...' : 'Transmit Test Sale to KRA'}</span>
+              18% EAC VAT
+            </button>
+            <button
+              type="button"
+              onClick={() => handleApplyPresetTemplate('flat_gst')}
+              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium text-xs transition cursor-pointer whitespace-nowrap"
+              title="Load 10% GST Template"
+            >
+              10% GST
             </button>
           </div>
+        }
+      />
+
+      {/* Global Tax & Registration Settings */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Sliders className="w-4 h-4 text-slate-500" />
+          <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+            Global Tax & Registration
+          </h4>
         </div>
-
-        {/* Integration Details Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pt-4 relative z-10 text-xs">
-          <div className="bg-slate-950/60 p-3 rounded-xl border border-white/10">
-            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">
-              Integration Partner
-            </div>
-            <div className="font-bold text-white flex items-center gap-1.5">
-              <span>Digitax Technologies</span>
-            </div>
-            <div className="text-[10px] text-blue-400 mt-0.5 font-medium">
-              KRA Certified Integrator
-            </div>
-          </div>
-
-          <div className="bg-slate-950/60 p-3 rounded-xl border border-white/10">
-            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">
-              Environment Target
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setDigitaxEnv('sandbox')}
-                className={`px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer ${
-                  digitaxEnv === 'sandbox'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-800 text-slate-400 hover:text-white'
-                }`}
-              >
-                Sandbox
-              </button>
-              <button
-                type="button"
-                onClick={() => setDigitaxEnv('production')}
-                className={`px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer ${
-                  digitaxEnv === 'production'
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-slate-800 text-slate-400 hover:text-white'
-                }`}
-              >
-                Production Live
-              </button>
-            </div>
-            <div className="text-[10px] text-slate-400 mt-1 font-mono truncate">
-              {digitaxEnv === 'sandbox' ? 'api.digitax.tech/ke/v2' : 'api.digitax.tech/ke/v2'}
-            </div>
-          </div>
-
-          <div className="bg-slate-950/60 p-3 rounded-xl border border-white/10">
-            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">
-              Virtual CU Device Serial
-            </div>
-            <div className="font-mono font-bold text-emerald-400">
-              {digitaxTestResult?.cuSerial || 'KRARVS000000005'}
-            </div>
-            <div className="text-[10px] text-slate-400 mt-0.5">
-              Certified Device Unit
-            </div>
-          </div>
-
-          <div className="bg-slate-950/60 p-3 rounded-xl border border-white/10">
-            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">
-              Merchant Tax PIN (KRA)
-            </div>
-            <div className="font-mono font-bold text-white">
-              {etimsInfo?.tax_pin || taxSettings.taxNumber || 'A011001890C'}
-            </div>
-            <div className="text-[10px] text-slate-400 mt-0.5">
-              Branch: {etimsInfo?.branch_office_id || '01'} • Active
-            </div>
-          </div>
-        </div>
-
-        {/* Feature Switches & Handshake Feed */}
-        <div className="pt-4 mt-4 border-t border-white/10 grid grid-cols-1 md:grid-cols-2 gap-3 relative z-10 text-xs">
-          <label className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-950/50 border border-white/10 cursor-pointer hover:bg-slate-950/70 transition">
-            <input
-              type="checkbox"
-              checked={autoTransmitEtims}
-              onChange={(e) => setAutoTransmitEtims(e.target.checked)}
-              className="w-4 h-4 text-blue-600 rounded cursor-pointer"
-            />
-            <div>
-              <div className="font-bold text-white">
-                Auto-Transmit Sales to KRA via Digitax API
-              </div>
-              <div className="text-[11px] text-slate-400">
-                Transmits signed itemized fiscal invoices instantly upon till payment completion
-              </div>
-            </div>
-          </label>
-
-          <label className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-950/50 border border-white/10 cursor-pointer hover:bg-slate-950/70 transition">
-            <input
-              type="checkbox"
-              checked={generateKraQr}
-              onChange={(e) => setGenerateKraQr(e.target.checked)}
-              className="w-4 h-4 text-blue-600 rounded cursor-pointer"
-            />
-            <div>
-              <div className="font-bold text-white">
-                Generate Cryptographic KRA QR Codes
-              </div>
-              <div className="text-[11px] text-slate-400">
-                Embeds verifiable KRA validation QR code and CU number on thermal and digital slips
-              </div>
-            </div>
-          </label>
-        </div>
-
-        {/* Last Ping Handshake Banner */}
-        {digitaxTestResult && (
-          <div className="mt-3 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between text-[11px] text-emerald-300 font-mono">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span>
-                Digitax Handshake: <strong>200 OK</strong> • CU Invoice: <strong>{digitaxTestResult.sequenceNo}</strong> • Endpoint: {digitaxTestResult.endpoint}
-              </span>
-            </div>
-            <span className="text-[10px] text-slate-400 hidden sm:inline">
-              {new Date(digitaxTestResult.timestamp).toLocaleTimeString()}
-            </span>
-          </div>
-        )}
-
-        {/* Live Transmitted Invoices Feed */}
-        {recentDigitaxSales.length > 0 && (
-          <div className="mt-4 pt-3.5 border-t border-white/10 relative z-10">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Receipt className="w-3.5 h-3.5 text-blue-400" />
-                Live Transmitted eTIMS Invoices ({recentDigitaxSales.length})
-              </span>
-              <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                KRA Verified
-              </span>
-            </div>
-            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-              {recentDigitaxSales.map((sale) => (
-                <div
-                  key={sale.id}
-                  className="bg-slate-950/70 p-2.5 rounded-xl border border-white/10 flex items-center justify-between text-xs hover:border-blue-500/40 transition"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-white font-mono">{sale.trader_invoice_number}</span>
-                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                        CU #{sale.invoice_number}
-                      </span>
-                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                        {sale.status}
-                      </span>
-                    </div>
-                    <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-2">
-                      <span>Serial: {sale.serial_number}</span>
-                      <span>•</span>
-                      <span>{sale.date} {sale.time}</span>
-                      {sale.customer_tin && <span>• Buyer: {sale.customer_tin}</span>}
-                    </div>
-                  </div>
-                  {sale.etims_url && (
-                    <a
-                      href={sale.etims_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 border border-blue-500/30 transition shrink-0"
-                    >
-                      <span>KRA Portal</span>
-                      <ExternalLink className="w-2.5 h-2.5" />
-                    </a>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Global Configuration Card */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-4">
-        <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-2 border-b border-slate-100 pb-2">
-          <Sliders className="w-3.5 h-3.5 text-slate-600" />
-          <span>Global Tax & Registration Settings</span>
-        </h4>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
-              Tax Scheme / Label
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+              Tax Scheme
             </label>
             <select
               value={taxSettings.taxLabel}
               onChange={(e) => setTaxSettings({ ...taxSettings, taxLabel: e.target.value })}
-              className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-600 cursor-pointer"
+              className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
             >
               <option value="VAT">VAT (Value Added Tax)</option>
               <option value="GST">GST (Goods and Services Tax)</option>
@@ -744,8 +505,8 @@ export const TaxManagementPanel: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
-              Standard Default Rate (%)
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+              Default Rate (%)
             </label>
             <div className="relative">
               <input
@@ -760,90 +521,294 @@ export const TaxManagementPanel: React.FC = () => {
                     defaultTaxRate: (parseFloat(e.target.value) || 0) / 100,
                   })
                 }
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold font-mono focus:outline-none focus:border-blue-600"
+                className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-mono tabular-nums font-semibold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <span className="absolute right-3 top-2 text-xs font-bold text-slate-400 pointer-events-none">
-                %
-              </span>
+              <span className="absolute right-3 top-2 text-xs text-slate-400 pointer-events-none">%</span>
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
-              Tax PIN / Fiscal Reg #
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+              KRA Tax PIN / Fiscal Reg #
             </label>
             <input
               type="text"
               value={taxSettings.taxNumber}
               onChange={(e) => setTaxSettings({ ...taxSettings, taxNumber: e.target.value.toUpperCase() })}
               placeholder="e.g. P051234567Z"
-              className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:outline-none focus:border-blue-600"
+              className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-mono tabular-nums font-semibold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
-              Retail Price Structure
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+              Price Structure
             </label>
             <select
               value={taxSettings.pricingType}
               onChange={(e) => setTaxSettings({ ...taxSettings, pricingType: e.target.value as any })}
-              className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-600 cursor-pointer"
+              className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
             >
               <option value="inclusive">Tax Inclusive (Shelf price includes tax)</option>
-              <option value="exclusive">Tax Exclusive (Tax calculated on top at till)</option>
+              <option value="exclusive">Tax Exclusive (Added at till)</option>
             </select>
           </div>
         </div>
 
-        {/* Feature Switches */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-          <label className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50/60 cursor-pointer hover:bg-slate-50 transition">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+          <label className="flex items-start gap-2.5 p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/50 cursor-pointer hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition">
             <input
               type="checkbox"
               checked={taxSettings.enableDynamicCategoryTax}
-              onChange={(e) => setTaxSettings({ ...taxSettings, enableDynamicCategoryTax: e.target.checked })}
-              className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+              onChange={(e) => {
+                if (e.target.checked && !requireCapability('advancedTaxRules')) return;
+                setTaxSettings({ ...taxSettings, enableDynamicCategoryTax: e.target.checked });
+              }}
+              className="w-4 h-4 mt-0.5 text-blue-600 rounded cursor-pointer"
             />
             <div>
-              <div className="text-xs font-bold text-slate-800">
-                Category-Specific Dynamic Tax Rules
+              <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                Category-Specific Dynamic Rules
               </div>
-              <div className="text-[11px] text-slate-500">
-                Apply special rates or zero-rated 0% tax to entire product categories (e.g. flour, grains, produce)
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                Apply special or zero-rated (0%) rates to entire product categories.
               </div>
             </div>
           </label>
 
-          <label className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50/60 cursor-pointer hover:bg-slate-50 transition">
+          <label className="flex items-start gap-2.5 p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/50 cursor-pointer hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition">
             <input
               type="checkbox"
               checked={taxSettings.enableDynamicRegionalTax}
-              onChange={(e) => setTaxSettings({ ...taxSettings, enableDynamicRegionalTax: e.target.checked })}
-              className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+              onChange={(e) => {
+                if (e.target.checked && !requireCapability('advancedTaxRules')) return;
+                setTaxSettings({ ...taxSettings, enableDynamicRegionalTax: e.target.checked });
+              }}
+              className="w-4 h-4 mt-0.5 text-blue-600 rounded cursor-pointer"
             />
             <div>
-              <div className="text-xs font-bold text-slate-800">
-                Regional / Branch-Specific Tax Overrides
+              <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                Branch / Regional Overrides
               </div>
-              <div className="text-[11px] text-slate-500">
-                Apply location overrides for duty-free export zones, coastal special economic zones, or regional rates
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                Apply branch-level rates for special economic or export zones.
               </div>
             </div>
           </label>
         </div>
       </div>
 
-      {/* Dynamic Tax Rules List Card */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+      {/* KRA eTIMS Integration Section */}
+      <div className="pt-5 border-t border-slate-200 dark:border-slate-800 space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="space-y-0.5">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <FileCheck className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                KRA eTIMS Fiscal Engine
+              </h4>
+              <span className="text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
+              <span className="text-slate-600 dark:text-slate-400">Digitax Partner Integration</span>
+              <span className="text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
+              <span className="text-emerald-700 dark:text-emerald-400 font-medium">API Connected</span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Automated Control Unit (CU) invoice signing and KRA verification QR generation via Digitax.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              id="test-digitax-ping-btn"
+              disabled={isTestingDigitax}
+              onClick={handleTestDigitaxPing}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 text-slate-700 dark:text-slate-200 font-medium text-xs transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              title="Ping Digitax eTIMS sandbox server to verify KRA transmission"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isTestingDigitax ? 'animate-spin' : ''}`} />
+              <span>{isTestingDigitax ? 'Testing Ping...' : 'Test Digitax Ping'}</span>
+            </button>
+
+            <button
+              type="button"
+              id="transmit-digitax-test-sale-btn"
+              disabled={isTransmittingTestSale}
+              onClick={handleTransmitTestSale}
+              className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium text-xs transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              title="Transmit a live compliant test sale to KRA eTIMS via Digitax"
+            >
+              <Zap className={`w-3.5 h-3.5 ${isTransmittingTestSale ? 'animate-spin' : ''}`} />
+              <span>{isTransmittingTestSale ? 'Signing with KRA...' : 'Transmit Test Sale'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Clean Key-Value Integration Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50/70 dark:bg-slate-950/50 text-xs">
+          <div className="p-3.5">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400">Integration Partner</div>
+            <div className="font-semibold text-slate-900 dark:text-slate-100 mt-0.5">Digitax Technologies</div>
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">KRA Certified Integrator</div>
+          </div>
+
+          <div className="p-3.5">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-1">Environment</div>
+            <div className="inline-flex bg-slate-200/80 dark:bg-slate-800 p-0.5 rounded-md">
+              <button
+                type="button"
+                onClick={() => setDigitaxEnv('sandbox')}
+                className={`px-2 py-0.5 rounded text-[11px] font-medium transition cursor-pointer ${
+                  digitaxEnv === 'sandbox'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
+                    : 'text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                Sandbox
+              </button>
+              <button
+                type="button"
+                onClick={() => setDigitaxEnv('production')}
+                className={`px-2 py-0.5 rounded text-[11px] font-medium transition cursor-pointer ${
+                  digitaxEnv === 'production'
+                    ? 'bg-emerald-600 text-white shadow-2xs'
+                    : 'text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                Live
+              </button>
+            </div>
+          </div>
+
+          <div className="p-3.5">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400">Virtual CU Serial</div>
+            <div className="font-mono tabular-nums font-semibold text-slate-900 dark:text-slate-100 mt-0.5">
+              {digitaxTestResult?.cuSerial || 'KRARVS000000005'}
+            </div>
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Certified Device Unit</div>
+          </div>
+
+          <div className="p-3.5">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400">Registered Tax PIN</div>
+            <div className="font-mono tabular-nums font-semibold text-slate-900 dark:text-slate-100 mt-0.5">
+              {etimsInfo?.tax_pin || taxSettings.taxNumber || 'A011001890C'}
+            </div>
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
+              Branch {etimsInfo?.branch_office_id || '01'} · Active
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+          <label className="flex items-start gap-2.5 p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/50 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autoTransmitEtims}
+              onChange={(e) => setAutoTransmitEtims(e.target.checked)}
+              className="w-4 h-4 mt-0.5 text-blue-600 rounded cursor-pointer"
+            />
+            <div>
+              <div className="font-semibold text-slate-800 dark:text-slate-200">
+                Auto-Transmit Sales via Digitax API
+              </div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                Submits signed itemized fiscal invoices upon checkout completion.
+              </div>
+            </div>
+          </label>
+
+          <label className="flex items-start gap-2.5 p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/50 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={generateKraQr}
+              onChange={(e) => setGenerateKraQr(e.target.checked)}
+              className="w-4 h-4 mt-0.5 text-blue-600 rounded cursor-pointer"
+            />
+            <div>
+              <div className="font-semibold text-slate-800 dark:text-slate-200">
+                Embed KRA Verification QR Codes
+              </div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                Prints verifiable KRA QR code and CU sequence on receipts.
+              </div>
+            </div>
+          </label>
+        </div>
+
+        {digitaxTestResult && (
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono tabular-nums text-emerald-700 dark:text-emerald-400 px-3 py-2 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900">
+            <span className="inline-flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              Digitax Handshake 200 OK · CU Invoice {digitaxTestResult.sequenceNo}
+            </span>
+            <span className="text-slate-500 dark:text-slate-400">
+              {new Date(digitaxTestResult.timestamp).toLocaleTimeString()}
+            </span>
+          </div>
+        )}
+
+        {recentDigitaxSales.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-slate-700 dark:text-slate-300 tabular-nums">
+                Recent Transmitted eTIMS Invoices ({recentDigitaxSales.length})
+              </span>
+              <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
+                KRA Verified
+              </span>
+            </div>
+            <div className="divide-y divide-slate-200 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg max-h-44 overflow-y-auto">
+              {recentDigitaxSales.map((sale) => (
+                <div
+                  key={sale.id}
+                  className="px-3 py-2.5 flex items-center justify-between gap-3 text-xs bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 font-mono tabular-nums">
+                      <span className="font-semibold text-slate-900 dark:text-slate-100">
+                        {sale.trader_invoice_number}
+                      </span>
+                      <span className="text-slate-400">·</span>
+                      <span className="text-[11px] text-slate-600 dark:text-slate-300">
+                        CU #{sale.invoice_number}
+                      </span>
+                      <span className="text-slate-400">·</span>
+                      <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
+                        {sale.status}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+                      Serial {sale.serial_number} · {sale.date} {sale.time}
+                      {sale.customer_tin ? ` · Buyer ${sale.customer_tin}` : ''}
+                    </div>
+                  </div>
+                  {sale.etims_url && (
+                    <a
+                      href={sale.etims_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline shrink-0 whitespace-nowrap"
+                    >
+                      <span>Verify</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Dynamic Tax Rules Hierarchy Table */}
+      <div className="pt-5 border-t border-slate-200 dark:border-slate-800 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-2">
-              <Layers className="w-3.5 h-3.5 text-slate-600" />
-              <span>Active Tax Rules Hierarchy ({taxSettings.rules.length})</span>
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 tabular-nums">
+              Tax Rules Hierarchy ({taxSettings.rules.length})
             </h4>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              Rules are evaluated at checkout: Regional Overrides &gt; Category Rules &gt; Store Default
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Evaluated in order: Regional Overrides &rarr; Category Rules &rarr; Store Default.
             </p>
           </div>
 
@@ -851,104 +816,83 @@ export const TaxManagementPanel: React.FC = () => {
             type="button"
             id="btn-add-tax-rule"
             onClick={handleOpenAddRule}
-            className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-xs self-start sm:self-auto"
+            className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs transition inline-flex items-center gap-1.5 cursor-pointer self-start sm:self-auto whitespace-nowrap"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add Tax Rule</span>
           </button>
         </div>
 
-        {/* Rules Table */}
-        <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+        <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-600 border-b border-slate-200">
+            <thead className="bg-slate-50 dark:bg-slate-950 text-[11px] font-semibold text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
               <tr>
-                <th className="py-2.5 px-3">Rule Name & Code</th>
+                <th className="py-2.5 px-3">Code &amp; Rule</th>
                 <th className="py-2.5 px-3">Scope / Target</th>
-                <th className="py-2.5 px-3 text-right">Tax Rate</th>
+                <th className="py-2.5 px-3 text-right">Rate</th>
                 <th className="py-2.5 px-3 text-center">Status</th>
                 <th className="py-2.5 px-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white dark:bg-slate-900">
               {taxSettings.rules.map((rule) => {
                 const targetLocationName = locations.find((l) => l.id === rule.targetLocationId)?.name;
 
                 return (
-                  <tr key={rule.id} className="hover:bg-slate-50/80 transition">
-                    <td className="py-3 px-3">
+                  <tr key={rule.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition">
+                    <td className="py-2.5 px-3">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                        <span className="font-mono text-[11px] font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
                           {rule.code}
                         </span>
-                        <div className="font-bold text-slate-900">
+                        <span className="font-medium text-slate-900 dark:text-slate-100">
                           {rule.name}
-                        </div>
+                        </span>
                         {rule.isDefault && (
-                          <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.2 rounded-full bg-blue-100 text-blue-700">
-                            Default
+                          <span className="text-[11px] text-blue-600 dark:text-blue-400 font-medium">
+                            · Default
                           </span>
                         )}
                       </div>
                       {rule.description && (
-                        <div className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
                           {rule.description}
                         </div>
                       )}
                     </td>
 
-                    <td className="py-3 px-3">
-                      {rule.scope === 'category' ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
-                          <Tag className="w-3 h-3 text-purple-600" />
-                          Category: {rule.targetCategory}
-                        </span>
-                      ) : rule.scope === 'region' ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
-                          <MapPin className="w-3 h-3 text-blue-600" />
-                          Region: {targetLocationName || rule.targetLocationId}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
-                          All Catalog Items
-                        </span>
-                      )}
+                    <td className="py-2.5 px-3 text-slate-600 dark:text-slate-300">
+                      {rule.scope === 'category'
+                        ? `Category: ${rule.targetCategory}`
+                        : rule.scope === 'region'
+                        ? `Branch: ${targetLocationName || rule.targetLocationId}`
+                        : 'All Catalog Items'}
                     </td>
 
-                    <td className="py-3 px-3 text-right font-mono">
-                      <span
-                        className={`font-black text-xs px-2 py-0.5 rounded-full ${
-                          rule.rate === 0
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : rule.rate < 0.1
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-blue-100 text-blue-800'
-                        }`}
-                      >
-                        {(rule.rate * 100).toFixed(1)}%
-                      </span>
+                    <td className="py-2.5 px-3 text-right font-mono tabular-nums font-semibold text-slate-900 dark:text-slate-100">
+                      {(rule.rate * 100).toFixed(1)}%
                     </td>
 
-                    <td className="py-3 px-3 text-center">
+                    <td className="py-2.5 px-3 text-center">
                       <button
                         type="button"
                         onClick={() => handleToggleRuleActive(rule.id)}
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition cursor-pointer ${
+                        className={`text-xs font-medium transition cursor-pointer ${
                           rule.isActive
-                            ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                            : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                            ? 'text-emerald-700 dark:text-emerald-400 hover:underline'
+                            : 'text-slate-400 dark:text-slate-500 hover:underline'
                         }`}
                       >
                         {rule.isActive ? 'Active' : 'Disabled'}
                       </button>
                     </td>
 
-                    <td className="py-3 px-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
+                    <td className="py-2.5 px-3 text-right">
+                      <div className="inline-flex items-center justify-end gap-1">
                         <button
                           type="button"
                           onClick={() => handleOpenEditRule(rule)}
-                          className="p-1 text-slate-500 hover:text-blue-600 rounded transition cursor-pointer"
+                          className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded transition cursor-pointer"
                           title="Edit rule"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
@@ -957,7 +901,7 @@ export const TaxManagementPanel: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => handleDeleteRule(rule.id)}
-                            className="p-1 text-slate-400 hover:text-rose-600 rounded transition cursor-pointer"
+                            className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded transition cursor-pointer"
                             title="Delete rule"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -973,7 +917,7 @@ export const TaxManagementPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* Live Dynamic Tax Resolution Simulator Sandbox */}
+      {/* Live Tax Resolution Simulator */}
       {(() => {
         const simResolved = resolveDynamicTaxRate(
           { category: simCategory },
@@ -997,35 +941,25 @@ export const TaxManagementPanel: React.FC = () => {
         }
 
         return (
-          <div className="bg-slate-900 text-white rounded-2xl border border-slate-800 p-5 sm:p-6 shadow-md space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0">
-                  <Calculator className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                    <span>Live Dynamic Tax Resolution Simulator</span>
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                      Sandbox
-                    </span>
-                  </h4>
-                  <p className="text-[11px] text-slate-400">
-                    Verify how your category exemptions and branch overrides resolve dynamically before customers check out
-                  </p>
-                </div>
-              </div>
+          <div className="pt-5 border-t border-slate-200 dark:border-slate-800 space-y-4">
+            <div>
+              <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Tax Resolution Simulator
+              </h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Preview how branch overrides and category exemptions calculate at checkout.
+              </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                  Select Branch / Location
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Branch / Location
                 </label>
                 <select
                   value={simLocationId}
                   onChange={(e) => setSimLocationId(e.target.value)}
-                  className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                  className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                 >
                   {locations.map((loc) => (
                     <option key={loc.id} value={loc.id}>
@@ -1036,13 +970,13 @@ export const TaxManagementPanel: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                  Select Product Category
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Product Category
                 </label>
                 <select
                   value={simCategory}
                   onChange={(e) => setSimCategory(e.target.value)}
-                  className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                  className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                 >
                   {categories.filter((c) => c !== 'All').map((cat) => (
                     <option key={cat} value={cat}>
@@ -1053,8 +987,8 @@ export const TaxManagementPanel: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                  Test Amount ({currentBusiness?.currency || 'KES'})
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Sample Amount ({currentBusiness?.currency || 'KES'})
                 </label>
                 <input
                   type="number"
@@ -1062,64 +996,47 @@ export const TaxManagementPanel: React.FC = () => {
                   step="10"
                   value={simAmount}
                   onChange={(e) => setSimAmount(e.target.value)}
-                  className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-3 py-2 text-xs font-bold font-mono text-white focus:outline-none focus:border-blue-500"
+                  className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-mono tabular-nums font-semibold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             </div>
 
-            {/* Calculation Result Display */}
-            <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/60 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-              <div>
-                <span className="text-[10px] text-slate-400 block font-semibold">Matched Rule</span>
-                <span className="font-bold text-white flex items-center gap-1.5 mt-0.5">
-                  <span className="font-mono text-[9px] px-1 py-0.2 rounded bg-slate-700 text-slate-300 border border-slate-600">
-                    {simResolved.code}
-                  </span>
-                  <span className="truncate">{simResolved.ruleName}</span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50/70 dark:bg-slate-950/50 text-xs">
+              <div className="p-3">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Matched Rule</span>
+                <span className="font-semibold text-slate-900 dark:text-slate-100 mt-0.5 block truncate">
+                  {simResolved.code} · {simResolved.ruleName}
                 </span>
               </div>
-
-              <div>
-                <span className="text-[10px] text-slate-400 block font-semibold">Effective Rate</span>
-                <span className={`font-mono font-black text-sm mt-0.5 block ${simResolved.rate === 0 ? 'text-emerald-400' : 'text-blue-400'}`}>
-                  {(simResolved.rate * 100).toFixed(1)}% {simResolved.rate === 0 ? '(0% Zero-Rated)' : ''}
+              <div className="p-3">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Effective Rate</span>
+                <span className="font-mono tabular-nums font-semibold text-slate-900 dark:text-slate-100 mt-0.5 block">
+                  {(simResolved.rate * 100).toFixed(1)}%
                 </span>
               </div>
-
-              <div>
-                <span className="text-[10px] text-slate-400 block font-semibold">Taxable Net Base</span>
-                <span className="font-mono font-bold text-slate-200 text-sm mt-0.5 block">
+              <div className="p-3">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Taxable Net Base</span>
+                <span className="font-mono tabular-nums font-semibold text-slate-900 dark:text-slate-100 mt-0.5 block">
                   {currentBusiness?.currency || 'KES'} {simNet.toFixed(2)}
                 </span>
               </div>
-
-              <div>
-                <span className="text-[10px] text-slate-400 block font-semibold">
-                  Tax ({taxSettings.taxLabel})
+              <div className="p-3">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                  Tax ({taxSettings.taxLabel}) · Total
                 </span>
-                <span className="font-mono font-black text-sm text-emerald-400 mt-0.5 block">
-                  {currentBusiness?.currency || 'KES'} {simTax.toFixed(2)}
+                <span className="font-mono tabular-nums font-semibold text-emerald-700 dark:text-emerald-400 mt-0.5 block">
+                  {simTax.toFixed(2)} · {simGross.toFixed(2)}
                 </span>
               </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] text-slate-400 pt-1">
-              <span>
-                Pricing Structure: <strong className="text-white capitalize">{taxSettings.pricingType}</strong>
-                {taxSettings.pricingType === 'inclusive' ? ' (Shelf price includes tax)' : ' (Tax calculated on top at checkout)'}
-              </span>
-              <span className="text-slate-300 font-mono">
-                Total Payable: <strong className="text-white text-xs">{currentBusiness?.currency || 'KES'} {simGross.toFixed(2)}</strong>
-              </span>
             </div>
           </div>
         );
       })()}
 
-      {/* Bottom Save Changes Bar */}
-      <div className="flex items-center justify-between pt-2">
-        <p className="text-xs text-slate-400">
-          Changes will apply dynamically to all register terminals upon save.
+      {/* Bottom Save Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Updates apply to all active POS terminals across your branches immediately upon save.
         </p>
 
         <button
@@ -1127,16 +1044,16 @@ export const TaxManagementPanel: React.FC = () => {
           id="btn-save-tax-settings"
           onClick={handleSaveTaxSettings}
           disabled={isSaving}
-          className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-2 shadow-md transition cursor-pointer"
+          className="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium text-xs inline-flex items-center gap-2 transition cursor-pointer whitespace-nowrap self-start sm:self-auto"
         >
           {isSaving ? (
             <>
-              <RotateCcw className="w-4 h-4 animate-spin" />
-              <span>Saving Configuration...</span>
+              <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+              <span>Saving...</span>
             </>
           ) : (
             <>
-              <Save className="w-4 h-4" />
+              <Save className="w-3.5 h-3.5" />
               <span>Save Tax Configuration</span>
             </>
           )}
@@ -1146,16 +1063,15 @@ export const TaxManagementPanel: React.FC = () => {
       {/* Add / Edit Rule Modal */}
       {isEditingRule && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-lg w-full p-5 sm:p-6 space-y-4 animate-fade-in">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
-                <Receipt className="w-4 h-4 text-emerald-600" />
-                <span>{ruleToEdit ? 'Edit Tax Rule' : 'Create New Tax Rule'}</span>
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xl max-w-lg w-full p-5 sm:p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+              <h3 className="font-semibold text-sm text-slate-900 dark:text-slate-100">
+                {ruleToEdit ? 'Edit Tax Rule' : 'Create Tax Rule'}
               </h3>
               <button
                 type="button"
                 onClick={() => setIsEditingRule(false)}
-                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1163,32 +1079,32 @@ export const TaxManagementPanel: React.FC = () => {
 
             <form onSubmit={handleSaveRule} className="space-y-4 text-xs">
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Rule Name *</label>
+                <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">Rule Name *</label>
                 <input
                   type="text"
                   required
                   value={ruleName}
                   onChange={(e) => setRuleName(e.target.value)}
                   placeholder="e.g. Zero-Rated Basic Food Staples"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-600"
+                  className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Fiscal / ETR Code</label>
+                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">Fiscal / ETR Code</label>
                   <input
                     type="text"
                     required
                     value={ruleCode}
                     onChange={(e) => setRuleCode(e.target.value.toUpperCase())}
                     placeholder="e.g. A, B, E"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold font-mono focus:outline-none focus:border-blue-600"
+                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-mono font-semibold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Rate (%) *</label>
+                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">Rate (%) *</label>
                   <div className="relative">
                     <input
                       type="number"
@@ -1199,33 +1115,33 @@ export const TaxManagementPanel: React.FC = () => {
                       value={ruleRate}
                       onChange={(e) => setRuleRate(e.target.value)}
                       placeholder="e.g. 16 or 0"
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold font-mono focus:outline-none focus:border-blue-600"
+                      className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-mono tabular-nums font-semibold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
-                    <span className="absolute right-3 top-2 text-slate-400 font-bold">%</span>
+                    <span className="absolute right-3 top-2 text-slate-400">%</span>
                   </div>
                 </div>
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Application Scope *</label>
+                <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">Application Scope *</label>
                 <select
                   value={ruleScope}
                   onChange={(e) => setRuleScope(e.target.value as any)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-600 cursor-pointer"
+                  className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                 >
-                  <option value="category">Specific Product Category (Category Zero-Rated/Special)</option>
-                  <option value="region">Specific Branch / Region Override (Special Economic Zone)</option>
+                  <option value="category">Specific Product Category</option>
+                  <option value="region">Specific Branch / Region Override</option>
                   <option value="all">All Products (Store-Wide Default)</option>
                 </select>
               </div>
 
               {ruleScope === 'category' && (
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Target Product Category *</label>
+                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">Target Product Category *</label>
                   <select
                     value={ruleTargetCategory}
                     onChange={(e) => setRuleTargetCategory(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-600 cursor-pointer"
+                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                   >
                     {categories
                       .filter((c) => c !== 'All')
@@ -1240,11 +1156,11 @@ export const TaxManagementPanel: React.FC = () => {
 
               {ruleScope === 'region' && (
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Target Branch / Location *</label>
+                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">Target Branch / Location *</label>
                   <select
                     value={ruleTargetLocationId}
                     onChange={(e) => setRuleTargetLocationId(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-600 cursor-pointer"
+                    className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                   >
                     {locations.map((loc) => (
                       <option key={loc.id} value={loc.id}>
@@ -1256,13 +1172,13 @@ export const TaxManagementPanel: React.FC = () => {
               )}
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Legal / Fiscal Description</label>
+                <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">Legal / Fiscal Description</label>
                 <input
                   type="text"
                   value={ruleDescription}
                   onChange={(e) => setRuleDescription(e.target.value)}
                   placeholder="e.g. Schedule 2 Zero-rated staple grains"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:border-blue-600"
+                  className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
@@ -1274,22 +1190,22 @@ export const TaxManagementPanel: React.FC = () => {
                   onChange={(e) => setRuleIsActive(e.target.checked)}
                   className="w-4 h-4 text-blue-600 rounded cursor-pointer"
                 />
-                <label htmlFor="rule-active-checkbox" className="font-bold text-slate-700 cursor-pointer">
+                <label htmlFor="rule-active-checkbox" className="font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
                   Activate this rule immediately at checkout
                 </label>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsEditingRule(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold transition cursor-pointer"
+                  className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold transition cursor-pointer shadow-xs"
+                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition cursor-pointer"
                 >
                   {ruleToEdit ? 'Save Changes' : 'Add Rule'}
                 </button>
@@ -1301,3 +1217,4 @@ export const TaxManagementPanel: React.FC = () => {
     </div>
   );
 };
+

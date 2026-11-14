@@ -23,6 +23,7 @@ import {
   Monitor,
   User,
   Gift,
+  Lock,
 } from 'lucide-react';
 import { usePos } from '../../context/PosContext';
 import { scrollToTop } from '../../utils/scrollUtils';
@@ -75,6 +76,7 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
     posContext = null;
   }
   const isSuperAdmin = posContext?.isSuperAdmin ?? false;
+  const entitlements = posContext?.entitlements;
   const isCurrentlyPricing = currentPage === 'pricing' || Boolean(posContext?.isPricingPageOpen);
 
   // Manage accessibility, focus trap, escape key, and body scroll locking
@@ -321,6 +323,9 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
               >
                 <BarChart3 className="w-5 h-5 text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" />
                 <span className="truncate flex-1">Sales Analytics</span>
+                {!isSuperAdmin && entitlements && !entitlements.capabilities.analytics && (
+                  <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                )}
               </button>
 
               <button
@@ -348,6 +353,9 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
               >
                 <Truck className="w-5 h-5 text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" />
                 <span className="truncate flex-1">Suppliers & Invoices</span>
+                {!isSuperAdmin && entitlements && !entitlements.capabilities.suppliers && (
+                  <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                )}
               </button>
 
               <button

@@ -5,6 +5,7 @@ import {
   BarChart3,
   RefreshCw,
   Menu,
+  Lock,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 
@@ -27,6 +28,8 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     isMobileMenuOpen,
     setIsMobileMenuOpen,
     toggleMobileMenu,
+    isSuperAdmin,
+    entitlements,
     t,
   } = usePos();
 
@@ -84,13 +87,18 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
       <button
         type="button"
         onClick={() => handleNavClick('analytics')}
-        className={`flex-1 min-h-[44px] flex flex-col items-center justify-center py-1 px-1 rounded-lg transition-colors duration-150 cursor-pointer ${
+        className={`flex-1 min-h-[44px] flex flex-col items-center justify-center py-1 px-1 rounded-lg transition-colors duration-150 cursor-pointer relative ${
           currentTab === 'analytics'
             ? 'text-blue-600 font-bold'
             : 'text-slate-500 hover:text-slate-800 font-medium'
         }`}
       >
-        <BarChart3 className={`w-5 h-5 ${currentTab === 'analytics' ? 'stroke-[2.25]' : 'stroke-[1.75]'}`} />
+        <div className="relative">
+          <BarChart3 className={`w-5 h-5 ${currentTab === 'analytics' ? 'stroke-[2.25]' : 'stroke-[1.75]'}`} />
+          {!isSuperAdmin && !entitlements.capabilities.analytics && (
+            <Lock className="w-2.5 h-2.5 text-slate-400 absolute -top-1 -right-2" aria-label="Requires plan upgrade" />
+          )}
+        </div>
         <span className="text-[10px] tracking-tight mt-0.5">{t('nav_analytics', 'Analytics')}</span>
       </button>
 

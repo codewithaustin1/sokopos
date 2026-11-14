@@ -24,6 +24,7 @@ import {
   BadgePercent,
   Clock,
   RefreshCw,
+  Lock,
 } from 'lucide-react';
 import { Customer } from '../types';
 import { usePos } from '../context/PosContext';
@@ -48,7 +49,12 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
     openBusinessSettings,
     refreshTenantCustomers,
     isCustomersLoading,
+    entitlements,
+    isSuperAdmin,
+    requireCapability,
   } = usePos();
+
+  const hasLoyaltyAndCredit = isSuperAdmin || entitlements.capabilities.loyaltyAndStoreCredit;
 
   useEffect(() => {
     refreshTenantCustomers(false).catch(() => {});
@@ -271,12 +277,16 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
             <button
               type="button"
               id="customer-view-loyalty-settings-btn"
-              onClick={() => openBusinessSettings('loyalty')}
+              onClick={() => {
+                if (!requireCapability('loyaltyAndStoreCredit')) return;
+                openBusinessSettings('loyalty');
+              }}
               className="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-xs rounded-xl border border-amber-200 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
               title="Configure Loyalty Points Earning & Redemption Values"
             >
               <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-600" />
               <span className="hidden sm:inline">Loyalty Rules</span>
+              {!hasLoyaltyAndCredit && <Lock className="w-3 h-3 text-amber-700 shrink-0" />}
             </button>
 
             <button
@@ -623,13 +633,14 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
                     <button
                       type="button"
                       onClick={() => {
+                        if (!requireCapability('loyaltyAndStoreCredit')) return;
                         setCustomerForCreditAdjustment(cust);
                         setIsCreditAdjustmentModalOpen(true);
                       }}
-                      className="p-1.5 rounded-xl bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 border border-slate-200 transition cursor-pointer"
+                      className="p-1.5 rounded-xl bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 border border-slate-200 transition cursor-pointer relative"
                       title="Record payment or adjust credit ledger"
                     >
-                      <Wallet className="w-4 h-4" />
+                      {!hasLoyaltyAndCredit ? <Lock className="w-4 h-4 text-slate-400" /> : <Wallet className="w-4 h-4" />}
                     </button>
 
                     {/* View Details */}
@@ -699,6 +710,7 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
           setIsFormModalOpen(true);
         }}
         onOpenCreditAdjustment={(cust) => {
+          if (!requireCapability('loyaltyAndStoreCredit')) return;
           setCustomerForCreditAdjustment(cust);
           setIsCreditAdjustmentModalOpen(true);
         }}

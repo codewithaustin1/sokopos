@@ -264,6 +264,62 @@ Sitemap: ${origin}/sitemap.xml
 
   const SUPER_ADMIN_EMAIL = 'upfrontretaile@gmail.com';
 
+  type CanonicalServerTier = 'free' | 'starter' | 'business' | 'premium';
+
+  function normalizeServerPlanTier(
+    plan?: string | null,
+    subscriptionPlanId?: string | null
+  ): CanonicalServerTier {
+    for (const candidate of [plan, subscriptionPlanId]) {
+      const clean = String(candidate || '').trim().toLowerCase();
+      if (!clean) continue;
+      if (clean === 'free' || clean === 'free_advisory') return 'free';
+      if (clean === 'starter' || clean === 'basic') return 'starter';
+      if (clean === 'business' || clean === 'professional' || clean === 'pro') return 'business';
+      if (clean === 'premium' || clean === 'enterprise') return 'premium';
+    }
+    return 'free';
+  }
+
+  const SERVER_TIER_MIN_KES: Record<CanonicalServerTier, { monthly: number; annual: number }> = {
+    free: { monthly: 1999, annual: 1999 },
+    starter: { monthly: 599, annual: 5990 },
+    business: { monthly: 1299, annual: 12990 },
+    premium: { monthly: 2999, annual: 29990 },
+  };
+
+  const SERVER_TIER_STAFF_LIMIT: Record<CanonicalServerTier, number> = {
+    free: 1,
+    starter: 2,
+    business: 10,
+    premium: -1,
+  };
+
+  function resolveEffectiveServerPlanTier(bizDoc?: Record<string, any> | null): CanonicalServerTier {
+    if (!bizDoc) return 'free';
+    const bizId = String(bizDoc.id || '').trim();
+    const ownerEmail = String(bizDoc.ownerEmail || '').trim().toLowerCase();
+    if (bizId === 'biz-demo' || bizId === 'biz-upfront' || ownerEmail === SUPER_ADMIN_EMAIL) {
+      return 'premium';
+    }
+    const baseTier = normalizeServerPlanTier(bizDoc.plan, bizDoc.subscription?.planId);
+    if (bizDoc.status === 'suspended') {
+      return 'free';
+    }
+    if (bizDoc.subscription && baseTier !== 'free') {
+      if (bizDoc.subscription.status === 'expired') {
+        return 'free';
+      }
+      if (bizDoc.subscription.expiresAt) {
+        const expMs = new Date(String(bizDoc.subscription.expiresAt)).getTime();
+        if (Number.isFinite(expMs) && expMs < Date.now()) {
+          return 'free';
+        }
+      }
+    }
+    return baseTier;
+  }
+
   async function verifyFirebaseIdToken(
     idToken: string | undefined
   ): Promise<{ uid: string; email: string; emailVerified: boolean } | null> {
@@ -464,6 +520,43 @@ Sitemap: ${origin}/sitemap.xml
       const creds = await hydrateStaffCredentialsFromFirestore();
       const existingCred = creds[cashierId];
 
+      if (existingCred && existingCred.businessId && existingCred.businessId !== businessId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Cross-tenant access denied: credential belongs to a different store.',
+        });
+      }
+
+      const authHeader = req.headers.authorization;
+      const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined;
+      const caller = bearerToken ? await verifyFirebaseIdToken(bearerToken) : null;
+      const cleanBizId = String(businessId).trim();
+      const isExemptAccount =
+        cleanBizId === 'biz-demo' ||
+        cleanBizId === 'biz-upfront' ||
+        caller?.email === SUPER_ADMIN_EMAIL;
+
+      if (!existingCred && !isExemptAccount) {
+        const bizDoc = await getFirestoreDoc('businesses', cleanBizId, bearerToken);
+        if (bizDoc) {
+          const docOwnerEmail = String(bizDoc.ownerEmail || '').trim().toLowerCase();
+          if (docOwnerEmail !== SUPER_ADMIN_EMAIL) {
+            const effectiveTier = resolveEffectiveServerPlanTier(bizDoc);
+            const staffLimit = SERVER_TIER_STAFF_LIMIT[effectiveTier];
+            const currentStaffCount = Object.values(creds).filter(
+              (c) => c.businessId === cleanBizId
+            ).length;
+            if (staffLimit > 0 && currentStaffCount >= staffLimit) {
+              return res.status(403).json({
+                success: false,
+                code: 'QUOTA_EXCEEDED',
+                error: `Your ${effectiveTier.toUpperCase()} subscription supports up to ${staffLimit} staff seat${staffLimit === 1 ? '' : 's'}. Upgrade your package to add more team members.`,
+              });
+            }
+          }
+        }
+      }
+
       let pinHash = hash;
       if (!pinHash && pin) {
         pinHash = await bcrypt.hash(String(pin), 10);
@@ -511,8 +604,6 @@ Sitemap: ${origin}/sitemap.xml
       creds[cashierId] = updatedCred;
       saveStaffCredentials(creds);
 
-      const authHeader = req.headers.authorization;
-      const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
       await persistStaffCredentialToFirestore(updatedCred, bearerToken);
 
       return res.json({
@@ -1127,6 +1218,8 @@ Extract:
     status: 'pending' | 'pay_offline' | 'success' | 'failed' | 'abandoned';
     businessId?: string;
     planId?: string;
+    billingCycle?: 'monthly' | 'annual';
+    activatedSubscription?: Record<string, any>;
     gatewayResponse?: string;
     paidAt?: string;
     createdAt: string;
@@ -1382,6 +1475,23 @@ Extract:
 
       const resolvedChannel: PaymentChannel = channel === 'card' ? 'card' : 'mpesa_stk';
       const resolvedFlow: PaymentFlowType = flowType === 'subscription' ? 'subscription' : 'pos_sale';
+      const billingCycle: 'monthly' | 'annual' =
+        metadata?.billingCycle === 'annual' ? 'annual' : 'monthly';
+      const normalizedPlanId: CanonicalServerTier | undefined =
+        resolvedFlow === 'subscription'
+          ? normalizeServerPlanTier(planId, metadata?.planId)
+          : undefined;
+
+      if (resolvedFlow === 'subscription' && normalizedPlanId) {
+        const minExpectedKes = SERVER_TIER_MIN_KES[normalizedPlanId]?.[billingCycle] ?? 599;
+        if (numericAmount < minExpectedKes) {
+          return res.status(400).json({
+            success: false,
+            code: 'INVALID_TIER_AMOUNT',
+            error: `Subscription checkout for ${normalizedPlanId.toUpperCase()} (${billingCycle}) requires at least KES ${minExpectedKes.toLocaleString()}.`,
+          });
+        }
+      }
 
       // Resolve Paystack subaccount for POS sales (subscriptions settle to main platform account)
       let posSubaccountCode: string | undefined;
@@ -1427,7 +1537,8 @@ Extract:
         flowType: resolvedFlow,
         channel: resolvedChannel,
         businessId: businessId || 'unknown',
-        planId: planId || undefined,
+        planId: normalizedPlanId || planId || undefined,
+        ...(resolvedFlow === 'subscription' ? { billingCycle } : {}),
         ...(posSubaccountCode ? { subaccount: posSubaccountCode } : {}),
       };
 
@@ -1461,7 +1572,8 @@ Extract:
           amountKes: numericAmount,
           status: result.status,
           businessId,
-          planId,
+          planId: normalizedPlanId || planId,
+          billingCycle: resolvedFlow === 'subscription' ? billingCycle : undefined,
           createdAt: new Date().toISOString(),
         });
 
@@ -1503,7 +1615,8 @@ Extract:
         amountKes: numericAmount,
         status: 'pending',
         businessId,
-        planId,
+        planId: normalizedPlanId || planId,
+        billingCycle: resolvedFlow === 'subscription' ? billingCycle : undefined,
         createdAt: new Date().toISOString(),
       });
 
@@ -1524,8 +1637,43 @@ Extract:
         return res.status(400).json({ verified: false, status: 'failed', error: 'Reference is required.' });
       }
 
+      const authHeader = req.headers.authorization;
+      const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined;
+
       const cached = paymentIntents.get(reference);
       if (cached && cached.status === 'success') {
+        const normalizedCachedPlan =
+          cached.flowType === 'subscription'
+            ? normalizeServerPlanTier(cached.planId, undefined)
+            : cached.planId;
+        let cachedActivatedSub = cached.activatedSubscription;
+        if (cached.flowType === 'subscription' && cached.businessId && !cachedActivatedSub) {
+          const cycle: 'monthly' | 'annual' = cached.billingCycle === 'annual' ? 'annual' : 'monthly';
+          const durationDays = cycle === 'annual' ? 365 : 30;
+          const nowIso = cached.paidAt || new Date().toISOString();
+          cachedActivatedSub = {
+            status: 'active',
+            plan: normalizedCachedPlan,
+            planId: normalizedCachedPlan,
+            activatedAt: nowIso,
+            expiresAt: new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString(),
+            lastPaymentReference: cached.reference,
+            paymentProvider: cached.provider,
+          };
+          cached.activatedSubscription = cachedActivatedSub;
+          paymentIntents.set(reference, cached);
+          await patchFirestoreDoc(
+            'businesses',
+            cached.businessId,
+            {
+              status: 'active',
+              plan: normalizedCachedPlan,
+              subscription: cachedActivatedSub,
+            },
+            ['status', 'plan', 'subscription'],
+            bearerToken
+          );
+        }
         return res.json({
           verified: true,
           provider: cached.provider,
@@ -1535,7 +1683,8 @@ Extract:
           channel: cached.channel,
           flowType: cached.flowType,
           businessId: cached.businessId,
-          planId: cached.planId,
+          planId: normalizedCachedPlan,
+          ...(cachedActivatedSub ? { activatedSubscription: cachedActivatedSub } : {}),
           gatewayResponse: cached.gatewayResponse || 'Approved via webhook',
           paidAt: cached.paidAt,
         });
@@ -1544,31 +1693,88 @@ Extract:
       const adapter = getActivePaymentAdapter();
       const verification = await adapter.verifyTransaction(reference);
 
+      const resolvedFlowType = cached?.flowType || (verification.metadata?.flowType as PaymentFlowType | undefined);
+      const resolvedBusinessId = cached?.businessId || (verification.metadata?.businessId as string | undefined);
+      const rawPlanId = cached?.planId || (verification.metadata?.planId as string | undefined);
+      const normalizedPlanId =
+        resolvedFlowType === 'subscription'
+          ? normalizeServerPlanTier(rawPlanId, verification.metadata?.planId as string | undefined)
+          : rawPlanId;
+      const billingCycle: 'monthly' | 'annual' =
+        cached?.billingCycle === 'annual' || verification.metadata?.billingCycle === 'annual'
+          ? 'annual'
+          : 'monthly';
+
+      let activatedSubscription: Record<string, any> | undefined;
+
+      if (
+        verification.verified &&
+        verification.status === 'success' &&
+        resolvedFlowType === 'subscription' &&
+        resolvedBusinessId &&
+        normalizedPlanId
+      ) {
+        const paidKes = Number(verification.amountKes || cached?.amountKes || 0);
+        const minExpectedKes =
+          SERVER_TIER_MIN_KES[normalizedPlanId as CanonicalServerTier]?.[billingCycle] ?? 599;
+        if (paidKes > 0 && paidKes < minExpectedKes) {
+          return res.status(400).json({
+            verified: false,
+            reference,
+            status: 'failed',
+            error: `Verified amount (KES ${paidKes.toLocaleString()}) is below the minimum KES ${minExpectedKes.toLocaleString()} required for ${normalizedPlanId.toUpperCase()}.`,
+          });
+        }
+
+        const durationDays =
+          Number(verification.metadata?.durationDays) || (billingCycle === 'annual' ? 365 : 30);
+        const nowIso = verification.paidAt || new Date().toISOString();
+        const expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+        activatedSubscription = {
+          status: 'active',
+          plan: normalizedPlanId,
+          planId: normalizedPlanId,
+          activatedAt: nowIso,
+          expiresAt,
+          lastPaymentReference: verification.reference || reference,
+          paymentProvider: verification.provider || adapter.providerName,
+        };
+
+        await patchFirestoreDoc(
+          'businesses',
+          resolvedBusinessId,
+          {
+            status: 'active',
+            plan: normalizedPlanId,
+            subscription: activatedSubscription,
+          },
+          ['status', 'plan', 'subscription'],
+          bearerToken
+        );
+
+        creditAffiliateCommissionOnPayment({
+          paymentReference: verification.reference || reference,
+          businessId: resolvedBusinessId,
+          planId: normalizedPlanId,
+          amountKes: paidKes,
+        }).catch((err) => console.warn('Affiliate commission credit notice:', err));
+      }
+
       if (cached) {
         cached.status = verification.status;
         cached.gatewayResponse = verification.gatewayResponse;
         cached.paidAt = verification.paidAt;
+        if (normalizedPlanId) cached.planId = normalizedPlanId;
+        if (activatedSubscription) cached.activatedSubscription = activatedSubscription;
         paymentIntents.set(reference, cached);
-      }
-
-      const resolvedFlowType = cached?.flowType || (verification.metadata?.flowType as PaymentFlowType | undefined);
-      const resolvedBusinessId = cached?.businessId || (verification.metadata?.businessId as string | undefined);
-      const resolvedPlanId = cached?.planId || (verification.metadata?.planId as string | undefined);
-
-      if (verification.verified && verification.status === 'success' && resolvedFlowType === 'subscription' && resolvedBusinessId) {
-        creditAffiliateCommissionOnPayment({
-          paymentReference: verification.reference || reference,
-          businessId: resolvedBusinessId,
-          planId: resolvedPlanId || 'business',
-          amountKes: verification.amountKes || cached?.amountKes || 0,
-        }).catch((err) => console.warn('Affiliate commission credit notice:', err));
       }
 
       return res.json({
         ...verification,
         flowType: resolvedFlowType,
         businessId: resolvedBusinessId,
-        planId: resolvedPlanId,
+        planId: normalizedPlanId,
+        ...(activatedSubscription ? { activatedSubscription } : {}),
       });
     } catch (err: any) {
       console.error('Error in /api/payments/verify:', err);
@@ -2322,7 +2528,23 @@ Extract:
         if (flowType === 'subscription' && businessId) {
           const durationDays = Number(metadata.durationDays) || (metadata.billingCycle === 'annual' ? 365 : 30);
           const expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
-          const resolvedPlan = planId || 'business';
+          const resolvedPlan = normalizeServerPlanTier(planId, metadata.planId);
+          const activatedSubscription = {
+            status: 'active',
+            plan: resolvedPlan,
+            planId: resolvedPlan,
+            activatedAt: nowIso,
+            expiresAt,
+            lastPaymentReference: ref,
+            paymentProvider: adapter.providerName,
+          };
+
+          const currentIntent = paymentIntents.get(ref);
+          if (currentIntent) {
+            currentIntent.planId = resolvedPlan;
+            currentIntent.activatedSubscription = activatedSubscription;
+            paymentIntents.set(ref, currentIntent);
+          }
 
           await patchFirestoreDoc(
             'businesses',
@@ -2330,15 +2552,7 @@ Extract:
             {
               status: 'active',
               plan: resolvedPlan,
-              subscription: {
-                status: 'active',
-                plan: resolvedPlan,
-                planId: resolvedPlan,
-                activatedAt: nowIso,
-                expiresAt,
-                lastPaymentReference: ref,
-                paymentProvider: adapter.providerName,
-              },
+              subscription: activatedSubscription,
             },
             ['status', 'plan', 'subscription']
           );

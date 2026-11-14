@@ -23,6 +23,7 @@ import { AppLogo } from './common/AppLogo';
 import { AppFooter } from './common/AppFooter';
 import { MobileHeaderNav } from './common/MobileHeaderNav';
 import { scrollToTop } from '../utils/scrollUtils';
+import { FAQ_ITEMS, FAQ_CATEGORIES } from '../data/faqData';
 
 interface LegalPageViewProps {
   currentTab: LegalTab;
@@ -30,114 +31,6 @@ interface LegalPageViewProps {
   onBackToLogin: () => void;
   loginBgGraphic?: string | null;
 }
-
-interface FaqItem {
-  id: string;
-  category: 'General & Ownership' | 'Offline & Connectivity' | 'Payments & M-Pesa' | 'Hardware & Peripherals' | 'Data & Security';
-  question: string;
-  answer: string;
-}
-
-const FAQ_ITEMS: FaqItem[] = [
-  {
-    id: 'faq-ownership',
-    category: 'General & Ownership',
-    question: 'Who owns and operates SokoPoS?',
-    answer:
-      'SokoPoS is engineered, hosted, and operated exclusively by Sokoplus Horizon. Sokoplus Horizon provides cloud infrastructure, product engineering, continuous software maintenance, customer support, and multi-tenant security operations for all SokoPoS retail platforms.',
-  },
-  {
-    id: 'faq-retail-types',
-    category: 'General & Ownership',
-    question: 'What types of retail businesses can use SokoPoS?',
-    answer:
-      'SokoPoS is designed for supermarkets, convenience stores, electronics outlets, fashion boutiques, agro-dealers, pharmacies, hardware shops, wholesale distribution depots, and multi-branch retail enterprises across East Africa and beyond.',
-  },
-  {
-    id: 'faq-multi-branch',
-    category: 'General & Ownership',
-    question: 'How does multi-store and branch management work?',
-    answer:
-      'A single business account can manage multiple store locations, distribution centers, or branches. Inventory levels are tracked per location, and sales analytics can be viewed per branch or aggregated across your entire retail chain in real-time.',
-  },
-  {
-    id: 'faq-offline-capability',
-    category: 'Offline & Connectivity',
-    question: 'What happens to checkout if our internet connection drops?',
-    answer:
-      'SokoPoS is built on an offline-first architecture. If your internet disconnects, the register terminal continues operating without interruption. Cashiers can scan barcodes, ring up products, tender cash, apply discounts, calculate change, and print thermal slips completely offline.',
-  },
-  {
-    id: 'faq-offline-sync',
-    category: 'Offline & Connectivity',
-    question: 'How do offline transactions sync back to the cloud?',
-    answer:
-      'Every sale made while offline is automatically placed in an encrypted local FIFO queue. The moment an active network connection (Wi-Fi or mobile data) is detected, SokoPoS flushes the queue to Google Cloud Firestore in the background without cashier intervention.',
-  },
-  {
-    id: 'faq-mpesa-support',
-    category: 'Payments & M-Pesa',
-    question: 'How does M-Pesa integration work on SokoPoS?',
-    answer:
-      'SokoPoS supports multiple M-Pesa payment workflows: direct STK Push (where the customer receives an automatic prompt on their phone to enter their M-Pesa PIN), dynamic customer-facing QR codes, Buy Goods Till numbers, and Paybill accounts with account reference matching.',
-  },
-  {
-    id: 'faq-cash-rounding',
-    category: 'Payments & M-Pesa',
-    question: 'How are cents handled during cash vs. electronic payments?',
-    answer:
-      'Electronic payments (M-Pesa and Card terminals) settle exact transaction amounts down to the cent. For cash payments involving cents, SokoPoS applies Standard Half-Up rounding: KES 0.50 and above rounds up to KES 1, while below KES 0.50 rounds down to KES 0.',
-  },
-  {
-    id: 'faq-scanners',
-    category: 'Hardware & Peripherals',
-    question: 'Which barcode scanners are compatible with SokoPoS?',
-    answer:
-      'SokoPoS works out-of-the-box with any standard USB or Bluetooth handheld or desktop barcode scanner configured in HID Keyboard Wedge mode (e.g. Honeywell, Zebra, Sunlux, Netum). SokoPoS also includes a built-in camera barcode scanner for mobile phones and tablets.',
-  },
-  {
-    id: 'faq-cash-drawers',
-    category: 'Hardware & Peripherals',
-    question: 'Is SokoPoS compatible with RJ11/RJ12 cash drawers?',
-    answer:
-      'Yes. Standard RJ11/RJ12 cash drawers plug directly into the DK (Drawer Kick) port of your thermal receipt printer. When configured in your printer driver or browser kiosk printing mode, the drawer kicks open automatically upon completing a cash sale.',
-  },
-  {
-    id: 'faq-printers',
-    category: 'Hardware & Peripherals',
-    question: 'What thermal receipt printers are supported?',
-    answer:
-      'SokoPoS supports both 80mm (3-inch) standard commercial POS printers and 58mm (2-inch) mini mobile thermal printers via USB, Bluetooth, or LAN. You can enable automatic receipt printing and silent kiosk printing (--kiosk-printing) for zero-click instant slips.',
-  },
-  {
-    id: 'faq-storage-limits',
-    category: 'Data & Security',
-    question: 'How much cloud storage space does each business account get?',
-    answer:
-      'Storage is unmetered and elastic with no artificial limits on inventory SKUs, transaction histories, or customer records. Data is stored across redundant Google Cloud Firestore instances with multi-zone replication.',
-  },
-  {
-    id: 'faq-data-export',
-    category: 'Data & Security',
-    question: 'Can I export my sales and inventory data for accounting?',
-    answer:
-      'Yes. Business administrators can download complete structured JSON archives and sales backups directly from the system at any time for Excel, QuickBooks, or tax authority compliance with zero data lock-in.',
-  },
-  {
-    id: 'faq-pin-security',
-    category: 'Data & Security',
-    question: 'How does cashier PIN authentication work?',
-    answer:
-      'Cashier PINs are protected with industry-standard salted bcrypt hashing. Managers can enforce role-based access control (RBAC), and high-impact actions like refunds or discounts are recorded with an immutable audit log.',
-  },
-  {
-    id: 'faq-gcp-compliance',
-    category: 'Data & Security',
-    question: 'How does SokoPoS comply with Google Cloud Platform Terms of Service and Acceptable Use Policy?',
-    answer:
-      'SokoPoS is engineered in strict compliance with Google Cloud Platform Terms of Service and Acceptable Use Policy (AUP). Database collections enforce authenticated row-level security with zero public open-write rules, eliminating risks of database abuse or automated project suspension. Server and AI endpoints enforce IP rate limiting to prevent resource exhaustion, and all data storage conforms to Google API Services User Data Policy.',
-  },
-];
 
 export const LegalPageView: React.FC<LegalPageViewProps> = ({
   currentTab,
@@ -154,14 +47,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
     scrollToTop(true);
   }, [currentTab]);
 
-  const categories = [
-    'All',
-    'General & Ownership',
-    'Offline & Connectivity',
-    'Payments & M-Pesa',
-    'Hardware & Peripherals',
-    'Data & Security',
-  ];
+  const categories = FAQ_CATEGORIES;
 
   const filteredFaqs = useMemo(() => {
     return FAQ_ITEMS.filter((item) => {
@@ -627,7 +513,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
                   id="faq-search-input"
                   value={faqSearchQuery}
                   onChange={(e) => setFaqSearchQuery(e.target.value)}
-                  placeholder="Search questions (e.g. offline, M-Pesa, barcode, cash drawer, receipt printer)..."
+                  placeholder="Search questions (e.g. pricing, eTIMS, Paystack, M-Pesa, shifts, stock transfer, offline)..."
                   className="w-full pl-10 pr-16 py-2.5 bg-neutral-100 border border-neutral-300 rounded-xl text-xs text-black placeholder-neutral-500 focus:outline-none focus:border-blue-500 transition"
                 />
                 {faqSearchQuery && (
@@ -664,7 +550,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
             <div className="space-y-3">
               {filteredFaqs.length === 0 ? (
                 <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-white/60 p-12 text-center text-neutral-500 text-xs">
-                  No questions found matching your search. Try searching for &ldquo;offline&rdquo;, &ldquo;M-Pesa&rdquo;, or &ldquo;printer&rdquo;.
+                  No questions found matching your search. Try searching for &ldquo;pricing&rdquo;, &ldquo;eTIMS&rdquo;, &ldquo;Paystack&rdquo;, or &ldquo;offline&rdquo;.
                 </div>
               ) : (
                 filteredFaqs.map((faq) => {

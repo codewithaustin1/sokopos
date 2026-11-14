@@ -44,6 +44,8 @@ import { ToastContainer } from './components/common/ToastContainer';
 import { verifyServerPayment } from './lib/paymentService';
 import { AffiliatePortalModal } from './components/AffiliatePortalModal';
 import { trackPlatformEvent } from './lib/telemetryService';
+import { UpgradePromptModal } from './components/common/UpgradePromptModal';
+import { auth } from './lib/firebase';
 
 function PosAppContent() {
   const {
@@ -87,6 +89,7 @@ function PosAppContent() {
     setIsAffiliateModalOpen,
     isMobileMenuOpen,
     setIsMobileMenuOpen,
+    requireCapability,
   } = usePos();
 
   // URL Path Routing: Ensure root URL ('/') always routes to landing page, not logged-in dashboard
@@ -165,7 +168,8 @@ function PosAppContent() {
     let cancelled = false;
     const verifyAndProvision = async (attempt = 1) => {
       showToast('Verifying your Paystack subscription payment...', 'info');
-      const result = await verifyServerPayment(paymentRef);
+      const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
+      const result = await verifyServerPayment(paymentRef, idToken);
       if (cancelled) return;
 
       if (result.verified && result.status === 'success') {
@@ -179,9 +183,8 @@ function PosAppContent() {
           (result.metadata?.planId as string | undefined) ||
           pendingMeta.planId ||
           'business') as BusinessPlanTier;
-        const payer = pendingMeta.payer || currentUser.email || currentBusiness?.ownerEmail || '';
 
-        const activation = await activateBusinessSubscription(targetBusinessId, targetPlanId, payer);
+        const activation = await activateBusinessSubscription(targetBusinessId, targetPlanId, paymentRef);
         if (activation.success) {
           setIsSubscriptionModalOpen(false);
           showToast(`Subscription activated! Your ${targetPlanId.toUpperCase()} plan is now live.`, 'success');
@@ -278,7 +281,14 @@ function PosAppContent() {
     setCurrentPath('/pos');
   };
 
-  const [currentTab, setCurrentTab] = useState<'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers' | 'settings' | 'super-admin'>('register');
+  type AppTab = 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers' | 'settings' | 'super-admin';
+  const [currentTab, setCurrentTab] = useState<AppTab>('register');
+
+  const handleSetCurrentTab = (tab: AppTab) => {
+    if (tab === 'suppliers' && !requireCapability('suppliers')) return;
+    if (tab === 'analytics' && !requireCapability('analytics')) return;
+    setCurrentTab(tab);
+  };
 
   useEffect(() => {
     if (isShiftModalOpen) {
@@ -523,6 +533,8 @@ function PosAppContent() {
           isOpen={isSitemapOpen}
           onClose={() => setIsSitemapOpen(false)}
         />
+
+        <UpgradePromptModal />
       </div>
     );
   }
@@ -609,7 +621,7 @@ function PosAppContent() {
         {/* Left Vertical Navigation */}
         <SidebarNav
           currentTab={currentTab}
-          setCurrentTab={setCurrentTab}
+          setCurrentTab={handleSetCurrentTab}
           openBarcodeScanner={() => setIsScannerOpen(true)}
           openSuperAdminModal={handleOpenSuperAdmin}
         />
@@ -669,7 +681,7 @@ function PosAppContent() {
             )}
             {currentTab === 'inventory' && <InventoryView />}
             {currentTab === 'suppliers' && <SupplierManagementView />}
-            {currentTab === 'analytics' && <AnalyticsView onNavigateToReports={() => setCurrentTab('reports')} />}
+            {currentTab === 'analytics' && <AnalyticsView onNavigateToReports={() => handleSetCurrentTab('reports')} />}
             {currentTab === 'reports' && <ReportsView />}
             {currentTab === 'cloud-sync' && <CloudSyncView />}
             {currentTab === 'staff' && <StaffManagementView />}
@@ -701,7 +713,7 @@ function PosAppContent() {
       {/* Mobile Bottom Navigation Bar (< lg screens) */}
       <MobileBottomNav
         currentTab={currentTab}
-        setCurrentTab={setCurrentTab}
+        setCurrentTab={handleSetCurrentTab}
         openBarcodeScanner={() => setIsScannerOpen(true)}
         onRequestSignOut={() => setIsSignOutModalOpen(true)}
       />
@@ -763,7 +775,7 @@ function PosAppContent() {
         isOpen={isMobileMenuOpen}
         onClose={() => setIsMobileMenuOpen(false)}
         onNavigateTab={(tab) => {
-          setCurrentTab(tab);
+          handleSetCurrentTab(tab);
           setIsMobileMenuOpen(false);
         }}
         isLoggedIn={true}
@@ -774,6 +786,8 @@ function PosAppContent() {
         onClose={() => setIsAffiliateModalOpen(false)}
         onSwitchToPos={() => setIsAffiliateModalOpen(false)}
       />
+
+      <UpgradePromptModal />
     </div>
   );
 }

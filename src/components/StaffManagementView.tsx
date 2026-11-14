@@ -19,6 +19,10 @@ import {
 import { usePos } from '../context/PosContext';
 import { Cashier } from '../types';
 import { RolePrivilegesPanel } from './RolePrivilegesPanel';
+import {
+  isQuotaAtOrAboveLimit,
+  getRequiredTierForStaffCount,
+} from '../utils/subscriptionEntitlements';
 
 export const StaffManagementView: React.FC = () => {
   const {
@@ -36,6 +40,8 @@ export const StaffManagementView: React.FC = () => {
     appointDemoCashier,
     refreshTenantStaff,
     isStaffLoading,
+    entitlements,
+    openUpgradePrompt,
   } = usePos();
 
   useEffect(() => {
@@ -58,7 +64,27 @@ export const StaffManagementView: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  const maxStaff = isSuperAdmin ? -1 : entitlements.limits.maxStaffUsers;
+  const isAtStaffLimit = isQuotaAtOrAboveLimit(systemUsers.length, maxStaff);
+  const canCustomizeRbac = isSuperAdmin || entitlements.capabilities.granularRbac;
+
   const openAddModal = () => {
+    if (!isSuperAdmin && maxStaff > 0 && systemUsers.length >= maxStaff) {
+      openUpgradePrompt({
+        title: 'Staff Account Limit Reached',
+        description: `Your ${entitlements.tierName} plan supports up to ${maxStaff} staff ${
+          maxStaff === 1 ? 'account' : 'accounts'
+        }. Existing staff remain active, and upgrading adds more team seats.`,
+        requiredTier: getRequiredTierForStaffCount(systemUsers.length + 1),
+        featureLabel: 'Additional Staff Seats',
+        quotaMetric: {
+          label: 'Staff Accounts',
+          used: systemUsers.length,
+          limit: maxStaff,
+        },
+      });
+      return;
+    }
     setName('');
     setRole('cashier');
     setUsername('');
@@ -194,6 +220,11 @@ export const StaffManagementView: React.FC = () => {
             <span className="bg-blue-100 text-blue-800 text-[11px] font-bold px-2 py-0.5 rounded-full">
               {currentBusiness.name}
             </span>
+            {maxStaff > 0 && (
+              <span className="text-[11px] font-mono tabular-nums font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
+                {systemUsers.length} / {maxStaff} seats
+              </span>
+            )}
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
             {activeStaffSubTab === 'users'
@@ -221,6 +252,7 @@ export const StaffManagementView: React.FC = () => {
               >
                 <Shield className="w-4 h-4 text-indigo-600" />
                 <span>Manage Role Privileges</span>
+                {!canCustomizeRbac && <Lock className="w-3.5 h-3.5 text-indigo-500" />}
               </button>
               <button
                 onClick={() => openBusinessSettings('profile')}
@@ -233,7 +265,7 @@ export const StaffManagementView: React.FC = () => {
                 onClick={openAddModal}
                 className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <UserPlus className="w-4 h-4" />
+                {isAtStaffLimit ? <Lock className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
                 <span>Provision System User</span>
               </button>
             </>
@@ -250,7 +282,7 @@ export const StaffManagementView: React.FC = () => {
                 onClick={openAddModal}
                 className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <UserPlus className="w-4 h-4" />
+                {isAtStaffLimit ? <Lock className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
                 <span>Provision System User</span>
               </button>
             </>
@@ -290,6 +322,9 @@ export const StaffManagementView: React.FC = () => {
           >
             <Shield className={`w-3.5 h-3.5 ${activeStaffSubTab === 'privileges' ? 'text-amber-300' : 'text-indigo-600'}`} />
             <span>Role Privileges & Access Control</span>
+            {!canCustomizeRbac && (
+              <Lock className={`w-3.5 h-3.5 ${activeStaffSubTab === 'privileges' ? 'text-white/80' : 'text-slate-400'}`} />
+            )}
           </button>
         </div>
 

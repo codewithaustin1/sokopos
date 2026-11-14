@@ -27,7 +27,12 @@ import {
   Minus,
   Check,
   X,
+  Lock,
 } from 'lucide-react';
+import {
+  isQuotaAtOrAboveLimit,
+  getRequiredTierForProductCount,
+} from '../utils/subscriptionEntitlements';
 import { Product } from '../types';
 import { usePos } from '../context/PosContext';
 import { ProductFormModal } from './ProductFormModal';
@@ -61,12 +66,19 @@ export const InventoryView: React.FC = () => {
     inventoryLastFetchedAt,
     can,
     refreshTenantSuppliers,
+    entitlements,
+    isSuperAdmin,
+    requireCapability,
+    openUpgradePrompt,
   } = usePos();
 
   const canManage = can('manageInventory');
   const canViewCost = can('viewCostPrice');
   const canTransfer = can('stockTransfers');
   const canManageSuppliers = can('manageSuppliers');
+  const maxProducts = isSuperAdmin ? -1 : entitlements.limits.maxProducts;
+  const isAtProductLimit = isQuotaAtOrAboveLimit(products.length, maxProducts);
+  const canUseTransfers = isSuperAdmin || entitlements.capabilities.stockTransfers;
 
   useEffect(() => {
     refreshTenantSuppliers(false).catch(() => {});
@@ -290,7 +302,27 @@ export const InventoryView: React.FC = () => {
   };
 
   // Product Modals & Drawer Handlers
+  const checkProductQuotaBeforeAdd = (additionalCount = 1): boolean => {
+    if (isSuperAdmin || maxProducts < 0) return true;
+    if (products.length + additionalCount > maxProducts) {
+      openUpgradePrompt({
+        title: 'Product Catalog Limit Reached',
+        description: `Your ${entitlements.tierName} plan supports up to ${maxProducts} SKUs. Existing products remain accessible, and upgrading to Starter unlocks unlimited products.`,
+        requiredTier: getRequiredTierForProductCount(products.length + additionalCount),
+        featureLabel: 'Unlimited Product Catalog',
+        quotaMetric: {
+          label: 'Inventory SKUs',
+          used: products.length,
+          limit: maxProducts,
+        },
+      });
+      return false;
+    }
+    return true;
+  };
+
   const handleOpenAddModal = () => {
+    if (!checkProductQuotaBeforeAdd(1)) return;
     setEditingProduct(null);
     setClonedDraftProduct(null);
     setStagedAiProduct(null);
@@ -305,6 +337,7 @@ export const InventoryView: React.FC = () => {
   };
 
   const handleCloneProduct = (p: Product) => {
+    if (!checkProductQuotaBeforeAdd(1)) return;
     setEditingProduct(null);
     setStagedAiProduct(null);
     setClonedDraftProduct(p);
@@ -312,6 +345,7 @@ export const InventoryView: React.FC = () => {
   };
 
   const handleOpenTransferModal = (p: Product | null) => {
+    if (!requireCapability('stockTransfers')) return;
     setTransferTargetProduct(p);
     setIsTransferModalOpen(true);
   };
@@ -429,7 +463,9 @@ export const InventoryView: React.FC = () => {
           </h2>
           <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5 whitespace-nowrap truncate">
             <span className="font-medium text-slate-700 tabular-nums">
-              {products.length} {products.length === 1 ? 'product' : 'products'}
+              {maxProducts > 0
+                ? `${products.length} / ${maxProducts} SKUs`
+                : `${products.length} ${products.length === 1 ? 'product' : 'products'}`}
             </span>
             <span aria-hidden="true" className="text-slate-300">·</span>
             <span>
@@ -512,12 +548,17 @@ export const InventoryView: React.FC = () => {
                     type="button"
                     onClick={() => {
                       setIsToolsMenuOpen(false);
+                      if (isAtProductLimit) {
+                        checkProductQuotaBeforeAdd(1);
+                        return;
+                      }
                       setIsCsvModalOpen(true);
                     }}
                     className="w-full px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 cursor-pointer"
                   >
                     <Upload className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-                    <span>Import CSV Catalog</span>
+                    <span className="flex-1">Import CSV Catalog</span>
+                    {isAtProductLimit && <Lock className="w-3 h-3 text-slate-400 shrink-0" />}
                   </button>
                 )}
                 <button
@@ -579,7 +620,8 @@ export const InventoryView: React.FC = () => {
                     className="w-full px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 cursor-pointer"
                   >
                     <ArrowRightLeft className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    <span>Branch Transfer</span>
+                    <span className="flex-1">Branch Transfer</span>
+                    {!canUseTransfers && <Lock className="w-3 h-3 text-slate-400 shrink-0" />}
                   </button>
                 )}
               </div>
@@ -1479,7 +1521,8 @@ export const InventoryView: React.FC = () => {
                                       className="w-full px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
                                     >
                                       <ArrowRightLeft className="w-3.5 h-3.5 text-blue-600" />
-                                      <span>Transfer Stock</span>
+                                      <span className="flex-1 text-left">Transfer Stock</span>
+                                      {!canUseTransfers && <Lock className="w-3 h-3 text-slate-400 shrink-0" />}
                                     </button>
                                   )}
                                   {canManage && (

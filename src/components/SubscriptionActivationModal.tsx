@@ -26,6 +26,7 @@ import {
   ClientPaymentChannel,
 } from '../lib/paymentService';
 import { trackPlatformEvent } from '../lib/telemetryService';
+import { auth } from '../lib/firebase';
 
 interface SubscriptionActivationModalProps {
   isOpen: boolean;
@@ -101,7 +102,7 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
       await activateBusinessSubscription(
         currentBusiness?.id || 'biz-default',
         selectedPlanId as any,
-        paymentChannel === 'mpesa_stk' ? phoneNumber : payerEmail
+        verifiedRef
       );
     } else {
       await updateBusinessPlan(currentBusiness?.id || 'biz-default', selectedPlanId as any);
@@ -122,7 +123,8 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
     const maxAttempts = 40; // ~120s at 3s intervals
     for (let i = 0; i < maxAttempts; i++) {
       await new Promise((r) => setTimeout(r, 3000));
-      const check = await verifyServerPayment(ref);
+      const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
+      const check = await verifyServerPayment(ref, idToken);
       if (check.verified && check.status === 'success') {
         await completeActivation(check.reference || ref);
         return;
@@ -142,7 +144,8 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
     setIsCheckingStatus(true);
     setPaymentError(null);
     try {
-      const check = await verifyServerPayment(paymentRef);
+      const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
+      const check = await verifyServerPayment(paymentRef, idToken);
       if (check.verified && check.status === 'success') {
         await completeActivation(check.reference || paymentRef);
       } else if (check.status === 'failed' || check.status === 'abandoned') {
@@ -190,6 +193,7 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
     });
 
     try {
+      const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
       const initRes = await initiateServerPayment({
         flowType: 'subscription',
         channel: paymentChannel,
@@ -203,7 +207,7 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
           durationDays,
           businessName: currentBusiness?.name,
         },
-      });
+      }, idToken);
 
       if (!initRes.success || !initRes.reference) {
         setPaymentError(initRes.error || 'Could not initiate Paystack payment.');
