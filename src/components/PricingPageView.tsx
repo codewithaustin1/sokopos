@@ -149,6 +149,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
     loginBgGraphic: contextLoginBgGraphic,
     setIsSubscriptionModalOpen,
     selectCheckoutPackage,
+    setPendingCheckoutIntent,
     showToast,
   } = usePos();
   const loginBgGraphic = propLoginBgGraphic ?? contextLoginBgGraphic;
@@ -199,7 +200,14 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
       showToast(`Selected ${tier.name} Plan (${billing === 'annual' ? 'Annual' : 'Monthly'}). Opening checkout...`, 'info');
       setIsSubscriptionModalOpen(true);
     } else {
-      showToast(`Please sign in to subscribe to the ${tier.name} Plan.`, 'info');
+      setPendingCheckoutIntent({
+        planId: selectedPlan,
+        billingCycle: billing,
+        planName: tier.name,
+        amountKes: billing === 'annual' ? tier.a : tier.m,
+        timestamp: Date.now(),
+      });
+      showToast(`Log in to complete subscription checkout for ${tier.name} Plan.`, 'info');
       if (onSelectPlan) {
         onSelectPlan(tier.id);
       } else {

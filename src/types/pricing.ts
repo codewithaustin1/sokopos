@@ -1,5 +1,13 @@
 export type PackageTierId = 'free' | 'starter' | 'business' | 'premium';
 
+export interface PendingCheckoutIntent {
+  planId: PackageTierId;
+  billingCycle: 'monthly' | 'annual';
+  planName: string;
+  amountKes: number;
+  timestamp: number;
+}
+
 export interface PricingTierFeature {
   id: string;
   name: string;

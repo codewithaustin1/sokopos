@@ -24,7 +24,6 @@ import { ReturnsModal } from './components/ReturnsModal';
 import { PinLockModal } from './components/PinLockModal';
 import { SuperAdminDashboardModal } from './components/SuperAdminDashboardModal';
 import { DestructiveConfirmModal } from './components/DestructiveConfirmModal';
-import { PosHotkeysHelpModal } from './components/PosHotkeysHelpModal';
 import { SignInView } from './components/SignInView';
 import { SignOutConfirmModal } from './components/SignOutConfirmModal';
 import { BusinessProfileSettingsModal } from './components/BusinessProfileSettingsModal';
@@ -299,7 +298,6 @@ function PosAppContent() {
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [paymentInitialMethod, setPaymentInitialMethod] = useState<PaymentMethod>('mpesa');
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
-  const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const [superAdminModalDefaultTab, setSuperAdminModalDefaultTab] = useState<'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding' | 'traffic'>('tenants');
 
   const handleOpenSuperAdmin = (tab?: 'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding' | 'traffic') => {
@@ -417,49 +415,16 @@ function PosAppContent() {
     enableInputRestoration: true,
   });
 
-  // Global POS Hotkeys:
-  // Space/Enter: Settle
-  // F1: Cash
-  // F2: M-Pesa
-  // F3: Card
-  // Esc: Close/Cancel
-  // +/-: Item quantities
+  // Global Esc Handler for Modals & Overlays
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // 0. F10: Global Hotkeys Help Guide Modal
-      if (e.key === 'F10') {
-        e.preventDefault();
-        setIsHelpModalOpen((prev) => !prev);
-        return;
-      }
-
-      // Ctrl+F / Cmd+F: Fast jump to Product Search on Register tab
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
-        if (currentTab === 'register') {
-          e.preventDefault();
-          window.dispatchEvent(new CustomEvent('focus-register-search'));
-          const searchInput = document.getElementById('register-search-input') as HTMLInputElement | null;
-          if (searchInput) {
-            searchInput.focus();
-            searchInput.select();
-          }
-          return;
-        }
-      }
-
       const target = e.target as HTMLElement | null;
       const isInputActive =
         target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
 
-      // 1. Esc: Global Close / Cancel
       if (e.key === 'Escape') {
         if (isInputActive) {
           (target as HTMLElement).blur();
-        }
-        if (isHelpModalOpen) {
-          e.preventDefault();
-          setIsHelpModalOpen(false);
-          return;
         }
         if (activeReceipt) {
           e.preventDefault();
@@ -498,114 +463,21 @@ function PosAppContent() {
         }
         return;
       }
-
-      // 2. F1: Cash
-      if (e.key === 'F1') {
-        e.preventDefault();
-        if (isPaymentOpen) {
-          setPaymentInitialMethod('cash');
-        } else if (currentTab === 'register' && cart.length > 0 && !activeReceipt && !activeRefundReceipt && !isReturnsModalOpen) {
-          // Direct 1-tap Exact Cash settlement
-          settleExactCash();
-        }
-        return;
-      }
-
-      // 3. F2: M-Pesa
-      if (e.key === 'F2') {
-        e.preventDefault();
-        if (isPaymentOpen) {
-          setPaymentInitialMethod('mpesa');
-        } else if (currentTab === 'register' && cart.length > 0 && !activeReceipt && !activeRefundReceipt && !isReturnsModalOpen) {
-          handleOpenPayment('mpesa');
-        }
-        return;
-      }
-
-      // 4. F3: Card
-      if (e.key === 'F3') {
-        e.preventDefault();
-        if (isPaymentOpen) {
-          setPaymentInitialMethod('card');
-        } else if (currentTab === 'register' && cart.length > 0 && !activeReceipt && !activeRefundReceipt && !isReturnsModalOpen) {
-          handleOpenPayment('card');
-        }
-        return;
-      }
-
-      // 5. +/- for Item Quantities
-      // Active when not in an active text input, register view is active, cart has items, and no modal is blocking
-      const isModalActive =
-        isPaymentOpen ||
-        isScannerOpen ||
-        isHelpModalOpen ||
-        activeReceipt !== null ||
-        activeRefundReceipt !== null ||
-        isReturnsModalOpen ||
-        isSignOutModalOpen;
-
-      if (!isInputActive && !isModalActive && currentTab === 'register' && cart.length > 0) {
-        if (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd') {
-          e.preventDefault();
-          const lastItem = cart[cart.length - 1];
-          updateCartQuantity(lastItem.productId, lastItem.quantity + 1);
-          soundFx.playBeep(520, 0.04);
-          return;
-        }
-        if (e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract') {
-          e.preventDefault();
-          const lastItem = cart[cart.length - 1];
-          updateCartQuantity(lastItem.productId, lastItem.quantity - 1);
-          soundFx.playBeep(420, 0.04);
-          return;
-        }
-      }
-
-      // 6. Enter Key Handling for POS Settlement
-      if (e.key === 'Enter') {
-        // If not typing in an input and on register tab with items in cart:
-        if (!isInputActive && !isModalActive && currentTab === 'register' && cart.length > 0) {
-          e.preventDefault();
-          handleOpenPayment('cash');
-          return;
-        }
-
-        // If active receipt is open and Enter is pressed, dismiss receipt
-        if (activeReceipt && !isInputActive) {
-          e.preventDefault();
-          setActiveReceipt(null);
-          return;
-        }
-
-        return;
-      }
-
-      // 7. Space to Settle
-      if (e.key === ' ' && !isInputActive && !isModalActive && currentTab === 'register' && cart.length > 0) {
-        e.preventDefault();
-        handleOpenPayment('cash');
-        return;
-      }
     };
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [
     currentTab,
-    cart,
     isPaymentOpen,
     isScannerOpen,
     activeReceipt,
     activeRefundReceipt,
     isReturnsModalOpen,
     isSignOutModalOpen,
-    isHelpModalOpen,
-    settleExactCash,
-    updateCartQuantity,
     setActiveReceipt,
     setActiveRefundReceipt,
     closeReturnsModal,
-    soundFx,
   ]);
 
   // Dedicated Full-Page Pricing View:
@@ -701,7 +573,6 @@ function PosAppContent() {
       <Header
         openBarcodeScanner={() => setIsScannerOpen(true)}
         openSignOutModal={() => setIsSignOutModalOpen(true)}
-        openHelpModal={() => setIsHelpModalOpen(true)}
         openSuperAdminModal={handleOpenSuperAdmin}
       />
 
@@ -833,18 +704,12 @@ function PosAppContent() {
         setCurrentTab={setCurrentTab}
         openBarcodeScanner={() => setIsScannerOpen(true)}
         onRequestSignOut={() => setIsSignOutModalOpen(true)}
-        openHelpModal={() => setIsHelpModalOpen(true)}
       />
 
       {/* Global Modals & Safeguards */}
       <BarcodeScannerModal
         isOpen={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
-      />
-
-      <PosHotkeysHelpModal
-        isOpen={isHelpModalOpen}
-        onClose={() => setIsHelpModalOpen(false)}
       />
 
       <PaymentModal

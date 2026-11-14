@@ -370,6 +370,56 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
           mobileActiveView === 'catalog' ? 'flex' : 'hidden md:flex'
         }`}
       >
+        {/* Top-Level Quick Action Toolbar (Action-Oriented UI) */}
+        <div className="bg-white border border-slate-200 rounded-xl p-2 flex items-center justify-between gap-2 shrink-0 shadow-2xs overflow-x-auto modal-scrollbar">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={openBarcodeScanner}
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs whitespace-nowrap"
+            >
+              <Scan className="w-3.5 h-3.5" />
+              <span>Scan Barcode</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsCustomerSelectOpen(true)}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+            >
+              <User className="w-3.5 h-3.5 text-slate-500" />
+              <span>{selectedCustomer ? selectedCustomer.name : 'Select Customer'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openReturnsModal()}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+              <span>Returns</span>
+            </button>
+            <button
+              type="button"
+              onClick={openShiftManagement}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+            >
+              <Clock className="w-3.5 h-3.5 text-slate-500" />
+              <span>Shift Till</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              disabled={cart.length === 0}
+              onClick={onProceedToPayment}
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-black flex items-center gap-1.5 transition cursor-pointer shadow-xs whitespace-nowrap"
+            >
+              <Banknote className="w-3.5 h-3.5" />
+              <span>Pay (KES {cartTotal.toFixed(0)})</span>
+            </button>
+          </div>
+        </div>
+
         {/* Search & Branch Context */}
         <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between shrink-0">
           {/* Quick Search with Barcode Enter support & Ctrl+F shortcut */}

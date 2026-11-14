@@ -41,6 +41,7 @@ import {
   PricingTier,
   BusinessPlanTier,
   DEFAULT_PRICING_TIERS,
+  PendingCheckoutIntent,
   DigitaxEtimsData,
   PermissionKey,
   RolePermissionsMap,
@@ -217,6 +218,9 @@ interface PosContextType {
   selectedCheckoutPlan: 'free' | 'starter' | 'business' | 'premium';
   selectedCheckoutBilling: 'monthly' | 'annual';
   selectCheckoutPackage: (plan: 'free' | 'starter' | 'business' | 'premium', billing?: 'monthly' | 'annual') => void;
+  pendingCheckoutIntent: PendingCheckoutIntent | null;
+  setPendingCheckoutIntent: (intent: PendingCheckoutIntent | null) => void;
+  clearPendingCheckoutIntent: () => void;
   activateBusinessSubscription: (businessId: string, plan: BusinessPlanTier, voucherCode?: string) => Promise<{ success: boolean; message: string }>;
   isPricingPageOpen: boolean;
   setIsPricingPageOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -8098,6 +8102,42 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     []
   );
 
+  const [pendingCheckoutIntent, setPendingCheckoutIntentState] = useState<PendingCheckoutIntent | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = sessionStorage.getItem('sokopos_pending_checkout_intent');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.planId && Date.now() - (parsed.timestamp || 0) < 2 * 3600 * 1000) {
+            return parsed;
+          }
+        }
+      } catch {
+        // ignore storage errors
+      }
+    }
+    return null;
+  });
+
+  const setPendingCheckoutIntent = useCallback((intent: PendingCheckoutIntent | null) => {
+    setPendingCheckoutIntentState(intent);
+    if (typeof window !== 'undefined') {
+      try {
+        if (intent) {
+          sessionStorage.setItem('sokopos_pending_checkout_intent', JSON.stringify(intent));
+        } else {
+          sessionStorage.removeItem('sokopos_pending_checkout_intent');
+        }
+      } catch {
+        // ignore storage errors
+      }
+    }
+  }, []);
+
+  const clearPendingCheckoutIntent = useCallback(() => {
+    setPendingCheckoutIntent(null);
+  }, [setPendingCheckoutIntent]);
+
   // Dedicated Full-Page Pricing State (Seamless access across logged-in and public views)
   const [isPricingPageOpen, setIsPricingPageOpen] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -8237,6 +8277,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         selectedCheckoutPlan,
         selectedCheckoutBilling,
         selectCheckoutPackage,
+        pendingCheckoutIntent,
+        setPendingCheckoutIntent,
+        clearPendingCheckoutIntent,
         activateBusinessSubscription,
         isPricingPageOpen,
         setIsPricingPageOpen,

@@ -13,7 +13,6 @@ interface MobileBottomNavProps {
   setCurrentTab: (tab: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers' | 'settings' | 'super-admin') => void;
   openBarcodeScanner: () => void;
   onRequestSignOut: () => void;
-  openHelpModal?: () => void;
 }
 
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({

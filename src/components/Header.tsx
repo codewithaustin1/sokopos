@@ -32,14 +32,12 @@ interface HeaderProps {
   openBarcodeScanner: () => void;
   openSuperAdminModal: (tab?: 'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding') => void;
   openSignOutModal?: () => void;
-  openHelpModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   openBarcodeScanner,
   openSuperAdminModal,
   openSignOutModal,
-  openHelpModal,
 }) => {
   const {
     locations,
@@ -458,24 +456,6 @@ export const Header: React.FC<HeaderProps> = ({
                   </button>
 
                   <PWAInstallButton variant="menu-item" />
-
-                  <button
-                    id="user-menu-hotkeys-btn"
-                    type="button"
-                    onClick={() => {
-                      setIsUserMenuOpen(false);
-                      openHelpModal?.();
-                    }}
-                    className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-left font-medium text-slate-700 hover:bg-slate-100 transition-colors duration-150 cursor-pointer"
-                  >
-                    <span className="flex items-center gap-2.5">
-                      <Keyboard className="w-4 h-4 text-slate-500 shrink-0" />
-                      <span>Keyboard Shortcuts</span>
-                    </span>
-                    <kbd className="text-[10px] font-mono text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">
-                      F10
-                    </kbd>
-                  </button>
 
                   <button
                     id="user-menu-lock-register-btn"
