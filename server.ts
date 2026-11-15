@@ -37,6 +37,35 @@ async function startServer() {
 
   // Trust reverse proxy for accurate client IP identification (Cloud Run / Nginx)
   app.set('trust proxy', 1);
+  app.disable('x-powered-by');
+
+  // Security headers compatible with AI Studio iframe preview, Firebase Auth/Firestore, and Paystack Checkout
+  app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+    res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=(), payment=(self)');
+    if (req.protocol === 'https' || req.get('x-forwarded-proto') === 'https') {
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+    res.setHeader(
+      'Content-Security-Policy',
+      [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.paystack.co https://apis.google.com https://www.gstatic.com https://accounts.google.com",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src 'self' data: https://fonts.gstatic.com",
+        "img-src 'self' data: blob: https:",
+        "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://api.paystack.co https://api.digitax.tech https://sandbox.safaricom.co.ke https://api.safaricom.co.ke",
+        "frame-src 'self' https://checkout.paystack.com https://*.firebaseapp.com https://accounts.google.com",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self' https://checkout.paystack.com",
+        "frame-ancestors 'self' https://aistudio.google.com https://*.google.com",
+      ].join('; ')
+    );
+    next();
+  });
 
   // Enable large payload parser for Base64 document images & PDFs, preserving rawBody for webhook HMAC verification
   app.use(
@@ -154,16 +183,173 @@ Sitemap: ${origin}/sitemap.xml
     });
   });
 
-  // Cryptographic PIN Hashing with Bcrypt
+  // -------------------------------------------------------------
+  // Firebase Auth Verification & Tenant RBAC Helpers
+  // -------------------------------------------------------------
+  let firebaseProjectId = process.env.FIREBASE_PROJECT_ID || 'gen-lang-client-0820403611';
+  let firestoreDatabaseId = process.env.FIRESTORE_DATABASE_ID || '(default)';
+  let firebaseWebApiKey = process.env.FIREBASE_WEB_API_KEY || '';
+  try {
+    const fbConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
+    if (fs.existsSync(fbConfigPath)) {
+      const fbCfg = JSON.parse(fs.readFileSync(fbConfigPath, 'utf-8'));
+      if (fbCfg.projectId) firebaseProjectId = fbCfg.projectId;
+      if (fbCfg.firestoreDatabaseId) firestoreDatabaseId = fbCfg.firestoreDatabaseId;
+      if (fbCfg.apiKey) firebaseWebApiKey = fbCfg.apiKey;
+    }
+  } catch (err) {
+    console.warn('Could not read firebase-applet-config.json on server:', err);
+  }
+
+  const SUPER_ADMIN_EMAIL = 'upfrontretaile@gmail.com';
+
+  // Server-side HMAC key for signing Daraja callback URLs even when DARAJA_CALLBACK_SECRET is unset
+  const DARAJA_CALLBACK_HMAC_KEY =
+    (process.env.DARAJA_CALLBACK_SECRET || '').trim() ||
+    (process.env.DARAJA_PASSKEY || '').trim() ||
+    crypto.randomBytes(32).toString('hex');
+
+  function signDarajaCallbackRef(reference: string): string {
+    return crypto
+      .createHmac('sha256', DARAJA_CALLBACK_HMAC_KEY)
+      .update(String(reference))
+      .digest('hex')
+      .slice(0, 32);
+  }
+
+  function verifyDarajaCallbackSig(reference: string, sig: string): boolean {
+    if (!reference || !sig) return false;
+    const expected = signDarajaCallbackRef(reference);
+    const a = Buffer.from(expected);
+    const b = Buffer.from(String(sig).trim());
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  }
+
+  interface AuthenticatedCaller {
+    uid: string;
+    email: string;
+    emailVerified: boolean;
+    bearerToken: string;
+    isSuperAdmin: boolean;
+  }
+
+  function extractBearerToken(req: express.Request): string | undefined {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return undefined;
+    const token = authHeader.slice(7).trim();
+    return token || undefined;
+  }
+
+  async function verifyFirebaseIdToken(
+    idToken: string | undefined
+  ): Promise<{ uid: string; email: string; emailVerified: boolean } | null> {
+    const clean = String(idToken || '').trim();
+    if (!clean || !firebaseWebApiKey) return null;
+    try {
+      const resp = await fetch(
+        `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(firebaseWebApiKey)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken: clean }),
+        }
+      );
+      if (!resp.ok) return null;
+      const data: any = await resp.json().catch(() => null);
+      const user = Array.isArray(data?.users) ? data.users[0] : null;
+      if (!user || !user.localId || !user.email) return null;
+      return {
+        uid: String(user.localId),
+        email: String(user.email).trim().toLowerCase(),
+        emailVerified: Boolean(user.emailVerified),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async function requireVerifiedCaller(
+    req: express.Request,
+    res: express.Response
+  ): Promise<AuthenticatedCaller | null> {
+    const bearerToken = extractBearerToken(req);
+    if (!bearerToken) {
+      res.status(401).json({ error: 'Authentication required. Please sign in.' });
+      return null;
+    }
+    const verified = await verifyFirebaseIdToken(bearerToken);
+    if (!verified) {
+      res.status(401).json({ error: 'Invalid or expired authentication session.' });
+      return null;
+    }
+    const isSuperAdmin = verified.email === SUPER_ADMIN_EMAIL && verified.emailVerified;
+    if (!verified.emailVerified && !isSuperAdmin) {
+      res.status(403).json({ error: 'Email verification is required for this action.' });
+      return null;
+    }
+    return {
+      ...verified,
+      bearerToken,
+      isSuperAdmin,
+    };
+  }
+
+  async function requireSuperAdminCaller(
+    req: express.Request,
+    res: express.Response
+  ): Promise<AuthenticatedCaller | null> {
+    const caller = await requireVerifiedCaller(req, res);
+    if (!caller) return null;
+    if (!caller.isSuperAdmin) {
+      res.status(403).json({ error: 'Super Admin privileges required.' });
+      return null;
+    }
+    return caller;
+  }
+
+  async function verifyTenantCallerAccess(
+    caller: AuthenticatedCaller,
+    businessId: string,
+    requireManagerOrOwner = false
+  ): Promise<{ allowed: boolean; bizDoc: Record<string, any> | null }> {
+    const cleanBizId = String(businessId || '').trim();
+    if (!cleanBizId) return { allowed: false, bizDoc: null };
+    if (caller.isSuperAdmin) {
+      const bizDoc = await getFirestoreDoc('businesses', cleanBizId, caller.bearerToken);
+      return { allowed: true, bizDoc };
+    }
+    if (cleanBizId === 'biz-demo') {
+      return { allowed: false, bizDoc: null };
+    }
+    const [bizDoc, userDoc] = await Promise.all([
+      getFirestoreDoc('businesses', cleanBizId, caller.bearerToken),
+      getFirestoreDoc('users', caller.uid, caller.bearerToken),
+    ]);
+    const isOwner = Boolean(
+      bizDoc?.ownerEmail && String(bizDoc.ownerEmail).trim().toLowerCase() === caller.email
+    );
+    const isMember = Boolean(
+      userDoc?.businessId &&
+        String(userDoc.businessId).trim() === cleanBizId &&
+        (!requireManagerOrOwner ||
+          ['business_owner', 'manager', 'super_admin'].includes(String(userDoc.role || '')))
+    );
+    return { allowed: isOwner || isMember, bizDoc };
+  }
+
+  // Cryptographic PIN Hashing with Bcrypt (requires authenticated session)
   app.post('/api/auth/hash-pin', async (req, res) => {
     try {
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
       const { pin, rounds = 10 } = req.body;
-      if (!pin || typeof pin !== 'string') {
-        return res.status(400).json({ error: 'PIN is required and must be a string' });
+      if (!pin || typeof pin !== 'string' || pin.length > 64) {
+        return res.status(400).json({ error: 'PIN is required and must be a valid string' });
       }
 
       // Safe rounds range (cost factor)
-      const saltRounds = Math.min(Math.max(Number(rounds) || 10, 4), 14);
+      const saltRounds = Math.min(Math.max(Number(rounds) || 10, 10), 14);
       const hash = await bcrypt.hash(pin, saltRounds);
 
       return res.json({
@@ -252,26 +438,8 @@ Sitemap: ${origin}/sitemap.xml
   loadStaffCredentials();
 
   // -------------------------------------------------------------
-  // Firestore Persistent Backing Store for Staff Credentials
-  // Ensures staff PIN hashes survive Cloud Run deployments & container restarts
+  // Server Plan Tier Constants & Helpers
   // -------------------------------------------------------------
-  let firebaseProjectId = process.env.FIREBASE_PROJECT_ID || 'gen-lang-client-0820403611';
-  let firestoreDatabaseId = process.env.FIRESTORE_DATABASE_ID || '(default)';
-  let firebaseWebApiKey = process.env.FIREBASE_WEB_API_KEY || '';
-  try {
-    const fbConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
-    if (fs.existsSync(fbConfigPath)) {
-      const fbCfg = JSON.parse(fs.readFileSync(fbConfigPath, 'utf-8'));
-      if (fbCfg.projectId) firebaseProjectId = fbCfg.projectId;
-      if (fbCfg.firestoreDatabaseId) firestoreDatabaseId = fbCfg.firestoreDatabaseId;
-      if (fbCfg.apiKey) firebaseWebApiKey = fbCfg.apiKey;
-    }
-  } catch (err) {
-    console.warn('Could not read firebase-applet-config.json on server:', err);
-  }
-
-  const SUPER_ADMIN_EMAIL = 'upfrontretaile@gmail.com';
-
   type CanonicalServerTier = 'free' | 'starter' | 'business' | 'premium';
 
   function normalizeServerPlanTier(
@@ -326,34 +494,6 @@ Sitemap: ${origin}/sitemap.xml
       }
     }
     return baseTier;
-  }
-
-  async function verifyFirebaseIdToken(
-    idToken: string | undefined
-  ): Promise<{ uid: string; email: string; emailVerified: boolean } | null> {
-    const clean = String(idToken || '').trim();
-    if (!clean || !firebaseWebApiKey) return null;
-    try {
-      const resp = await fetch(
-        `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(firebaseWebApiKey)}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ idToken: clean }),
-        }
-      );
-      if (!resp.ok) return null;
-      const data: any = await resp.json().catch(() => null);
-      const user = Array.isArray(data?.users) ? data.users[0] : null;
-      if (!user || !user.localId || !user.email) return null;
-      return {
-        uid: String(user.localId),
-        email: String(user.email).trim().toLowerCase(),
-        emailVerified: Boolean(user.emailVerified),
-      };
-    } catch {
-      return null;
-    }
   }
 
   let cachedAdcToken: { token: string; expiresAt: number } | null = null;
@@ -517,35 +657,140 @@ Sitemap: ${origin}/sitemap.xml
   // Non-blocking startup hydration from Firestore
   hydrateStaffCredentialsFromFirestore(true).catch(() => {});
 
+  // Check Global Staff Identity Availability (returns only availability booleans, zero cross-tenant PII)
+  app.post('/api/auth/check-staff-identity', async (req, res) => {
+    try {
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
+      const { username, code, excludeCashierId } = req.body || {};
+      const creds = await hydrateStaffCredentialsFromFirestore();
+      const normUser = username ? String(username).trim().toLowerCase() : '';
+      const normCode = code ? String(code).trim().toLowerCase().replace(/^#/, '') : '';
+
+      let usernameAvailable = true;
+      let codeAvailable = true;
+
+      for (const other of Object.values(creds)) {
+        if (excludeCashierId && other.cashierId === excludeCashierId) continue;
+        if (normUser && other.username?.trim().toLowerCase() === normUser) {
+          usernameAvailable = false;
+        }
+        if (normCode && other.code?.trim().toLowerCase().replace(/^#/, '') === normCode) {
+          codeAvailable = false;
+        }
+      }
+
+      return res.json({ usernameAvailable, codeAvailable });
+    } catch (err: any) {
+      console.error('Error in /api/auth/check-staff-identity:', err);
+      return res.status(500).json({ error: 'Identity uniqueness check failed' });
+    }
+  });
+
+  // Server-Side RFC 6238 TOTP Verification (Protected by 5-attempt / 15-minute rate limit & Firebase auth)
+  function base32ToBuffer(base32: string): Buffer {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    const clean = String(base32 || '').toUpperCase().replace(/=+$/, '').replace(/\s+/g, '');
+    let bits = 0;
+    let value = 0;
+    const output: number[] = [];
+    for (let i = 0; i < clean.length; i++) {
+      const idx = alphabet.indexOf(clean[i]);
+      if (idx === -1) continue;
+      value = (value << 5) | idx;
+      bits += 5;
+      if (bits >= 8) {
+        output.push((value >>> (bits - 8)) & 255);
+        bits -= 8;
+      }
+    }
+    return Buffer.from(output);
+  }
+
+  app.post('/api/auth/verify-totp', pinVerifyLimiter, async (req, res) => {
+    try {
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
+      const { code, secret } = req.body || {};
+      const cleanCode = String(code || '').trim().replace(/\s+/g, '');
+      const cleanSecret = String(secret || '').trim().toUpperCase().replace(/\s+/g, '');
+
+      if (!/^\d{6}$/.test(cleanCode) || !/^[A-Z2-7]{16,64}$/.test(cleanSecret)) {
+        return res.status(400).json({ verified: false, error: 'Valid 6-digit code and Base32 secret are required.' });
+      }
+
+      const keyBuf = base32ToBuffer(cleanSecret);
+      const baseCounter = Math.floor(Date.now() / 1000 / 30);
+      let verified = false;
+
+      for (let offset = -1; offset <= 1; offset++) {
+        const counterBuf = Buffer.alloc(8);
+        counterBuf.writeBigInt64BE(BigInt(baseCounter + offset), 0);
+        const hmac = crypto.createHmac('sha1', keyBuf).update(counterBuf).digest();
+        const idx = hmac[hmac.length - 1] & 0x0f;
+        const otpNum =
+          ((hmac[idx] & 0x7f) << 24) |
+          ((hmac[idx + 1] & 0xff) << 16) |
+          ((hmac[idx + 2] & 0xff) << 8) |
+          (hmac[idx + 3] & 0xff);
+        const expected = (otpNum % 1_000_000).toString().padStart(6, '0');
+        if (crypto.timingSafeEqual(Buffer.from(cleanCode), Buffer.from(expected))) {
+          verified = true;
+          break;
+        }
+      }
+
+      if (!verified) {
+        return res.status(401).json({ verified: false, error: 'Invalid authenticator code.' });
+      }
+      return res.json({ verified: true });
+    } catch (err: any) {
+      console.error('Error in /api/auth/verify-totp:', err);
+      return res.status(500).json({ verified: false, error: 'TOTP verification failed.' });
+    }
+  });
+
   // Save / Isolate Staff Credential on Server
   app.post('/api/auth/save-staff-credential', async (req, res) => {
     try {
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
       const { cashierId, businessId, pin, hash, role, name, code, username } = req.body;
       if (!cashierId || !businessId) {
         return res.status(400).json({ error: 'cashierId and businessId are required' });
       }
 
+      const cleanBizId = String(businessId).trim();
+      const { allowed: callerOwnsTenant, bizDoc } = await verifyTenantCallerAccess(
+        caller,
+        cleanBizId,
+        true
+      );
+      if (!callerOwnsTenant) {
+        return res.status(403).json({
+          success: false,
+          error: 'Unauthorized: Only the business owner, manager, or Super Admin can manage staff credentials.',
+        });
+      }
+
       const creds = await hydrateStaffCredentialsFromFirestore();
       const existingCred = creds[cashierId];
 
-      if (existingCred && existingCred.businessId && existingCred.businessId !== businessId) {
+      if (existingCred && existingCred.businessId && existingCred.businessId !== cleanBizId) {
         return res.status(403).json({
           success: false,
           error: 'Cross-tenant access denied: credential belongs to a different store.',
         });
       }
 
-      const authHeader = req.headers.authorization;
-      const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined;
-      const caller = bearerToken ? await verifyFirebaseIdToken(bearerToken) : null;
-      const cleanBizId = String(businessId).trim();
       const isExemptAccount =
-        cleanBizId === 'biz-demo' ||
         cleanBizId === 'biz-upfront' ||
-        caller?.email === SUPER_ADMIN_EMAIL;
+        caller.isSuperAdmin;
 
       if (!existingCred && !isExemptAccount) {
-        const bizDoc = await getFirestoreDoc('businesses', cleanBizId, bearerToken);
         if (bizDoc) {
           const docOwnerEmail = String(bizDoc.ownerEmail || '').trim().toLowerCase();
           if (docOwnerEmail !== SUPER_ADMIN_EMAIL) {
@@ -565,7 +810,7 @@ Sitemap: ${origin}/sitemap.xml
         }
       }
 
-      let pinHash = hash;
+      let pinHash = hash && typeof hash === 'string' && hash.startsWith('$2') ? hash : undefined;
       if (!pinHash && pin) {
         pinHash = await bcrypt.hash(String(pin), 10);
       }
@@ -573,7 +818,7 @@ Sitemap: ${origin}/sitemap.xml
         pinHash = existingCred.hash;
       }
       if (!pinHash) {
-        return res.status(400).json({ error: 'pin or hash is required' });
+        return res.status(400).json({ error: 'pin or valid bcrypt hash is required' });
       }
 
       const normalizedUsername = username !== undefined
@@ -601,7 +846,7 @@ Sitemap: ${origin}/sitemap.xml
 
       const updatedCred: StoredStaffCredential = {
         cashierId,
-        businessId,
+        businessId: cleanBizId,
         hash: pinHash,
         role: role || existingCred?.role || 'cashier',
         name: name || existingCred?.name || 'Staff Member',
@@ -612,7 +857,7 @@ Sitemap: ${origin}/sitemap.xml
       creds[cashierId] = updatedCred;
       saveStaffCredentials(creds);
 
-      await persistStaffCredentialToFirestore(updatedCred, bearerToken);
+      await persistStaffCredentialToFirestore(updatedCred, caller.bearerToken);
 
       return res.json({
         success: true,
@@ -625,19 +870,35 @@ Sitemap: ${origin}/sitemap.xml
     }
   });
 
-  // Sync Staff Credentials into Server Vault
+  // Sync Staff Credentials into Server Vault (tenant-scoped & authenticated)
   app.post('/api/auth/sync-credentials', async (req, res) => {
     try {
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
       const { cashiers } = req.body;
       if (!Array.isArray(cashiers)) {
         return res.status(400).json({ error: 'cashiers must be an array' });
       }
       const creds = await hydrateStaffCredentialsFromFirestore();
-      const authHeader = req.headers.authorization;
-      const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+      const verifiedBizCache = new Map<string, boolean>();
       let count = 0;
-      for (const c of cashiers) {
+
+      for (const c of cashiers.slice(0, 100)) {
         if (c.id && c.pin && c.pin !== '••••••••' && !c.pin.startsWith('[PROTECTED')) {
+          const targetBizId = String(c.businessId || 'biz-upfront').trim();
+          let allowed = verifiedBizCache.get(targetBizId);
+          if (allowed === undefined) {
+            const access = await verifyTenantCallerAccess(caller, targetBizId, true);
+            allowed = access.allowed;
+            verifiedBizCache.set(targetBizId, allowed);
+          }
+          if (!allowed) continue;
+
+          if (creds[c.id] && creds[c.id].businessId && creds[c.id].businessId !== targetBizId) {
+            continue;
+          }
+
           const normUsername = c.username ? String(c.username).trim().toLowerCase() : undefined;
           const normCode = c.code ? String(c.code).trim().toLowerCase().replace(/^#/, '') : undefined;
 
@@ -654,11 +915,11 @@ Sitemap: ${origin}/sitemap.xml
 
           let pinHash = c.pin;
           if (!pinHash.startsWith('$2')) {
-            pinHash = await bcrypt.hash(String(c.pin), 10);
+            pinHash = await bcrypt.hash(String(pinHash), 10);
           }
           const syncedCred: StoredStaffCredential = {
             cashierId: c.id,
-            businessId: c.businessId || 'biz-upfront',
+            businessId: targetBizId,
             hash: pinHash,
             role: c.role || 'cashier',
             name: c.name || 'Staff Member',
@@ -667,7 +928,7 @@ Sitemap: ${origin}/sitemap.xml
             updatedAt: new Date().toISOString(),
           };
           creds[c.id] = syncedCred;
-          await persistStaffCredentialToFirestore(syncedCred, bearerToken);
+          await persistStaffCredentialToFirestore(syncedCred, caller.bearerToken);
           count++;
         }
       }
@@ -683,7 +944,7 @@ Sitemap: ${origin}/sitemap.xml
   app.post('/api/auth/verify-pin', pinVerifyLimiter, async (req, res) => {
     try {
       const { pin, hash, cashierId, businessId, usernameOrCode, managerOverride, managerId } = req.body;
-      if (!pin) {
+      if (!pin || typeof pin !== 'string') {
         return res.status(400).json({ error: 'PIN is required' });
       }
 
@@ -703,7 +964,7 @@ Sitemap: ${origin}/sitemap.xml
             return res.status(404).json({ valid: false, error: 'Designated manager was not found.' });
           }
           const isMatch = await bcrypt.compare(String(pin), target.hash).catch(() => false);
-          if (!isMatch && String(pin) !== target.hash) {
+          if (!isMatch) {
             return res.status(401).json({ valid: false, error: 'Invalid PIN entered for manager override.' });
           }
           return res.json({
@@ -717,7 +978,7 @@ Sitemap: ${origin}/sitemap.xml
         // Direct match against any eligible manager in this business tenant
         for (const mgr of candidates) {
           const isMatch = await bcrypt.compare(String(pin), mgr.hash).catch(() => false);
-          if (isMatch || String(pin) === mgr.hash) {
+          if (isMatch) {
             return res.json({
               valid: true,
               managerId: mgr.cashierId,
@@ -775,7 +1036,7 @@ Sitemap: ${origin}/sitemap.xml
           targetCred.hash.startsWith('$2y$');
         const isValid = isBcrypt
           ? await bcrypt.compare(String(pin), targetCred.hash).catch(() => false)
-          : String(pin) === targetCred.hash;
+          : false;
 
         if (!isValid) {
           return res.status(401).json({
@@ -813,44 +1074,25 @@ Sitemap: ${origin}/sitemap.xml
         });
       }
 
-      // 3. Fallback: Direct hash comparison (for legacy or offline fallback sync)
-      if (hash) {
-        const isBcrypt =
-          typeof hash === 'string' &&
-          (hash.startsWith('$2a$') || hash.startsWith('$2b$') || hash.startsWith('$2y$'));
-
-        if (isBcrypt) {
-          const isValid = await bcrypt.compare(String(pin), hash).catch(() => false);
-          if (!isValid) {
-            return res.status(401).json({
-              valid: false,
-              error: 'Invalid PIN entered.',
-              algorithm: 'bcrypt',
-            });
-          }
-
-          return res.json({
-            valid: true,
-            algorithm: 'bcrypt',
-            isUpgraded: true,
-          });
-        }
-
-        const isLegacyValid = String(pin) === String(hash);
-        if (!isLegacyValid) {
+      // 3. Fallback: Strictly Bcrypt hash verification (no plaintext bypass allowed)
+      if (
+        hash &&
+        typeof hash === 'string' &&
+        (hash.startsWith('$2a$') || hash.startsWith('$2b$') || hash.startsWith('$2y$'))
+      ) {
+        const isValid = await bcrypt.compare(String(pin), hash).catch(() => false);
+        if (!isValid) {
           return res.status(401).json({
             valid: false,
             error: 'Invalid PIN entered.',
-            algorithm: 'legacy_plain',
+            algorithm: 'bcrypt',
           });
         }
 
-        const upgradedHash = await bcrypt.hash(String(pin), 10);
         return res.json({
           valid: true,
-          algorithm: 'legacy_plain',
-          isUpgraded: false,
-          upgradedHash,
+          algorithm: 'bcrypt',
+          isUpgraded: true,
         });
       }
 
@@ -864,12 +1106,15 @@ Sitemap: ${origin}/sitemap.xml
     }
   });
 
-  // Bulk PIN Hashing (e.g. for batch migrations of staff PINs)
+  // Bulk PIN Hashing (authenticated, bounded batch migration)
   app.post('/api/auth/bulk-hash-pins', async (req, res) => {
     try {
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
       const { items } = req.body;
-      if (!Array.isArray(items)) {
-        return res.status(400).json({ error: 'items must be an array of { id, pin }' });
+      if (!Array.isArray(items) || items.length > 200) {
+        return res.status(400).json({ error: 'items must be an array of at most 200 { id, pin } entries' });
       }
 
       const results = await Promise.all(
@@ -895,6 +1140,9 @@ Sitemap: ${origin}/sitemap.xml
   // -------------------------------------------------------------
   app.post('/api/ai/parse-invoice', aiEndpointLimiter, async (req, res) => {
     try {
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
       const { imageBase64, mimeType = 'image/jpeg', existingProducts = [] } = req.body;
 
       if (!imageBase64 || typeof imageBase64 !== 'string') {
@@ -1022,6 +1270,9 @@ Instructions:
   // -------------------------------------------------------------
   app.post('/api/ai/parse-package', aiEndpointLimiter, async (req, res) => {
     try {
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
       const { imageBase64, mimeType = 'image/jpeg' } = req.body;
 
       if (!imageBase64 || typeof imageBase64 !== 'string') {
@@ -1129,6 +1380,9 @@ Extract:
 
   app.get('/api/digitax/etims-info', async (req, res) => {
     try {
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
       const apiKey = (req.headers['x-api-key'] as string) || DIGITAX_DEFAULT_API_KEY;
       const response = await fetch(`${DIGITAX_BASE_URL}/etims-info`, {
         headers: {
@@ -1146,6 +1400,9 @@ Extract:
 
   app.get('/api/digitax/items', async (req, res) => {
     try {
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
       const apiKey = (req.headers['x-api-key'] as string) || DIGITAX_DEFAULT_API_KEY;
       const response = await fetch(`${DIGITAX_BASE_URL}/items`, {
         headers: {
@@ -1163,6 +1420,9 @@ Extract:
 
   app.get('/api/digitax/sales', async (req, res) => {
     try {
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
       const apiKey = (req.headers['x-api-key'] as string) || DIGITAX_DEFAULT_API_KEY;
       const response = await fetch(`${DIGITAX_BASE_URL}/sales`, {
         headers: {
@@ -1180,6 +1440,9 @@ Extract:
 
   app.post('/api/digitax/sales', async (req, res) => {
     try {
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
       const apiKey = (req.headers['x-api-key'] as string) || DIGITAX_DEFAULT_API_KEY;
       const response = await fetch(`${DIGITAX_BASE_URL}/sales`, {
         method: 'POST',
@@ -1199,8 +1462,16 @@ Extract:
 
   app.get('/api/digitax/sales/:id', async (req, res) => {
     try {
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
+      const saleId = String(req.params.id || '').trim();
+      if (!/^[a-zA-Z0-9_-]{1,64}$/.test(saleId)) {
+        return res.status(400).json({ error: 'Invalid Digitax sale ID format' });
+      }
+
       const apiKey = (req.headers['x-api-key'] as string) || DIGITAX_DEFAULT_API_KEY;
-      const response = await fetch(`${DIGITAX_BASE_URL}/sales/${req.params.id}`, {
+      const response = await fetch(`${DIGITAX_BASE_URL}/sales/${encodeURIComponent(saleId)}`, {
         headers: {
           'Content-Type': 'application/json',
           'X-Api-Key': apiKey,
@@ -1725,6 +1996,47 @@ Extract:
 
       const resolvedChannel: PaymentChannel = channel === 'card' ? 'card' : 'mpesa_stk';
       const resolvedFlow: PaymentFlowType = flowType === 'subscription' ? 'subscription' : 'pos_sale';
+
+      const bearerToken = extractBearerToken(req);
+      let verifiedCaller: AuthenticatedCaller | null = null;
+      if (resolvedFlow === 'subscription') {
+        verifiedCaller = await requireVerifiedCaller(req, res);
+        if (!verifiedCaller) return;
+        const cleanSubBizId = String(businessId || '').trim();
+        if (cleanSubBizId) {
+          const access = await verifyTenantCallerAccess(verifiedCaller, cleanSubBizId, false);
+          if (!access.allowed) {
+            return res.status(403).json({
+              success: false,
+              error: 'Access denied: you do not have permission to initiate subscription billing for this business.',
+            });
+          }
+        }
+      } else if (bearerToken) {
+        const tokenUser = await verifyFirebaseIdToken(bearerToken);
+        if (!tokenUser) {
+          return res.status(401).json({
+            success: false,
+            error: 'Invalid or expired authentication token.',
+          });
+        }
+        verifiedCaller = {
+          ...tokenUser,
+          bearerToken,
+          isSuperAdmin: tokenUser.email === SUPER_ADMIN_EMAIL && tokenUser.emailVerified,
+        };
+        const cleanPosBizId = String(businessId || '').trim();
+        if (cleanPosBizId && cleanPosBizId !== 'biz-demo') {
+          const access = await verifyTenantCallerAccess(verifiedCaller, cleanPosBizId, false);
+          if (!access.allowed) {
+            return res.status(403).json({
+              success: false,
+              error: 'Access denied: your account is not authorized for this business terminal.',
+            });
+          }
+        }
+      }
+
       const adapter = resolveAdapterForPayment(resolvedFlow, resolvedChannel);
 
       if (!adapter.isConfigured()) {
@@ -1777,8 +2089,6 @@ Extract:
           });
         }
 
-        const authHeader = req.headers.authorization;
-        const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined;
         const bizDoc = await getFirestoreDoc('businesses', cleanBizId, bearerToken);
         const cachedSa = verifiedSubaccountCache.get(cleanBizId);
 
@@ -1802,6 +2112,7 @@ Extract:
 
       const payerEmail =
         (typeof email === 'string' && email.includes('@') ? email.trim() : '') ||
+        verifiedCaller?.email ||
         `receipts+${businessId || 'terminal'}@sokopos.co.ke`;
 
       const sharedMeta = {
@@ -1816,8 +2127,9 @@ Extract:
 
       const appBaseUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
       const darajaCallbackSecret = (process.env.DARAJA_CALLBACK_SECRET || '').trim();
-      const darajaCallbackUrl = `${appBaseUrl}/api/payments/daraja/callback${
-        darajaCallbackSecret ? `?token=${encodeURIComponent(darajaCallbackSecret)}` : ''
+      const callbackSig = signDarajaCallbackRef(reference);
+      const darajaCallbackUrl = `${appBaseUrl}/api/payments/daraja/callback?ref=${encodeURIComponent(reference)}&sig=${encodeURIComponent(callbackSig)}${
+        darajaCallbackSecret ? `&token=${encodeURIComponent(darajaCallbackSecret)}` : ''
       }`;
 
       const useHostedRedirect =
@@ -2034,7 +2346,26 @@ Extract:
         }
       }
 
-      const resolvedRef = intent?.reference || ref || parsed.checkoutRequestId;
+      if (!intent) {
+        console.warn('[Daraja Callback] Rejected unknown CheckoutRequestID:', parsed.checkoutRequestId);
+        return res.status(401).json({ ResultCode: 1, ResultDesc: 'Unknown payment transaction intent' });
+      }
+
+      // If no DARAJA_CALLBACK_SECRET is configured, authenticate callback via our HMAC URL signature
+      // or by independently confirming success directly with Safaricom Daraja STK Query API.
+      const providedSig = String(req.query?.sig || '').trim();
+      const hasValidSig = Boolean(configuredSecret) || verifyDarajaCallbackSig(intent.reference, providedSig);
+      if (!hasValidSig && parsed.resultCode === 0) {
+        const liveCheck = await darajaAdapter.verifyTransaction(parsed.checkoutRequestId);
+        if (!liveCheck.verified || liveCheck.status !== 'success') {
+          console.warn('[Daraja Callback] Rejected unverified ResultCode=0 callback for:', parsed.checkoutRequestId);
+          return res.status(401).json({ ResultCode: 1, ResultDesc: 'Callback authenticity verification failed' });
+        }
+      } else if (!hasValidSig) {
+        return res.status(401).json({ ResultCode: 1, ResultDesc: 'Invalid callback signature' });
+      }
+
+      const resolvedRef = intent.reference;
       const nowIso = new Date().toISOString();
 
       if (parsed.resultCode === 0) {
@@ -2158,12 +2489,11 @@ Extract:
         return res.status(400).json({ verified: false, status: 'failed', error: 'Reference is required.' });
       }
 
-      const authHeader = req.headers.authorization;
-      const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined;
+      const bearerToken = extractBearerToken(req);
 
       let cached = paymentIntents.get(reference);
       if (!cached) {
-        const dbRecord = await getFirestoreDoc('payment_records', reference, bearerToken);
+        const dbRecord = await getFirestoreDoc('payment_records', reference);
         if (dbRecord && dbRecord.reference) {
           cached = {
             reference: String(dbRecord.reference),
@@ -2187,6 +2517,23 @@ Extract:
           paymentIntents.set(reference, cached);
           if (cached.checkoutRequestId) {
             checkoutRequestToRef.set(cached.checkoutRequestId, reference);
+          }
+        }
+      }
+
+      const isSubscriptionRef = cached?.flowType === 'subscription' || reference.startsWith('SOKO-SUB-');
+      let verifiedVerifyCaller: AuthenticatedCaller | null = null;
+      if (isSubscriptionRef) {
+        verifiedVerifyCaller = await requireVerifiedCaller(req, res);
+        if (!verifiedVerifyCaller) return;
+        if (cached?.businessId) {
+          const access = await verifyTenantCallerAccess(verifiedVerifyCaller, cached.businessId, false);
+          if (!access.allowed) {
+            return res.status(403).json({
+              verified: false,
+              status: 'failed',
+              error: 'Access denied: you cannot verify payments belonging to another business.',
+            });
           }
         }
       }
@@ -2274,6 +2621,21 @@ Extract:
         cached?.billingCycle === 'annual' || verification.metadata?.billingCycle === 'annual'
           ? 'annual'
           : 'monthly';
+
+      if (resolvedFlowType === 'subscription' && resolvedBusinessId && !verifiedVerifyCaller) {
+        verifiedVerifyCaller = await requireVerifiedCaller(req, res);
+        if (!verifiedVerifyCaller) return;
+      }
+      if (resolvedFlowType === 'subscription' && resolvedBusinessId && verifiedVerifyCaller) {
+        const access = await verifyTenantCallerAccess(verifiedVerifyCaller, resolvedBusinessId, false);
+        if (!access.allowed) {
+          return res.status(403).json({
+            verified: false,
+            status: 'failed',
+            error: 'Access denied: you cannot activate subscriptions for another business.',
+          });
+        }
+      }
 
       let activatedSubscription: Record<string, any> | undefined;
 
@@ -2698,12 +3060,16 @@ Extract:
   // Enroll as an affiliate (Store Owner, Partner-Only, or Hybrid)
   app.post('/api/affiliates/enroll', async (req, res) => {
     try {
-      const { uid, email, name, mpesaPhone, accountType, preferredCode } = req.body || {};
-      if (!uid || !email || !name || !mpesaPhone) {
-        return res.status(400).json({ error: 'uid, email, name, and mpesaPhone are required.' });
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
+      const { name, mpesaPhone, accountType, preferredCode } = req.body || {};
+      if (!name || !mpesaPhone) {
+        return res.status(400).json({ error: 'name and mpesaPhone are required.' });
       }
 
-      const normalizedEmail = String(email).trim().toLowerCase();
+      const uid = caller.uid;
+      const normalizedEmail = caller.email;
       const matchedBusinesses = await queryFirestoreDocs('businesses', 'ownerEmail', normalizedEmail, 5);
       const matchedBiz = matchedBusinesses.find(
         (b) => String(b.ownerEmail || '').trim().toLowerCase() === normalizedEmail
@@ -2717,7 +3083,7 @@ Extract:
         ? 'owner'
         : 'partner';
 
-      let existing = await getFirestoreDoc('affiliates', String(uid));
+      let existing = await getFirestoreDoc('affiliates', uid);
       if (!existing) {
         const byEmail = await queryFirestoreDocs('affiliates', 'email', normalizedEmail, 5);
         existing = byEmail.find(
@@ -2770,8 +3136,8 @@ Extract:
 
       const nowIso = new Date().toISOString();
       const newAffiliate = {
-        id: String(uid),
-        uid: String(uid),
+        id: uid,
+        uid,
         email: normalizedEmail,
         name: String(name).trim(),
         code: candidateCode,
@@ -2791,7 +3157,7 @@ Extract:
         updatedAt: nowIso,
       };
 
-      const saved = await patchFirestoreDoc('affiliates', String(uid), newAffiliate);
+      const saved = await patchFirestoreDoc('affiliates', uid, newAffiliate);
       if (!saved) {
         return res.status(500).json({ error: 'Failed to save affiliate profile to Firestore.' });
       }
@@ -2806,11 +3172,12 @@ Extract:
   // Get current affiliate dashboard data (profile, commissions, payouts, referred count)
   app.get('/api/affiliates/me', async (req, res) => {
     try {
-      const uid = String(req.query.uid || '').trim();
-      const email = String(req.query.email || '').trim().toLowerCase();
-      if (!uid && !email) {
-        return res.status(400).json({ error: 'uid or email is required.' });
-      }
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
+      const requestedUid = String(req.query.uid || '').trim();
+      const uid = caller.isSuperAdmin && requestedUid ? requestedUid : caller.uid;
+      const email = caller.isSuperAdmin && req.query.email ? String(req.query.email).trim().toLowerCase() : caller.email;
 
       let affiliate = uid ? await getFirestoreDoc('affiliates', uid) : null;
       if (!affiliate && email) {
@@ -2874,13 +3241,16 @@ Extract:
   // Partner M-Pesa Payout Request
   app.post('/api/affiliates/payout-request', async (req, res) => {
     try {
-      const { uid, amountKes, mpesaPhone } = req.body || {};
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
+      const { amountKes, mpesaPhone } = req.body || {};
       const amount = Math.round(Number(amountKes));
-      if (!uid || !Number.isFinite(amount) || amount < 500) {
+      if (!Number.isFinite(amount) || amount < 500) {
         return res.status(400).json({ error: 'Minimum payout request is KES 500.' });
       }
 
-      const affiliate = await getFirestoreDoc('affiliates', String(uid));
+      const affiliate = await getFirestoreDoc('affiliates', caller.uid);
       if (!affiliate) {
         return res.status(404).json({ error: 'Affiliate profile not found.' });
       }
@@ -2927,8 +3297,11 @@ Extract:
   });
 
   // Super Admin: Affiliates & Payouts Overview
-  app.get('/api/affiliates/admin/overview', async (_req, res) => {
+  app.get('/api/affiliates/admin/overview', async (req, res) => {
     try {
+      const caller = await requireSuperAdminCaller(req, res);
+      if (!caller) return;
+
       const [affiliates, commissions, payouts] = await Promise.all([
         listFirestoreDocs('affiliates'),
         listFirestoreDocs('affiliate_commissions'),
@@ -2949,6 +3322,9 @@ Extract:
   // Super Admin: Approve, Mark Paid, or Reject M-Pesa Payout
   app.post('/api/affiliates/admin/payout-review', async (req, res) => {
     try {
+      const caller = await requireSuperAdminCaller(req, res);
+      if (!caller) return;
+
       const { payoutId, action, mpesaReceiptNumber, reviewedBy, notes } = req.body || {};
       if (!payoutId || (action !== 'approved' && action !== 'paid' && action !== 'rejected')) {
         return res.status(400).json({ error: 'payoutId and valid action (approved | paid | rejected) are required.' });
@@ -2986,7 +3362,7 @@ Extract:
               ? String(payout.mpesaReceiptNumber || '')
               : '',
           notes: resolvedNotes,
-          reviewedBy: String(reviewedBy || 'Super Admin'),
+          reviewedBy: String(reviewedBy || caller.email || 'Super Admin'),
           reviewedAt: nowIso,
         },
         ['status', 'mpesaReceiptNumber', 'notes', 'reviewedBy', 'reviewedAt']
@@ -3026,6 +3402,9 @@ Extract:
   // Super Admin: Update Partner Commission Rate or Status
   app.post('/api/affiliates/admin/update-rate', async (req, res) => {
     try {
+      const caller = await requireSuperAdminCaller(req, res);
+      if (!caller) return;
+
       const { affiliateId, commissionRate, status } = req.body || {};
       if (!affiliateId) {
         return res.status(400).json({ error: 'affiliateId is required.' });

@@ -5,6 +5,7 @@
  * certified Control Unit (CU) sequences, digital tax signatures,
  * and KRA verification QR codes in partnership with Digitax Technologies.
  */
+import { auth } from '../lib/firebase';
 
 export interface DigitaxEtimsInfo {
   tax_pin: string;
@@ -143,19 +144,38 @@ class DigitaxService {
     };
   }
 
+  private async getProxyHeaders(includeJson = false): Promise<Record<string, string>> {
+    const headers: Record<string, string> = {
+      'X-Api-Key': this.apiKey,
+    };
+    if (includeJson) {
+      headers['Content-Type'] = 'application/json';
+    }
+    const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
+    if (idToken) {
+      headers['Authorization'] = `Bearer ${idToken}`;
+    }
+    return headers;
+  }
+
   /**
    * Fetch merchant eTIMS info from Digitax
    */
   async getEtimsInfo(): Promise<DigitaxEtimsInfo> {
-    // Try backend proxy first for optimal reliability, then fallback to direct API
+    // Try backend proxy first for optimal reliability, then fallback to direct API if proxy is unavailable
     try {
       const res = await fetch('/api/digitax/etims-info', {
-        headers: { 'X-Api-Key': this.apiKey },
+        headers: await this.getProxyHeaders(false),
       });
       if (res.ok) {
         return await res.json();
       }
-    } catch {
+      if (res.status === 401 || res.status === 403) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || 'Authentication required for Digitax eTIMS API.');
+      }
+    } catch (err: any) {
+      if (err?.message?.includes('Authentication required')) throw err;
       // Fallback to direct client call
     }
 
@@ -178,13 +198,18 @@ class DigitaxService {
   async getItems(): Promise<DigitaxItem[]> {
     try {
       const res = await fetch('/api/digitax/items', {
-        headers: { 'X-Api-Key': this.apiKey },
+        headers: await this.getProxyHeaders(false),
       });
       if (res.ok) {
         const body = await res.json();
         return body.data || [];
       }
-    } catch {
+      if (res.status === 401 || res.status === 403) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || 'Authentication required for Digitax eTIMS API.');
+      }
+    } catch (err: any) {
+      if (err?.message?.includes('Authentication required')) throw err;
       // Fallback to direct client call
     }
 
@@ -208,13 +233,18 @@ class DigitaxService {
   async getSales(): Promise<DigitaxSaleResponse[]> {
     try {
       const res = await fetch('/api/digitax/sales', {
-        headers: { 'X-Api-Key': this.apiKey },
+        headers: await this.getProxyHeaders(false),
       });
       if (res.ok) {
         const body = await res.json();
         return body.data || [];
       }
-    } catch {
+      if (res.status === 401 || res.status === 403) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || 'Authentication required for Digitax eTIMS API.');
+      }
+    } catch (err: any) {
+      if (err?.message?.includes('Authentication required')) throw err;
       // Fallback to direct client call
     }
 
@@ -239,16 +269,18 @@ class DigitaxService {
     try {
       const res = await fetch('/api/digitax/sales', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Api-Key': this.apiKey,
-        },
+        headers: await this.getProxyHeaders(true),
         body: JSON.stringify(params),
       });
       if (res.ok) {
         return await res.json();
       }
-    } catch {
+      if (res.status === 401 || res.status === 403) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || 'Authentication required for Digitax eTIMS API.');
+      }
+    } catch (err: any) {
+      if (err?.message?.includes('Authentication required')) throw err;
       // Fallback to direct client call
     }
 
@@ -279,18 +311,21 @@ class DigitaxService {
       try {
         let sale: DigitaxSaleResponse | null = null;
         try {
-          const res = await fetch(`/api/digitax/sales/${saleId}`, {
-            headers: { 'X-Api-Key': this.apiKey },
+          const res = await fetch(`/api/digitax/sales/${encodeURIComponent(saleId)}`, {
+            headers: await this.getProxyHeaders(false),
           });
           if (res.ok) {
             sale = await res.json();
+          } else if (res.status === 401 || res.status === 403) {
+            throw new Error('Authentication required for Digitax eTIMS API.');
           }
-        } catch {
+        } catch (err: any) {
+          if (err?.message?.includes('Authentication required')) throw err;
           // Fallback
         }
 
         if (!sale) {
-          const response = await fetch(`${this.baseUrl}/sales/${saleId}`, {
+          const response = await fetch(`${this.baseUrl}/sales/${encodeURIComponent(saleId)}`, {
             headers: this.getHeaders(),
           });
           if (response.ok) {
@@ -307,7 +342,7 @@ class DigitaxService {
     }
 
     // Return the latest known state even if still pending
-    const fallbackResponse = await fetch(`${this.baseUrl}/sales/${saleId}`, {
+    const fallbackResponse = await fetch(`${this.baseUrl}/sales/${encodeURIComponent(saleId)}`, {
       headers: this.getHeaders(),
     });
     return await fallbackResponse.json();

@@ -1,7 +1,20 @@
 import { AffiliateAccountType, AffiliateCommission, AffiliatePayout, AffiliateProfile } from '../types';
+import { auth } from './firebase';
 
 const REFERRAL_STORAGE_KEY = 'sokopos_referral_attribution';
 const REFERRAL_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30-day attribution window
+
+async function getAffiliateAuthHeaders(includeJsonContentType = false): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {};
+  if (includeJsonContentType) {
+    headers['Content-Type'] = 'application/json';
+  }
+  const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
+  if (idToken) {
+    headers['Authorization'] = `Bearer ${idToken}`;
+  }
+  return headers;
+}
 
 export interface StoredReferralAttribution {
   code: string;
@@ -75,9 +88,10 @@ export async function enrollAffiliate(params: {
   preferredCode?: string;
 }): Promise<{ success: boolean; affiliate?: AffiliateProfile; error?: string }> {
   try {
+    const headers = await getAffiliateAuthHeaders(true);
     const resp = await fetch('/api/affiliates/enroll', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(params),
     });
     const data = await resp.json().catch(() => ({}));
@@ -102,7 +116,8 @@ export async function fetchAffiliateDashboard(uid: string, email?: string): Prom
   const query = new URLSearchParams();
   if (uid) query.set('uid', uid);
   if (email) query.set('email', email.trim().toLowerCase());
-  const resp = await fetch(`/api/affiliates/me?${query.toString()}`);
+  const headers = await getAffiliateAuthHeaders(false);
+  const resp = await fetch(`/api/affiliates/me?${query.toString()}`, { headers });
   if (!resp.ok) {
     throw new Error('Failed to load affiliate dashboard');
   }
@@ -115,9 +130,10 @@ export async function requestAffiliatePayout(params: {
   mpesaPhone: string;
 }): Promise<{ success: boolean; payout?: AffiliatePayout; remainingBalanceKes?: number; error?: string }> {
   try {
+    const headers = await getAffiliateAuthHeaders(true);
     const resp = await fetch('/api/affiliates/payout-request', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(params),
     });
     const data = await resp.json().catch(() => ({}));
@@ -137,7 +153,8 @@ export interface AdminAffiliateOverview {
 }
 
 export async function fetchAdminAffiliateOverview(): Promise<AdminAffiliateOverview> {
-  const resp = await fetch('/api/affiliates/admin/overview');
+  const headers = await getAffiliateAuthHeaders(false);
+  const resp = await fetch('/api/affiliates/admin/overview', { headers });
   if (!resp.ok) {
     throw new Error('Failed to load admin affiliate overview');
   }
@@ -152,9 +169,10 @@ export async function reviewAffiliatePayout(params: {
   notes?: string;
 }): Promise<{ success: boolean; error?: string }> {
   try {
+    const headers = await getAffiliateAuthHeaders(true);
     const resp = await fetch('/api/affiliates/admin/payout-review', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(params),
     });
     const data = await resp.json().catch(() => ({}));
@@ -173,9 +191,10 @@ export async function updateAffiliateRateOrStatus(params: {
   status?: 'active' | 'suspended';
 }): Promise<{ success: boolean; error?: string }> {
   try {
+    const headers = await getAffiliateAuthHeaders(true);
     const resp = await fetch('/api/affiliates/admin/update-rate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(params),
     });
     const data = await resp.json().catch(() => ({}));

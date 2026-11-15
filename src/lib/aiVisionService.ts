@@ -1,5 +1,6 @@
 import { ParsedSupplierInvoice, ParsedProductPackage, ParsedInvoiceLineItem } from '../types/aiVision';
 import { Product } from '../types';
+import { auth } from './firebase';
 
 export async function parseSupplierInvoiceWithAi(
   imageBase64: string,
@@ -7,12 +8,17 @@ export async function parseSupplierInvoiceWithAi(
   existingProducts: Product[]
 ): Promise<ParsedSupplierInvoice> {
   const strippedBase64 = imageBase64.replace(/^data:[^;]+;base64,/, '');
+  const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (idToken) {
+    headers['Authorization'] = `Bearer ${idToken}`;
+  }
 
   const response = await fetch('/api/ai/parse-invoice', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify({
       imageBase64: strippedBase64,
       mimeType: mimeType || 'image/jpeg',
@@ -85,12 +91,17 @@ export async function parseProductPackageWithAi(
   mimeType: string
 ): Promise<ParsedProductPackage> {
   const strippedBase64 = imageBase64.replace(/^data:[^;]+;base64,/, '');
+  const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (idToken) {
+    headers['Authorization'] = `Bearer ${idToken}`;
+  }
 
   const response = await fetch('/api/ai/parse-package', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify({
       imageBase64: strippedBase64,
       mimeType: mimeType || 'image/jpeg',

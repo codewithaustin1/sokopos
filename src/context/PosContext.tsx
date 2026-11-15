@@ -110,7 +110,6 @@ import {
   updateCashierInFirestore,
   deleteCashierFromFirestore,
   getTenantCashiersFromFirestore,
-  findCashierInFirestoreByIdentity,
   saveTransactionToFirestore,
   saveStockTransferToFirestore,
   saveSyncLogToFirestore,
@@ -152,7 +151,9 @@ import {
   verifyManagerOverrideViaServer,
   saveStaffCredentialOnServer,
   syncStaffCredentialsOnServer,
+  checkStaffIdentityAvailabilityOnServer,
   PROTECTED_PIN_MASK,
+  isProtectedPin,
   isBcryptHash,
 } from '../lib/pinSecurityService';
 import {
@@ -861,35 +862,31 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return nextBizs;
     });
 
-    // Safely invoke ensureTenantDefaults if initialized
+    // 4. Sync winner business document to Firestore BEFORE ensuring tenant defaults / user profile writes
+    if (auth.currentUser) {
+      try {
+        if (isExistingAccount && !isSuperAdminEmail) {
+          await updateBusinessInFirestore(winner.id, { lastLoginAt: winner.lastLoginAt });
+        } else {
+          await saveBusinessToFirestore(winner);
+        }
+      } catch (e) {
+        console.warn('Firestore sync winner note:', e);
+      }
+      if (uniqueConflicts.length > 0) {
+        deleteBusinessConflictsFromFirestore(uniqueConflicts).catch((e) => {
+          console.warn('Firestore delete conflicts note:', e);
+        });
+      }
+    }
+
+    // Safely invoke ensureTenantDefaults if initialized (runs after winner business doc exists in Firestore)
     try {
       if (typeof ensureTenantDefaults === 'function') {
         ensureTenantDefaults(winner);
       }
     } catch (e) {
       console.warn('Tenant defaults bootstrap notice:', e);
-    }
-
-    // 4. Firestore level: non-blocking background sync so login transitions instantly
-    if (auth.currentUser) {
-      (async () => {
-        try {
-          if (isExistingAccount && !isSuperAdminEmail) {
-            await updateBusinessInFirestore(winner.id, { lastLoginAt: winner.lastLoginAt });
-          } else {
-            await saveBusinessToFirestore(winner);
-          }
-        } catch (e) {
-          console.warn('Firestore sync winner note:', e);
-        }
-        if (uniqueConflicts.length > 0) {
-          try {
-            await deleteBusinessConflictsFromFirestore(uniqueConflicts);
-          } catch (e) {
-            console.warn('Firestore delete conflicts note:', e);
-          }
-        }
-      })();
     }
 
     return { winner, purgedCount: uniqueConflicts.length, isExistingAccount };
@@ -2121,15 +2118,24 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Auto-upgrade any legacy unhashed staff PINs stored in localStorage to server Bcrypt hashes
   useEffect(() => {
-    const unhashedUsers = allSystemUsers.filter((u) => !isBcryptHash(u.pin));
-    if (unhashedUsers.length > 0) {
-      fetch('/api/auth/bulk-hash-pins', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          items: unhashedUsers.map((u) => ({ id: u.id, pin: u.pin })),
-        }),
-      })
+    const unhashedUsers = allSystemUsers.filter(
+      (u) => u.pin && !isProtectedPin(u.pin) && !isBcryptHash(u.pin)
+    );
+    if (unhashedUsers.length > 0 && auth.currentUser) {
+      auth.currentUser
+        .getIdToken()
+        .then((idToken) =>
+          fetch('/api/auth/bulk-hash-pins', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({
+              items: unhashedUsers.map((u) => ({ id: u.id, pin: u.pin })),
+            }),
+          })
+        )
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
           if (data?.results && Array.isArray(data.results)) {
@@ -2260,23 +2266,40 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return false;
     }
 
-    // Check targeted cashier identity across Firestore (no full-collection scan)
+    // Refresh current tenant cashiers from Firestore + verify global identity availability via server endpoint
     let globalUsers: Cashier[] = [...allSystemUsers];
     if (isOnline && auth.currentUser) {
       try {
-        const remoteCashiers = await findCashierInFirestoreByIdentity(rawUsername, rawCode);
-        if (remoteCashiers && remoteCashiers.length > 0) {
+        const [tenantRemoteCashiers, serverAvailability] = await Promise.all([
+          getTenantCashiersFromFirestore(activeBusinessId),
+          checkStaffIdentityAvailabilityOnServer({ username: rawUsername, code: rawCode }),
+        ]);
+        if (tenantRemoteCashiers && tenantRemoteCashiers.length > 0) {
           const map = new Map<string, Cashier>();
           globalUsers.forEach((u) => map.set(u.id, u));
-          remoteCashiers.forEach((r) => map.set(r.id, r));
+          tenantRemoteCashiers.forEach((r) => map.set(r.id, r));
           globalUsers = Array.from(map.values());
+        }
+        if (serverAvailability && !serverAvailability.usernameAvailable) {
+          showToast(
+            `Username "${rawUsername}" is already assigned in SokoPoS. No two staff members can share a username.`,
+            'error'
+          );
+          return false;
+        }
+        if (serverAvailability && !serverAvailability.codeAvailable) {
+          showToast(
+            `Staff ID "${rawCode}" is already assigned in SokoPoS. No two staff members can share a Staff ID.`,
+            'error'
+          );
+          return false;
         }
       } catch (err) {
         console.warn('Targeted staff uniqueness check fallback to local state:', err);
       }
     }
 
-    // Enforce global uniqueness across ALL businesses in SokoPoS (no two staff may share username or Staff ID)
+    // Enforce tenant/local uniqueness as immediate guard
     const existingSameUsername = globalUsers.find(
       (u) => u.username?.trim().toLowerCase() === rawUsername
     );
@@ -2416,16 +2439,37 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return false;
     }
 
-    // Check targeted cashier identity across Firestore for uniqueness
+    // Refresh current tenant cashiers from Firestore + verify global identity availability via server endpoint
     let globalUsers: Cashier[] = [...allSystemUsers];
     if (isOnline && auth.currentUser && (normalizedUsername !== undefined || cleanCode !== undefined)) {
       try {
-        const remoteCashiers = await findCashierInFirestoreByIdentity(normalizedUsername, normalizedCode);
-        if (remoteCashiers && remoteCashiers.length > 0) {
+        const [tenantRemoteCashiers, serverAvailability] = await Promise.all([
+          getTenantCashiersFromFirestore(activeBusinessId),
+          checkStaffIdentityAvailabilityOnServer({
+            username: normalizedUsername,
+            code: normalizedCode,
+            excludeCashierId: id,
+          }),
+        ]);
+        if (tenantRemoteCashiers && tenantRemoteCashiers.length > 0) {
           const map = new Map<string, Cashier>();
           globalUsers.forEach((u) => map.set(u.id, u));
-          remoteCashiers.forEach((r) => map.set(r.id, r));
+          tenantRemoteCashiers.forEach((r) => map.set(r.id, r));
           globalUsers = Array.from(map.values());
+        }
+        if (normalizedUsername !== undefined && serverAvailability && !serverAvailability.usernameAvailable) {
+          showToast(
+            `Username "${normalizedUsername}" is already assigned in SokoPoS. No two staff members can share a username.`,
+            'error'
+          );
+          return false;
+        }
+        if (cleanCode !== undefined && serverAvailability && !serverAvailability.codeAvailable) {
+          showToast(
+            `Staff ID "${normalizedCode}" is already assigned in SokoPoS. No two staff members can share a Staff ID.`,
+            'error'
+          );
+          return false;
         }
       } catch (err) {
         console.warn('Targeted staff uniqueness check fallback on update:', err);
@@ -7342,11 +7386,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (candidateUsers.length === 0 && isOnline) {
       try {
         let remoteCashiers: Cashier[] = [];
-        if (auth.currentUser) {
-          remoteCashiers = await findCashierInFirestoreByIdentity(trimmedInput, cleanCode);
-          if (!remoteCashiers || remoteCashiers.length === 0) {
-            remoteCashiers = await getTenantCashiersFromFirestore(activeBusinessId);
-          }
+        if (auth.currentUser && activeBusinessId && activeBusinessId !== 'biz-demo') {
+          remoteCashiers = await getTenantCashiersFromFirestore(activeBusinessId);
         }
         if (remoteCashiers && remoteCashiers.length > 0) {
           setAllSystemUsers((prev) => {

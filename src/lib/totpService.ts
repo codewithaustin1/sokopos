@@ -1,4 +1,5 @@
 import QRCode from 'qrcode';
+import { auth } from './firebase';
 
 /**
  * RFC 6238 Time-based One-Time Password (TOTP) Service for SokoPoS
@@ -166,16 +167,31 @@ export async function verifyTotpCode(
  */
 export async function verifyTotpOnServer(code: string, secret: string): Promise<boolean> {
   try {
+    const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (idToken) {
+      headers['Authorization'] = `Bearer ${idToken}`;
+    }
     const res = await fetch('/api/auth/verify-totp', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ code, secret }),
     });
+    if (res.status === 429) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Too many authentication attempts. Please try again later.');
+    }
     if (res.ok) {
       const data = await res.json();
       return Boolean(data.verified);
     }
-  } catch (err) {
+    if (res.status === 401 || res.status === 403) {
+      return false;
+    }
+  } catch (err: any) {
+    if (err?.message?.includes('Too many') || err?.message?.includes('locked')) {
+      throw err;
+    }
     console.warn('Server verify-totp network issue, falling back to client crypto:', err);
   }
   return await verifyTotpCode(code, secret);

@@ -510,7 +510,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
       if (!silent) setIsVerifyingCard(true);
       if (!silent) setCardGatewayError(null);
       try {
-        const check = await verifyServerPayment(ref);
+        const idToken = auth.currentUser
+          ? await auth.currentUser.getIdToken().catch(() => undefined)
+          : undefined;
+        const check = await verifyServerPayment(ref, idToken);
         if (check.verified && check.status === 'success') {
           setCardGatewayStatus('verified');
           soundFx?.playSuccess?.();

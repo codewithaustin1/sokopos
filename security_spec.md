@@ -1,49 +1,40 @@
-# Multi-Tenant Row-Level Security (RLS) Specification
+# Multi-Tenant Row-Level Security (RLS) & API Hardening Specification
 
 ## Application Context
 - **Target Database**: `ai-studio-sokopospointofsa-5314257a-dae6-432a-bde0-81ab935cc7ad`
-- **Application**: SokoPOS Multi-Tenant Retail Point-of-Sale System
+- **Application**: SokoPoS Multi-Tenant Retail Point-of-Sale System
 - **Super Administrator**: `upfrontretaile@gmail.com`
 
 ---
 
 ## Core Security Invariant
-All tenant data access across all core collections (`products`, `transactions`, `locations`, `cashiers`, `stock_transfers`, `sync_logs`) must enforce:
+All tenant data access across core collections (`products`, `categories`, `locations`, `cashiers`, `transactions`, `customers`, `suppliers`, `stock_transfers`, `sync_logs`, `purged_sales_backups`) must enforce verified tenant membership or ownership on **both** single-document reads (`get`), queries (`list`), creates, updates, and deletes:
 
 ```javascript
-request.auth.token.businessId == resource.data.businessId
+hasTenantAccess(resource.data.businessId) // isEmailVerified() && (isSuperAdmin() || tokenBusinessId() == bizId || isOwnerOf(bizId) || isMemberOf(bizId))
 ```
 
-Non-super-admin users cannot read, list, create, update, or delete data belonging to other tenants.
+Non-super-admin users cannot list, read, create, update, or delete records belonging to any other business tenant or records lacking a `businessId`.
 
 ---
 
-## The Eight Pillars Enforcement
+## Hardened Controls (Database + Server + Edge API)
 1. **Default Deny**: `match /{document=**} { allow read, write: if false; }` at root.
-2. **Explicit Data-Access Scoping**: Every match block checks `request.auth.token.businessId == resource.data.businessId`.
-3. **Write Protection**: On create, `request.resource.data.businessId` must match the caller's token.
-4. **Relational Isolation**: Collections are isolated strictly by tenant ID.
-5. **Role Escalation Prevention**: Super-admin actions are restricted to `upfrontretaile@gmail.com` or custom claim `role == 'super_admin'`.
-6. **No Client-Side Delegation**: Rules do not trust client filtering; the database enforces isolation.
-7. **Audit Trail Security**: Destructive actions (deletions) are restricted or logged.
-8. **Error Handling Architecture**: Client service catches and formats Firestore errors using `OperationType` and `handleFirestoreError`.
-
----
-
-## Dirty Dozen Security Test Scenarios
-1. **Unauthenticated Read**: Request without auth token to `/products/prod-1` -> REJECTED (403).
-2. **Unauthenticated Write**: Request without auth token to `/transactions/tx-1` -> REJECTED (403).
-3. **Cross-Tenant Product Read**: User with `businessId: "biz-1"` reading product with `businessId: "biz-2"` -> REJECTED.
-4. **Cross-Tenant Product Mutation**: User with `businessId: "biz-1"` updating product with `businessId: "biz-2"` -> REJECTED.
-5. **Cross-Tenant Transaction Injection**: User with `businessId: "biz-1"` creating transaction with `businessId: "biz-2"` -> REJECTED.
-6. **Tenant Location Leakage**: User with `businessId: "biz-1"` listing locations of `businessId: "biz-2"` -> REJECTED.
-7. **Tenant Staff/Cashier Tampering**: User with `businessId: "biz-1"` modifying cashier of `businessId: "biz-2"` -> REJECTED.
-8. **Stock Transfer Spoofing**: User attempting to initiate transfer for an unauthorized business -> REJECTED.
-9. **Super-Admin Authorized Audit Read**: Super-admin (`upfrontretaile@gmail.com`) querying any tenant -> ALLOWED.
-10. **Tenant Self-Read**: Authenticated user with `businessId: "biz-1"` querying their own products -> ALLOWED.
-11. **Tenant Self-Transaction Write**: Authenticated user with `businessId: "biz-1"` saving a sale with matching `businessId: "biz-1"` -> ALLOWED.
-12. **Catch-All Wildcard Exploit**: Accessing an undefined collection or document -> REJECTED by Default Deny.
-13. **Client Self-Upgrade Tampering**: Business owner or tenant member attempting to directly update `plan`, `status`, `subscription`, or `paystackSubaccount*` on `/businesses/{businessId}` -> REJECTED (`403 PERMISSION_DENIED`).
-14. **Self-Signup Free Tier Lock**: Non-super-admin creating `/businesses/{businessId}` with `plan: "business"` or `"premium"`, or injecting a `subscription` object -> REJECTED (`403 PERMISSION_DENIED`).
-15. **Verified Payment / Webhook & Super-Admin Provisioning**: Server-side verified Paystack transaction (`/api/payments/verify/:reference` or webhook `charge.success` via ADC) or Super Admin updating `plan`, `status`, and `subscription` on `/businesses/{businessId}` -> ALLOWED.
-16. **Daraja / Paystack Payment Record Protection**: Authenticated or unauthenticated client attempting to create, update, or delete `/payment_records/{recordId}` directly -> REJECTED (`403 PERMISSION_DENIED`); only server Admin/ADC writes and Super-Admin audit reads are permitted.
+2. **Strict Tenant `allow list` Scoping**: Every tenant collection checks `hasTenantAccess(resource.data.businessId)` on `list` as well as `get`, preventing cross-tenant enumeration.
+3. **Document ID Validation (`isValidId`)**: All collection paths validate document IDs against `^[a-zA-Z0-9_.\-]+$` and `size() <= 128` (with strict date/ID patterns on payment and telemetry records).
+4. **Privilege Escalation Prevention**:
+   - `/users/{userId}` blocks self-assignment of `super_admin` roles and prevents binding to unowned `businessId` tenants.
+   - `/businesses/{businessId}` blocks client modification of `plan`, `status`, `subscription`, `referredByCode`, `referredAt`, and `paystackSubaccount*` fields.
+   - `/staff_credentials/{credId}` disallows all client writes (`allow write: if false;`); writes are performed exclusively by authenticated `/api/auth/*` server handlers via ADC.
+   - `/affiliates`, `/affiliate_commissions`, and `/affiliate_payouts` disallow direct non-admin client writes; mutations execute exclusively via authenticated backend endpoints.
+   - `/payment_records/{recordId}` is read-only for Super Admin audit and written exclusively server-side.
+5. **Bcrypt-Only Authentication & Vaulting**:
+   - Plaintext PIN comparison fallbacks removed from Express (`/server.ts`), Cloudflare Edge (`/functions/api/[[route]].ts`), and client fallback code.
+   - `/api/auth/save-staff-credential`, `/api/auth/sync-credentials`, `/api/auth/check-staff-identity`, `/api/auth/verify-totp`, `/api/auth/hash-pin`, and `/api/auth/bulk-hash-pins` require verified Firebase ID Bearer tokens (and tenant manager/owner RBAC for credential mutations).
+6. **Payment & Affiliate API Security**:
+   - `/api/payments/initiate` (`subscription`) and `/api/payments/verify/:reference` (`SOKO-SUB-*` / subscriptions) require verified Firebase ID tokens and tenant authorization.
+   - `/api/payments/daraja/callback` rejects unknown `CheckoutRequestID` intents and verifies `DARAJA_CALLBACK_SECRET`, signed HMAC URL tokens, or independent Safaricom STK Query confirmation before crediting subscriptions.
+   - `/api/affiliates/enroll`, `/api/affiliates/me`, and `/api/affiliates/payout-request` derive `uid`/`email` strictly from verified Firebase ID tokens; admin affiliate routes enforce `requireSuperAdminCaller`.
+7. **HTTP Security Headers & Edge CORS**:
+   - Express sets `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, `X-Permitted-Cross-Domain-Policies`, HSTS (over HTTPS), and `Content-Security-Policy` with scoped `frame-ancestors` (zero `x-powered-by` leakage).
+   - Cloudflare Pages Edge adapter replaces wildcard `Access-Control-Allow-Origin: *` with explicit origin allowlist matching and Firebase token verification.

@@ -53,11 +53,17 @@ export async function hashPinOnServer(pin: string): Promise<string> {
   }
 
   try {
+    const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (idToken) {
+      headers['Authorization'] = `Bearer ${idToken}`;
+    }
+
     const response = await fetch('/api/auth/hash-pin', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({ pin }),
     });
 
@@ -74,6 +80,33 @@ export async function hashPinOnServer(pin: string): Promise<string> {
   // Cryptographic fallback (pure JS bcrypt in browser)
   const salt = bcrypt.genSaltSync(10);
   return bcrypt.hashSync(pin, salt);
+}
+
+export async function checkStaffIdentityAvailabilityOnServer(params: {
+  username?: string;
+  code?: string;
+  excludeCashierId?: string;
+}): Promise<{ usernameAvailable: boolean; codeAvailable: boolean } | null> {
+  try {
+    const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
+    if (!idToken) return null;
+    const response = await fetch('/api/auth/check-staff-identity', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify(params),
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return {
+      usernameAvailable: Boolean(data.usernameAvailable),
+      codeAvailable: Boolean(data.codeAvailable),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export interface SaveStaffCredentialResult {
@@ -231,7 +264,7 @@ export async function verifyStaffPinViaServer(params: {
         const isValid = bcrypt.compareSync(pin, fallbackHash);
         return { isValid };
       }
-      return { isValid: pin === fallbackHash };
+      return { isValid: false, error: 'PIN hash upgrade required on server.' };
     } catch {
       return { isValid: false };
     }

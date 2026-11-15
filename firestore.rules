@@ -3,10 +3,17 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // -------------------------------------------------------------------------
-    // Helper Functions: Authentication, Super-Admin & Multi-Tenant Access Control
+    // Helper Functions: Authentication, Validation, Super-Admin & Multi-Tenant RBAC
     // -------------------------------------------------------------------------
     function isSignedIn() {
       return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string &&
+             id.size() > 0 &&
+             id.size() <= 128 &&
+             id.matches('^[a-zA-Z0-9_.\\-]+$');
     }
 
     function isSuperAdmin() {
@@ -59,37 +66,62 @@ service cloud.firestore {
 
     // Test connection endpoint - Used on app boot to verify network connectivity
     match /test/{docId} {
-      allow read: if true;
+      allow read: if isValidId(docId);
       allow write: if false;
     }
 
     // Platform Settings & Login Branding
     match /platform_settings/{settingId} {
-      allow read: if true;
-      allow write: if isSuperAdmin();
+      allow read: if isValidId(settingId);
+      allow write: if isSuperAdmin() && isValidId(settingId);
     }
 
-    // Users Collection (Profile documents keyed by Firebase Auth UID)
+    // Users Collection (Profile documents keyed by Firebase Auth UID; prevents self-escalation)
     match /users/{userId} {
-      allow read: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin());
-      allow create, update: if isEmailVerified() && (request.auth.uid == userId || isSuperAdmin());
-      allow delete: if isSuperAdmin();
+      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isSuperAdmin());
+      allow list: if isSuperAdmin();
+      allow create: if isEmailVerified() && isValidId(userId) && (
+        isSuperAdmin() || (
+          request.auth.uid == userId &&
+          (!('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid) &&
+          (!('role' in request.resource.data) || request.resource.data.role in ['business_owner', 'manager', 'cashier', 'supervisor', 'accountant']) &&
+          (!('businessId' in request.resource.data) || (
+            request.resource.data.businessId is string && (
+              request.resource.data.businessId == 'biz-demo' ||
+              isOwnerOf(request.resource.data.businessId) ||
+              (tokenBusinessId() != null && tokenBusinessId() == request.resource.data.businessId)
+            )
+          ))
+        )
+      );
+      allow update: if isEmailVerified() && isValidId(userId) && (
+        isSuperAdmin() || (
+          request.auth.uid == userId &&
+          (!('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid) &&
+          (!('role' in request.resource.data) || request.resource.data.role in ['business_owner', 'manager', 'cashier', 'supervisor', 'accountant']) &&
+          (!('businessId' in request.resource.data) || (
+            resource != null && request.resource.data.businessId == resource.data.businessId
+          ) || isOwnerOf(request.resource.data.businessId))
+        )
+      );
+      allow delete: if isSuperAdmin() && isValidId(userId);
     }
 
-    // Businesses Collection (Tenants)
+    // Businesses Collection (Tenants - billing, status, and Paystack subaccount fields protected)
     match /businesses/{businessId} {
-      allow get: if isSignedIn() && (
+      allow get: if isSignedIn() && isValidId(businessId) && (
         isSuperAdmin() ||
         (resource != null && request.auth.token.email_verified == true && request.auth.token.email is string && resource.data.ownerEmail is string && resource.data.ownerEmail.lower() == request.auth.token.email.lower()) ||
         hasTenantAccess(businessId)
       );
       allow list: if isSignedIn() && (
         isSuperAdmin() ||
-        (request.auth.token.email_verified == true && resource.data.ownerEmail != null && resource.data.ownerEmail == request.auth.token.email)
+        (request.auth.token.email_verified == true && request.auth.token.email is string && resource.data.ownerEmail is string && resource.data.ownerEmail.lower() == request.auth.token.email.lower())
       );
-      allow create: if isEmailVerified() && (
+      allow create: if isEmailVerified() && isValidId(businessId) && (
         isSuperAdmin() ||
         (
+          businessId != 'biz-demo' &&
           request.resource.data.id != 'biz-demo' &&
           request.auth.token.email is string &&
           request.resource.data.ownerEmail is string &&
@@ -100,11 +132,11 @@ service cloud.firestore {
           (!('paystackSubaccountStatus' in request.resource.data) || request.resource.data.paystackSubaccountStatus != 'verified')
         )
       );
-      allow update: if isEmailVerified() && (
+      allow update: if isEmailVerified() && isValidId(businessId) && (
         isSuperAdmin() ||
         (
           (
-            (request.auth.token.email is string && resource.data.ownerEmail is string && resource.data.ownerEmail.lower() == request.auth.token.email.lower()) ||
+            (resource != null && request.auth.token.email is string && resource.data.ownerEmail is string && resource.data.ownerEmail.lower() == request.auth.token.email.lower()) ||
             hasTenantAccess(businessId)
           ) &&
           !request.resource.data.diff(resource.data).affectedKeys().hasAny([
@@ -122,10 +154,11 @@ service cloud.firestore {
           ])
         )
       );
-      allow delete: if isEmailVerified() && (
+      allow delete: if isEmailVerified() && isValidId(businessId) && (
         isSuperAdmin() ||
         (
           businessId != 'biz-demo' &&
+          resource != null &&
           request.auth.token.email is string &&
           resource.data.ownerEmail is string &&
           resource.data.ownerEmail.lower() == request.auth.token.email.lower()
@@ -133,111 +166,119 @@ service cloud.firestore {
       );
     }
 
-    // Products Collection (Tenant catalog items - Firestore single source of truth)
+    // Products Collection (Tenant catalog items - strictly scoped by businessId)
     match /products/{productId} {
-      allow get: if isSignedIn() && (
+      allow get: if isSignedIn() && isValidId(productId) && (
         isSuperAdmin() ||
-        (resource != null && (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)))
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
       allow list: if isSignedIn() && (
         isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo')
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
       );
-      allow create: if isSignedIn() && (
+      allow create: if isEmailVerified() && isValidId(productId) && (
         isSuperAdmin() ||
-        (request.resource.data.businessId is string && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
+        (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
       );
-      allow update: if isSignedIn() && (
+      allow update: if isEmailVerified() && isValidId(productId) && (
         isSuperAdmin() ||
         (
-          (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
-          (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+          resource != null &&
+          resource.data.businessId is string &&
+          hasTenantAccess(resource.data.businessId) &&
+          request.resource.data.businessId == resource.data.businessId
         )
       );
-      allow delete: if isSignedIn() && (
+      allow delete: if isEmailVerified() && isValidId(productId) && (
         isSuperAdmin() ||
-        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
     }
 
     // Categories Collection (Tenant product categories)
     match /categories/{categoryId} {
-      allow get: if isSignedIn() && (
+      allow get: if isSignedIn() && isValidId(categoryId) && (
         isSuperAdmin() ||
-        (resource != null && (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)))
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
       allow list: if isSignedIn() && (
         isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo')
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
       );
-      allow create: if isSignedIn() && (
+      allow create: if isEmailVerified() && isValidId(categoryId) && (
         isSuperAdmin() ||
-        (request.resource.data.businessId is string && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
+        (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
       );
-      allow update: if isSignedIn() && (
+      allow update: if isEmailVerified() && isValidId(categoryId) && (
         isSuperAdmin() ||
         (
-          (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
-          (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+          resource != null &&
+          resource.data.businessId is string &&
+          hasTenantAccess(resource.data.businessId) &&
+          request.resource.data.businessId == resource.data.businessId
         )
       );
-      allow delete: if isSignedIn() && (
+      allow delete: if isEmailVerified() && isValidId(categoryId) && (
         isSuperAdmin() ||
-        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
     }
 
     // Locations Collection (Tenant store branches & till registers)
     match /locations/{locationId} {
-      allow get: if isSignedIn() && (
+      allow get: if isSignedIn() && isValidId(locationId) && (
         isSuperAdmin() ||
-        (resource != null && (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)))
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
       allow list: if isSignedIn() && (
         isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo')
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
       );
-      allow create: if isSignedIn() && (
+      allow create: if isEmailVerified() && isValidId(locationId) && (
         isSuperAdmin() ||
-        (request.resource.data.businessId is string && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
+        (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
       );
-      allow update: if isSignedIn() && (
+      allow update: if isEmailVerified() && isValidId(locationId) && (
         isSuperAdmin() ||
         (
-          (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
-          (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+          resource != null &&
+          resource.data.businessId is string &&
+          hasTenantAccess(resource.data.businessId) &&
+          request.resource.data.businessId == resource.data.businessId
         )
       );
-      allow delete: if isSignedIn() && (
+      allow delete: if isEmailVerified() && isValidId(locationId) && (
         isSuperAdmin() ||
-        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
     }
 
     // Cashiers / Staff Collection (Tenant cashiers & staff accounts)
     match /cashiers/{cashierId} {
-      allow get: if isSignedIn() && (
+      allow get: if isSignedIn() && isValidId(cashierId) && (
         isSuperAdmin() ||
-        (resource != null && (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)))
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
       allow list: if isSignedIn() && (
         isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo')
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
       );
-      allow create: if isSignedIn() && (
+      allow create: if isEmailVerified() && isValidId(cashierId) && (
         isSuperAdmin() ||
-        (request.resource.data.businessId is string && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
+        (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
       );
-      allow update: if isSignedIn() && (
+      allow update: if isEmailVerified() && isValidId(cashierId) && (
         isSuperAdmin() ||
         (
-          (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
-          (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+          resource != null &&
+          resource.data.businessId is string &&
+          hasTenantAccess(resource.data.businessId) &&
+          request.resource.data.businessId == resource.data.businessId
         )
       );
-      allow delete: if isSignedIn() && (
+      allow delete: if isEmailVerified() && isValidId(cashierId) && (
         isSuperAdmin() ||
-        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
 
       // Private Server-Only Credentials Subcollection:
@@ -246,226 +287,206 @@ service cloud.firestore {
       }
     }
 
-    // Dedicated server-only staff credentials collection
+    // Dedicated server-only staff credentials collection (server Admin/ADC writes only; zero client writes)
     match /staff_credentials/{credId} {
-      allow read: if isSuperAdmin();
-      allow create: if isSuperAdmin() || (
-        isEmailVerified() &&
-        request.resource.data.businessId is string &&
-        hasTenantAccess(request.resource.data.businessId)
-      );
-      allow update: if isSuperAdmin() || (
-        isEmailVerified() &&
-        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
-        (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
-      );
-      allow delete: if isSuperAdmin() || (
-        isEmailVerified() &&
-        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
-      );
+      allow get: if isSuperAdmin() && isValidId(credId);
+      allow list: if isSuperAdmin();
+      allow write: if false;
     }
 
     // Transactions Collection (Tenant checkout receipts & sales)
     match /transactions/{transactionId} {
-      allow get: if isSignedIn() && (
+      allow get: if isSignedIn() && isValidId(transactionId) && (
         isSuperAdmin() ||
-        (resource != null && (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)))
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
       allow list: if isSignedIn() && (
         isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo')
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
       );
-      allow create: if isSignedIn() && (
+      allow create: if isEmailVerified() && isValidId(transactionId) && (
         isSuperAdmin() ||
-        (request.resource.data.businessId is string && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
+        (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
       );
-      allow update: if isSignedIn() && (
+      allow update: if isEmailVerified() && isValidId(transactionId) && (
         isSuperAdmin() ||
         (
-          (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
-          (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+          resource != null &&
+          resource.data.businessId is string &&
+          hasTenantAccess(resource.data.businessId) &&
+          request.resource.data.businessId == resource.data.businessId
         )
       );
-      allow delete: if isSignedIn() && (
+      allow delete: if isEmailVerified() && isValidId(transactionId) && (
         isSuperAdmin() ||
-        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
     }
 
     // Customers Collection (Tenant customer credit & loyalty)
     match /customers/{customerId} {
-      allow get: if isSignedIn() && (
+      allow get: if isSignedIn() && isValidId(customerId) && (
         isSuperAdmin() ||
-        (resource != null && (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)))
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
       allow list: if isSignedIn() && (
         isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo')
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
       );
-      allow create: if isSignedIn() && (
+      allow create: if isEmailVerified() && isValidId(customerId) && (
         isSuperAdmin() ||
-        (request.resource.data.businessId is string && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
+        (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
       );
-      allow update: if isSignedIn() && (
+      allow update: if isEmailVerified() && isValidId(customerId) && (
         isSuperAdmin() ||
         (
-          (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
-          (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+          resource != null &&
+          resource.data.businessId is string &&
+          hasTenantAccess(resource.data.businessId) &&
+          request.resource.data.businessId == resource.data.businessId
         )
       );
-      allow delete: if isSignedIn() && (
+      allow delete: if isEmailVerified() && isValidId(customerId) && (
         isSuperAdmin() ||
-        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
     }
 
     // Suppliers Collection (Tenant vendor directory & purchasing)
     match /suppliers/{supplierId} {
-      allow get: if isSignedIn() && (
+      allow get: if isSignedIn() && isValidId(supplierId) && (
         isSuperAdmin() ||
-        (resource != null && (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)))
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
       allow list: if isSignedIn() && (
         isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo')
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
       );
-      allow create: if isSignedIn() && (
+      allow create: if isEmailVerified() && isValidId(supplierId) && (
         isSuperAdmin() ||
-        (request.resource.data.businessId is string && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
+        (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
       );
-      allow update: if isSignedIn() && (
+      allow update: if isEmailVerified() && isValidId(supplierId) && (
         isSuperAdmin() ||
         (
-          (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
-          (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+          resource != null &&
+          resource.data.businessId is string &&
+          hasTenantAccess(resource.data.businessId) &&
+          request.resource.data.businessId == resource.data.businessId
         )
       );
-      allow delete: if isSignedIn() && (
+      allow delete: if isEmailVerified() && isValidId(supplierId) && (
         isSuperAdmin() ||
-        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
     }
 
     // Stock Transfers Collection (Inter-branch inventory movements)
     match /stock_transfers/{transferId} {
-      allow get: if isSignedIn() && (
+      allow get: if isSignedIn() && isValidId(transferId) && (
         isSuperAdmin() ||
-        (resource != null && (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)))
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
       allow list: if isSignedIn() && (
         isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo')
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
       );
-      allow create: if isSignedIn() && (
+      allow create: if isEmailVerified() && isValidId(transferId) && (
         isSuperAdmin() ||
-        (request.resource.data.businessId is string && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
+        (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
       );
-      allow update: if isSignedIn() && (
+      allow update: if isEmailVerified() && isValidId(transferId) && (
         isSuperAdmin() ||
         (
-          (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
-          (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+          resource != null &&
+          resource.data.businessId is string &&
+          hasTenantAccess(resource.data.businessId) &&
+          request.resource.data.businessId == resource.data.businessId
         )
       );
-      allow delete: if isSignedIn() && (
+      allow delete: if isEmailVerified() && isValidId(transferId) && (
         isSuperAdmin() ||
-        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
     }
 
     // Sync Logs Collection (Tenant audit events & replication history)
     match /sync_logs/{syncLogId} {
-      allow get: if isSignedIn() && (
+      allow get: if isSignedIn() && isValidId(syncLogId) && (
         isSuperAdmin() ||
-        (resource != null && (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)))
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
       allow list: if isSignedIn() && (
         isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo')
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
       );
-      allow create: if isSignedIn() && (
+      allow create: if isEmailVerified() && isValidId(syncLogId) && (
         isSuperAdmin() ||
-        (request.resource.data.businessId is string && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
+        (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
       );
-      allow update: if isSignedIn() && (
+      allow update: if isEmailVerified() && isValidId(syncLogId) && (
         isSuperAdmin() ||
         (
-          (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
-          (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+          resource != null &&
+          resource.data.businessId is string &&
+          hasTenantAccess(resource.data.businessId) &&
+          request.resource.data.businessId == resource.data.businessId
         )
       );
-      allow delete: if isSignedIn() && (
+      allow delete: if isEmailVerified() && isValidId(syncLogId) && (
         isSuperAdmin() ||
-        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
     }
 
     // Purged Sales Backups Collection (Tenant pre-reset snapshot archives)
     match /purged_sales_backups/{backupId} {
-      allow get: if isSignedIn() && (
+      allow get: if isSignedIn() && isValidId(backupId) && (
         isSuperAdmin() ||
-        (resource != null && (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)))
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
       allow list: if isSignedIn() && (
         isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo')
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
       );
-      allow create: if isSignedIn() && (
+      allow create: if isEmailVerified() && isValidId(backupId) && (
         isSuperAdmin() ||
-        (request.resource.data.businessId is string && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
+        (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
       );
-      allow update: if isSignedIn() && (
+      allow update: if isEmailVerified() && isValidId(backupId) && (
         isSuperAdmin() ||
         (
-          (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId)) &&
-          (!('businessId' in request.resource.data) || !('businessId' in resource.data) || request.resource.data.businessId == resource.data.businessId)
+          resource != null &&
+          resource.data.businessId is string &&
+          hasTenantAccess(resource.data.businessId) &&
+          request.resource.data.businessId == resource.data.businessId
         )
       );
-      allow delete: if isSignedIn() && (
+      allow delete: if isEmailVerified() && isValidId(backupId) && (
         isSuperAdmin() ||
-        (!('businessId' in resource.data) || hasTenantAccess(resource.data.businessId))
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
     }
 
-    // Affiliates Collection (Partner profiles - PII and balances protected)
+    // Affiliates Collection (Partner profiles - managed exclusively via authenticated backend & Super Admin)
     match /affiliates/{affiliateId} {
-      allow get: if isSignedIn() && (isSuperAdmin() || resource.data.uid == request.auth.uid);
+      allow get: if isSignedIn() && isValidId(affiliateId) && (isSuperAdmin() || (resource != null && resource.data.uid == request.auth.uid));
       allow list: if isSignedIn() && (isSuperAdmin() || resource.data.uid == request.auth.uid);
-      allow create: if isEmailVerified() && (
-        isSuperAdmin() || (
-          request.resource.data.uid == request.auth.uid &&
-          request.resource.data.totalEarnedKes == 0 &&
-          request.resource.data.availableBalanceKes == 0 &&
-          request.resource.data.paidOutKes == 0
-        )
-      );
-      allow update: if isSuperAdmin() || (
-        isEmailVerified() &&
-        resource.data.uid == request.auth.uid &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['mpesaPhone', 'name', 'updatedAt'])
-      );
-      allow delete: if isSuperAdmin();
+      allow write: if isSuperAdmin() && isValidId(affiliateId);
     }
 
     // Affiliate Commissions Ledger (Server/SuperAdmin credited only)
     match /affiliate_commissions/{commissionId} {
-      allow get: if isSignedIn() && (isSuperAdmin() || resource.data.affiliateUid == request.auth.uid);
+      allow get: if isSignedIn() && isValidId(commissionId) && (isSuperAdmin() || (resource != null && resource.data.affiliateUid == request.auth.uid));
       allow list: if isSignedIn() && (isSuperAdmin() || resource.data.affiliateUid == request.auth.uid);
-      allow write: if isSuperAdmin();
+      allow write: if isSuperAdmin() && isValidId(commissionId);
     }
 
-    // Affiliate Payout Requests (Partner creates pending request; SuperAdmin approves/rejects)
+    // Affiliate Payout Requests (Managed via authenticated server endpoints & SuperAdmin)
     match /affiliate_payouts/{payoutId} {
-      allow get: if isSignedIn() && (isSuperAdmin() || resource.data.affiliateUid == request.auth.uid);
+      allow get: if isSignedIn() && isValidId(payoutId) && (isSuperAdmin() || (resource != null && resource.data.affiliateUid == request.auth.uid));
       allow list: if isSignedIn() && (isSuperAdmin() || resource.data.affiliateUid == request.auth.uid);
-      allow create: if isEmailVerified() && (
-        isSuperAdmin() || (
-          request.resource.data.affiliateUid == request.auth.uid &&
-          request.resource.data.status == 'pending' &&
-          request.resource.data.amountKes >= 500
-        )
-      );
-      allow update, delete: if isSuperAdmin();
+      allow write: if isSuperAdmin() && isValidId(payoutId);
     }
 
     // Platform Traffic Daily Rollups (Super-Admin-only read/write oversight)
