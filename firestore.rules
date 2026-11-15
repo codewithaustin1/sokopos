@@ -516,5 +516,19 @@ service cloud.firestore {
       allow create, update: if isSuperAdmin() && isValidTrafficEventId(eventId) && isValidTrafficEvent(request.resource.data);
       allow delete: if isSuperAdmin() && isValidTrafficEventId(eventId);
     }
+
+    // Server-side Payment Gateway Records (Daraja STK & Paystack webhook/verify audit log)
+    function isValidPaymentRecordId(recordId) {
+      return recordId is string &&
+             recordId.size() > 0 &&
+             recordId.size() <= 128 &&
+             recordId.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    match /payment_records/{recordId} {
+      allow get: if isSuperAdmin() && isValidPaymentRecordId(recordId);
+      allow list: if isSuperAdmin();
+      allow write: if false;
+    }
   }
 }

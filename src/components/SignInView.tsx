@@ -133,6 +133,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     appointedDemoCashierId,
     isAffiliateModalOpen,
     setIsAffiliateModalOpen,
+    loginBgGraphic,
   } = usePos();
 
   const [activeTab, setActiveTab] = useState<'owner' | 'partner' | 'staff' | 'register'>('owner');
@@ -1691,7 +1692,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             <div className="max-w-3xl mx-auto flex flex-col items-center text-center">
               <h1 className="sp-h1">The ultimate POS built for retail, bars and supermarkets.</h1>
               <p className="sp-lead">
-                Selling is easier than ever. Our PoS cuts operational layers, automating receipts, payments, and stock/sales reporting.
+                Selling is easier than ever. Cut operational layers, automate receipt production, payment collection, stock reconciliation, and sales reporting!
               </p>
               <div className="sp-cta">
                 <button
@@ -1885,7 +1886,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       <WhatsAppFloatingButton
         phoneNumber="+254740463021"
         delayEntranceMs={2000}
-        playEntranceSound={true}
       />
 
       {/* PRESERVED BENCHMARK FOOTER (Rendered in matching light mode) */}
@@ -1911,6 +1911,18 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           }}
           className="fixed inset-0 z-[100] bg-slate-950/60 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200"
         >
+          {loginBgGraphic && (
+            <>
+              <img
+                src={loginBgGraphic}
+                alt=""
+                aria-hidden="true"
+                referrerPolicy="no-referrer"
+                className="fixed inset-0 w-full h-full object-cover pointer-events-none"
+              />
+              <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-xs pointer-events-none" />
+            </>
+          )}
           <div
             ref={modalCardRef}
             role="dialog"

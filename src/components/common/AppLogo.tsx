@@ -17,6 +17,11 @@ export const AppLogo: React.FC<AppLogoProps> = ({
   onClick,
 }) => {
   const { platformLogo } = usePos();
+  const [hasImageError, setHasImageError] = React.useState(false);
+
+  React.useEffect(() => {
+    setHasImageError(false);
+  }, [platformLogo]);
 
   const iconSizes = {
     sm: 'w-7 h-7 text-xs rounded-lg',
@@ -43,10 +48,12 @@ export const AppLogo: React.FC<AppLogoProps> = ({
       onClick={onClick}
       className={`flex items-center gap-2.5 sm:gap-3 select-none ${onClick ? 'cursor-pointer' : ''} ${className}`}
     >
-      {platformLogo ? (
+      {platformLogo && !hasImageError ? (
         <img
           src={platformLogo}
           alt="SokoPoS Platform Logo"
+          referrerPolicy="no-referrer"
+          onError={() => setHasImageError(true)}
           className={`${imgSizes[size]} object-contain drop-shadow-sm`}
         />
       ) : (

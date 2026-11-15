@@ -20,7 +20,7 @@ import { soundFx } from '../../utils/audio';
 interface WhatsAppFloatingButtonProps {
   phoneNumber?: string; // e.g. +254740463021
   delayEntranceMs?: number; // default: 2000ms
-  playEntranceSound?: boolean; // default: true
+  playEntranceSound?: boolean; // deprecated: popup entrance is silent
 }
 
 interface ChatMessage {
@@ -34,7 +34,6 @@ interface ChatMessage {
 export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
   phoneNumber = '+254740463021',
   delayEntranceMs = 2000,
-  playEntranceSound = true,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -60,35 +59,16 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
   // Clean phone number to digits only for wa.me URL
   const cleanPhone = (phoneNumber || '254740463021').replace(/[^0-9]/g, '');
 
-  // Entrance timer: Triggers entrance animation and sound effect exactly after delayEntranceMs (2s)
+  // Entrance timer: Triggers entrance animation cleanly after delayEntranceMs (silent)
   useEffect(() => {
     setIsMounted(true);
 
     const entranceTimer = setTimeout(() => {
       setHasEntered(true);
-      if (playEntranceSound) {
-        soundFx.playBubblePop();
-      }
     }, delayEntranceMs);
 
     return () => clearTimeout(entranceTimer);
-  }, [delayEntranceMs, playEntranceSound]);
-
-  // Unlock Web Audio context on user gesture if browser has suspended it
-  useEffect(() => {
-    if (!playEntranceSound) return;
-    const unlockAudio = () => {
-      soundFx.playBeep(0, 0.001);
-      window.removeEventListener('pointerdown', unlockAudio);
-      window.removeEventListener('keydown', unlockAudio);
-    };
-    window.addEventListener('pointerdown', unlockAudio, { once: true });
-    window.addEventListener('keydown', unlockAudio, { once: true });
-    return () => {
-      window.removeEventListener('pointerdown', unlockAudio);
-      window.removeEventListener('keydown', unlockAudio);
-    };
-  }, [playEntranceSound]);
+  }, [delayEntranceMs]);
 
   // Auto-scroll chat stream to latest message
   useEffect(() => {
@@ -210,7 +190,6 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
 
   const handleToggleOpen = () => {
     if (!isOpen) {
-      soundFx.playBeep(520, 0.1);
       setIsMinimized(false);
     }
     setIsOpen(!isOpen);

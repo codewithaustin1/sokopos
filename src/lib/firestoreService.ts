@@ -1352,19 +1352,29 @@ export async function getPlatformSettingsFromFirestore(forceRefresh = false): Pr
   }
 }
 
-export async function savePlatformSettingsToFirestore(settings: PlatformSettings): Promise<void> {
-  if (!db || !auth.currentUser) return;
+export async function savePlatformSettingsToFirestore(
+  settings: PlatformSettings
+): Promise<{ ok: boolean; error?: string }> {
+  if (!db) {
+    return { ok: false, error: 'Database client is not initialized.' };
+  }
+  if (!auth.currentUser) {
+    return { ok: false, error: 'Sign in with a verified Super Admin Google account to sync branding to cloud.' };
+  }
   try {
     await setDoc(doc(db, 'platform_settings', 'global'), sanitizeForFirestore(settings), { merge: true });
     if (typeof window !== 'undefined') {
       try {
         localStorage.removeItem(PLATFORM_SETTINGS_CACHE_KEY);
       } catch {
-        // ignore
+        // ignore storage errors
       }
     }
-  } catch (error) {
+    return { ok: true };
+  } catch (error: any) {
+    const message = error?.message || 'Failed to persist platform branding to Firestore.';
     console.warn('Failed to save platform settings to Firestore:', error);
+    return { ok: false, error: message };
   }
 }
 

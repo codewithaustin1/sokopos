@@ -46,4 +46,4 @@ Non-super-admin users cannot read, list, create, update, or delete data belongin
 13. **Client Self-Upgrade Tampering**: Business owner or tenant member attempting to directly update `plan`, `status`, `subscription`, or `paystackSubaccount*` on `/businesses/{businessId}` -> REJECTED (`403 PERMISSION_DENIED`).
 14. **Self-Signup Free Tier Lock**: Non-super-admin creating `/businesses/{businessId}` with `plan: "business"` or `"premium"`, or injecting a `subscription` object -> REJECTED (`403 PERMISSION_DENIED`).
 15. **Verified Payment / Webhook & Super-Admin Provisioning**: Server-side verified Paystack transaction (`/api/payments/verify/:reference` or webhook `charge.success` via ADC) or Super Admin updating `plan`, `status`, and `subscription` on `/businesses/{businessId}` -> ALLOWED.
-
+16. **Daraja / Paystack Payment Record Protection**: Authenticated or unauthenticated client attempting to create, update, or delete `/payment_records/{recordId}` directly -> REJECTED (`403 PERMISSION_DENIED`); only server Admin/ADC writes and Super-Admin audit reads are permitted.

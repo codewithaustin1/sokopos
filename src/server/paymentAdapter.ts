@@ -9,6 +9,9 @@ export interface MpesaStkInitParams {
   phone: string;
   email: string;
   reference: string;
+  callbackUrl?: string;
+  accountReference?: string;
+  transactionDesc?: string;
   subaccount?: string;
   bearer?: 'account' | 'subaccount';
   metadata?: Record<string, any>;
@@ -18,6 +21,9 @@ export interface MpesaStkInitResult {
   success: boolean;
   provider: PaymentProviderName;
   reference: string;
+  checkoutRequestId?: string;
+  merchantRequestId?: string;
+  customerMessage?: string;
   status: 'pay_offline' | 'pending' | 'success' | 'failed';
   displayText: string;
   error?: string;
@@ -96,6 +102,7 @@ export interface PaymentVerificationResult {
   status: 'success' | 'pending' | 'failed' | 'abandoned';
   amountKes?: number;
   channel?: string;
+  mpesaReceiptNumber?: string;
   gatewayResponse?: string;
   paidAt?: string;
   metadata?: Record<string, any>;
@@ -471,27 +478,274 @@ export class PaystackAdapter implements PaymentProviderAdapter {
 }
 
 
+export function normalizeDarajaMsisdn(phone: string): string {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.startsWith('254') && digits.length >= 12) {
+    return digits.slice(0, 12);
+  }
+  if (digits.startsWith('0') && digits.length >= 10) {
+    return `254${digits.slice(1, 10)}`;
+  }
+  if ((digits.startsWith('7') || digits.startsWith('1')) && digits.length >= 9) {
+    return `254${digits.slice(0, 9)}`;
+  }
+  return digits;
+}
+
+export function formatDarajaTimestamp(date = new Date()): string {
+  // Format YYYYMMDDHHmmss strictly in East Africa Time (UTC+3)
+  const eatMs = date.getTime() + 3 * 60 * 60 * 1000;
+  const eat = new Date(eatMs);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    String(eat.getUTCFullYear()) +
+    pad(eat.getUTCMonth() + 1) +
+    pad(eat.getUTCDate()) +
+    pad(eat.getUTCHours()) +
+    pad(eat.getUTCMinutes()) +
+    pad(eat.getUTCSeconds())
+  );
+}
+
+export interface DarajaCallbackParsed {
+  merchantRequestId: string;
+  checkoutRequestId: string;
+  resultCode: number;
+  resultDesc: string;
+  amountKes?: number;
+  mpesaReceiptNumber?: string;
+  transactionDate?: string;
+  phoneNumber?: string;
+}
+
+export function parseDarajaStkCallback(body: any): DarajaCallbackParsed | null {
+  const cb = body?.Body?.stkCallback;
+  if (!cb || !cb.CheckoutRequestID) return null;
+
+  const resultCode = Number(cb.ResultCode);
+  const resultDesc = String(cb.ResultDesc || '').trim();
+  const parsed: DarajaCallbackParsed = {
+    merchantRequestId: String(cb.MerchantRequestID || ''),
+    checkoutRequestId: String(cb.CheckoutRequestID || ''),
+    resultCode: Number.isFinite(resultCode) ? resultCode : -1,
+    resultDesc: resultDesc || 'Daraja STK callback received',
+  };
+
+  const items = Array.isArray(cb.CallbackMetadata?.Item) ? cb.CallbackMetadata.Item : [];
+  for (const item of items) {
+    if (!item || !item.Name) continue;
+    if (item.Name === 'Amount' && item.Value !== undefined) {
+      const amt = Number(item.Value);
+      if (Number.isFinite(amt)) parsed.amountKes = amt;
+    } else if (item.Name === 'MpesaReceiptNumber' && item.Value !== undefined) {
+      parsed.mpesaReceiptNumber = String(item.Value).trim();
+    } else if (item.Name === 'TransactionDate' && item.Value !== undefined) {
+      parsed.transactionDate = String(item.Value).trim();
+    } else if (item.Name === 'PhoneNumber' && item.Value !== undefined) {
+      parsed.phoneNumber = String(item.Value).trim();
+    }
+  }
+
+  return parsed;
+}
+
 export class DarajaAdapter implements PaymentProviderAdapter {
   readonly providerName: PaymentProviderName = 'daraja';
+  private cachedToken: { token: string; expiresAt: number } | null = null;
+
+  getEnvironment(): 'sandbox' | 'production' {
+    const raw = (process.env.DARAJA_ENV || 'sandbox').trim().toLowerCase();
+    return raw === 'production' || raw === 'live' ? 'production' : 'sandbox';
+  }
+
+  private getBaseUrl(): string {
+    return this.getEnvironment() === 'production'
+      ? 'https://api.safaricom.co.ke'
+      : 'https://sandbox.safaricom.co.ke';
+  }
+
+  private getCredentials() {
+    return {
+      consumerKey: (process.env.DARAJA_CONSUMER_KEY || '').trim(),
+      consumerSecret: (process.env.DARAJA_CONSUMER_SECRET || '').trim(),
+      shortCode: (process.env.DARAJA_SHORTCODE || '').trim(),
+      passkey: (process.env.DARAJA_PASSKEY || '').trim(),
+      transactionType:
+        (process.env.DARAJA_TRANSACTION_TYPE || '').trim() === 'CustomerBuyGoodsOnline'
+          ? 'CustomerBuyGoodsOnline'
+          : 'CustomerPayBillOnline',
+    };
+  }
 
   isConfigured(): boolean {
-    return Boolean(
-      process.env.DARAJA_CONSUMER_KEY &&
-        process.env.DARAJA_CONSUMER_SECRET &&
-        process.env.DARAJA_SHORTCODE &&
-        process.env.DARAJA_PASSKEY
+    const { consumerKey, consumerSecret, shortCode, passkey } = this.getCredentials();
+    return Boolean(consumerKey && consumerSecret && shortCode && passkey);
+  }
+
+  private async getAccessToken(): Promise<string> {
+    if (this.cachedToken && Date.now() < this.cachedToken.expiresAt - 60_000) {
+      return this.cachedToken.token;
+    }
+
+    const { consumerKey, consumerSecret } = this.getCredentials();
+    if (!consumerKey || !consumerSecret) {
+      throw new Error('DARAJA_CONSUMER_KEY and DARAJA_CONSUMER_SECRET are not configured.');
+    }
+
+    const authBasic = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+    const resp = await fetch(
+      `${this.getBaseUrl()}/oauth/v1/generate?grant_type=client_credentials`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Basic ${authBasic}`,
+        },
+      }
     );
+
+    const data: any = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data?.access_token) {
+      throw new Error(
+        data?.errorMessage || data?.error_description || `Daraja OAuth failed (${resp.status}).`
+      );
+    }
+
+    const expiresInSec = Math.max(120, Number(data.expires_in) || 3599);
+    this.cachedToken = {
+      token: String(data.access_token),
+      expiresAt: Date.now() + expiresInSec * 1000,
+    };
+    return this.cachedToken.token;
+  }
+
+  private buildPassword(shortCode: string, passkey: string, timestamp: string): string {
+    return Buffer.from(`${shortCode}${passkey}${timestamp}`).toString('base64');
   }
 
   async initiateMpesaStk(params: MpesaStkInitParams): Promise<MpesaStkInitResult> {
-    return {
-      success: false,
-      provider: this.providerName,
-      reference: params.reference,
-      status: 'failed',
-      displayText: 'Safaricom Daraja adapter is reserved for future migration.',
-      error: 'Daraja adapter is not yet activated. Set PAYMENT_PROVIDER=paystack.',
-    };
+    if (!this.isConfigured()) {
+      return {
+        success: false,
+        provider: this.providerName,
+        reference: params.reference,
+        status: 'failed',
+        displayText: 'Safaricom Daraja credentials are not configured on the server.',
+        error:
+          'DARAJA_CONSUMER_KEY, DARAJA_CONSUMER_SECRET, DARAJA_SHORTCODE, and DARAJA_PASSKEY must be configured.',
+      };
+    }
+
+    const msisdn = normalizeDarajaMsisdn(params.phone);
+    if (!/^254(7|1)\d{8}$/.test(msisdn)) {
+      return {
+        success: false,
+        provider: this.providerName,
+        reference: params.reference,
+        status: 'failed',
+        displayText: 'Enter a valid Safaricom M-Pesa phone number (e.g. 07XX or 01XX).',
+        error: 'Phone number must be a valid 12-digit Kenyan mobile number (2547XXXXXXXX or 2541XXXXXXXX).',
+      };
+    }
+
+    const amountKes = Math.round(Number(params.amountKes));
+    if (!Number.isFinite(amountKes) || amountKes < 1) {
+      return {
+        success: false,
+        provider: this.providerName,
+        reference: params.reference,
+        status: 'failed',
+        displayText: 'Invalid KES amount.',
+        error: 'Amount must be at least KES 1.',
+      };
+    }
+
+    if (!params.callbackUrl || !/^https?:\/\//i.test(params.callbackUrl)) {
+      return {
+        success: false,
+        provider: this.providerName,
+        reference: params.reference,
+        status: 'failed',
+        displayText: 'Daraja callback URL is missing.',
+        error: 'Valid CallBackURL is required for Daraja STK Push.',
+      };
+    }
+
+    try {
+      const token = await this.getAccessToken();
+      const { shortCode, passkey, transactionType } = this.getCredentials();
+      const timestamp = formatDarajaTimestamp();
+      const password = this.buildPassword(shortCode, passkey, timestamp);
+
+      const accountReference = String(params.accountReference || params.reference || 'SokoPoS')
+        .replace(/[^a-zA-Z0-9_-]/g, '')
+        .slice(0, 12) || 'SokoPoS';
+      const transactionDesc = String(params.transactionDesc || 'SokoPoS Plan')
+        .replace(/[^a-zA-Z0-9 _-]/g, '')
+        .slice(0, 13) || 'SokoPoS Plan';
+
+      const payload = {
+        BusinessShortCode: shortCode,
+        Password: password,
+        Timestamp: timestamp,
+        TransactionType: transactionType,
+        Amount: amountKes,
+        PartyA: msisdn,
+        PartyB: shortCode,
+        PhoneNumber: msisdn,
+        CallBackURL: params.callbackUrl,
+        AccountReference: accountReference,
+        TransactionDesc: transactionDesc,
+      };
+
+      const resp = await fetch(`${this.getBaseUrl()}/mpesa/stkpush/v1/processrequest`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data: any = await resp.json().catch(() => ({}));
+      if (!resp.ok || String(data?.ResponseCode) !== '0' || !data?.CheckoutRequestID) {
+        const errMsg =
+          data?.errorMessage ||
+          data?.ResponseDescription ||
+          `Daraja STK Push failed (${resp.status}).`;
+        return {
+          success: false,
+          provider: this.providerName,
+          reference: params.reference,
+          status: 'failed',
+          displayText: errMsg,
+          error: errMsg,
+        };
+      }
+
+      const customerMsg =
+        data?.CustomerMessage ||
+        `M-Pesa Express prompt sent to +${msisdn}. Enter your M-Pesa PIN to authorize KES ${amountKes.toLocaleString()}.`;
+
+      return {
+        success: true,
+        provider: this.providerName,
+        reference: params.reference,
+        checkoutRequestId: String(data.CheckoutRequestID),
+        merchantRequestId: String(data.MerchantRequestID || ''),
+        customerMessage: customerMsg,
+        status: 'pending',
+        displayText: customerMsg,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        provider: this.providerName,
+        reference: params.reference,
+        status: 'failed',
+        displayText: err?.message || 'Unable to reach Safaricom Daraja API.',
+        error: err?.message || 'Daraja STK Push request failed.',
+      };
+    }
   }
 
   async initializeCardCheckout(params: CardCheckoutInitParams): Promise<CardCheckoutInitResult> {
@@ -504,14 +758,128 @@ export class DarajaAdapter implements PaymentProviderAdapter {
     };
   }
 
-  async verifyTransaction(reference: string): Promise<PaymentVerificationResult> {
-    return {
-      verified: false,
-      provider: this.providerName,
-      reference,
-      status: 'failed',
-      error: 'Daraja adapter is not yet activated.',
-    };
+  async verifyTransaction(checkoutRequestId: string): Promise<PaymentVerificationResult> {
+    if (!this.isConfigured()) {
+      return {
+        verified: false,
+        provider: this.providerName,
+        reference: checkoutRequestId,
+        status: 'failed',
+        error: 'Daraja credentials are not configured on the server.',
+      };
+    }
+    if (!checkoutRequestId) {
+      return {
+        verified: false,
+        provider: this.providerName,
+        reference: checkoutRequestId,
+        status: 'failed',
+        error: 'CheckoutRequestID is required for Daraja STK Query.',
+      };
+    }
+
+    try {
+      const token = await this.getAccessToken();
+      const { shortCode, passkey } = this.getCredentials();
+      const timestamp = formatDarajaTimestamp();
+      const password = this.buildPassword(shortCode, passkey, timestamp);
+
+      const resp = await fetch(`${this.getBaseUrl()}/mpesa/stkpushquery/v1/query`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          BusinessShortCode: shortCode,
+          Password: password,
+          Timestamp: timestamp,
+          CheckoutRequestID: checkoutRequestId,
+        }),
+      });
+
+      const data: any = await resp.json().catch(() => ({}));
+      const errorCode = String(data?.errorCode || '');
+      const errorMessage = String(data?.errorMessage || '').toLowerCase();
+
+      // Daraja returns 500.001.1001 ("The transaction is being processed") while awaiting customer PIN
+      if (
+        errorCode === '500.001.1001' ||
+        errorMessage.includes('being processed') ||
+        (resp.ok && data?.ResultCode === undefined && String(data?.ResponseCode) === '0')
+      ) {
+        return {
+          verified: false,
+          provider: this.providerName,
+          reference: checkoutRequestId,
+          status: 'pending',
+          gatewayResponse: data?.errorMessage || data?.ResponseDescription || 'Awaiting M-Pesa PIN confirmation',
+        };
+      }
+
+      if (!resp.ok && data?.ResultCode === undefined) {
+        return {
+          verified: false,
+          provider: this.providerName,
+          reference: checkoutRequestId,
+          status: 'pending',
+          gatewayResponse: data?.errorMessage || `STK query returned ${resp.status}`,
+        };
+      }
+
+      const resultCode = Number(data?.ResultCode);
+      const resultDesc = String(data?.ResultDesc || data?.ResponseDescription || '').trim();
+
+      if (resultCode === 0) {
+        return {
+          verified: true,
+          provider: this.providerName,
+          reference: checkoutRequestId,
+          status: 'success',
+          channel: 'mpesa_stk',
+          gatewayResponse: resultDesc || 'The service request is processed successfully.',
+          paidAt: new Date().toISOString(),
+        };
+      }
+
+      if (resultCode === 1032) {
+        return {
+          verified: false,
+          provider: this.providerName,
+          reference: checkoutRequestId,
+          status: 'abandoned',
+          gatewayResponse: resultDesc || 'M-Pesa prompt was cancelled by the user.',
+          error: resultDesc || 'M-Pesa prompt was cancelled by the user.',
+        };
+      }
+
+      if (Number.isFinite(resultCode)) {
+        return {
+          verified: false,
+          provider: this.providerName,
+          reference: checkoutRequestId,
+          status: 'failed',
+          gatewayResponse: resultDesc || `M-Pesa request declined (code ${resultCode}).`,
+          error: resultDesc || `M-Pesa request declined (code ${resultCode}).`,
+        };
+      }
+
+      return {
+        verified: false,
+        provider: this.providerName,
+        reference: checkoutRequestId,
+        status: 'pending',
+        gatewayResponse: resultDesc || 'Awaiting M-Pesa confirmation',
+      };
+    } catch (err: any) {
+      return {
+        verified: false,
+        provider: this.providerName,
+        reference: checkoutRequestId,
+        status: 'pending',
+        gatewayResponse: err?.message || 'Temporary network notice querying Daraja STK status.',
+      };
+    }
   }
 
   verifyWebhookSignature(): boolean {

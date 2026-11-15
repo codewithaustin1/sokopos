@@ -547,7 +547,7 @@ function PosAppContent() {
       >
         {loginBgGraphic && (
           <div
-            className="fixed inset-0 pointer-events-none -z-10 bg-cover bg-center bg-no-repeat"
+            className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center bg-no-repeat"
             style={{ backgroundImage: `url(${loginBgGraphic})` }}
           />
         )}

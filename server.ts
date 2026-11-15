@@ -2,16 +2,24 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { GoogleGenAI, Type } from '@google/genai';
 import {
+  DarajaAdapter,
   getActivePaymentAdapter,
+  parseDarajaStkCallback,
   PaystackAdapter,
   PaymentChannel,
   PaymentFlowType,
+  PaymentProviderAdapter,
   SettlementBankOption,
 } from './src/server/paymentAdapter';
+import {
+  DarajaSubscriptionPoller,
+  PendingDarajaSubscriptionTask,
+} from './src/server/darajaPoller';
 
 async function startServer() {
   const app = express();
@@ -1207,7 +1215,7 @@ Extract:
   });
 
   // -------------------------------------------------------------
-  // Unified Payment Gateway API (Paystack Active / Daraja Ready)
+  // Unified Payment Gateway API (Hybrid: Daraja M-Pesa Subscriptions + Paystack Cards & POS)
   // -------------------------------------------------------------
   interface StoredPaymentIntent {
     reference: string;
@@ -1219,26 +1227,282 @@ Extract:
     businessId?: string;
     planId?: string;
     billingCycle?: 'monthly' | 'annual';
+    durationDays?: number;
+    checkoutRequestId?: string;
+    merchantRequestId?: string;
+    mpesaReceiptNumber?: string;
+    phone?: string;
     activatedSubscription?: Record<string, any>;
     gatewayResponse?: string;
     paidAt?: string;
     createdAt: string;
   }
 
+  const darajaAdapter = new DarajaAdapter();
+  const paystackAdapter = new PaystackAdapter();
   const paymentIntents = new Map<string, StoredPaymentIntent>();
+  const checkoutRequestToRef = new Map<string, string>();
+  const processedSubscriptionRefs = new Set<string>();
   const verifiedSubaccountCache = new Map<
     string,
     { code: string; status: 'verified' | 'unconfigured' | 'inactive'; bank?: string; mask?: string }
   >();
   let cachedKenyaBanks: { items: SettlementBankOption[]; fetchedAt: number } | null = null;
 
+  function resolveAdapterForPayment(
+    flowType: PaymentFlowType,
+    channel: PaymentChannel
+  ): PaymentProviderAdapter {
+    // Hybrid routing: Subscriptions over M-Pesa STK route through Safaricom Daraja when configured;
+    // Card payments and POS store sales/subaccounts stay on Paystack.
+    if (flowType === 'subscription' && channel === 'mpesa_stk') {
+      if (darajaAdapter.isConfigured()) {
+        return darajaAdapter;
+      }
+      const preferred = (process.env.PAYMENT_PROVIDER || '').trim().toLowerCase();
+      if (preferred === 'daraja' && !paystackAdapter.isConfigured()) {
+        return darajaAdapter;
+      }
+    }
+    return paystackAdapter;
+  }
+
+  async function activateSubscriptionFromPayment(params: {
+    reference: string;
+    provider: 'paystack' | 'daraja';
+    businessId?: string;
+    planId?: string;
+    billingCycle?: 'monthly' | 'annual';
+    durationDays?: number;
+    amountKes: number;
+    channel: PaymentChannel;
+    paidAt?: string;
+    mpesaReceiptNumber?: string;
+    preferredBearerToken?: string;
+    telemetrySessionPrefix?: string;
+  }): Promise<Record<string, any> | undefined> {
+    if (!params.businessId) return undefined;
+    const resolvedPlan = normalizeServerPlanTier(params.planId, undefined);
+    const cycle: 'monthly' | 'annual' = params.billingCycle === 'annual' ? 'annual' : 'monthly';
+    const durationDays =
+      Number(params.durationDays) || (cycle === 'annual' ? 365 : 30);
+    const nowIso = params.paidAt || new Date().toISOString();
+    const expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+    const activatedSubscription: Record<string, any> = {
+      status: 'active',
+      plan: resolvedPlan,
+      planId: resolvedPlan,
+      activatedAt: nowIso,
+      expiresAt,
+      lastPaymentReference: params.reference,
+      paymentProvider: params.provider,
+      ...(params.mpesaReceiptNumber ? { mpesaReceiptNumber: params.mpesaReceiptNumber } : {}),
+    };
+
+    await patchFirestoreDoc(
+      'businesses',
+      params.businessId,
+      {
+        status: 'active',
+        plan: resolvedPlan,
+        subscription: activatedSubscription,
+      },
+      ['status', 'plan', 'subscription'],
+      params.preferredBearerToken
+    );
+
+    creditAffiliateCommissionOnPayment({
+      paymentReference: params.reference,
+      businessId: params.businessId,
+      planId: resolvedPlan,
+      amountKes: params.amountKes,
+    }).catch((err) => console.warn('Affiliate commission credit notice:', err));
+
+    if (!processedSubscriptionRefs.has(params.reference)) {
+      processedSubscriptionRefs.add(params.reference);
+      recordTelemetryEventOnServer({
+        eventType: 'subscription_activated',
+        sessionId: `${params.telemetrySessionPrefix || params.provider}-${params.reference}`,
+        businessId: params.businessId,
+        planId: resolvedPlan,
+        channel: params.channel,
+        amountKes: params.amountKes,
+        deviceType: 'desktop',
+      });
+    }
+
+    return activatedSubscription;
+  }
+
+  const darajaPoller = new DarajaSubscriptionPoller(darajaAdapter, {
+    getIntentStatus: (reference) => paymentIntents.get(reference)?.status,
+    fetchPendingFromStore: async () => {
+      const docs = await queryFirestoreDocs('payment_records', 'status', 'pending', 50);
+      const tasks: PendingDarajaSubscriptionTask[] = [];
+      for (const doc of docs) {
+        if (
+          doc.provider === 'daraja' &&
+          doc.flowType === 'subscription' &&
+          doc.checkoutRequestId &&
+          doc.reference
+        ) {
+          const ref = String(doc.reference);
+          const checkoutRequestId = String(doc.checkoutRequestId);
+          checkoutRequestToRef.set(checkoutRequestId, ref);
+          const createdAtMs = doc.createdAt ? new Date(String(doc.createdAt)).getTime() : Date.now();
+          if (!paymentIntents.has(ref)) {
+            paymentIntents.set(ref, {
+              reference: ref,
+              provider: 'daraja',
+              flowType: 'subscription',
+              channel: 'mpesa_stk',
+              amountKes: Number(doc.amountKes || 0),
+              status: 'pending',
+              businessId: doc.businessId ? String(doc.businessId) : undefined,
+              planId: doc.planId ? String(doc.planId) : undefined,
+              billingCycle: doc.billingCycle === 'annual' ? 'annual' : 'monthly',
+              durationDays: doc.durationDays ? Number(doc.durationDays) : undefined,
+              checkoutRequestId,
+              merchantRequestId: doc.merchantRequestId ? String(doc.merchantRequestId) : undefined,
+              phone: doc.phone ? String(doc.phone) : undefined,
+              createdAt: String(doc.createdAt || new Date().toISOString()),
+            });
+          }
+          tasks.push({
+            reference: ref,
+            checkoutRequestId,
+            businessId: doc.businessId ? String(doc.businessId) : undefined,
+            planId: doc.planId ? String(doc.planId) : undefined,
+            billingCycle: doc.billingCycle === 'annual' ? 'annual' : 'monthly',
+            durationDays: doc.durationDays ? Number(doc.durationDays) : undefined,
+            amountKes: Number(doc.amountKes || 0),
+            phone: doc.phone ? String(doc.phone) : undefined,
+            createdAtMs: Number.isFinite(createdAtMs) ? createdAtMs : Date.now(),
+            pollAttempts: Number(doc.pollAttempts || 0),
+            status: 'pending',
+          });
+        }
+      }
+      return tasks;
+    },
+    onResolvedSuccess: async (task, verification) => {
+      const nowIso = verification.paidAt || new Date().toISOString();
+      const existing = paymentIntents.get(task.reference);
+      const updatedIntent: StoredPaymentIntent = {
+        ...(existing || {
+          reference: task.reference,
+          provider: 'daraja',
+          flowType: 'subscription',
+          channel: 'mpesa_stk',
+          amountKes: task.amountKes,
+          businessId: task.businessId,
+          planId: task.planId,
+          billingCycle: task.billingCycle,
+          durationDays: task.durationDays,
+          checkoutRequestId: task.checkoutRequestId,
+          phone: task.phone,
+          createdAt: new Date(task.createdAtMs).toISOString(),
+        }),
+        status: 'success',
+        gatewayResponse: verification.gatewayResponse || 'Approved via Daraja STK Query',
+        paidAt: nowIso,
+        ...(verification.mpesaReceiptNumber
+          ? { mpesaReceiptNumber: verification.mpesaReceiptNumber }
+          : {}),
+      };
+      paymentIntents.set(task.reference, updatedIntent);
+
+      if (task.businessId) {
+        const activatedSub = await activateSubscriptionFromPayment({
+          reference: task.reference,
+          provider: 'daraja',
+          businessId: task.businessId,
+          planId: task.planId,
+          billingCycle: task.billingCycle,
+          durationDays: task.durationDays,
+          amountKes: task.amountKes,
+          channel: 'mpesa_stk',
+          paidAt: nowIso,
+          mpesaReceiptNumber: updatedIntent.mpesaReceiptNumber,
+          telemetrySessionPrefix: 'daraja-poller',
+        });
+        if (activatedSub) {
+          updatedIntent.activatedSubscription = activatedSub;
+          paymentIntents.set(task.reference, updatedIntent);
+        }
+      }
+
+      await patchFirestoreDoc('payment_records', task.reference, {
+        reference: task.reference,
+        provider: 'daraja',
+        status: 'success',
+        gatewayResponse: updatedIntent.gatewayResponse,
+        resolvedBy: 'stk_query_poller',
+        pollAttempts: task.pollAttempts,
+        paidAt: nowIso,
+        updatedAt: nowIso,
+      }).catch(() => {});
+    },
+    onResolvedFailed: async (task, terminalStatus, reason) => {
+      const nowIso = new Date().toISOString();
+      const existing = paymentIntents.get(task.reference);
+      if (existing) {
+        existing.status = terminalStatus;
+        existing.gatewayResponse = reason;
+        paymentIntents.set(task.reference, existing);
+      }
+      await patchFirestoreDoc('payment_records', task.reference, {
+        reference: task.reference,
+        provider: 'daraja',
+        status: terminalStatus,
+        gatewayResponse: reason,
+        resolvedBy: 'stk_query_poller',
+        pollAttempts: task.pollAttempts,
+        updatedAt: nowIso,
+      }).catch(() => {});
+    },
+  });
+  darajaPoller.start();
+
   app.get('/api/payments/config', (_req, res) => {
-    const adapter = getActivePaymentAdapter();
+    const subscriptionMpesaAdapter = resolveAdapterForPayment('subscription', 'mpesa_stk');
     return res.json({
-      provider: adapter.providerName,
-      configured: adapter.isConfigured(),
+      provider: subscriptionMpesaAdapter.providerName,
+      configured: subscriptionMpesaAdapter.isConfigured(),
+      subscriptionMpesaProvider: subscriptionMpesaAdapter.providerName,
+      cardProvider: 'paystack',
+      darajaConfigured: darajaAdapter.isConfigured(),
+      darajaEnv: darajaAdapter.getEnvironment(),
+      paystackConfigured: paystackAdapter.isConfigured(),
       channels: ['mpesa_stk', 'card'],
     });
+  });
+
+  app.get('/api/payments/daraja/poller-status', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    if (!bearerToken) {
+      return res.status(401).json({ error: 'Authentication required.' });
+    }
+    const caller = await verifyFirebaseIdToken(bearerToken);
+    if (!caller || caller.email !== SUPER_ADMIN_EMAIL || !caller.emailVerified) {
+      return res.status(403).json({ error: 'Super Admin privileges required.' });
+    }
+    return res.json(darajaPoller.getStatus());
+  });
+
+  app.post('/api/payments/daraja/poller-sweep', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    if (!bearerToken) {
+      return res.status(401).json({ error: 'Authentication required.' });
+    }
+    const caller = await verifyFirebaseIdToken(bearerToken);
+    if (!caller || caller.email !== SUPER_ADMIN_EMAIL || !caller.emailVerified) {
+      return res.status(403).json({ error: 'Super Admin privileges required.' });
+    }
+    const result = await darajaPoller.tick(true);
+    return res.json({ success: true, ...result, status: darajaPoller.getStatus() });
   });
 
   app.get('/api/payments/banks', async (_req, res) => {
@@ -1457,14 +1721,20 @@ Extract:
 
   app.post('/api/payments/initiate', async (req, res) => {
     try {
-      const adapter = getActivePaymentAdapter();
       const { flowType, channel, amountKes, phone, email, businessId, planId, metadata } = req.body || {};
+
+      const resolvedChannel: PaymentChannel = channel === 'card' ? 'card' : 'mpesa_stk';
+      const resolvedFlow: PaymentFlowType = flowType === 'subscription' ? 'subscription' : 'pos_sale';
+      const adapter = resolveAdapterForPayment(resolvedFlow, resolvedChannel);
 
       if (!adapter.isConfigured()) {
         return res.status(503).json({
           success: false,
           provider: adapter.providerName,
-          error: `${adapter.providerName.toUpperCase()} is not configured on the server. Set PAYSTACK_SECRET_KEY in environment variables.`,
+          error:
+            adapter.providerName === 'daraja'
+              ? 'Safaricom Daraja credentials are not configured on the server. Set DARAJA_CONSUMER_KEY, DARAJA_CONSUMER_SECRET, DARAJA_SHORTCODE, and DARAJA_PASSKEY.'
+              : `${adapter.providerName.toUpperCase()} is not configured on the server. Set PAYSTACK_SECRET_KEY in environment variables.`,
         });
       }
 
@@ -1473,13 +1743,15 @@ Extract:
         return res.status(400).json({ success: false, error: 'Valid KES amount (>= 1) is required.' });
       }
 
-      const resolvedChannel: PaymentChannel = channel === 'card' ? 'card' : 'mpesa_stk';
-      const resolvedFlow: PaymentFlowType = flowType === 'subscription' ? 'subscription' : 'pos_sale';
       const billingCycle: 'monthly' | 'annual' =
         metadata?.billingCycle === 'annual' ? 'annual' : 'monthly';
       const normalizedPlanId: CanonicalServerTier | undefined =
         resolvedFlow === 'subscription'
           ? normalizeServerPlanTier(planId, metadata?.planId)
+          : undefined;
+      const durationDays =
+        resolvedFlow === 'subscription'
+          ? Number(metadata?.durationDays) || (billingCycle === 'annual' ? 365 : 30)
           : undefined;
 
       if (resolvedFlow === 'subscription' && normalizedPlanId) {
@@ -1538,9 +1810,15 @@ Extract:
         channel: resolvedChannel,
         businessId: businessId || 'unknown',
         planId: normalizedPlanId || planId || undefined,
-        ...(resolvedFlow === 'subscription' ? { billingCycle } : {}),
+        ...(resolvedFlow === 'subscription' ? { billingCycle, durationDays } : {}),
         ...(posSubaccountCode ? { subaccount: posSubaccountCode } : {}),
       };
+
+      const appBaseUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+      const darajaCallbackSecret = (process.env.DARAJA_CALLBACK_SECRET || '').trim();
+      const darajaCallbackUrl = `${appBaseUrl}/api/payments/daraja/callback${
+        darajaCallbackSecret ? `?token=${encodeURIComponent(darajaCallbackSecret)}` : ''
+      }`;
 
       const useHostedRedirect =
         resolvedChannel === 'card' ||
@@ -1556,6 +1834,13 @@ Extract:
           phone: String(phone),
           email: payerEmail,
           reference,
+          ...(adapter.providerName === 'daraja'
+            ? {
+                callbackUrl: darajaCallbackUrl,
+                accountReference: 'SokoPoS',
+                transactionDesc: `${(normalizedPlanId || 'Business').toUpperCase()} Plan`.slice(0, 13),
+              }
+            : {}),
           ...(posSubaccountCode ? { subaccount: posSubaccountCode, bearer: 'subaccount' as const } : {}),
           metadata: sharedMeta,
         });
@@ -1564,7 +1849,8 @@ Extract:
           return res.status(400).json(result);
         }
 
-        paymentIntents.set(result.reference, {
+        const nowIso = new Date().toISOString();
+        const intentRecord: StoredPaymentIntent = {
           reference: result.reference,
           provider: result.provider,
           flowType: resolvedFlow,
@@ -1574,8 +1860,55 @@ Extract:
           businessId,
           planId: normalizedPlanId || planId,
           billingCycle: resolvedFlow === 'subscription' ? billingCycle : undefined,
-          createdAt: new Date().toISOString(),
-        });
+          durationDays,
+          checkoutRequestId: result.checkoutRequestId,
+          merchantRequestId: result.merchantRequestId,
+          phone: String(phone),
+          createdAt: nowIso,
+        };
+        paymentIntents.set(result.reference, intentRecord);
+        if (result.checkoutRequestId) {
+          checkoutRequestToRef.set(result.checkoutRequestId, result.reference);
+        }
+
+        await patchFirestoreDoc('payment_records', result.reference, {
+          reference: result.reference,
+          provider: result.provider,
+          flowType: resolvedFlow,
+          channel: resolvedChannel,
+          amountKes: numericAmount,
+          status: result.status,
+          businessId: businessId || '',
+          planId: normalizedPlanId || planId || '',
+          billingCycle: resolvedFlow === 'subscription' ? billingCycle : '',
+          durationDays: durationDays || 30,
+          checkoutRequestId: result.checkoutRequestId || '',
+          merchantRequestId: result.merchantRequestId || '',
+          phone: String(phone || ''),
+          customerEmail: payerEmail,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        }).catch(() => {});
+
+        if (
+          result.provider === 'daraja' &&
+          resolvedFlow === 'subscription' &&
+          result.checkoutRequestId &&
+          (result.status === 'pending' || result.status === 'pay_offline')
+        ) {
+          darajaPoller.enlistPendingTransaction({
+            reference: result.reference,
+            checkoutRequestId: result.checkoutRequestId,
+            businessId,
+            planId: normalizedPlanId || planId,
+            billingCycle,
+            durationDays,
+            amountKes: numericAmount,
+            phone: String(phone || ''),
+            createdAtMs: Date.now(),
+            status: result.status,
+          });
+        }
 
         return res.json({
           ...result,
@@ -1583,7 +1916,6 @@ Extract:
         });
       }
 
-      const appBaseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
       const callbackPath = resolvedFlow === 'subscription' ? '/pos' : '/';
       const callbackUrl = `${appBaseUrl}${callbackPath}?payment_ref=${encodeURIComponent(reference)}`;
       const hostedChannels: ('card' | 'mobile_money')[] =
@@ -1607,6 +1939,7 @@ Extract:
         return res.status(400).json(cardResult);
       }
 
+      const nowIso = new Date().toISOString();
       paymentIntents.set(cardResult.reference, {
         reference: cardResult.reference,
         provider: cardResult.provider,
@@ -1617,8 +1950,25 @@ Extract:
         businessId,
         planId: normalizedPlanId || planId,
         billingCycle: resolvedFlow === 'subscription' ? billingCycle : undefined,
-        createdAt: new Date().toISOString(),
+        durationDays,
+        createdAt: nowIso,
       });
+
+      await patchFirestoreDoc('payment_records', cardResult.reference, {
+        reference: cardResult.reference,
+        provider: cardResult.provider,
+        flowType: resolvedFlow,
+        channel: resolvedChannel,
+        amountKes: numericAmount,
+        status: 'pending',
+        businessId: businessId || '',
+        planId: normalizedPlanId || planId || '',
+        billingCycle: resolvedFlow === 'subscription' ? billingCycle : '',
+        durationDays: durationDays || 30,
+        customerEmail: payerEmail,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      }).catch(() => {});
 
       return res.json({
         ...cardResult,
@@ -1627,6 +1977,177 @@ Extract:
     } catch (err: any) {
       console.error('Error in /api/payments/initiate:', err);
       return res.status(500).json({ success: false, error: err?.message || 'Payment initiation failed.' });
+    }
+  });
+
+  app.post('/api/payments/daraja/callback', async (req, res) => {
+    try {
+      const configuredSecret = (process.env.DARAJA_CALLBACK_SECRET || '').trim();
+      if (configuredSecret) {
+        const providedToken = String(req.query?.token || '').trim();
+        const expectedBuf = Buffer.from(configuredSecret);
+        const providedBuf = Buffer.from(providedToken);
+        const matches =
+          expectedBuf.length === providedBuf.length &&
+          crypto.timingSafeEqual(expectedBuf, providedBuf);
+        if (!matches) {
+          return res.status(401).json({ ResultCode: 1, ResultDesc: 'Invalid callback token' });
+        }
+      }
+
+      const parsed = parseDarajaStkCallback(req.body);
+      if (!parsed) {
+        return res.status(400).json({ ResultCode: 1, ResultDesc: 'Invalid STK callback payload' });
+      }
+
+      let ref = checkoutRequestToRef.get(parsed.checkoutRequestId);
+      let intent = ref ? paymentIntents.get(ref) : undefined;
+
+      if (!intent) {
+        const docs = await queryFirestoreDocs(
+          'payment_records',
+          'checkoutRequestId',
+          parsed.checkoutRequestId,
+          1
+        );
+        const doc = docs[0];
+        if (doc && doc.reference) {
+          ref = String(doc.reference);
+          intent = {
+            reference: ref,
+            provider: 'daraja',
+            flowType: doc.flowType === 'pos_sale' ? 'pos_sale' : 'subscription',
+            channel: 'mpesa_stk',
+            amountKes: Number(doc.amountKes || 0),
+            status: (doc.status as StoredPaymentIntent['status']) || 'pending',
+            businessId: doc.businessId ? String(doc.businessId) : undefined,
+            planId: doc.planId ? String(doc.planId) : undefined,
+            billingCycle: doc.billingCycle === 'annual' ? 'annual' : 'monthly',
+            durationDays: doc.durationDays ? Number(doc.durationDays) : undefined,
+            checkoutRequestId: parsed.checkoutRequestId,
+            merchantRequestId: parsed.merchantRequestId || doc.merchantRequestId,
+            phone: parsed.phoneNumber || doc.phone,
+            createdAt: String(doc.createdAt || new Date().toISOString()),
+          };
+          checkoutRequestToRef.set(parsed.checkoutRequestId, ref);
+          paymentIntents.set(ref, intent);
+        }
+      }
+
+      const resolvedRef = intent?.reference || ref || parsed.checkoutRequestId;
+      const nowIso = new Date().toISOString();
+
+      if (parsed.resultCode === 0) {
+        if (
+          intent?.amountKes &&
+          parsed.amountKes !== undefined &&
+          Math.round(parsed.amountKes) < Math.round(intent.amountKes)
+        ) {
+          const mismatchMsg = `Daraja callback amount (KES ${parsed.amountKes}) is less than expected KES ${intent.amountKes}.`;
+          if (intent) {
+            intent.status = 'failed';
+            intent.gatewayResponse = mismatchMsg;
+            paymentIntents.set(resolvedRef, intent);
+          }
+          await patchFirestoreDoc('payment_records', resolvedRef, {
+            reference: resolvedRef,
+            provider: 'daraja',
+            status: 'failed',
+            resultCode: parsed.resultCode,
+            gatewayResponse: mismatchMsg,
+            updatedAt: nowIso,
+          }).catch(() => {});
+          return res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
+        }
+
+        const updatedIntent: StoredPaymentIntent = {
+          ...(intent || {
+            reference: resolvedRef,
+            provider: 'daraja',
+            flowType: 'subscription',
+            channel: 'mpesa_stk',
+            amountKes: parsed.amountKes || 0,
+            createdAt: nowIso,
+          }),
+          status: 'success',
+          checkoutRequestId: parsed.checkoutRequestId,
+          merchantRequestId: parsed.merchantRequestId || intent?.merchantRequestId,
+          mpesaReceiptNumber: parsed.mpesaReceiptNumber || intent?.mpesaReceiptNumber,
+          gatewayResponse: parsed.resultDesc,
+          paidAt: nowIso,
+        };
+        paymentIntents.set(resolvedRef, updatedIntent);
+
+        if (updatedIntent.flowType === 'subscription' && updatedIntent.businessId) {
+          const activatedSub = await activateSubscriptionFromPayment({
+            reference: resolvedRef,
+            provider: 'daraja',
+            businessId: updatedIntent.businessId,
+            planId: updatedIntent.planId,
+            billingCycle: updatedIntent.billingCycle,
+            durationDays: updatedIntent.durationDays,
+            amountKes: updatedIntent.amountKes || parsed.amountKes || 0,
+            channel: 'mpesa_stk',
+            paidAt: nowIso,
+            mpesaReceiptNumber: updatedIntent.mpesaReceiptNumber,
+            telemetrySessionPrefix: 'daraja-cb',
+          });
+          if (activatedSub) {
+            updatedIntent.activatedSubscription = activatedSub;
+            paymentIntents.set(resolvedRef, updatedIntent);
+          }
+        }
+
+        await patchFirestoreDoc('payment_records', resolvedRef, {
+          reference: resolvedRef,
+          provider: 'daraja',
+          event: 'stk.callback.success',
+          flowType: updatedIntent.flowType,
+          channel: 'mpesa_stk',
+          amountKes: updatedIntent.amountKes || parsed.amountKes || 0,
+          status: 'success',
+          businessId: updatedIntent.businessId || '',
+          planId: updatedIntent.planId || '',
+          checkoutRequestId: parsed.checkoutRequestId,
+          merchantRequestId: updatedIntent.merchantRequestId || '',
+          mpesaReceiptNumber: updatedIntent.mpesaReceiptNumber || '',
+          phone: parsed.phoneNumber || updatedIntent.phone || '',
+          resultCode: 0,
+          gatewayResponse: parsed.resultDesc,
+          paidAt: nowIso,
+          updatedAt: nowIso,
+        }).catch(() => {});
+
+        darajaPoller.markResolved(resolvedRef);
+        return res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
+      }
+
+      const failStatus: StoredPaymentIntent['status'] =
+        parsed.resultCode === 1032 ? 'abandoned' : 'failed';
+
+      if (intent) {
+        intent.status = failStatus;
+        intent.gatewayResponse = parsed.resultDesc;
+        paymentIntents.set(resolvedRef, intent);
+      }
+
+      await patchFirestoreDoc('payment_records', resolvedRef, {
+        reference: resolvedRef,
+        provider: 'daraja',
+        event: 'stk.callback.failed',
+        status: failStatus,
+        checkoutRequestId: parsed.checkoutRequestId,
+        merchantRequestId: parsed.merchantRequestId || '',
+        resultCode: parsed.resultCode,
+        gatewayResponse: parsed.resultDesc,
+        updatedAt: nowIso,
+      }).catch(() => {});
+
+      darajaPoller.markResolved(resolvedRef);
+      return res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
+    } catch (err: any) {
+      console.error('Error in /api/payments/daraja/callback:', err);
+      return res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
     }
   });
 
@@ -1640,7 +2161,36 @@ Extract:
       const authHeader = req.headers.authorization;
       const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined;
 
-      const cached = paymentIntents.get(reference);
+      let cached = paymentIntents.get(reference);
+      if (!cached) {
+        const dbRecord = await getFirestoreDoc('payment_records', reference, bearerToken);
+        if (dbRecord && dbRecord.reference) {
+          cached = {
+            reference: String(dbRecord.reference),
+            provider: dbRecord.provider === 'daraja' ? 'daraja' : 'paystack',
+            flowType: dbRecord.flowType === 'pos_sale' ? 'pos_sale' : 'subscription',
+            channel: dbRecord.channel === 'card' ? 'card' : 'mpesa_stk',
+            amountKes: Number(dbRecord.amountKes || 0),
+            status: (dbRecord.status as StoredPaymentIntent['status']) || 'pending',
+            businessId: dbRecord.businessId ? String(dbRecord.businessId) : undefined,
+            planId: dbRecord.planId ? String(dbRecord.planId) : undefined,
+            billingCycle: dbRecord.billingCycle === 'annual' ? 'annual' : 'monthly',
+            durationDays: dbRecord.durationDays ? Number(dbRecord.durationDays) : undefined,
+            checkoutRequestId: dbRecord.checkoutRequestId ? String(dbRecord.checkoutRequestId) : undefined,
+            merchantRequestId: dbRecord.merchantRequestId ? String(dbRecord.merchantRequestId) : undefined,
+            mpesaReceiptNumber: dbRecord.mpesaReceiptNumber ? String(dbRecord.mpesaReceiptNumber) : undefined,
+            phone: dbRecord.phone ? String(dbRecord.phone) : undefined,
+            gatewayResponse: dbRecord.gatewayResponse ? String(dbRecord.gatewayResponse) : undefined,
+            paidAt: dbRecord.paidAt ? String(dbRecord.paidAt) : undefined,
+            createdAt: String(dbRecord.createdAt || new Date().toISOString()),
+          };
+          paymentIntents.set(reference, cached);
+          if (cached.checkoutRequestId) {
+            checkoutRequestToRef.set(cached.checkoutRequestId, reference);
+          }
+        }
+      }
+
       if (cached && cached.status === 'success') {
         const normalizedCachedPlan =
           cached.flowType === 'subscription'
@@ -1648,31 +2198,24 @@ Extract:
             : cached.planId;
         let cachedActivatedSub = cached.activatedSubscription;
         if (cached.flowType === 'subscription' && cached.businessId && !cachedActivatedSub) {
-          const cycle: 'monthly' | 'annual' = cached.billingCycle === 'annual' ? 'annual' : 'monthly';
-          const durationDays = cycle === 'annual' ? 365 : 30;
-          const nowIso = cached.paidAt || new Date().toISOString();
-          cachedActivatedSub = {
-            status: 'active',
-            plan: normalizedCachedPlan,
+          cachedActivatedSub = await activateSubscriptionFromPayment({
+            reference: cached.reference,
+            provider: cached.provider,
+            businessId: cached.businessId,
             planId: normalizedCachedPlan,
-            activatedAt: nowIso,
-            expiresAt: new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString(),
-            lastPaymentReference: cached.reference,
-            paymentProvider: cached.provider,
-          };
-          cached.activatedSubscription = cachedActivatedSub;
-          paymentIntents.set(reference, cached);
-          await patchFirestoreDoc(
-            'businesses',
-            cached.businessId,
-            {
-              status: 'active',
-              plan: normalizedCachedPlan,
-              subscription: cachedActivatedSub,
-            },
-            ['status', 'plan', 'subscription'],
-            bearerToken
-          );
+            billingCycle: cached.billingCycle,
+            durationDays: cached.durationDays,
+            amountKes: cached.amountKes,
+            channel: cached.channel,
+            paidAt: cached.paidAt,
+            mpesaReceiptNumber: cached.mpesaReceiptNumber,
+            preferredBearerToken: bearerToken,
+            telemetrySessionPrefix: `${cached.provider}-verify`,
+          });
+          if (cachedActivatedSub) {
+            cached.activatedSubscription = cachedActivatedSub;
+            paymentIntents.set(reference, cached);
+          }
         }
         return res.json({
           verified: true,
@@ -1681,17 +2224,44 @@ Extract:
           status: 'success',
           amountKes: cached.amountKes,
           channel: cached.channel,
+          ...(cached.mpesaReceiptNumber ? { mpesaReceiptNumber: cached.mpesaReceiptNumber } : {}),
           flowType: cached.flowType,
           businessId: cached.businessId,
           planId: normalizedCachedPlan,
           ...(cachedActivatedSub ? { activatedSubscription: cachedActivatedSub } : {}),
-          gatewayResponse: cached.gatewayResponse || 'Approved via webhook',
+          gatewayResponse: cached.gatewayResponse || 'Approved',
           paidAt: cached.paidAt,
         });
       }
 
-      const adapter = getActivePaymentAdapter();
-      const verification = await adapter.verifyTransaction(reference);
+      if (cached && (cached.status === 'failed' || cached.status === 'abandoned')) {
+        return res.json({
+          verified: false,
+          provider: cached.provider,
+          reference: cached.reference,
+          status: cached.status,
+          flowType: cached.flowType,
+          businessId: cached.businessId,
+          planId: cached.planId,
+          gatewayResponse: cached.gatewayResponse || 'Payment was not completed.',
+          error: cached.gatewayResponse || 'Payment was declined or cancelled.',
+        });
+      }
+
+      const verifyAdapter =
+        cached?.provider === 'daraja'
+          ? darajaAdapter
+          : cached?.provider === 'paystack'
+          ? paystackAdapter
+          : getActivePaymentAdapter();
+
+      const verifyLookupKey =
+        verifyAdapter.providerName === 'daraja'
+          ? cached?.checkoutRequestId || reference
+          : reference;
+
+      const verification = await verifyAdapter.verifyTransaction(verifyLookupKey);
+      const clientReference = cached?.reference || reference;
 
       const resolvedFlowType = cached?.flowType || (verification.metadata?.flowType as PaymentFlowType | undefined);
       const resolvedBusinessId = cached?.businessId || (verification.metadata?.businessId as string | undefined);
@@ -1720,57 +2290,67 @@ Extract:
         if (paidKes > 0 && paidKes < minExpectedKes) {
           return res.status(400).json({
             verified: false,
-            reference,
+            reference: clientReference,
             status: 'failed',
             error: `Verified amount (KES ${paidKes.toLocaleString()}) is below the minimum KES ${minExpectedKes.toLocaleString()} required for ${normalizedPlanId.toUpperCase()}.`,
           });
         }
 
         const durationDays =
-          Number(verification.metadata?.durationDays) || (billingCycle === 'annual' ? 365 : 30);
-        const nowIso = verification.paidAt || new Date().toISOString();
-        const expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
-        activatedSubscription = {
-          status: 'active',
-          plan: normalizedPlanId,
-          planId: normalizedPlanId,
-          activatedAt: nowIso,
-          expiresAt,
-          lastPaymentReference: verification.reference || reference,
-          paymentProvider: verification.provider || adapter.providerName,
-        };
+          Number(cached?.durationDays || verification.metadata?.durationDays) ||
+          (billingCycle === 'annual' ? 365 : 30);
 
-        await patchFirestoreDoc(
-          'businesses',
-          resolvedBusinessId,
-          {
-            status: 'active',
-            plan: normalizedPlanId,
-            subscription: activatedSubscription,
-          },
-          ['status', 'plan', 'subscription'],
-          bearerToken
-        );
-
-        creditAffiliateCommissionOnPayment({
-          paymentReference: verification.reference || reference,
+        activatedSubscription = await activateSubscriptionFromPayment({
+          reference: clientReference,
+          provider: verification.provider || verifyAdapter.providerName,
           businessId: resolvedBusinessId,
           planId: normalizedPlanId,
+          billingCycle,
+          durationDays,
           amountKes: paidKes,
-        }).catch((err) => console.warn('Affiliate commission credit notice:', err));
+          channel: cached?.channel || (verification.channel === 'card' ? 'card' : 'mpesa_stk'),
+          paidAt: verification.paidAt,
+          mpesaReceiptNumber: verification.mpesaReceiptNumber || cached?.mpesaReceiptNumber,
+          preferredBearerToken: bearerToken,
+          telemetrySessionPrefix: `${verifyAdapter.providerName}-verify`,
+        });
+
+        await patchFirestoreDoc('payment_records', clientReference, {
+          reference: clientReference,
+          provider: verification.provider || verifyAdapter.providerName,
+          status: 'success',
+          gatewayResponse: verification.gatewayResponse || 'Approved',
+          paidAt: verification.paidAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }).catch(() => {});
+        darajaPoller.markResolved(clientReference);
+      } else if (verification.status === 'failed' || verification.status === 'abandoned') {
+        await patchFirestoreDoc('payment_records', clientReference, {
+          reference: clientReference,
+          provider: verification.provider || verifyAdapter.providerName,
+          status: verification.status,
+          gatewayResponse: verification.gatewayResponse || verification.error || 'Payment failed',
+          updatedAt: new Date().toISOString(),
+        }).catch(() => {});
+        darajaPoller.markResolved(clientReference);
       }
 
       if (cached) {
         cached.status = verification.status;
         cached.gatewayResponse = verification.gatewayResponse;
         cached.paidAt = verification.paidAt;
+        if (verification.mpesaReceiptNumber) cached.mpesaReceiptNumber = verification.mpesaReceiptNumber;
         if (normalizedPlanId) cached.planId = normalizedPlanId;
         if (activatedSubscription) cached.activatedSubscription = activatedSubscription;
-        paymentIntents.set(reference, cached);
+        paymentIntents.set(clientReference, cached);
       }
 
       return res.json({
         ...verification,
+        reference: clientReference,
+        ...(cached?.mpesaReceiptNumber && !verification.mpesaReceiptNumber
+          ? { mpesaReceiptNumber: cached.mpesaReceiptNumber }
+          : {}),
         flowType: resolvedFlowType,
         businessId: resolvedBusinessId,
         planId: normalizedPlanId,
@@ -2471,7 +3051,7 @@ Extract:
 
   app.post('/api/payments/webhook', async (req: any, res) => {
     try {
-      const adapter = getActivePaymentAdapter();
+      const adapter = paystackAdapter;
       const signature = req.headers['x-paystack-signature'] as string | undefined;
       const rawBody = req.rawBody || JSON.stringify(req.body || {});
 
@@ -2527,52 +3107,28 @@ Extract:
 
         if (flowType === 'subscription' && businessId) {
           const durationDays = Number(metadata.durationDays) || (metadata.billingCycle === 'annual' ? 365 : 30);
-          const expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
           const resolvedPlan = normalizeServerPlanTier(planId, metadata.planId);
-          const activatedSubscription = {
-            status: 'active',
-            plan: resolvedPlan,
+          const activatedSubscription = await activateSubscriptionFromPayment({
+            reference: ref,
+            provider: adapter.providerName,
+            businessId,
             planId: resolvedPlan,
-            activatedAt: nowIso,
-            expiresAt,
-            lastPaymentReference: ref,
-            paymentProvider: adapter.providerName,
-          };
+            billingCycle: metadata.billingCycle === 'annual' ? 'annual' : 'monthly',
+            durationDays,
+            amountKes,
+            channel,
+            paidAt: data.paid_at || nowIso,
+            telemetrySessionPrefix: 'webhook',
+          });
 
           const currentIntent = paymentIntents.get(ref);
           if (currentIntent) {
             currentIntent.planId = resolvedPlan;
-            currentIntent.activatedSubscription = activatedSubscription;
+            if (activatedSubscription) {
+              currentIntent.activatedSubscription = activatedSubscription;
+            }
             paymentIntents.set(ref, currentIntent);
           }
-
-          await patchFirestoreDoc(
-            'businesses',
-            businessId,
-            {
-              status: 'active',
-              plan: resolvedPlan,
-              subscription: activatedSubscription,
-            },
-            ['status', 'plan', 'subscription']
-          );
-
-          await creditAffiliateCommissionOnPayment({
-            paymentReference: ref,
-            businessId,
-            planId: resolvedPlan,
-            amountKes,
-          });
-
-          recordTelemetryEventOnServer({
-            eventType: 'subscription_activated',
-            sessionId: `webhook-${ref}`,
-            businessId,
-            planId: resolvedPlan,
-            channel,
-            amountKes,
-            deviceType: 'desktop',
-          });
         } else if (flowType === 'pos_sale' && transactionId) {
           await patchFirestoreDoc(
             'transactions',
@@ -3587,6 +4143,7 @@ Extract:
   });
 
   const handleShutdown = () => {
+    darajaPoller.stop();
     server.close(() => {
       process.exit(0);
     });

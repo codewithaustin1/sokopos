@@ -1,0 +1,1350 @@
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  AlertCircle,
+  AlertTriangle,
+  Check,
+  CheckCircle2,
+  Crop,
+  Eye,
+  Globe,
+  Image as ImageIcon,
+  LayoutTemplate,
+  Link as LinkIcon,
+  Loader2,
+  Lock,
+  Menu,
+  Moon,
+  RefreshCw,
+  RotateCcw,
+  Sun,
+  Trash2,
+  UploadCloud,
+  X,
+} from 'lucide-react';
+import { usePos } from '../../context/PosContext';
+import { AppLogo } from '../common/AppLogo';
+import { SettingsSectionHeader } from '../common/SettingsSectionHeader';
+import {
+  detectImageFormatLabel,
+  estimateAssetSizeKb,
+  inspectImageAsset,
+  InspectedImageAsset,
+  processAndOptimizeImage,
+  validateBrandingAssetFile,
+  validateBrandingAssetUrl,
+} from '../../utils/imageOptimizer';
+import bgModernHypermarket from '../../assets/images/bg_modern_hypermarket_1794745035042.jpg';
+import bgEveningMarket from '../../assets/images/bg_evening_market_1794745035836.jpg';
+import bgMinimalBoutique from '../../assets/images/bg_minimal_boutique_1794745035140.jpg';
+import bgDarkTechPos from '../../assets/images/bg_dark_tech_pos_1794745035491.jpg';
+
+type BrandingAssetTab = 'logo' | 'favicon' | 'login-bg';
+
+const DEFAULT_FAVICON_SVG =
+  'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="%232563eb"/><text x="16" y="23" font-size="20" font-family="sans-serif" font-weight="900" fill="white" text-anchor="middle">S</text></svg>';
+
+const LOGO_PRESETS = [
+  {
+    id: 'logo-preset-sokomart',
+    name: 'SokoMart Pro Retail',
+    tag: '4:1 Horizontal Lockup',
+    url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="100" viewBox="0 0 400 100"><rect width="400" height="100" fill="none"/><g transform="translate(15, 15)"><rect width="70" height="70" rx="18" fill="%232563eb"/><path d="M22 24h6l4 22h24l3.5-14H32" fill="none" stroke="white" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="36" cy="54" r="3.5" fill="white"/><circle cx="52" cy="54" r="3.5" fill="white"/></g><text x="100" y="55" fill="%230f172a" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="900" font-size="32" letter-spacing="-0.03em">SOKOMART</text><rect x="306" y="32" width="68" height="24" rx="6" fill="%23fbbf24"/><text x="340" y="48" fill="%230f172a" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="900" font-size="12" text-anchor="middle" letter-spacing="0.05em">PRO</text><text x="102" y="73" fill="%2364748b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="700" font-size="10.5" letter-spacing="0.1em">ENTERPRISE POINT OF SALE</text></svg>',
+  },
+  {
+    id: 'logo-preset-apex',
+    name: 'Apex Supermarket',
+    tag: '4:1 Horizontal Lockup',
+    url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="100" viewBox="0 0 400 100"><rect width="400" height="100" fill="none"/><g transform="translate(15, 15)"><rect width="70" height="70" rx="18" fill="%23059669"/><path d="M22 30h26l-3 24H25L22 30z" fill="none" stroke="white" stroke-width="4" stroke-linejoin="round"/><path d="M28 30V24a7 7 0 0 1 14 0v6" fill="none" stroke="white" stroke-width="4" stroke-linecap="round"/></g><text x="100" y="55" fill="%23064e3b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="900" font-size="32" letter-spacing="-0.03em">APEX MART</text><rect x="306" y="32" width="76" height="24" rx="6" fill="%2310b981"/><text x="344" y="48" fill="white" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="900" font-size="11" text-anchor="middle" letter-spacing="0.05em">RETAIL</text><text x="102" y="73" fill="%23047857" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="700" font-size="10.5" letter-spacing="0.1em">FRESH FOODS &amp; GROCERY</text></svg>',
+  },
+  {
+    id: 'logo-preset-metro',
+    name: 'Metro Retail Co.',
+    tag: '1:1 Square Mark',
+    url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" rx="44" fill="%234f46e5"/><g transform="translate(30, 30)"><path d="M70 20l50 30v60l-50 30-50-30v-60z" fill="none" stroke="white" stroke-width="12" stroke-linejoin="round"/><circle cx="70" cy="70" r="18" fill="%23fbbf24"/><text x="70" y="125" fill="white" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="900" font-size="16" text-anchor="middle" letter-spacing="0.1em">METRO</text></g></svg>',
+  },
+];
+
+const FAVICON_PRESETS = [
+  {
+    id: 'fav-preset-default',
+    name: 'SokoPoS Classic',
+    tag: 'Blue Mark',
+    url: DEFAULT_FAVICON_SVG,
+  },
+  {
+    id: 'fav-preset-emerald-cart',
+    name: 'Emerald Cart',
+    tag: 'Green Till',
+    url: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="%23059669"/><path d="M7 8h3l2.5 9h10l2-6H11" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="13" cy="21" r="1.5" fill="white"/><circle cx="21" cy="21" r="1.5" fill="white"/></svg>',
+  },
+  {
+    id: 'fav-preset-amber-bag',
+    name: 'Amber Bag',
+    tag: 'Gold Store',
+    url: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="%23d97706"/><path d="M9 11h14l-1.5 12h-11L9 11z" fill="none" stroke="white" stroke-width="2" stroke-linejoin="round"/><path d="M12 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>',
+  },
+  {
+    id: 'fav-preset-indigo-star',
+    name: 'Indigo Hub',
+    tag: 'Indigo Star',
+    url: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="%234f46e5"/><path d="M16 6l3 7 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z" fill="white"/></svg>',
+  },
+];
+
+const LOGIN_BG_PRESETS = [
+  {
+    id: 'preset-hypermarket',
+    name: 'Modern Hypermarket',
+    tag: 'Retail Flagship · 16:9',
+    url: bgModernHypermarket,
+  },
+  {
+    id: 'preset-night-market',
+    name: 'Evening Market & Cafe',
+    tag: 'Warm Ambient · 16:9',
+    url: bgEveningMarket,
+  },
+  {
+    id: 'preset-minimal-store',
+    name: 'Minimal Travertine Boutique',
+    tag: 'Architectural · 16:9',
+    url: bgMinimalBoutique,
+  },
+  {
+    id: 'preset-tech-carbon',
+    name: 'Dark Anodized Terminal',
+    tag: 'Slate Geometric · 16:9',
+    url: bgDarkTechPos,
+  },
+];
+
+function getFormatAdvisory(
+  tab: BrandingAssetTab,
+  metrics: InspectedImageAsset | null
+): string | null {
+  if (!metrics || !metrics.valid) return null;
+  const { width, height, aspectRatio } = metrics;
+
+  if (tab === 'logo') {
+    if (width < 120 || height < 32) {
+      return `Low resolution (${width} × ${height} px). Aim for at least 400 × 100 px or a vector SVG so headers stay crisp on retina screens.`;
+    }
+    if (aspectRatio < 0.75) {
+      return `Tall portrait ratio (${width} × ${height} px). Horizontal 4:1 lockups or 1:1 square marks fit the POS navigation bar cleanly.`;
+    }
+  }
+
+  if (tab === 'favicon') {
+    if (width < 32 || height < 32) {
+      return `Small icon (${width} × ${height} px). Use at least 64 × 64 px so browser tabs and mobile shortcuts look sharp.`;
+    }
+    if (Math.abs(aspectRatio - 1) > 0.25) {
+      return `Non-square aspect ratio (${width} × ${height} px). A 1:1 square icon prevents edge clipping inside browser tabs.`;
+    }
+  }
+
+  if (tab === 'login-bg') {
+    if (width < 960 || height < 540) {
+      return `Low background resolution (${width} × ${height} px). Recommend 1920 × 1080 px (16:9) for sharp full-bleed terminal sign-in screens.`;
+    }
+    if (aspectRatio < 1.1) {
+      return `Portrait orientation (${width} × ${height} px). Landscape 16:9 images avoid heavy cropping on desktop and tablet POS displays.`;
+    }
+  }
+
+  return null;
+}
+
+interface ReadinessCheck {
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+function getAssetReadinessChecks(
+  tab: BrandingAssetTab,
+  assetUrl: string | null,
+  metrics: InspectedImageAsset | null,
+  previewLoadError: boolean,
+  assetSizeKb: number
+): ReadinessCheck[] {
+  if (!assetUrl) {
+    return [
+      { label: 'Active Asset', passed: true, detail: 'Using built-in SokoPoS default' },
+      { label: 'Renderable', passed: true, detail: 'Verified SVG fallback' },
+    ];
+  }
+
+  const format = metrics?.format || detectImageFormatLabel(assetUrl);
+  const renderOk = Boolean(!previewLoadError && metrics?.valid);
+
+  let ratioOk = renderOk;
+  let ratioDetail = renderOk && metrics ? `${metrics.width} × ${metrics.height} px` : 'Pending check';
+  if (renderOk && metrics) {
+    if (tab === 'logo') {
+      ratioOk = metrics.aspectRatio >= 0.75 && metrics.width >= 120;
+      ratioDetail = ratioOk ? `${metrics.width} × ${metrics.height} px (Header fit)` : `Suboptimal (${metrics.width} × ${metrics.height} px)`;
+    } else if (tab === 'favicon') {
+      ratioOk = Math.abs(metrics.aspectRatio - 1) <= 0.25 && metrics.width >= 32;
+      ratioDetail = ratioOk ? `${metrics.width} × ${metrics.height} px (Square)` : `Non-square or small (${metrics.width} × ${metrics.height} px)`;
+    } else {
+      ratioOk = metrics.aspectRatio >= 1.1 && metrics.width >= 960;
+      ratioDetail = ratioOk ? `${metrics.width} × ${metrics.height} px (16:9 fit)` : `Low-res or portrait (${metrics.width} × ${metrics.height} px)`;
+    }
+  }
+
+  const payloadOk = assetSizeKb === 0 || assetSizeKb <= 900;
+  const payloadDetail = assetSizeKb > 0 ? `${assetSizeKb} KB / 900 KB limit` : 'Asset URL reference';
+
+  return [
+    {
+      label: `Format (${format})`,
+      passed: renderOk,
+      detail: renderOk ? 'Decoded & verified' : 'Failed to decode image',
+    },
+    {
+      label: 'Dimensions & Fit',
+      passed: ratioOk,
+      detail: ratioDetail,
+    },
+    {
+      label: 'Cloud Sync Budget',
+      passed: payloadOk,
+      detail: payloadDetail,
+    },
+  ];
+}
+
+export const SuperAdminBrandingTab: React.FC = () => {
+  const {
+    platformLogo,
+    platformLogoName,
+    setPlatformLogo,
+    removePlatformLogo,
+    platformFavicon,
+    platformFaviconName,
+    setPlatformFavicon,
+    removePlatformFavicon,
+    loginBgGraphic,
+    loginBgGraphicName,
+    setLoginBgGraphic,
+    removeLoginBgGraphic,
+    refreshPlatformSettings,
+    resetAllPlatformBranding,
+    isRealGoogleAccount,
+  } = usePos();
+
+  const [subTab, setSubTab] = useState<BrandingAssetTab>('logo');
+  const [previewSurface, setPreviewSurface] = useState<'light' | 'dark'>('light');
+  const [enableBgScrim, setEnableBgScrim] = useState(true);
+  const [isResettingAll, setIsResettingAll] = useState(false);
+  const [confirmResetAll, setConfirmResetAll] = useState(false);
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+
+  // Per-tab upload & URL states
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isProcessingFile, setIsProcessingFile] = useState(false);
+  const [isApplyingUrl, setIsApplyingUrl] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
+  const [assetError, setAssetError] = useState<string | null>(null);
+  const [previewLoadError, setPreviewLoadError] = useState(false);
+  const [activeMetrics, setActiveMetrics] = useState<InspectedImageAsset | null>(null);
+
+  const currentAssetUrl =
+    subTab === 'logo'
+      ? platformLogo
+      : subTab === 'favicon'
+      ? platformFavicon
+      : loginBgGraphic;
+
+  const currentAssetName =
+    subTab === 'logo'
+      ? platformLogoName || 'Custom Platform Brand Logo'
+      : subTab === 'favicon'
+      ? platformFaviconName || 'Custom Browser Favicon'
+      : loginBgGraphicName || 'Custom Login Background';
+
+  // Reset transient form errors when switching asset tabs
+  useEffect(() => {
+    setAssetError(null);
+    setUrlInput('');
+    setIsDragging(false);
+    setPreviewLoadError(false);
+    setConfirmResetAll(false);
+  }, [subTab]);
+
+  // Inspect active asset dimensions & integrity whenever the active asset changes
+  useEffect(() => {
+    let cancelled = false;
+    if (!currentAssetUrl) {
+      setActiveMetrics(null);
+      setPreviewLoadError(false);
+      return;
+    }
+
+    inspectImageAsset(currentAssetUrl).then((res) => {
+      if (cancelled) return;
+      if (res.valid) {
+        setActiveMetrics(res);
+        setPreviewLoadError(false);
+      } else {
+        setActiveMetrics(null);
+        setPreviewLoadError(true);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentAssetUrl]);
+
+  const applyAssetForTab = async (url: string, name: string) => {
+    setAssetError(null);
+    if (subTab === 'logo') {
+      await setPlatformLogo(url, name);
+    } else if (subTab === 'favicon') {
+      await setPlatformFavicon(url, name);
+    } else {
+      await setLoginBgGraphic(url, name);
+    }
+  };
+
+  const revertAssetForTab = async () => {
+    setAssetError(null);
+    if (subTab === 'logo') {
+      await removePlatformLogo();
+    } else if (subTab === 'favicon') {
+      await removePlatformFavicon();
+    } else {
+      await removeLoginBgGraphic();
+    }
+  };
+
+  const handleResetAllBranding = async () => {
+    setIsResettingAll(true);
+    setAssetError(null);
+    try {
+      await resetAllPlatformBranding();
+      setConfirmResetAll(false);
+    } finally {
+      setIsResettingAll(false);
+    }
+  };
+
+  const handleCloudSync = async () => {
+    setIsSyncingCloud(true);
+    setAssetError(null);
+    try {
+      await refreshPlatformSettings();
+    } finally {
+      setIsSyncingCloud(false);
+    }
+  };
+
+  const handleProcessFile = async (file: File) => {
+    const validation = validateBrandingAssetFile(file, {
+      allowIco: subTab === 'favicon',
+      maxBytes: subTab === 'login-bg' ? 5 * 1024 * 1024 : 2 * 1024 * 1024,
+      label:
+        subTab === 'logo'
+          ? 'platform logo'
+          : subTab === 'favicon'
+          ? 'favicon'
+          : 'login background',
+    });
+
+    if (!validation.valid) {
+      setAssetError(validation.error || 'Invalid asset file.');
+      return;
+    }
+
+    setAssetError(null);
+    setIsProcessingFile(true);
+    try {
+      const optimized =
+        subTab === 'logo'
+          ? await processAndOptimizeImage(file, 800, 400, 0.94, 'image/png')
+          : subTab === 'favicon'
+          ? await processAndOptimizeImage(file, 128, 128, 0.94, 'image/png')
+          : await processAndOptimizeImage(file, 1920, 1080, 0.85, 'auto');
+
+      const check = await inspectImageAsset(optimized);
+      if (!check.valid) {
+        setAssetError(check.error || 'Processed image could not be rendered.');
+        return;
+      }
+
+      await applyAssetForTab(optimized, file.name);
+    } catch (err: any) {
+      setAssetError(err?.message || 'Failed to process image file.');
+    } finally {
+      setIsProcessingFile(false);
+    }
+  };
+
+  const handleApplyUrl = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const raw = urlInput.trim();
+    const urlCheck = validateBrandingAssetUrl(raw);
+    if (!urlCheck.valid) {
+      setAssetError(urlCheck.error || 'Enter a valid image URL.');
+      return;
+    }
+
+    setAssetError(null);
+    setIsApplyingUrl(true);
+    try {
+      const check = await inspectImageAsset(raw);
+      if (!check.valid) {
+        setAssetError(
+          check.error || 'URL did not resolve to a loadable image. Verify the link and CORS headers.'
+        );
+        return;
+      }
+
+      const fallbackLabel =
+        subTab === 'logo'
+          ? 'External Brand Logo'
+          : subTab === 'favicon'
+          ? 'External Favicon Asset'
+          : 'External Login Background';
+      await applyAssetForTab(raw, fallbackLabel);
+      setUrlInput('');
+    } catch {
+      setAssetError('Could not validate or apply this image URL.');
+    } finally {
+      setIsApplyingUrl(false);
+    }
+  };
+
+  const advisoryWarning = getFormatAdvisory(subTab, activeMetrics);
+  const hasAnyCustomAsset = Boolean(platformLogo || platformFavicon || loginBgGraphic);
+  const activeCount = [platformLogo, platformFavicon, loginBgGraphic].filter(Boolean).length;
+  const assetSizeKb = currentAssetUrl ? estimateAssetSizeKb(currentAssetUrl) : 0;
+  const assetFormat = currentAssetUrl
+    ? activeMetrics?.format || detectImageFormatLabel(currentAssetUrl, currentAssetName)
+    : 'SVG';
+  const readinessChecks = getAssetReadinessChecks(
+    subTab,
+    currentAssetUrl,
+    activeMetrics,
+    previewLoadError,
+    assetSizeKb
+  );
+
+  const inlineUrlValidation = urlInput.trim() ? validateBrandingAssetUrl(urlInput) : null;
+
+  const tabMeta = {
+    logo: {
+      title: 'Platform Brand Logo',
+      subtitle: 'Rendered in the POS top bar, mobile drawer, and terminal sign-in header.',
+      accept: 'image/png,image/svg+xml,image/webp,image/jpeg',
+      formatsLabel: 'PNG, SVG, WebP, JPG · Max 2 MB',
+      dimensionsHint: 'Recommended: 400 × 100 px (4:1 horizontal) or 512 × 512 px (1:1 mark)',
+      inputId: 'platform-logo-file-input',
+      dropzoneId: 'platform-logo-dropzone',
+      urlPlaceholder: 'https://cdn.example.com/brand-logo.svg',
+      buttonLabel: 'Verify & Apply',
+      selectButtonLabel: 'Choose Logo File',
+    },
+    favicon: {
+      title: 'Browser Favicon & Shortcut Icon',
+      subtitle: 'Updates browser tabs, bookmarks, and mobile home-screen shortcut icons immediately.',
+      accept: 'image/png,image/x-icon,image/vnd.microsoft.icon,image/svg+xml,image/webp,image/jpeg,.ico',
+      formatsLabel: 'PNG, ICO, SVG, WebP · Max 2 MB',
+      dimensionsHint: 'Recommended: 64 × 64 px or 128 × 128 px (1:1 square)',
+      inputId: 'platform-favicon-file-input',
+      dropzoneId: 'platform-favicon-dropzone',
+      urlPlaceholder: 'https://cdn.example.com/favicon.png',
+      buttonLabel: 'Verify & Apply',
+      selectButtonLabel: 'Choose Favicon File',
+    },
+    'login-bg': {
+      title: 'Terminal Sign-In Background',
+      subtitle: 'Full-bleed backdrop behind the POS terminal login dialog with automatic contrast scrim.',
+      accept: 'image/png,image/jpeg,image/webp,image/svg+xml',
+      formatsLabel: 'PNG, JPG, WebP, SVG · Max 5 MB',
+      dimensionsHint: 'Recommended: 1920 × 1080 px (16:9 widescreen)',
+      inputId: 'login-bg-file-input',
+      dropzoneId: 'login-bg-dropzone',
+      urlPlaceholder: 'https://cdn.example.com/terminal-backdrop.jpg',
+      buttonLabel: 'Verify & Apply',
+      selectButtonLabel: 'Select Image File',
+    },
+  }[subTab];
+
+  return (
+    <div className="space-y-6">
+      <SettingsSectionHeader
+        title="Platform Branding"
+        description="Manage the global brand logo, browser favicon, and terminal sign-in backdrop synced across all POS terminals."
+        meta={
+          <div className="flex flex-wrap items-center gap-2 text-xs tabular-nums">
+            <span
+              className={
+                hasAnyCustomAsset
+                  ? 'text-emerald-600 dark:text-emerald-400 font-medium'
+                  : 'text-slate-500 dark:text-slate-400'
+              }
+            >
+              {activeCount} of 3 custom assets active
+            </span>
+            <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">
+              ·
+            </span>
+            <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
+              platform_settings/global
+            </span>
+            <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">
+              ·
+            </span>
+            <span
+              className={
+                isRealGoogleAccount
+                  ? 'text-slate-600 dark:text-slate-300 font-medium'
+                  : 'text-amber-600 dark:text-amber-400 font-medium'
+              }
+            >
+              {isRealGoogleAccount ? 'Cloud sync ready' : 'Local cache only'}
+            </span>
+          </div>
+        }
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleCloudSync}
+              disabled={isSyncingCloud}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 transition cursor-pointer disabled:opacity-50 whitespace-nowrap shrink-0"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingCloud ? 'animate-spin' : ''}`} />
+              <span>{isSyncingCloud ? 'Syncing...' : 'Sync from Cloud'}</span>
+            </button>
+
+            {hasAnyCustomAsset && !confirmResetAll && (
+              <button
+                type="button"
+                onClick={() => setConfirmResetAll(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-rose-700 dark:text-rose-400 bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 transition cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset All</span>
+              </button>
+            )}
+
+            {hasAnyCustomAsset && confirmResetAll && (
+              <div className="inline-flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleResetAllBranding}
+                  disabled={isResettingAll}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-rose-600 hover:bg-rose-700 transition cursor-pointer disabled:opacity-50 whitespace-nowrap shrink-0"
+                >
+                  {isResettingAll ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Check className="w-3.5 h-3.5" />
+                  )}
+                  <span>Confirm Reset</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmResetAll(false)}
+                  disabled={isResettingAll}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 transition cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Cancel</span>
+                </button>
+              </div>
+            )}
+          </div>
+        }
+      />
+
+      {/* Segmented Asset Switcher */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div
+          role="tablist"
+          aria-label="Branding asset type"
+          className="inline-flex flex-wrap items-center gap-1 p-1 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl"
+        >
+          {[
+            { id: 'logo' as const, label: 'Brand Logo', icon: LayoutTemplate, active: Boolean(platformLogo) },
+            { id: 'favicon' as const, label: 'Browser Favicon', icon: Globe, active: Boolean(platformFavicon) },
+            { id: 'login-bg' as const, label: 'Login Background', icon: ImageIcon, active: Boolean(loginBgGraphic) },
+          ].map((item) => {
+            const Icon = item.icon;
+            const isSelected = subTab === item.id;
+            return (
+              <button
+                key={item.id}
+                role="tab"
+                aria-selected={isSelected}
+                type="button"
+                onClick={() => setSubTab(item.id)}
+                className={`px-3.5 py-2 rounded-lg text-xs font-medium transition inline-flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
+                  isSelected
+                    ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-2xs font-semibold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5 shrink-0" />
+                <span>{item.label}</span>
+                {item.active && (
+                  <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                    Custom
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {currentAssetUrl && (
+          <button
+            id={subTab === 'login-bg' ? 'remove-login-bg-top-btn' : undefined}
+            type="button"
+            onClick={revertAssetForTab}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-400 border border-slate-200 dark:border-slate-800 hover:border-rose-200 dark:hover:border-rose-800/60 transition cursor-pointer whitespace-nowrap shrink-0"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Revert {subTab === 'logo' ? 'Logo' : subTab === 'favicon' ? 'Favicon' : 'Background'}</span>
+          </button>
+        )}
+      </div>
+
+      {/* Validation Error Banner */}
+      {assetError && (
+        <div
+          role="alert"
+          className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-rose-800 dark:text-rose-200"
+        >
+          <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+          <div className="flex-1 font-medium leading-relaxed">{assetError}</div>
+          <button
+            type="button"
+            onClick={() => setAssetError(null)}
+            className="text-rose-600 dark:text-rose-400 hover:underline font-medium shrink-0 cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Format / Resolution Advisory */}
+      {!assetError && advisoryWarning && (
+        <div className="bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200">
+          <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <div className="flex-1 leading-relaxed">{advisoryWarning}</div>
+        </div>
+      )}
+
+      {/* Two-Column Studio Workspace */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left Column: Upload, URL Validation, Active Asset & Presets */}
+        <div className="lg:col-span-7 space-y-5">
+          {/* Card 1: Upload & External URL */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl p-5 border border-slate-200 dark:border-slate-800 space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  {tabMeta.title}
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                  {tabMeta.subtitle}
+                </p>
+              </div>
+              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                {tabMeta.formatsLabel}
+              </span>
+            </div>
+
+            <input
+              id={tabMeta.inputId}
+              ref={fileInputRef}
+              type="file"
+              accept={tabMeta.accept}
+              onChange={(e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                  handleProcessFile(e.target.files[0]);
+                  e.target.value = '';
+                }
+              }}
+              className="hidden"
+            />
+
+            <div
+              id={tabMeta.dropzoneId}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  fileInputRef.current?.click();
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragging(false);
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                  handleProcessFile(e.dataTransfer.files[0]);
+                }
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                setIsDragging(false);
+              }}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-xl p-6 text-center transition cursor-pointer flex flex-col items-center justify-center gap-2.5 focus-visible:outline-2 focus-visible:outline-blue-600 ${
+                isDragging
+                  ? 'border-blue-500 bg-blue-50/70 dark:bg-blue-950/30'
+                  : isProcessingFile
+                  ? 'border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 pointer-events-none'
+                  : 'border-slate-300 dark:border-slate-700 hover:border-blue-500 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 bg-slate-50/40 dark:bg-slate-950/30'
+              }`}
+            >
+              {isProcessingFile ? (
+                <>
+                  <Loader2 className="w-6 h-6 animate-spin text-blue-600 dark:text-blue-400" />
+                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                    Validating &amp; optimizing asset...
+                  </p>
+                </>
+              ) : (
+                <>
+                  <UploadCloud className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                  <div>
+                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      Drag &amp; drop an image file here, or click to browse
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      {tabMeta.dimensionsHint}
+                    </p>
+                  </div>
+                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition whitespace-nowrap">
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    <span>{tabMeta.selectButtonLabel}</span>
+                  </span>
+                </>
+              )}
+            </div>
+
+            {/* External Verified URL Input */}
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
+              <label
+                htmlFor={`branding-url-input-${subTab}`}
+                className="block text-xs font-medium text-slate-700 dark:text-slate-300"
+              >
+                Or apply a verified image URL
+              </label>
+              <form onSubmit={handleApplyUrl} className="flex flex-col sm:flex-row gap-2">
+                <div className="relative flex-1">
+                  <LinkIcon className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    id={`branding-url-input-${subTab}`}
+                    type="url"
+                    value={urlInput}
+                    onChange={(e) => {
+                      setUrlInput(e.target.value);
+                      if (assetError) setAssetError(null);
+                    }}
+                    placeholder={tabMeta.urlPlaceholder}
+                    className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isApplyingUrl || !urlInput.trim() || Boolean(inlineUrlValidation && !inlineUrlValidation.valid)}
+                  className="bg-slate-900 dark:bg-blue-600 hover:bg-slate-800 dark:hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-medium px-4 py-2 rounded-lg transition inline-flex items-center justify-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap"
+                >
+                  {isApplyingUrl ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Check className="w-3.5 h-3.5" />
+                  )}
+                  <span>{isApplyingUrl ? 'Verifying...' : tabMeta.buttonLabel}</span>
+                </button>
+              </form>
+              {inlineUrlValidation && !inlineUrlValidation.valid && (
+                <p className="text-[11px] text-rose-600 dark:text-rose-400 font-medium">
+                  {inlineUrlValidation.error}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Card 2: Active Asset Status */}
+          {currentAssetUrl ? (
+            <div
+              className={`rounded-xl p-4 border flex items-center justify-between gap-4 ${
+                previewLoadError
+                  ? 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/60'
+                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+              }`}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-16 h-11 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 shrink-0 p-1 flex items-center justify-center">
+                  {previewLoadError ? (
+                    <AlertCircle className="w-4 h-4 text-rose-500" />
+                  ) : (
+                    <img
+                      src={currentAssetUrl}
+                      alt={currentAssetName}
+                      referrerPolicy="no-referrer"
+                      onError={() => setPreviewLoadError(true)}
+                      className={
+                        subTab === 'login-bg'
+                          ? 'w-full h-full object-cover rounded-sm'
+                          : 'max-h-full max-w-full object-contain'
+                      }
+                    />
+                  )}
+                </div>
+
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
+                    {currentAssetName}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums mt-0.5">
+                    {previewLoadError ? (
+                      <span className="text-rose-600 dark:text-rose-400 font-sans font-medium">
+                        Preview unreachable — revert or upload a new asset
+                      </span>
+                    ) : (
+                      <>
+                        <span className="text-emerald-600 dark:text-emerald-400 font-sans font-medium">
+                          Active
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span>{assetFormat}</span>
+                        {activeMetrics?.valid && (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span>
+                              {activeMetrics.width} × {activeMetrics.height} px
+                            </span>
+                          </>
+                        )}
+                        <span aria-hidden="true">·</span>
+                        <span>{assetSizeKb > 0 ? `${assetSizeKb} KB` : 'Static / URL'}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                id={subTab === 'login-bg' ? 'remove-login-bg-card-btn' : undefined}
+                type="button"
+                onClick={revertAssetForTab}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium text-rose-700 dark:text-rose-400 bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 transition inline-flex items-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Revert</span>
+              </button>
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex items-center gap-2.5 text-xs text-slate-600 dark:text-slate-400">
+              <CheckCircle2 className="w-4 h-4 text-slate-400 dark:text-slate-500 shrink-0" />
+              <span>
+                {subTab === 'logo' && 'Default SokoPoS wordmark and badge lockup active.'}
+                {subTab === 'favicon' && 'Default SokoPoS blue S mark active in browser tabs.'}
+                {subTab === 'login-bg' && 'Default dark slate (#020617) terminal backdrop active.'}
+              </span>
+            </div>
+          )}
+
+          {/* Card 3: Curated Presets */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl p-5 border border-slate-200 dark:border-slate-800 space-y-3.5">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                {subTab === 'logo'
+                  ? 'Curated Brand Logo Presets'
+                  : subTab === 'favicon'
+                  ? 'Curated Favicon Presets'
+                  : 'Curated Terminal Background Presets'}
+              </h4>
+              <span className="text-[11px] text-slate-400 dark:text-slate-500">1-click apply</span>
+            </div>
+
+            {subTab === 'logo' && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {LOGO_PRESETS.map((preset) => {
+                  const isSelected = platformLogo === preset.url;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => applyAssetForTab(preset.url, preset.name)}
+                      className={`group rounded-lg border text-left transition cursor-pointer p-3 flex flex-col justify-between gap-2.5 ${
+                        isSelected
+                          ? 'border-blue-600 ring-1 ring-blue-600/30 bg-blue-50/50 dark:bg-blue-950/30'
+                          : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-950/40'
+                      }`}
+                    >
+                      <div className="h-10 bg-slate-50 rounded-md p-1.5 flex items-center justify-center border border-slate-200/80">
+                        <img
+                          src={preset.url}
+                          alt={preset.name}
+                          referrerPolicy="no-referrer"
+                          className="max-h-full max-w-full object-contain"
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-semibold text-xs text-slate-800 dark:text-slate-200 truncate">
+                            {preset.name}
+                          </span>
+                          {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
+                        </div>
+                        <span className="text-[11px] text-slate-400 dark:text-slate-500 block truncate">
+                          {preset.tag}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {subTab === 'favicon' && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {FAVICON_PRESETS.map((preset) => {
+                  const isSelected = platformFavicon === preset.url;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => applyAssetForTab(preset.url, preset.name)}
+                      className={`group rounded-lg border text-center transition cursor-pointer p-3 flex flex-col items-center gap-2 ${
+                        isSelected
+                          ? 'border-blue-600 ring-1 ring-blue-600/30 bg-blue-50/50 dark:bg-blue-950/30'
+                          : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-950/40'
+                      }`}
+                    >
+                      <div className="w-10 h-10 bg-slate-100 dark:bg-slate-900 rounded-lg p-1.5 flex items-center justify-center border border-slate-200/80 dark:border-slate-800">
+                        <img
+                          src={preset.url}
+                          alt={preset.name}
+                          referrerPolicy="no-referrer"
+                          className="w-7 h-7 object-contain"
+                        />
+                      </div>
+                      <div className="min-w-0 w-full">
+                        <span className="font-semibold text-xs text-slate-800 dark:text-slate-200 truncate block">
+                          {preset.name}
+                        </span>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 block truncate">
+                          {preset.tag}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {subTab === 'login-bg' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {LOGIN_BG_PRESETS.map((preset) => {
+                  const isSelected = loginBgGraphic === preset.url;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => applyAssetForTab(preset.url, preset.name)}
+                      className={`group rounded-lg border text-left transition cursor-pointer p-2.5 flex items-center gap-3 ${
+                        isSelected
+                          ? 'border-blue-600 ring-1 ring-blue-600/30 bg-blue-50/50 dark:bg-blue-950/30'
+                          : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-950/40'
+                      }`}
+                    >
+                      <div className="w-16 h-10 rounded-md overflow-hidden shrink-0 border border-slate-200/80 dark:border-slate-700 bg-slate-900">
+                        <img
+                          src={preset.url}
+                          alt={preset.name}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-semibold text-xs text-slate-800 dark:text-slate-200 truncate">
+                            {preset.name}
+                          </span>
+                          {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
+                        </div>
+                        <span className="text-[11px] text-slate-400 dark:text-slate-500 block truncate">
+                          {preset.tag}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Column: Real-Time Interactive Preview Canvas */}
+        <div className="lg:col-span-5 lg:sticky lg:top-6">
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            {/* Canvas Toolbar */}
+            <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 bg-slate-50/70 dark:bg-slate-950/50">
+              <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <Eye className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <span>Real-Time Preview Canvas</span>
+              </span>
+
+              {subTab === 'login-bg' ? (
+                <button
+                  type="button"
+                  onClick={() => setEnableBgScrim(!enableBgScrim)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[11px] font-medium text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 cursor-pointer transition whitespace-nowrap"
+                >
+                  <span>{enableBgScrim ? 'Scrim: On' : 'Scrim: Off'}</span>
+                </button>
+              ) : (
+                <div className="inline-flex items-center p-0.5 rounded-lg bg-slate-200/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewSurface('light')}
+                    className={`px-2 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer transition whitespace-nowrap ${
+                      previewSurface === 'light'
+                        ? 'bg-white text-slate-900 shadow-2xs font-semibold'
+                        : 'text-slate-500 dark:text-slate-400'
+                    }`}
+                  >
+                    <Sun className="w-3 h-3" />
+                    <span>Light</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewSurface('dark')}
+                    className={`px-2 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer transition whitespace-nowrap ${
+                      previewSurface === 'dark'
+                        ? 'bg-slate-900 text-white shadow-2xs font-semibold'
+                        : 'text-slate-500 dark:text-slate-400'
+                    }`}
+                  >
+                    <Moon className="w-3 h-3" />
+                    <span>Dark</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Canvas Body */}
+            <div className="p-4 space-y-4">
+              {subTab === 'logo' && (
+                <>
+                  {/* 1. POS Top Header Simulation */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                      <span className="font-medium">POS Header Bar</span>
+                      <span>{previewSurface === 'light' ? 'Light surface' : 'Dark surface'}</span>
+                    </div>
+                    <div
+                      className={`rounded-xl p-3 border transition flex items-center justify-between ${
+                        previewSurface === 'light'
+                          ? 'bg-white border-slate-200 text-slate-900'
+                          : 'bg-slate-950 border-slate-800 text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <AppLogo theme={previewSurface} size="sm" />
+                        <span
+                          className={`text-[10px] font-medium border-l pl-2 truncate ${
+                            previewSurface === 'light'
+                              ? 'text-slate-500 border-slate-200'
+                              : 'text-slate-400 border-slate-800'
+                          }`}
+                        >
+                          Flagship Branch
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 shrink-0">
+                        Online
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 2. Mobile Drawer Simulation */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                      <span className="font-medium">Mobile Drawer Header</span>
+                      <span>Compact width (280 px)</span>
+                    </div>
+                    <div className="flex justify-start">
+                      <div
+                        className={`w-[260px] rounded-xl p-3 border transition flex items-center justify-between ${
+                          previewSurface === 'light'
+                            ? 'bg-white border-slate-200 text-slate-900'
+                            : 'bg-slate-950 border-slate-800 text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Menu
+                            className={`w-4 h-4 shrink-0 ${
+                              previewSurface === 'light' ? 'text-slate-600' : 'text-slate-300'
+                            }`}
+                          />
+                          <AppLogo theme={previewSurface} size="sm" />
+                        </div>
+                        <span className="text-[10px] text-slate-400 shrink-0">Close</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3. Sign-In Navigation Bar + Safe Frame */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                      <span className="font-medium">Sign-In &amp; Landing Bar</span>
+                      <span>Light header</span>
+                    </div>
+                    <div className="rounded-xl p-3 border border-slate-200 dark:border-slate-800 bg-[#f4f7f6] flex items-center justify-between">
+                      <AppLogo theme="light" size="sm" />
+                      <div className="flex items-center gap-2 text-[10px] font-semibold text-slate-600">
+                        <span>Pricing</span>
+                        <span className="px-2 py-0.5 rounded bg-blue-600 text-white">Launch POS</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                      <span className="font-medium flex items-center gap-1">
+                        <Crop className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                        <span>Safe Frame Alignment (4:1)</span>
+                      </span>
+                      {activeMetrics?.valid && (
+                        <span className="font-mono text-[10px] tabular-nums">
+                          {activeMetrics.width} × {activeMetrics.height} px
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      className={`aspect-[4/1] rounded-xl border border-dashed flex items-center justify-center p-3 relative overflow-hidden ${
+                        previewSurface === 'light'
+                          ? 'bg-slate-50 border-slate-300'
+                          : 'bg-slate-950 border-slate-700'
+                      }`}
+                    >
+                      {platformLogo && !previewLoadError ? (
+                        <img
+                          src={platformLogo}
+                          alt="Logo blueprint fit"
+                          referrerPolicy="no-referrer"
+                          onError={() => setPreviewLoadError(true)}
+                          className="max-h-14 max-w-[240px] object-contain"
+                        />
+                      ) : (
+                        <div className="text-[11px] font-mono text-slate-400 text-center">
+                          400 × 100 px lockup area
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {subTab === 'favicon' && (
+                <>
+                  {/* Browser Tab Simulation */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                      <span className="font-medium">Desktop Browser Tab</span>
+                      <span className="tabular-nums">16 × 16 px rendering</span>
+                    </div>
+                    <div
+                      className={`rounded-xl overflow-hidden border ${
+                        previewSurface === 'light'
+                          ? 'bg-slate-100 border-slate-200'
+                          : 'bg-slate-950 border-slate-800'
+                      }`}
+                    >
+                      <div
+                        className={`px-3 pt-2.5 flex items-center gap-3 border-b ${
+                          previewSurface === 'light'
+                            ? 'bg-slate-200/80 border-slate-200'
+                            : 'bg-slate-900 border-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1 pb-2" aria-hidden="true">
+                          <span className="w-2.5 h-2.5 rounded-full bg-rose-400 inline-block" />
+                          <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" />
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block" />
+                        </div>
+
+                        <div
+                          className={`px-3 py-1.5 rounded-t-lg text-xs font-medium flex items-center gap-2 max-w-[210px] border-t border-x ${
+                            previewSurface === 'light'
+                              ? 'bg-white text-slate-900 border-slate-200'
+                              : 'bg-slate-950 text-slate-100 border-slate-800'
+                          }`}
+                        >
+                          <img
+                            src={!previewLoadError && platformFavicon ? platformFavicon : DEFAULT_FAVICON_SVG}
+                            alt="Tab Favicon"
+                            referrerPolicy="no-referrer"
+                            onError={() => setPreviewLoadError(true)}
+                            className="w-4 h-4 rounded-xs object-contain shrink-0"
+                          />
+                          <span className="truncate text-[11px] font-semibold">SokoPoS Point of Sale</span>
+                        </div>
+                      </div>
+
+                      <div
+                        className={`px-3 py-2 flex items-center gap-2 text-[11px] font-mono ${
+                          previewSurface === 'light'
+                            ? 'bg-white text-slate-500'
+                            : 'bg-slate-950 text-slate-400'
+                        }`}
+                      >
+                        <Lock className="w-3 h-3 text-emerald-500 shrink-0" />
+                        <span className="truncate">https://sokopos.co.ke/app</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Mobile / Bookmark Tile Preview */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                      <span className="font-medium">App Shortcut &amp; Bookmark Tile</span>
+                      <span className="tabular-nums">64 × 64 px</span>
+                    </div>
+                    <div
+                      className={`p-5 rounded-xl border flex items-center justify-center ${
+                        previewSurface === 'light'
+                          ? 'bg-slate-50 border-slate-200'
+                          : 'bg-slate-950 border-slate-800'
+                      }`}
+                    >
+                      <div className="flex flex-col items-center gap-1.5">
+                        <div
+                          className={`w-14 h-14 rounded-2xl border flex items-center justify-center p-2 shadow-2xs ${
+                            previewSurface === 'light'
+                              ? 'bg-white border-slate-200'
+                              : 'bg-slate-900 border-slate-800'
+                          }`}
+                        >
+                          <img
+                            src={!previewLoadError && platformFavicon ? platformFavicon : DEFAULT_FAVICON_SVG}
+                            alt="Shortcut Tile"
+                            referrerPolicy="no-referrer"
+                            className="w-9 h-9 object-contain"
+                          />
+                        </div>
+                        <span
+                          className={`text-[11px] font-medium ${
+                            previewSurface === 'light' ? 'text-slate-700' : 'text-slate-300'
+                          }`}
+                        >
+                          SokoPoS
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {subTab === 'login-bg' && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                    <span className="font-medium">16:9 Terminal Sign-In Simulation</span>
+                    {activeMetrics?.valid && (
+                      <span className="font-mono text-[10px] tabular-nums">
+                        {activeMetrics.width} × {activeMetrics.height} px
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="relative rounded-xl overflow-hidden border border-slate-800 aspect-[16/10] flex flex-col justify-between select-none bg-slate-950">
+                    {loginBgGraphic && !previewLoadError ? (
+                      <img
+                        src={loginBgGraphic}
+                        alt="Login background simulation"
+                        referrerPolicy="no-referrer"
+                        onError={() => setPreviewLoadError(true)}
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                    ) : null}
+
+                    {loginBgGraphic && enableBgScrim && !previewLoadError && (
+                      <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[1px]" />
+                    )}
+
+                    <div className="relative z-10 px-3 py-2 border-b border-white/10 bg-slate-950/60 flex items-center justify-between text-white">
+                      <AppLogo theme="dark" size="sm" />
+                      <span className="text-[9px] text-slate-300">Terminal Ready</span>
+                    </div>
+
+                    <div className="relative z-10 flex items-center justify-center p-2 my-auto">
+                      <div className="w-44 rounded-lg border shadow-lg overflow-hidden text-center bg-[#18202c] border-slate-700/60">
+                        <div className="p-2 space-y-1.5">
+                          <div className="grid grid-cols-2 gap-0.5 bg-[#0e131c] p-0.5 rounded-md border border-slate-800 text-[7px] font-bold">
+                            <span className="bg-[#343e4f] text-white rounded py-0.5">Login</span>
+                            <span className="text-slate-400 py-0.5">PIN Pad</span>
+                          </div>
+                          <div className="text-[9px] font-bold text-white leading-tight py-0.5">
+                            Log In to POS Terminal
+                          </div>
+                          <div className="w-full py-1 px-1.5 rounded-md bg-[#1d8af3] text-white font-semibold text-[8px] flex items-center justify-center">
+                            <span>Continue with Google</span>
+                          </div>
+                        </div>
+                        <div className="bg-[#283243] p-1.5 border-t border-slate-700/60 space-y-1">
+                          <div className="text-[6.5px] text-slate-300">Need to register a new location?</div>
+                          <div className="w-full py-0.5 px-1.5 rounded bg-[#DC2626] text-white font-semibold text-[7px] flex items-center justify-center">
+                            <span>Set Up a New Store</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="relative z-10 px-3 py-1.5 border-t border-white/10 bg-slate-950/60 text-center text-[8px] text-slate-400">
+                      © 2026 SokoPoS Enterprise Platform
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Asset Validation & Readiness Checklist */}
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                  Validation &amp; Readiness
+                </div>
+                <div className="space-y-1.5">
+                  {readinessChecks.map((chk) => (
+                    <div
+                      key={chk.label}
+                      className="flex items-center justify-between gap-2 text-[11px]"
+                    >
+                      <span className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+                        {chk.passed ? (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        ) : (
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                        )}
+                        <span className="font-medium">{chk.label}</span>
+                      </span>
+                      <span className="font-mono tabular-nums text-slate-500 dark:text-slate-400 text-right truncate">
+                        {chk.detail}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};

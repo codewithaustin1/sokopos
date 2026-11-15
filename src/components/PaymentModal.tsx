@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   X,
   Smartphone,
@@ -315,13 +315,19 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
 
   // Live M-Pesa STK Gateway state
   const [gatewayStkRef, setGatewayStkRef] = useState<string | null>(null);
+  const [gatewayStkProvider, setGatewayStkProvider] = useState<'paystack' | 'daraja' | null>(null);
+  const [gatewayStkReceipt, setGatewayStkReceipt] = useState<string | null>(null);
   const [gatewayStkStatus, setGatewayStkStatus] = useState<'idle' | 'pending' | 'verified' | 'failed'>('idle');
   const [gatewayStkError, setGatewayStkError] = useState<string | null>(null);
   const [isVerifyingStk, setIsVerifyingStk] = useState(false);
+  const stkFinalizedRef = useRef(false);
 
   useEffect(() => {
     if (!isOpen) {
+      stkFinalizedRef.current = false;
       setGatewayStkRef(null);
+      setGatewayStkProvider(null);
+      setGatewayStkReceipt(null);
       setGatewayStkStatus('idle');
       setGatewayStkError(null);
       setMpesaPromptSent(false);
@@ -347,18 +353,81 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
     );
   }, [cashPayable, roundedUp100, roundedUp500, roundedUp1000]);
 
+  const finalizeConfirmedStkTransaction = useCallback(
+    (confirmedRef: string, mpesaReceipt?: string, provider?: 'paystack' | 'daraja') => {
+      if (stkFinalizedRef.current) return;
+      stkFinalizedRef.current = true;
+
+      setGatewayStkStatus('verified');
+      if (provider) setGatewayStkProvider(provider);
+      if (mpesaReceipt) setGatewayStkReceipt(mpesaReceipt);
+
+      soundFx?.playSuccess?.();
+      const receiptNote = mpesaReceipt ? ` · Receipt ${mpesaReceipt}` : '';
+      showToast(
+        `M-Pesa payment confirmed (${confirmedRef}${receiptNote}). Transaction updated!`,
+        'success'
+      );
+
+      if (!hasZeroStock && activeShift?.status === 'open' && cart.length > 0) {
+        processPayment('mpesa', {
+          mpesaPhone: mpesaSubMode === 'stk' ? `+254 ${mpesaPhone}` : 'Customer QR Scan',
+          mpesaCode: mpesaReceipt || confirmedRef,
+          mpesaMode: 'stk',
+          mpesaType: mpesaQrType,
+          mpesaTarget:
+            mpesaQrType === 'buy_goods'
+              ? `Till ${tillNumber}`
+              : `Paybill ${paybillNumber} / Acc ${accountNumber}`,
+          paymentProvider: provider || gatewayStkProvider || 'daraja',
+          paymentReference: confirmedRef,
+          roundingDifference: 0,
+        });
+
+        safeConfetti({
+          particleCount: 50,
+          spread: 60,
+          origin: { y: 0.7 },
+        });
+      }
+
+      onClose();
+    },
+    [
+      soundFx,
+      showToast,
+      hasZeroStock,
+      activeShift,
+      cart.length,
+      processPayment,
+      mpesaSubMode,
+      mpesaPhone,
+      mpesaQrType,
+      tillNumber,
+      paybillNumber,
+      accountNumber,
+      gatewayStkProvider,
+      onClose,
+    ]
+  );
+
   const handleVerifyStkStatus = useCallback(
     async (refOverride?: string, silent = false) => {
       const ref = refOverride || gatewayStkRef;
-      if (!ref) return;
+      if (!ref || stkFinalizedRef.current) return;
       if (!silent) setIsVerifyingStk(true);
       if (!silent) setGatewayStkError(null);
       try {
-        const check = await verifyServerPayment(ref);
+        const idToken = auth.currentUser
+          ? await auth.currentUser.getIdToken().catch(() => undefined)
+          : undefined;
+        const check = await verifyServerPayment(ref, idToken);
         if (check.verified && check.status === 'success') {
-          setGatewayStkStatus('verified');
-          soundFx?.playSuccess?.();
-          showToast(`M-Pesa payment confirmed (${ref})`, 'success');
+          finalizeConfirmedStkTransaction(
+            check.reference || ref,
+            check.mpesaReceiptNumber,
+            check.provider
+          );
         } else if (check.status === 'failed' || check.status === 'abandoned') {
           setGatewayStkStatus('failed');
           setGatewayStkError(check.error || check.gatewayResponse || 'M-Pesa payment declined or cancelled.');
@@ -369,11 +438,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
         if (!silent) setIsVerifyingStk(false);
       }
     },
-    [gatewayStkRef, soundFx, showToast]
+    [gatewayStkRef, finalizeConfirmedStkTransaction, showToast]
   );
 
   const handleMpesaStkPush = async () => {
     setGatewayStkError(null);
+    stkFinalizedRef.current = false;
+    setGatewayStkReceipt(null);
     if (isDemoMode) {
       setIsSendingMpesaPrompt(true);
       await new Promise((res) => setTimeout(res, 900));
@@ -419,11 +490,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
       }
 
       setGatewayStkRef(res.reference);
+      if (res.provider) setGatewayStkProvider(res.provider);
       setMpesaPromptSent(true);
 
       if (res.status === 'success') {
-        setGatewayStkStatus('verified');
-        soundFx?.playSuccess?.();
+        finalizeConfirmedStkTransaction(res.reference, undefined, res.provider);
       } else {
         showToast(res.displayText || `STK prompt sent to +254 ${mpesaPhone}`, 'info');
       }
@@ -616,6 +687,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
 
     if (selectedMethod === 'mpesa') {
       const generatedCode =
+        gatewayStkReceipt ||
         gatewayStkRef ||
         `QX${Math.floor(1000 + Math.random() * 9000)}${String.fromCharCode(
           65 + Math.floor(Math.random() * 26)
@@ -626,7 +698,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
         mpesaMode: mpesaSubMode,
         mpesaType: mpesaQrType,
         mpesaTarget: mpesaQrType === 'buy_goods' ? `Till ${tillNumber}` : `Paybill ${paybillNumber} / Acc ${accountNumber}`,
-        paymentProvider: gatewayStkRef ? 'paystack' : undefined,
+        paymentReference: gatewayStkRef || undefined,
+        paymentProvider: gatewayStkProvider || (gatewayStkRef ? 'paystack' : undefined),
         roundingDifference: 0,
       };
     } else if (selectedMethod === 'cash') {
@@ -1407,15 +1480,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                                   {isDemoMode
                                     ? 'Sandbox STK Prompt Dispatched'
                                     : gatewayStkStatus === 'verified'
-                                    ? `M-Pesa Confirmed (${gatewayStkRef})`
+                                    ? `M-Pesa Confirmed (${gatewayStkReceipt || gatewayStkRef})`
                                     : `STK Prompt Sent to +254 ${mpesaPhone}`}
                                 </div>
                                 <div className="text-[11px] text-emerald-700">
                                   {isDemoMode
                                     ? 'Simulated PIN approval ready. Finalize payment below to complete.'
                                     : gatewayStkStatus === 'verified'
-                                    ? 'Payment verified by Paystack. Click Complete Sale to print receipt.'
-                                    : `Ref: ${gatewayStkRef || 'Pending'} · Auto-verifying every 3s while customer enters PIN.`}
+                                    ? `Payment verified via ${gatewayStkProvider === 'daraja' ? 'Daraja STK Query' : 'Payment Gateway'}. Transaction completed.`
+                                    : `Ref: ${gatewayStkRef || 'Pending'} · Auto-verifying every 3s via STK Query while customer enters PIN.`}
                                 </div>
                               </div>
                             </div>

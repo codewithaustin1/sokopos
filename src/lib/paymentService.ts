@@ -4,6 +4,11 @@ export type ClientPaymentFlowType = 'pos_sale' | 'subscription';
 export interface PaymentConfigResponse {
   provider: 'paystack' | 'daraja';
   configured: boolean;
+  subscriptionMpesaProvider?: 'paystack' | 'daraja';
+  cardProvider?: 'paystack';
+  darajaConfigured?: boolean;
+  darajaEnv?: 'sandbox' | 'production';
+  paystackConfigured?: boolean;
   channels: ClientPaymentChannel[];
 }
 
@@ -24,6 +29,8 @@ export interface InitiatePaymentResponse {
   provider?: 'paystack' | 'daraja';
   mode?: 'redirect' | 'stk_push';
   reference?: string;
+  checkoutRequestId?: string;
+  merchantRequestId?: string;
   status?: 'pay_offline' | 'pending' | 'success' | 'failed';
   displayText?: string;
   authorizationUrl?: string;
@@ -74,6 +81,7 @@ export interface VerifyPaymentResponse {
   status: 'success' | 'pending' | 'failed' | 'abandoned';
   amountKes?: number;
   channel?: string;
+  mpesaReceiptNumber?: string;
   gatewayResponse?: string;
   paidAt?: string;
   flowType?: ClientPaymentFlowType;
@@ -218,4 +226,129 @@ export async function verifyServerPayment(
       error: err?.message || 'Network error verifying payment.',
     };
   }
+}
+
+export interface KenyanMpesaValidationResult {
+  valid: boolean;
+  msisdn: string;
+  formattedDisplay: string;
+  error?: string;
+}
+
+/**
+ * Validates Kenyan M-Pesa phone formats (`07XXXXXXXX`, `01XXXXXXXX`,
+ * `2547XXXXXXXX`, `+2547XXXXXXXX`, `2541XXXXXXXX`, `+2541XXXXXXXX`)
+ * and normalizes to the 12-digit Daraja MSISDN (`254XXXXXXXXX`).
+ */
+export function validateKenyanMpesaPhone(rawPhone: string): KenyanMpesaValidationResult {
+  const compact = String(rawPhone || '').trim().replace(/[\s\-()]/g, '');
+  if (!compact) {
+    return {
+      valid: false,
+      msisdn: '',
+      formattedDisplay: '',
+      error: 'Please enter a Kenyan M-Pesa phone number (e.g. 07XXXXXXXX or +2547XXXXXXXX).',
+    };
+  }
+
+  const localMatch = /^0((?:7|1)\d{8})$/.exec(compact);
+  const intlMatch = /^\+?254((?:7|1)\d{8})$/.exec(compact);
+  const nineDigits = localMatch?.[1] || intlMatch?.[1];
+
+  if (!nineDigits) {
+    return {
+      valid: false,
+      msisdn: '',
+      formattedDisplay: '',
+      error: 'Enter a valid Kenyan M-Pesa number (07XXXXXXXX, 01XXXXXXXX, or +2547XXXXXXXX).',
+    };
+  }
+
+  const msisdn = `254${nineDigits}`;
+  const formattedDisplay = `+254 ${nineDigits.slice(0, 3)} ${nineDigits.slice(3, 6)} ${nineDigits.slice(6, 9)}`;
+
+  return {
+    valid: true,
+    msisdn,
+    formattedDisplay,
+  };
+}
+
+export interface PollPaymentOptions {
+  getIdToken?: () => Promise<string | undefined>;
+  intervalMs?: number;
+  maxAttempts?: number;
+  signal?: AbortSignal;
+  onUpdate?: (res: VerifyPaymentResponse, attempt: number) => void;
+}
+
+/**
+ * Periodically polls `/api/payments/verify/:reference` (which triggers Daraja STK Query
+ * or Paystack verification) until a terminal `'success'`, `'failed'`, or `'abandoned'`
+ * status is reached, or polling is aborted / hits `maxAttempts`.
+ */
+export async function pollSubscriptionPaymentStatus(
+  reference: string,
+  options: PollPaymentOptions = {}
+): Promise<VerifyPaymentResponse> {
+  const {
+    getIdToken,
+    intervalMs = 3000,
+    maxAttempts = 60,
+    signal,
+    onUpdate,
+  } = options;
+
+  let lastResult: VerifyPaymentResponse = {
+    verified: false,
+    reference,
+    status: 'pending',
+    gatewayResponse: 'Awaiting M-Pesa PIN confirmation.',
+  };
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (signal?.aborted) {
+      return lastResult;
+    }
+
+    const waitMs = attempt > 10 ? Math.max(intervalMs, 5000) : intervalMs;
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, waitMs);
+      if (signal) {
+        const onAbort = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        if (signal.aborted) {
+          clearTimeout(timer);
+          resolve();
+          return;
+        }
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
+    });
+
+    if (signal?.aborted) {
+      return lastResult;
+    }
+
+    const idToken = getIdToken ? await getIdToken().catch(() => undefined) : undefined;
+    if (signal?.aborted) {
+      return lastResult;
+    }
+
+    const res = await verifyServerPayment(reference, idToken);
+    lastResult = res;
+    onUpdate?.(res, attempt);
+
+    if (
+      (res.verified && res.status === 'success') ||
+      res.status === 'failed' ||
+      res.status === 'abandoned'
+    ) {
+      return res;
+    }
+  }
+
+  return lastResult;
 }

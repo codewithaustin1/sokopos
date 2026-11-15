@@ -413,6 +413,8 @@ export interface Transaction {
     roundingDifference?: number;
     notes?: string;
     storeCreditUsed?: number;
+    paymentProvider?: 'paystack' | 'daraja';
+    paymentReference?: string;
     splitBreakdown?: SplitPaymentTender[];
   };
   status: 'completed' | 'refunded' | 'partially_refunded';

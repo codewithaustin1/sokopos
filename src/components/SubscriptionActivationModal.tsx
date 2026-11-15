@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Check,
   Zap,
@@ -21,9 +21,13 @@ import {
 import { usePos } from '../context/PosContext';
 import { DEFAULT_PRICING_TIERS } from '../types/pricing';
 import {
+  getPaymentGatewayConfig,
   initiateServerPayment,
+  pollSubscriptionPaymentStatus,
+  validateKenyanMpesaPhone,
   verifyServerPayment,
   ClientPaymentChannel,
+  PaymentConfigResponse,
 } from '../lib/paymentService';
 import { trackPlatformEvent } from '../lib/telemetryService';
 import { auth } from '../lib/firebase';
@@ -58,10 +62,19 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
     selectedCheckoutBilling || 'monthly'
   );
 
+  const [gatewayConfig, setGatewayConfig] = useState<PaymentConfigResponse | null>(null);
+  const pollAbortControllerRef = useRef<AbortController | null>(null);
+
   useEffect(() => {
     if (isOpen) {
       setSelectedPlanId(selectedCheckoutPlan || 'business');
       setBillingCycle(selectedCheckoutBilling || 'monthly');
+      setPhoneTouched(false);
+      setPaymentError(null);
+      if (currentLocation?.phone) {
+        setPhoneNumber((prev) => prev || currentLocation.phone || '');
+      }
+      getPaymentGatewayConfig().then(setGatewayConfig).catch(() => {});
       trackPlatformEvent('subscription_modal_open', {
         businessId: currentBusiness?.id,
         businessName: currentBusiness?.name,
@@ -69,19 +82,30 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
         dedupeKey: `sub-modal-${currentBusiness?.id || 'anon'}`,
         dedupeTtlMs: 30_000,
       });
+    } else {
+      pollAbortControllerRef.current?.abort();
+      pollAbortControllerRef.current = null;
     }
-  }, [isOpen, selectedCheckoutPlan, selectedCheckoutBilling, currentBusiness?.id, currentBusiness?.name]);
+    return () => {
+      pollAbortControllerRef.current?.abort();
+      pollAbortControllerRef.current = null;
+    };
+  }, [isOpen, selectedCheckoutPlan, selectedCheckoutBilling, currentBusiness?.id, currentBusiness?.name, currentLocation?.phone]);
 
   const [paymentChannel, setPaymentChannel] = useState<ClientPaymentChannel>('mpesa_stk');
-  const [phoneNumber, setPhoneNumber] = useState(() => currentLocation?.phone || '0740463021');
+  const [phoneNumber, setPhoneNumber] = useState(() => currentLocation?.phone || '');
+  const [phoneTouched, setPhoneTouched] = useState(false);
   const [payerEmail, setPayerEmail] = useState(() => currentUser?.email || currentBusiness?.ownerEmail || '');
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [paymentStep, setPaymentStep] = useState<'select' | 'pending' | 'success'>('select');
   const [paymentRef, setPaymentRef] = useState<string>('');
+  const [mpesaReceiptNumber, setMpesaReceiptNumber] = useState<string>('');
   const [cardAuthUrl, setCardAuthUrl] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+
+  const phoneValidation = validateKenyanMpesaPhone(phoneNumber);
 
   if (!isOpen) return null;
 
@@ -97,7 +121,10 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
   const durationDays = isFree ? 3650 : billingCycle === 'annual' ? 365 : 30;
   const durationLabel = isFree ? 'Lifetime Free Software' : billingCycle === 'annual' ? '365 Days (1 Year)' : '30 Days';
 
-  const completeActivation = async (verifiedRef: string) => {
+  const completeActivation = async (verifiedRef: string, receiptNo?: string) => {
+    if (receiptNo) {
+      setMpesaReceiptNumber(receiptNo);
+    }
     if (activateBusinessSubscription) {
       await activateBusinessSubscription(
         currentBusiness?.id || 'biz-default',
@@ -114,29 +141,39 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
       setIsProcessingPayment(false);
       setPaymentStep('select');
       setCardAuthUrl(null);
+      setMpesaReceiptNumber('');
       onClose();
       onSuccess?.();
-    }, 1600);
+    }, 1800);
   };
 
   const pollUntilVerified = async (ref: string) => {
-    const maxAttempts = 40; // ~120s at 3s intervals
-    for (let i = 0; i < maxAttempts; i++) {
-      await new Promise((r) => setTimeout(r, 3000));
-      const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
-      const check = await verifyServerPayment(ref, idToken);
-      if (check.verified && check.status === 'success') {
-        await completeActivation(check.reference || ref);
-        return;
-      }
-      if (check.status === 'failed' || check.status === 'abandoned') {
-        setPaymentError(check.error || check.gatewayResponse || 'Payment was declined or cancelled.');
-        setIsProcessingPayment(false);
-        setPaymentStep('select');
-        return;
-      }
+    pollAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    pollAbortControllerRef.current = controller;
+
+    const finalCheck = await pollSubscriptionPaymentStatus(ref, {
+      getIdToken: () => auth.currentUser?.getIdToken().catch(() => undefined) ?? Promise.resolve(undefined),
+      intervalMs: 3000,
+      maxAttempts: 45,
+      signal: controller.signal,
+    });
+
+    if (controller.signal.aborted) return;
+
+    if (finalCheck.verified && finalCheck.status === 'success') {
+      await completeActivation(finalCheck.reference || ref, finalCheck.mpesaReceiptNumber);
+      return;
     }
-    setStatusMessage('Still awaiting confirmation. Click "Verify Payment Status" once completed.');
+    if (finalCheck.status === 'failed' || finalCheck.status === 'abandoned') {
+      setPaymentError(
+        finalCheck.error || finalCheck.gatewayResponse || 'Payment was declined or cancelled.'
+      );
+      setIsProcessingPayment(false);
+      setPaymentStep('select');
+      return;
+    }
+    setStatusMessage('Still awaiting M-Pesa PIN confirmation. Click "Verify Payment Status" once completed.');
   };
 
   const handleManualVerify = async () => {
@@ -147,13 +184,15 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
       const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
       const check = await verifyServerPayment(paymentRef, idToken);
       if (check.verified && check.status === 'success') {
-        await completeActivation(check.reference || paymentRef);
+        pollAbortControllerRef.current?.abort();
+        await completeActivation(check.reference || paymentRef, check.mpesaReceiptNumber);
       } else if (check.status === 'failed' || check.status === 'abandoned') {
+        pollAbortControllerRef.current?.abort();
         setPaymentError(check.error || check.gatewayResponse || 'Payment was not completed.');
         setIsProcessingPayment(false);
         setPaymentStep('select');
       } else {
-        setStatusMessage('Payment is still pending authorization. Please complete it and retry.');
+        setStatusMessage('Payment is still pending PIN authorization on your phone. Please complete it and retry.');
       }
     } finally {
       setIsCheckingStatus(false);
@@ -164,21 +203,39 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
     e.preventDefault();
     setPaymentError(null);
     setCardAuthUrl(null);
+    setMpesaReceiptNumber('');
 
-    if (paymentChannel === 'mpesa_stk' && phoneNumber.replace(/\D/g, '').length < 9) {
-      setPaymentError('Please enter a valid Safaricom M-Pesa phone number.');
-      return;
+    if (paymentChannel === 'mpesa_stk') {
+      setPhoneTouched(true);
+      if (!phoneValidation.valid) {
+        setPaymentError(
+          phoneValidation.error ||
+            'Enter a valid Kenyan M-Pesa number (07XXXXXXXX, 01XXXXXXXX, or +2547XXXXXXXX).'
+        );
+        return;
+      }
     }
     if (paymentChannel === 'card' && (!payerEmail.trim() || !payerEmail.includes('@'))) {
       setPaymentError('Please enter a valid email address for card receipt & 3DS verification.');
       return;
     }
 
+    const normalizedMpesaPhone =
+      paymentChannel === 'mpesa_stk' ? phoneValidation.msisdn : undefined;
+    const displayMpesaPhone =
+      paymentChannel === 'mpesa_stk' ? phoneValidation.formattedDisplay : phoneNumber;
+
+    pollAbortControllerRef.current?.abort();
     setIsProcessingPayment(true);
     setPaymentStep('pending');
+    const isDarajaActive =
+      paymentChannel === 'mpesa_stk' &&
+      gatewayConfig?.subscriptionMpesaProvider === 'daraja';
     setStatusMessage(
       paymentChannel === 'mpesa_stk'
-        ? `Sending M-Pesa STK Push to ${phoneNumber}...`
+        ? isDarajaActive
+          ? `Sending Safaricom M-Pesa Express STK prompt to ${displayMpesaPhone}...`
+          : `Sending M-Pesa STK Push to ${displayMpesaPhone}...`
         : 'Initializing secure Paystack Card checkout...'
     );
 
@@ -198,7 +255,7 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
         flowType: 'subscription',
         channel: paymentChannel,
         amountKes: payableAmount,
-        phone: paymentChannel === 'mpesa_stk' ? phoneNumber : undefined,
+        phone: normalizedMpesaPhone,
         email: payerEmail || currentBusiness?.ownerEmail || 'billing@sokopos.co.ke',
         businessId: currentBusiness?.id,
         planId: selectedPlanId,
@@ -210,7 +267,10 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
       }, idToken);
 
       if (!initRes.success || !initRes.reference) {
-        setPaymentError(initRes.error || 'Could not initiate Paystack payment.');
+        setPaymentError(
+          initRes.error ||
+            (isDarajaActive ? 'Could not send Safaricom M-Pesa STK prompt.' : 'Could not initiate Paystack payment.')
+        );
         setIsProcessingPayment(false);
         setPaymentStep('select');
         return;
@@ -231,7 +291,7 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
               reference: initRes.reference,
               businessId: currentBusiness?.id || 'biz-default',
               planId: selectedPlanId,
-              payer: paymentChannel === 'mpesa_stk' ? phoneNumber : payerEmail,
+              payer: paymentChannel === 'mpesa_stk' ? normalizedMpesaPhone || phoneNumber : payerEmail,
             })
           );
         } catch {
@@ -245,7 +305,7 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
 
       setStatusMessage(
         initRes.displayText ||
-          `M-Pesa STK prompt sent to ${phoneNumber}. Enter your M-Pesa PIN to authorize Ksh ${payableAmount.toLocaleString()}.`
+          `M-Pesa STK prompt sent to ${displayMpesaPhone}. Enter your M-Pesa PIN to authorize Ksh ${payableAmount.toLocaleString()}.`
       );
       pollUntilVerified(initRes.reference);
     } catch (err: any) {
@@ -359,6 +419,7 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
                 <button
                   type="button"
                   onClick={() => {
+                    pollAbortControllerRef.current?.abort();
                     setIsProcessingPayment(false);
                     setPaymentStep('select');
                     setCardAuthUrl(null);
@@ -380,8 +441,13 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
                   Payment Verified & Store Activated!
                 </h3>
                 <p className="text-xs text-slate-600 max-w-sm mx-auto">
-                  Reference: <span className="font-mono font-bold text-slate-800">{paymentRef}</span>. Active for{' '}
-                  <strong className="text-emerald-700">{durationLabel}</strong>.
+                  Reference: <span className="font-mono font-bold text-slate-800">{paymentRef}</span>
+                  {mpesaReceiptNumber ? (
+                    <>
+                      {' '}· M-Pesa Receipt: <span className="font-mono font-bold text-emerald-700">{mpesaReceiptNumber}</span>
+                    </>
+                  ) : null}
+                  . Active for <strong className="text-emerald-700">{durationLabel}</strong>.
                 </p>
               </div>
 
@@ -457,24 +523,60 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
                   </div>
 
                   <span className="text-[11px] font-semibold text-slate-500">
-                    Secured by Paystack KES
+                    {paymentChannel === 'mpesa_stk' &&
+                    gatewayConfig?.subscriptionMpesaProvider === 'daraja'
+                      ? `Safaricom M-Pesa Express${
+                          gatewayConfig.darajaEnv === 'sandbox' ? ' (Sandbox)' : ''
+                        }`
+                      : 'Secured by Paystack KES'}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
                   {paymentChannel === 'mpesa_stk' ? (
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                      <label
+                        htmlFor="sub-mpesa-phone-input"
+                        className="block text-[10px] font-bold text-slate-600 uppercase mb-1"
+                      >
                         M-Pesa Phone Number
                       </label>
                       <input
+                        id="sub-mpesa-phone-input"
                         type="tel"
+                        inputMode="tel"
+                        autoComplete="tel"
                         required
                         value={phoneNumber}
-                        onChange={(e) => setPhoneNumber(e.target.value)}
-                        placeholder="e.g. 0740 463 021"
-                        className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl text-slate-900 font-mono font-medium focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                        onChange={(e) => {
+                          setPhoneNumber(e.target.value);
+                          if (paymentError) setPaymentError(null);
+                        }}
+                        onBlur={() => setPhoneTouched(true)}
+                        placeholder="07XXXXXXXX or +2547XXXXXXXX"
+                        aria-invalid={phoneTouched && !phoneValidation.valid}
+                        className={`w-full px-3 py-2 text-xs bg-white border rounded-xl text-slate-900 font-mono font-medium focus:outline-hidden focus:ring-2 ${
+                          phoneTouched && !phoneValidation.valid
+                            ? 'border-red-400 focus:ring-red-500'
+                            : phoneValidation.valid
+                            ? 'border-emerald-400 focus:ring-emerald-500'
+                            : 'border-slate-300 focus:ring-blue-500'
+                        }`}
                       />
+                      {phoneValidation.valid ? (
+                        <p className="mt-1 text-[10px] text-emerald-700 font-medium flex items-center gap-1">
+                          <Check className="w-3 h-3 shrink-0" />
+                          <span>STK Push target: {phoneValidation.formattedDisplay}</span>
+                        </p>
+                      ) : phoneTouched ? (
+                        <p className="mt-1 text-[10px] text-red-600 font-medium">
+                          Use 07XXXXXXXX, 01XXXXXXXX, or +2547XXXXXXXX
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          Accepted: 07XXXXXXXX, 01XXXXXXXX, or +2547XXXXXXXX
+                        </p>
+                      )}
                     </div>
                   ) : (
                     <div>

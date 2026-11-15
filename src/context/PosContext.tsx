@@ -332,6 +332,8 @@ interface PosContextType {
   platformFaviconName: string | null;
   setPlatformFavicon: (favicon: string | null, name?: string) => Promise<void>;
   removePlatformFavicon: () => Promise<void>;
+  refreshPlatformSettings: () => Promise<boolean>;
+  resetAllPlatformBranding: () => Promise<void>;
 
   // Locations (Scoped to Current Business)
   locations: Location[];
@@ -457,6 +459,8 @@ interface PosContextType {
       mpesaMode?: string;
       mpesaType?: string;
       mpesaTarget?: string;
+      paymentProvider?: 'paystack' | 'daraja';
+      paymentReference?: string;
       splitBreakdown?: SplitPaymentTender[];
     }
   ) => Transaction;
@@ -1534,25 +1538,25 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setLoginBgGraphicState(graphic);
       setLoginBgGraphicName(name || null);
 
-      if (graphic) {
-        localStorage.setItem(STORAGE_KEYS.LOGIN_BG_GRAPHIC, graphic);
-        if (name) localStorage.setItem(STORAGE_KEYS.LOGIN_BG_NAME, name);
-      } else {
-        localStorage.removeItem(STORAGE_KEYS.LOGIN_BG_GRAPHIC);
-        localStorage.removeItem(STORAGE_KEYS.LOGIN_BG_NAME);
+      try {
+        if (graphic) {
+          localStorage.setItem(STORAGE_KEYS.LOGIN_BG_GRAPHIC, graphic);
+          if (name) localStorage.setItem(STORAGE_KEYS.LOGIN_BG_NAME, name);
+        } else {
+          localStorage.removeItem(STORAGE_KEYS.LOGIN_BG_GRAPHIC);
+          localStorage.removeItem(STORAGE_KEYS.LOGIN_BG_NAME);
+        }
+      } catch (storageErr) {
+        console.warn('Local cache quota notice for login background:', storageErr);
       }
 
       // Persist to Firestore platform_settings collection
-      try {
-        await savePlatformSettingsToFirestore({
-          loginBgGraphic: graphic,
-          loginBgGraphicName: name || '',
-          updatedAt: new Date().toISOString(),
-          updatedBy: currentUser?.email || (isSuperAdmin ? SUPER_ADMIN_EMAIL : 'super_admin'),
-        });
-      } catch (err) {
-        console.warn('Failed to persist platform settings to Firestore:', err);
-      }
+      const cloudResult = await savePlatformSettingsToFirestore({
+        loginBgGraphic: graphic,
+        loginBgGraphicName: name || '',
+        updatedAt: new Date().toISOString(),
+        updatedBy: currentUser?.email || (isSuperAdmin ? SUPER_ADMIN_EMAIL : 'super_admin'),
+      });
 
       // Record Super Admin Audit Trail
       logSuperAdminAction(
@@ -1567,10 +1571,18 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         { loginBgGraphic: graphic ? 'custom-image' : null, name }
       );
 
+      if (!cloudResult.ok) {
+        showToast(
+          `Applied locally, but cloud sync could not complete: ${cloudResult.error || 'Verify Super Admin Google sign-in.'}`,
+          'warning'
+        );
+        return;
+      }
+
       showToast(
         graphic
-          ? 'Platform login screen background graphic applied successfully'
-          : 'Login background graphic removed. Login screen reverted to default appearance.',
+          ? 'Platform login screen background graphic applied & synced'
+          : 'Login background graphic removed. Reverted to default appearance.',
         'success'
       );
     },
@@ -1587,25 +1599,25 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setPlatformLogoState(logo);
       setPlatformLogoName(name || null);
 
-      if (logo) {
-        localStorage.setItem(STORAGE_KEYS.PLATFORM_LOGO, logo);
-        if (name) localStorage.setItem(STORAGE_KEYS.PLATFORM_LOGO_NAME, name);
-      } else {
-        localStorage.removeItem(STORAGE_KEYS.PLATFORM_LOGO);
-        localStorage.removeItem(STORAGE_KEYS.PLATFORM_LOGO_NAME);
+      try {
+        if (logo) {
+          localStorage.setItem(STORAGE_KEYS.PLATFORM_LOGO, logo);
+          if (name) localStorage.setItem(STORAGE_KEYS.PLATFORM_LOGO_NAME, name);
+        } else {
+          localStorage.removeItem(STORAGE_KEYS.PLATFORM_LOGO);
+          localStorage.removeItem(STORAGE_KEYS.PLATFORM_LOGO_NAME);
+        }
+      } catch (storageErr) {
+        console.warn('Local cache quota notice for platform logo:', storageErr);
       }
 
       // Persist to Firestore platform_settings collection
-      try {
-        await savePlatformSettingsToFirestore({
-          platformLogo: logo,
-          platformLogoName: name || '',
-          updatedAt: new Date().toISOString(),
-          updatedBy: currentUser?.email || (isSuperAdmin ? SUPER_ADMIN_EMAIL : 'super_admin'),
-        });
-      } catch (err) {
-        console.warn('Failed to persist platform logo to Firestore:', err);
-      }
+      const cloudResult = await savePlatformSettingsToFirestore({
+        platformLogo: logo,
+        platformLogoName: name || '',
+        updatedAt: new Date().toISOString(),
+        updatedBy: currentUser?.email || (isSuperAdmin ? SUPER_ADMIN_EMAIL : 'super_admin'),
+      });
 
       // Record Super Admin Audit Trail
       logSuperAdminAction(
@@ -1620,9 +1632,17 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         { platformLogo: logo ? 'custom-logo' : null, name }
       );
 
+      if (!cloudResult.ok) {
+        showToast(
+          `Logo applied locally, but cloud sync could not complete: ${cloudResult.error || 'Verify Super Admin Google sign-in.'}`,
+          'warning'
+        );
+        return;
+      }
+
       showToast(
         logo
-          ? 'Platform brand logo applied successfully across POS and headers'
+          ? 'Platform brand logo applied & synced across POS headers'
           : 'Platform logo removed. Reverted to default SokoPoS brand setup.',
         'success'
       );
@@ -1640,25 +1660,25 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setPlatformFaviconState(favicon);
       setPlatformFaviconName(name || null);
 
-      if (favicon) {
-        localStorage.setItem(STORAGE_KEYS.PLATFORM_FAVICON, favicon);
-        if (name) localStorage.setItem(STORAGE_KEYS.PLATFORM_FAVICON_NAME, name);
-      } else {
-        localStorage.removeItem(STORAGE_KEYS.PLATFORM_FAVICON);
-        localStorage.removeItem(STORAGE_KEYS.PLATFORM_FAVICON_NAME);
+      try {
+        if (favicon) {
+          localStorage.setItem(STORAGE_KEYS.PLATFORM_FAVICON, favicon);
+          if (name) localStorage.setItem(STORAGE_KEYS.PLATFORM_FAVICON_NAME, name);
+        } else {
+          localStorage.removeItem(STORAGE_KEYS.PLATFORM_FAVICON);
+          localStorage.removeItem(STORAGE_KEYS.PLATFORM_FAVICON_NAME);
+        }
+      } catch (storageErr) {
+        console.warn('Local cache quota notice for platform favicon:', storageErr);
       }
 
       // Persist to Firestore platform_settings collection
-      try {
-        await savePlatformSettingsToFirestore({
-          platformFavicon: favicon,
-          platformFaviconName: name || '',
-          updatedAt: new Date().toISOString(),
-          updatedBy: currentUser?.email || (isSuperAdmin ? SUPER_ADMIN_EMAIL : 'super_admin'),
-        });
-      } catch (err) {
-        console.warn('Failed to persist platform favicon to Firestore:', err);
-      }
+      const cloudResult = await savePlatformSettingsToFirestore({
+        platformFavicon: favicon,
+        platformFaviconName: name || '',
+        updatedAt: new Date().toISOString(),
+        updatedBy: currentUser?.email || (isSuperAdmin ? SUPER_ADMIN_EMAIL : 'super_admin'),
+      });
 
       // Record Super Admin Audit Trail
       logSuperAdminAction(
@@ -1673,9 +1693,17 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         { platformFavicon: favicon ? 'custom-favicon' : null, name }
       );
 
+      if (!cloudResult.ok) {
+        showToast(
+          `Favicon applied locally, but cloud sync could not complete: ${cloudResult.error || 'Verify Super Admin Google sign-in.'}`,
+          'warning'
+        );
+        return;
+      }
+
       showToast(
         favicon
-          ? 'Platform favicon applied successfully to browser tab'
+          ? 'Platform favicon applied & synced to browser tabs'
           : 'Platform favicon removed. Reverted to default SokoPoS icon setup.',
         'success'
       );
@@ -1686,6 +1714,132 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const removePlatformFavicon = useCallback(async () => {
     await setPlatformFavicon(null);
   }, [setPlatformFavicon]);
+
+  const refreshPlatformSettings = useCallback(async (): Promise<boolean> => {
+    try {
+      const settings = await getPlatformSettingsFromFirestore(true);
+      if (!settings) return false;
+
+      if (settings.loginBgGraphic !== undefined) {
+        setLoginBgGraphicState(settings.loginBgGraphic);
+        if (settings.loginBgGraphic) {
+          localStorage.setItem(STORAGE_KEYS.LOGIN_BG_GRAPHIC, settings.loginBgGraphic);
+        } else {
+          localStorage.removeItem(STORAGE_KEYS.LOGIN_BG_GRAPHIC);
+        }
+      }
+      if (settings.loginBgGraphicName !== undefined) {
+        setLoginBgGraphicName(settings.loginBgGraphicName || null);
+        if (settings.loginBgGraphicName) {
+          localStorage.setItem(STORAGE_KEYS.LOGIN_BG_NAME, settings.loginBgGraphicName);
+        } else {
+          localStorage.removeItem(STORAGE_KEYS.LOGIN_BG_NAME);
+        }
+      }
+
+      if (settings.platformLogo !== undefined) {
+        setPlatformLogoState(settings.platformLogo);
+        if (settings.platformLogo) {
+          localStorage.setItem(STORAGE_KEYS.PLATFORM_LOGO, settings.platformLogo);
+        } else {
+          localStorage.removeItem(STORAGE_KEYS.PLATFORM_LOGO);
+        }
+      }
+      if (settings.platformLogoName !== undefined) {
+        setPlatformLogoName(settings.platformLogoName || null);
+        if (settings.platformLogoName) {
+          localStorage.setItem(STORAGE_KEYS.PLATFORM_LOGO_NAME, settings.platformLogoName);
+        } else {
+          localStorage.removeItem(STORAGE_KEYS.PLATFORM_LOGO_NAME);
+        }
+      }
+
+      if (settings.platformFavicon !== undefined) {
+        setPlatformFaviconState(settings.platformFavicon);
+        if (settings.platformFavicon) {
+          localStorage.setItem(STORAGE_KEYS.PLATFORM_FAVICON, settings.platformFavicon);
+        } else {
+          localStorage.removeItem(STORAGE_KEYS.PLATFORM_FAVICON);
+        }
+      }
+      if (settings.platformFaviconName !== undefined) {
+        setPlatformFaviconName(settings.platformFaviconName || null);
+        if (settings.platformFaviconName) {
+          localStorage.setItem(STORAGE_KEYS.PLATFORM_FAVICON_NAME, settings.platformFaviconName);
+        } else {
+          localStorage.removeItem(STORAGE_KEYS.PLATFORM_FAVICON_NAME);
+        }
+      }
+
+      showToast('Platform branding synced from Firestore', 'success');
+      return true;
+    } catch {
+      showToast('Could not refresh platform branding from Firestore.', 'warning');
+      return false;
+    }
+  }, [showToast]);
+
+  const resetAllPlatformBranding = useCallback(async () => {
+    const hadAny = Boolean(platformLogo || platformFavicon || loginBgGraphic);
+    setLoginBgGraphicState(null);
+    setLoginBgGraphicName(null);
+    setPlatformLogoState(null);
+    setPlatformLogoName(null);
+    setPlatformFaviconState(null);
+    setPlatformFaviconName(null);
+
+    try {
+      localStorage.removeItem(STORAGE_KEYS.LOGIN_BG_GRAPHIC);
+      localStorage.removeItem(STORAGE_KEYS.LOGIN_BG_NAME);
+      localStorage.removeItem(STORAGE_KEYS.PLATFORM_LOGO);
+      localStorage.removeItem(STORAGE_KEYS.PLATFORM_LOGO_NAME);
+      localStorage.removeItem(STORAGE_KEYS.PLATFORM_FAVICON);
+      localStorage.removeItem(STORAGE_KEYS.PLATFORM_FAVICON_NAME);
+    } catch {
+      // ignore storage errors
+    }
+
+    const cloudResult = await savePlatformSettingsToFirestore({
+      loginBgGraphic: null,
+      loginBgGraphicName: '',
+      platformLogo: null,
+      platformLogoName: '',
+      platformFavicon: null,
+      platformFaviconName: '',
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentUser?.email || (isSuperAdmin ? SUPER_ADMIN_EMAIL : 'super_admin'),
+    });
+
+    if (hadAny) {
+      logSuperAdminAction(
+        'platform',
+        'business',
+        'platform-branding-reset-all',
+        'update',
+        'Reset all custom platform branding assets (logo, favicon, login background) to defaults',
+        { hadCustomAssets: true },
+        { loginBgGraphic: null, platformLogo: null, platformFavicon: null }
+      );
+    }
+
+    if (!cloudResult.ok) {
+      showToast(
+        `Defaults restored locally, but cloud sync could not complete: ${cloudResult.error || 'Verify Super Admin Google sign-in.'}`,
+        'warning'
+      );
+      return;
+    }
+
+    showToast('All platform branding assets reset to SokoPoS defaults', 'success');
+  }, [
+    currentUser?.email,
+    isSuperAdmin,
+    logSuperAdminAction,
+    loginBgGraphic,
+    platformFavicon,
+    platformLogo,
+    showToast,
+  ]);
 
   // 7. Multi-Tenant Locations Store
   const [allLocations, setAllLocations] = useState<Location[]>(() => {
@@ -4681,6 +4835,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       mpesaMode?: string;
       mpesaType?: string;
       mpesaTarget?: string;
+      paymentProvider?: 'paystack' | 'daraja';
+      paymentReference?: string;
       splitBreakdown?: SplitPaymentTender[];
     }
   ): Transaction => {
@@ -8618,6 +8774,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         platformFaviconName,
         setPlatformFavicon,
         removePlatformFavicon,
+        refreshPlatformSettings,
+        resetAllPlatformBranding,
 
         locations,
         currentLocation,

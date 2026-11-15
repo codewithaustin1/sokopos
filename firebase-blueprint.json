@@ -221,12 +221,16 @@
     },
     "PlatformSettings": {
       "title": "PlatformSettings",
-      "description": "Global platform configurations including login page background graphics",
+      "description": "Global platform configurations including custom brand logo, favicon, and login page background graphics",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
         "loginBgGraphic": { "type": "string" },
         "loginBgGraphicName": { "type": "string" },
+        "platformLogo": { "type": "string" },
+        "platformLogoName": { "type": "string" },
+        "platformFavicon": { "type": "string" },
+        "platformFaviconName": { "type": "string" },
         "updatedAt": { "type": "string" },
         "updatedBy": { "type": "string" }
       },
@@ -398,6 +402,36 @@
         "amountKes": { "type": "number" }
       },
       "required": ["id", "dateKey", "timestamp", "eventType", "sessionId", "deviceType"]
+    },
+    "PaymentRecord": {
+      "title": "PaymentRecord",
+      "description": "Server-authoritative payment intent, Daraja STK Push / Paystack webhook audit, and verification record",
+      "type": "object",
+      "properties": {
+        "reference": { "type": "string", "maxLength": 128 },
+        "provider": { "type": "string", "enum": ["paystack", "daraja"] },
+        "flowType": { "type": "string", "enum": ["subscription", "pos_sale"] },
+        "channel": { "type": "string", "enum": ["mpesa_stk", "card"] },
+        "amountKes": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "pay_offline", "success", "failed", "abandoned"] },
+        "businessId": { "type": "string", "maxLength": 128 },
+        "planId": { "type": "string", "maxLength": 64 },
+        "billingCycle": { "type": "string", "maxLength": 32 },
+        "durationDays": { "type": "number" },
+        "checkoutRequestId": { "type": "string", "maxLength": 128 },
+        "merchantRequestId": { "type": "string", "maxLength": 128 },
+        "mpesaReceiptNumber": { "type": "string", "maxLength": 64 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "customerEmail": { "type": "string", "maxLength": 160 },
+        "resultCode": { "type": "number" },
+        "pollAttempts": { "type": "number" },
+        "resolvedBy": { "type": "string", "maxLength": 64 },
+        "gatewayResponse": { "type": "string", "maxLength": 256 },
+        "paidAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["reference", "provider", "status"]
     }
   },
   "firestore": {
@@ -472,6 +506,10 @@
     "/platform_traffic_events/{eventId}": {
       "schema": "PlatformTrafficEvent",
       "description": "Bounded non-PII milestone conversion events readable strictly by Super Admin"
+    },
+    "/payment_records/{recordId}": {
+      "schema": "PaymentRecord",
+      "description": "Server-side payment intents, Daraja STK Push callbacks, and Paystack webhook records"
     }
   }
 }
