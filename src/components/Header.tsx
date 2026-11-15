@@ -25,6 +25,7 @@ import { usePos } from '../context/PosContext';
 import { ScannerStatusBadge } from './ScannerStatusBadge';
 import { AppLogo } from './common/AppLogo';
 import { PWAInstallButton } from './PWAInstallButton';
+import { GoogleTranslateWidget } from './common/GoogleTranslateWidget';
 
 interface HeaderProps {
   currentTab?: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers' | 'settings' | 'super-admin';
@@ -269,6 +270,10 @@ export const Header: React.FC<HeaderProps> = ({
               : `${t('action_offline', 'Offline')}${pendingOfflineCount > 0 ? ` · ${pendingOfflineCount}` : ''}`}
           </span>
         </button>
+
+        <div className="hidden lg:block">
+          <GoogleTranslateWidget />
+        </div>
 
         {/* Consolidated User & Terminal Utilities Menu */}
         <div className="relative pl-1.5 sm:pl-2 border-l border-slate-200">

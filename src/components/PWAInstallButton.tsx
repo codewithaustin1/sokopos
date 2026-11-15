@@ -67,7 +67,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 ${className}`}
         >
           <Download className="w-3.5 h-3.5 text-slate-500" />
-          <span>Install App</span>
+          <span>Get the App</span>
         </button>
       );
     }
@@ -101,7 +101,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
         >
           <span className="flex items-center gap-2.5 min-w-0">
             <Smartphone className="w-4 h-4 text-slate-500 shrink-0" />
-            <span className="truncate">{variant === 'menu-item' ? 'Install SokoPoS App' : 'Install App'}</span>
+            <span className="truncate">Get the App</span>
           </span>
           {variant === 'menu-item' && (
             <span className="text-[11px] text-slate-400 whitespace-nowrap shrink-0">iOS</span>
