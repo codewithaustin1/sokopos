@@ -211,15 +211,6 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
     });
   };
 
-  const handleWhatsAppSupport = () => {
-    handleItemClick(() => {
-      const text = encodeURIComponent(
-        'Hello SokoPoS Team! I need assistance with my Point of Sale setup in Kenya.'
-      );
-      window.open(`https://wa.me/254740463021?text=${text}`, '_blank', 'noopener,noreferrer');
-    });
-  };
-
   const handleFooterCta = () => {
     handleItemClick(() => {
       if (isLoggedIn) {
@@ -459,7 +450,7 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
                 className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-blue-50 hover:text-blue-600 transition-all cursor-pointer group text-sm w-full text-left"
               >
                 <CreditCard className="w-5 h-5 text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" />
-                <span className="truncate flex-1">Pricing Plans</span>
+                <span className="truncate flex-1">Pricing</span>
               </button>
 
               <button
@@ -468,25 +459,7 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
                 className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-emerald-700 transition-all cursor-pointer group text-sm w-full text-left"
               >
                 <Gift className="w-5 h-5 text-emerald-600 group-hover:text-emerald-700 transition-colors shrink-0" />
-                <span className="truncate flex-1">Partner Program (20%)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleItemClick(() => onAuthAction?.())}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-blue-50 hover:text-blue-600 transition-all cursor-pointer group text-sm w-full text-left"
-              >
-                <User className="w-5 h-5 text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" />
-                <span className="truncate flex-1">Merchant Sign In</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleWhatsAppSupport}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-blue-50 hover:text-blue-600 transition-all cursor-pointer group text-sm w-full text-left"
-              >
-                <MessageCircle className="w-5 h-5 text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" />
-                <span className="truncate flex-1">WhatsApp Support</span>
+                <span className="truncate flex-1">Partners</span>
               </button>
             </>
           )}

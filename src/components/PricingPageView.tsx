@@ -252,22 +252,22 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
   return (
     <div
       id="pricing-page"
-      className="min-h-full w-full flex flex-col justify-between relative selection:bg-[#1565d8] selection:text-white"
+      className="min-h-full w-full flex flex-col justify-between relative selection:bg-[#059669] selection:text-white"
       style={{
-        backgroundColor: '#f4f7f6',
-        color: '#0e1a2b',
+        backgroundColor: '#f8fafc',
+        color: '#090d16',
         fontFamily: 'var(--body, Figtree, system-ui, sans-serif)',
       }}
     >
       {/* Scoped CSS for light mode fidelity matching landing page */}
       <style>{`
         #pricing-page {
-          --bg: #f4f7f6;
+          --bg: #f8fafc;
           --surface: #ffffff;
-          --ink: #0e1a2b;
-          --muted: #4c5a6b;
-          --line: #d9e1e6;
-          --accent: #0a7d46;
+          --ink: #090d16;
+          --muted: #475569;
+          --line: #e2e8f0;
+          --accent: #059669;
           --on-accent: #ffffff;
           --mark: #d98e04;
           --mark-soft: #fbf0d6;
@@ -498,7 +498,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
               e.preventDefault();
               navigateToSection('industry-solutions');
             }}
-            className="hover:text-[#1565d8] transition"
+            className="hover:text-[#059669] transition"
           >
             Solutions
           </a>
@@ -508,7 +508,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
               e.preventDefault();
               navigateToSection('kenya-payments');
             }}
-            className="hover:text-[#1565d8] transition"
+            className="hover:text-[#059669] transition"
           >
             M-Pesa &amp; eTIMS
           </a>
@@ -518,7 +518,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
               e.preventDefault();
               navigateToSection('hardware-guide');
             }}
-            className="hover:text-[#1565d8] transition"
+            className="hover:text-[#059669] transition"
           >
             Hardware Freedom
           </a>
@@ -528,7 +528,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
               e.preventDefault();
               navigateToSection('pricing-comparison');
             }}
-            className="hover:text-[#1565d8] transition"
+            className="hover:text-[#059669] transition"
           >
             Why SokoPoS
           </a>
@@ -554,7 +554,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
               type="button"
               id="pricing-top-nav-login-btn"
               onClick={onBackToLogin}
-              className="hidden sm:inline-flex items-center px-4 py-1.5 rounded-xl bg-[#1565d8] hover:bg-[#1255b5] text-white font-bold text-xs shadow-md shadow-blue-500/20 transition cursor-pointer"
+              className="hidden sm:inline-flex items-center px-4 py-1.5 rounded-xl bg-[#059669] hover:bg-[#047857] text-white font-bold text-xs shadow-md shadow-emerald-500/20 transition cursor-pointer"
             >
               Login
             </button>
@@ -759,7 +759,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
             onClick={onBackToLogin}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-[#0e1a2b] text-xs font-bold border border-[#d9e1e6] transition cursor-pointer shadow-xs"
           >
-            <ArrowLeft className="w-4 h-4 text-[#1565d8]" />
+            <ArrowLeft className="w-4 h-4 text-[#059669]" />
             <span>{currentUser ? 'Return to Active POS Register' : 'Return to POS Terminal Login'}</span>
           </button>
 

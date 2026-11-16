@@ -64,7 +64,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
     terms: {
       title: 'Terms of Service',
       subtitle: 'SokoPoS Cloud Master Services Agreement & End-User License',
-      icon: <FileText className="w-6 h-6 text-blue-600" />,
+      icon: <FileText className="w-6 h-6 text-emerald-600" />,
     },
     privacy: {
       title: 'Privacy Policy & Data Protection',
@@ -74,7 +74,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
     faq: {
       title: 'Frequently Asked Questions (FAQ)',
       subtitle: 'Everything you need to know about SokoPoS terminal setup and operations',
-      icon: <HelpCircle className="w-6 h-6 text-blue-600" />,
+      icon: <HelpCircle className="w-6 h-6 text-emerald-600" />,
     },
     ownership: {
       title: 'Ownership & Legal Notice',
@@ -93,18 +93,18 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
   return (
     <div
       id="legal-page-body"
-      className="min-h-screen w-full flex flex-col justify-between font-sans selection:bg-[#1565d8] selection:text-white bg-[#f4f7f6] text-[#0e1a2b]"
+      className="min-h-screen w-full flex flex-col justify-between font-sans selection:bg-[#059669] selection:text-white bg-[#f8fafc] text-[#090d16]"
     >
       {/* Top Navigation Bar: Light mode */}
-      <header className="fixed top-0 left-0 right-0 z-30 w-full border-b border-[#d9e1e6] bg-[#f4f7f6]/95 backdrop-blur-md px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4 shadow-xs">
+      <header className="fixed top-0 left-0 right-0 z-30 w-full border-b border-[#e2e8f0] bg-[#f8fafc]/95 backdrop-blur-md px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4 shadow-xs">
         <div className="flex items-center gap-3 sm:gap-4">
           <button
             type="button"
             id="back-to-terminal-btn"
             onClick={onBackToLogin}
-            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-[#0e1a2b] text-xs font-bold border border-[#d9e1e6] transition cursor-pointer shadow-xs"
+            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-[#090d16] text-xs font-bold border border-[#e2e8f0] transition cursor-pointer shadow-xs"
           >
-            <ArrowLeft className="w-4 h-4 text-[#1565d8]" />
+            <ArrowLeft className="w-4 h-4 text-[#059669]" />
             <span className="hidden sm:inline">Back to POS Terminal</span>
             <span className="sm:hidden">Back</span>
           </button>
@@ -165,7 +165,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
             <button
               type="button"
               onClick={onBackToLogin}
-              className="hover:text-[#1565d8] transition cursor-pointer"
+              className="hover:text-[#059669] transition cursor-pointer"
             >
               Home
             </button>
@@ -184,7 +184,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
               onClick={() => onTabChange('terms')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                 currentTab === 'terms'
-                  ? 'bg-[#1565d8] text-white shadow-md shadow-blue-600/30'
+                  ? 'bg-[#059669] text-white shadow-md shadow-emerald-600/30'
                   : 'text-[#4c5a6b] hover:text-[#0e1a2b] hover:bg-slate-100'
               }`}
             >
@@ -198,7 +198,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
               onClick={() => onTabChange('privacy')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                 currentTab === 'privacy'
-                  ? 'bg-[#1565d8] text-white shadow-md shadow-blue-600/30'
+                  ? 'bg-[#059669] text-white shadow-md shadow-emerald-600/30'
                   : 'text-[#4c5a6b] hover:text-[#0e1a2b] hover:bg-slate-100'
               }`}
             >
@@ -212,7 +212,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
               onClick={() => onTabChange('faq')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                 currentTab === 'faq'
-                  ? 'bg-[#1565d8] text-white shadow-md shadow-blue-600/30'
+                  ? 'bg-[#059669] text-white shadow-md shadow-emerald-600/30'
                   : 'text-[#4c5a6b] hover:text-[#0e1a2b] hover:bg-slate-100'
               }`}
             >
@@ -226,7 +226,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
               onClick={() => onTabChange('ownership')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                 currentTab === 'ownership'
-                  ? 'bg-[#1565d8] text-white shadow-md shadow-blue-600/30'
+                  ? 'bg-[#059669] text-white shadow-md shadow-emerald-600/30'
                   : 'text-[#4c5a6b] hover:text-[#0e1a2b] hover:bg-slate-100'
               }`}
             >
@@ -240,7 +240,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
               onClick={() => onTabChange('compliance')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                 currentTab === 'compliance'
-                  ? 'bg-[#1565d8] text-white shadow-md shadow-blue-600/30'
+                  ? 'bg-[#059669] text-white shadow-md shadow-emerald-600/30'
                   : 'text-[#4c5a6b] hover:text-[#0e1a2b] hover:bg-slate-100'
               }`}
             >
@@ -514,7 +514,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
                   value={faqSearchQuery}
                   onChange={(e) => setFaqSearchQuery(e.target.value)}
                   placeholder="Search questions (e.g. pricing, eTIMS, Paystack, M-Pesa, shifts, stock transfer, offline)..."
-                  className="w-full pl-10 pr-16 py-2.5 bg-neutral-100 border border-neutral-300 rounded-xl text-xs text-black placeholder-neutral-500 focus:outline-none focus:border-blue-500 transition"
+                  className="w-full pl-10 pr-16 py-2.5 bg-neutral-100 border border-neutral-300 rounded-xl text-xs text-black placeholder-neutral-500 focus:outline-none focus:border-emerald-500 transition"
                 />
                 {faqSearchQuery && (
                   <button
@@ -536,7 +536,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
                     onClick={() => setSelectedCategory(cat)}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
                       selectedCategory === cat
-                        ? 'bg-blue-600 text-white shadow-xs'
+                        ? 'bg-emerald-600 text-white shadow-xs'
                         : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200 border border-neutral-200'
                     }`}
                   >
@@ -560,7 +560,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
                       key={faq.id}
                       className={`bg-white/90 backdrop-blur-md rounded-2xl border transition-all overflow-hidden ${
                         isExpanded
-                          ? 'border-blue-500/60 shadow-lg'
+                          ? 'border-emerald-500/60 shadow-lg'
                           : 'border-white/60 hover:border-neutral-300 shadow-sm'
                       }`}
                     >
@@ -570,7 +570,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
                         className="w-full px-5 py-4 flex items-center justify-between text-left gap-4 cursor-pointer"
                       >
                         <div className="space-y-1">
-                          <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider block">
+                          <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">
                             {faq.category}
                           </span>
                           <span className="font-bold text-black text-xs sm:text-sm">{faq.question}</span>
@@ -810,7 +810,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
             onClick={onBackToLogin}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-[#0e1a2b] text-xs font-bold border border-[#d9e1e6] transition cursor-pointer shadow-xs"
           >
-            <ArrowLeft className="w-4 h-4 text-[#1565d8]" />
+            <ArrowLeft className="w-4 h-4 text-[#059669]" />
             <span>Return to POS Terminal Login</span>
           </button>
 
