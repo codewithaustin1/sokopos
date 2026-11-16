@@ -243,6 +243,14 @@ interface PosContextType {
   pendingCheckoutIntent: PendingCheckoutIntent | null;
   setPendingCheckoutIntent: (intent: PendingCheckoutIntent | null) => void;
   clearPendingCheckoutIntent: () => void;
+  checkoutAuthRequested: boolean;
+  setCheckoutAuthRequested: React.Dispatch<React.SetStateAction<boolean>>;
+  requestCheckoutAuth: (
+    plan: 'starter' | 'business' | 'premium',
+    billing: 'monthly' | 'annual',
+    planName: string,
+    amountKes: number
+  ) => void;
   activateBusinessSubscription: (businessId: string, plan: BusinessPlanTier, paymentReference?: string) => Promise<{ success: boolean; message: string }>;
   isPricingPageOpen: boolean;
   setIsPricingPageOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -768,6 +776,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // Verify strictly against owner's businesses and stable tenant ID (no full-collection scan)
     let candidateBusinesses = [...businesses];
+    const remoteBusinessIds = new Set<string>();
     try {
       const stableId = getStableBusinessIdForEmail(normalizedEmail);
       const [ownerMatches, stableBiz] = await Promise.all([
@@ -778,7 +787,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (remoteBizs.length > 0) {
         const map = new Map<string, Business>();
         candidateBusinesses.forEach((b) => map.set(b.id, b));
-        remoteBizs.forEach((b) => map.set(b.id, b));
+        remoteBizs.forEach((b) => {
+          if (b?.id) remoteBusinessIds.add(b.id);
+          map.set(b.id, b);
+        });
         candidateBusinesses = Array.from(map.values());
       }
     } catch (err) {
@@ -863,12 +875,25 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
 
     // 4. Sync winner business document to Firestore BEFORE ensuring tenant defaults / user profile writes
-    if (auth.currentUser) {
+    if (auth.currentUser && (auth.currentUser.emailVerified || isSuperAdminEmail)) {
       try {
-        if (isExistingAccount && !isSuperAdminEmail) {
+        if (remoteBusinessIds.has(winner.id) && !isSuperAdminEmail) {
           await updateBusinessInFirestore(winner.id, { lastLoginAt: winner.lastLoginAt });
         } else {
-          await saveBusinessToFirestore(winner);
+          const {
+            subscription: _omitSub,
+            paystackSubaccountStatus: _omitPsStatus,
+            ...safeWinnerBase
+          } = winner;
+          const createPayload: Business = isSuperAdminEmail
+            ? winner
+            : {
+                ...safeWinnerBase,
+                ownerEmail: normalizedEmail,
+                plan: 'free',
+                status: 'active',
+              };
+          await saveBusinessToFirestore(createPayload);
         }
       } catch (e) {
         console.warn('Firestore sync winner note:', e);
@@ -902,83 +927,89 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const unsubscribe = onAuthStateChanged(auth, async (fbUser: FirebaseUser | null) => {
       clearTimeout(watchdogTimer);
       setFirebaseUser(fbUser);
-      setIsFirebaseAuthLoading(false);
-      if (fbUser && fbUser.email) {
-        // If user explicitly signed out, do not auto-login
-        const isExplicitlyLoggedOut = localStorage.getItem(STORAGE_KEYS.IS_LOGGED_OUT) === 'true';
-        if (isExplicitlyLoggedOut) {
+      if (!fbUser || !fbUser.email) {
+        setIsFirebaseAuthLoading(false);
+        return;
+      }
+
+      // If user explicitly signed out, do not auto-login
+      const isExplicitlyLoggedOut = localStorage.getItem(STORAGE_KEYS.IS_LOGGED_OUT) === 'true';
+      if (isExplicitlyLoggedOut) {
+        setIsFirebaseAuthLoading(false);
+        return;
+      }
+      // Clear logged out flag since an authentic Firebase user is active
+      localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
+
+      setIsFirebaseAuthLoading(true);
+      try {
+        const normalizedEmail = fbUser.email.toLowerCase().trim();
+        const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
+
+        // Enforce email verification gate before granting tenant access or writing to Firestore
+        if (!fbUser.emailVerified && !isSuperAdminEmail) {
+          setPendingVerificationEmail(fbUser.email);
           return;
         }
-        // Clear logged out flag since an authentic Firebase user is active
-        localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
 
-        try {
-          const normalizedEmail = fbUser.email.toLowerCase().trim();
-          const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
+        setPendingVerificationEmail(null);
 
-          // Enforce email verification gate before granting tenant access or writing to Firestore
-          if (!fbUser.emailVerified && !isSuperAdminEmail) {
-            setPendingVerificationEmail(fbUser.email);
-            return;
-          }
+        const idToken = await fbUser.getIdToken();
+        const tokenResult = await fbUser.getIdTokenResult();
+        const expirationTime = new Date(tokenResult.expirationTime).getTime();
 
-          setPendingVerificationEmail(null);
-
-          const idToken = await fbUser.getIdToken();
-          const tokenResult = await fbUser.getIdTokenResult();
-          const expirationTime = new Date(tokenResult.expirationTime).getTime();
-
-          const pendingStoreName = sessionStorage.getItem('sokopos_pending_store_name') || undefined;
-          if (pendingStoreName) {
-            sessionStorage.removeItem('sokopos_pending_store_name');
-          }
-
-          // Prioritize account last logged into & delete conflicts at Firestore level
-          const { winner: matchedBiz } = await prioritizeAccountAndPurgeConflicts(
-            normalizedEmail,
-            fbUser.displayName || undefined,
-            pendingStoreName
-          );
-
-          const targetBizId = isSuperAdminEmail ? 'biz-upfront' : matchedBiz.id;
-
-          const role: UserRole = isSuperAdminEmail
-            ? 'super_admin'
-            : matchedBiz
-            ? 'business_owner'
-            : 'manager';
-
-          const authUser: AuthUser = {
-            id: fbUser.uid,
-            firebaseUid: fbUser.uid,
-            email: fbUser.email,
-            name: fbUser.displayName || (isSuperAdminEmail ? 'Platform Administrator' : 'Google User'),
-            initials: (fbUser.displayName || (isSuperAdminEmail ? 'PA' : fbUser.email.substring(0, 2))).substring(0, 2).toUpperCase(),
-            avatarUrl: fbUser.photoURL || undefined,
-            authProvider: 'firebase',
-            role,
-            businessId: targetBizId,
-            businessName: matchedBiz?.name || (isSuperAdminEmail ? 'Upfront Retail Solutions' : 'Business Account'),
-            createdAt: fbUser.metadata.creationTime || new Date().toISOString(),
-            idToken,
-            tokenExpiresAt: expirationTime,
-            sessionStatus: 'verified',
-          };
-
-          setCurrentUser(authUser);
-          setActiveBusinessIdState(targetBizId);
-          localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
-
-          saveUserProfileToFirestore({
-            uid: fbUser.uid,
-            email: fbUser.email,
-            role,
-            businessId: targetBizId,
-            displayName: fbUser.displayName || '',
-          });
-        } catch (tokenErr) {
-          console.error('Error obtaining Firebase ID token:', tokenErr);
+        const pendingStoreName = sessionStorage.getItem('sokopos_pending_store_name') || undefined;
+        if (pendingStoreName) {
+          sessionStorage.removeItem('sokopos_pending_store_name');
         }
+
+        // Prioritize account last logged into & ensure business doc exists in Firestore before subscribing
+        const { winner: matchedBiz } = await prioritizeAccountAndPurgeConflicts(
+          normalizedEmail,
+          fbUser.displayName || undefined,
+          pendingStoreName
+        );
+
+        const targetBizId = isSuperAdminEmail ? 'biz-upfront' : matchedBiz.id;
+
+        const role: UserRole = isSuperAdminEmail
+          ? 'super_admin'
+          : matchedBiz
+          ? 'business_owner'
+          : 'manager';
+
+        const authUser: AuthUser = {
+          id: fbUser.uid,
+          firebaseUid: fbUser.uid,
+          email: fbUser.email,
+          name: fbUser.displayName || (isSuperAdminEmail ? 'Platform Administrator' : 'Google User'),
+          initials: (fbUser.displayName || (isSuperAdminEmail ? 'PA' : fbUser.email.substring(0, 2))).substring(0, 2).toUpperCase(),
+          avatarUrl: fbUser.photoURL || undefined,
+          authProvider: 'firebase',
+          role,
+          businessId: targetBizId,
+          businessName: matchedBiz?.name || (isSuperAdminEmail ? 'Upfront Retail Solutions' : 'Business Account'),
+          createdAt: fbUser.metadata.creationTime || new Date().toISOString(),
+          idToken,
+          tokenExpiresAt: expirationTime,
+          sessionStatus: 'verified',
+        };
+
+        await saveUserProfileToFirestore({
+          uid: fbUser.uid,
+          email: fbUser.email,
+          role,
+          businessId: targetBizId,
+          displayName: fbUser.displayName || '',
+        });
+
+        setCurrentUser(authUser);
+        setActiveBusinessIdState(targetBizId);
+        localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
+      } catch (tokenErr) {
+        console.error('Error obtaining Firebase ID token:', tokenErr);
+      } finally {
+        setIsFirebaseAuthLoading(false);
       }
     });
 
@@ -2177,7 +2208,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         lastSynced: new Date().toISOString(),
         terminalName: 'Terminal #01 (Main)',
       };
-      if (isOnline) {
+      const canWriteTenantDefaults = Boolean(
+        isOnline &&
+          auth.currentUser &&
+          (auth.currentUser.emailVerified ||
+            auth.currentUser.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()) &&
+          (auth.currentUser.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase() ||
+            biz.ownerEmail?.toLowerCase() === auth.currentUser.email?.toLowerCase())
+      );
+      if (canWriteTenantDefaults) {
         saveLocationToFirestore(defaultLoc).catch((e) => console.warn('Sync default loc:', e));
       }
       return [...prevLocs, defaultLoc];
@@ -2205,7 +2244,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         shiftStartedAt: new Date().toISOString(),
         assignedLocationId: `loc-main-${biz.id}`,
       };
-      if (auth.currentUser) {
+      const canWriteCashier = Boolean(
+        auth.currentUser &&
+          (auth.currentUser.emailVerified ||
+            auth.currentUser.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()) &&
+          (auth.currentUser.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase() ||
+            biz.ownerEmail?.toLowerCase() === auth.currentUser.email?.toLowerCase())
+      );
+      if (canWriteCashier) {
         saveCashierToFirestore(ownerStaff).catch((e) => console.warn('Sync default owner user:', e));
       }
       return [...prevUsers, ownerStaff];
@@ -6511,11 +6557,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
             const targetBiz = validRemote[0];
             setActiveBusinessIdState((prev) => {
-              if (isSA || prev === 'biz-upfront') {
+              if (isSA) {
                 localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, 'biz-upfront');
                 return 'biz-upfront';
               }
-              if (!prev || prev === 'biz-soko' || prev === 'biz-quickmart') {
+              if (!prev || prev === 'biz-upfront' || prev === 'biz-soko' || prev === 'biz-quickmart') {
                 if (targetBiz) {
                   localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBiz.id);
                   return targetBiz.id;
@@ -6539,8 +6585,21 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Real-time Firestore Tenant Subscriptions (3 core live streams: products, locations, 30-day transactions)
   // Categories, staff, customers, and suppliers load on demand with 15-min TTL session caching.
   useEffect(() => {
-    if (!isOnline || isFirebaseAuthLoading || !activeBusinessId || isDemoBusinessId(activeBusinessId)) return;
-    if (!auth.currentUser) return;
+    if (!isOnline || isFirebaseAuthLoading || !currentUser || !firebaseUser || !auth.currentUser) return;
+    if (!activeBusinessId || isDemoBusinessId(activeBusinessId)) return;
+
+    const signedInEmail = (auth.currentUser.email || '').toLowerCase().trim();
+    const isSA = signedInEmail === SUPER_ADMIN_EMAIL.toLowerCase() || currentUser.role === 'super_admin';
+
+    // Non-Super-Admin tenants require verified email & matching tenant scope before attaching listeners
+    if (!isSA && !auth.currentUser.emailVerified) return;
+    if (!isSA && activeBusinessId === 'biz-upfront') return;
+
+    const targetBizObj = businesses.find((b) => b.id === activeBusinessId);
+    const ownsActiveBiz = Boolean(
+      targetBizObj?.ownerEmail && targetBizObj.ownerEmail.toLowerCase().trim() === signedInEmail
+    );
+    if (!isSA && currentUser.businessId !== activeBusinessId && !ownsActiveBiz) return;
 
     let unsubProducts: (() => void) | undefined;
     let unsubLocations: (() => void) | undefined;
@@ -6665,7 +6724,16 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (unsubLocations) unsubLocations();
       if (unsubTransactions) unsubTransactions();
     };
-  }, [activeBusinessId, isOnline, isFirebaseAuthLoading, firebaseUser, refreshTenantCategories, refreshTenantStaff]);
+  }, [
+    activeBusinessId,
+    isOnline,
+    isFirebaseAuthLoading,
+    firebaseUser,
+    currentUser,
+    businesses,
+    refreshTenantCategories,
+    refreshTenantStaff,
+  ]);
 
   const seedTenantDataToFirestoreAction = async () => {
     if (!auth.currentUser) {
@@ -6755,20 +6823,19 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         sessionStatus: 'verified',
       };
 
-      // Set state immediately for zero-lag terminal transition
-      setCurrentUser(authUser);
-      setActiveBusinessIdState(targetBizId);
-      localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
-      setIsFirebaseAuthLoading(false);
-
-      // Async background tasks: non-blocking profile save (live onSnapshot streams catalog)
-      saveUserProfileToFirestore({
+      await saveUserProfileToFirestore({
         uid: firebaseUser.uid,
         email: firebaseUser.email,
         role,
         businessId: targetBizId,
         displayName: firebaseUser.displayName || '',
       });
+
+      // Set state after business doc and user profile are synced to Firestore
+      setCurrentUser(authUser);
+      setActiveBusinessIdState(targetBizId);
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
+      setIsFirebaseAuthLoading(false);
 
       soundFx.playSuccess();
       if (customStoreName && isExistingAccount) {
@@ -6939,18 +7006,18 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         sessionStatus: 'verified',
       };
 
-      setCurrentUser(authUser);
-      setActiveBusinessIdState(targetBizId);
-      localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
-      setIsFirebaseAuthLoading(false);
-
-      saveUserProfileToFirestore({
+      await saveUserProfileToFirestore({
         uid: firebaseUser.uid,
         email: firebaseUser.email,
         role,
         businessId: targetBizId,
         displayName: firebaseUser.displayName || '',
       });
+
+      setCurrentUser(authUser);
+      setActiveBusinessIdState(targetBizId);
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
+      setIsFirebaseAuthLoading(false);
 
       soundFx.playSuccess();
       if (customStoreName && isExistingAccount) {
@@ -7124,18 +7191,18 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         sessionStatus: 'verified',
       };
 
-      setPendingVerificationEmail(null);
-      setCurrentUser(authUser);
-      setActiveBusinessIdState(targetBizId);
-      localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
-
-      saveUserProfileToFirestore({
+      await saveUserProfileToFirestore({
         uid: refreshedUser.uid,
         email: refreshedUser.email!,
         role,
         businessId: targetBizId,
         displayName: refreshedUser.displayName || '',
       });
+
+      setPendingVerificationEmail(null);
+      setCurrentUser(authUser);
+      setActiveBusinessIdState(targetBizId);
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
 
       soundFx.playSuccess();
       showToast(
@@ -8564,6 +8631,28 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setPendingCheckoutIntent(null);
   }, [setPendingCheckoutIntent]);
 
+  const [checkoutAuthRequested, setCheckoutAuthRequested] = useState<boolean>(false);
+
+  const requestCheckoutAuth = useCallback(
+    (
+      plan: 'starter' | 'business' | 'premium',
+      billing: 'monthly' | 'annual',
+      planName: string,
+      amountKes: number
+    ) => {
+      selectCheckoutPackage(plan, billing);
+      setPendingCheckoutIntent({
+        planId: plan,
+        billingCycle: billing,
+        planName,
+        amountKes,
+        timestamp: Date.now(),
+      });
+      setCheckoutAuthRequested(true);
+    },
+    [selectCheckoutPackage, setPendingCheckoutIntent]
+  );
+
   // Dedicated Full-Page Pricing State (Seamless access across logged-in and public views)
   const [isPricingPageOpen, setIsPricingPageOpen] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -8747,6 +8836,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         pendingCheckoutIntent,
         setPendingCheckoutIntent,
         clearPendingCheckoutIntent,
+        checkoutAuthRequested,
+        setCheckoutAuthRequested,
+        requestCheckoutAuth,
         activateBusinessSubscription,
         isPricingPageOpen,
         setIsPricingPageOpen,

@@ -81,6 +81,10 @@ function PosAppContent() {
     isSubscriptionActive,
     isSubscriptionModalOpen,
     setIsSubscriptionModalOpen,
+    selectCheckoutPackage,
+    pendingCheckoutIntent,
+    clearPendingCheckoutIntent,
+    isDemoSession,
     activateBusinessSubscription,
     isPricingPageOpen,
     openPricingPage,
@@ -133,6 +137,38 @@ function PosAppContent() {
       }
     }
   }, [currentUser]);
+
+  // Auto-resume pending paid checkout immediately once owner signs in or registers a shop
+  useEffect(() => {
+    if (!currentUser || isAtLandingPage || isDemoSession || !pendingCheckoutIntent) return;
+    if (pendingCheckoutIntent.planId === 'free') {
+      clearPendingCheckoutIntent();
+      return;
+    }
+
+    const intent = pendingCheckoutIntent;
+    selectCheckoutPackage(intent.planId, intent.billingCycle);
+    closePricingPage();
+    setIsSubscriptionModalOpen(true);
+    clearPendingCheckoutIntent();
+
+    showToast(
+      `${intent.planName} Plan (${intent.billingCycle === 'annual' ? 'Annual' : 'Monthly'}) ready — complete M-Pesa activation below.`,
+      'success'
+    );
+  }, [
+    currentUser,
+    isAtLandingPage,
+    isDemoSession,
+    pendingCheckoutIntent,
+    currentBusiness?.id,
+    currentBusiness?.name,
+    selectCheckoutPackage,
+    closePricingPage,
+    setIsSubscriptionModalOpen,
+    clearPendingCheckoutIntent,
+    showToast,
+  ]);
 
   // Verify subscription payment when returning from Paystack Hosted Checkout (?payment_ref=SOKO-SUB-...)
   useEffect(() => {
@@ -505,15 +541,13 @@ function PosAppContent() {
           onBackToLogin={() => {
             closePricingPage();
           }}
-          onSelectPlan={(_planId) => {
+          onSelectPlan={(planId) => {
             if (currentUser) {
-              setIsSubscriptionModalOpen(true);
-            } else {
+              if (planId !== 'free') {
+                setIsSubscriptionModalOpen(true);
+              }
+            } else if (planId !== 'free') {
               closePricingPage();
-              setTimeout(() => {
-                const loginBtn = document.getElementById('auth-owner-tab-btn') || document.getElementById('hero-login-btn');
-                loginBtn?.click();
-              }, 120);
             }
           }}
         />

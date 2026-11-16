@@ -17,7 +17,9 @@ import {
   Gift,
   Phone,
   Share2,
+  ShieldCheck,
 } from 'lucide-react';
+import { DEFAULT_PRICING_TIERS } from '../types/pricing';
 import { usePos } from '../context/PosContext';
 import { Cashier } from '../types';
 import { soundFx } from '../utils/audio';
@@ -129,6 +131,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     showToast,
     openPricingPage,
     closePricingPage,
+    pendingCheckoutIntent,
+    setPendingCheckoutIntent,
+    clearPendingCheckoutIntent,
+    selectCheckoutPackage,
+    checkoutAuthRequested,
+    setCheckoutAuthRequested,
     appointedDemoCashier,
     appointedDemoCashierId,
     isAffiliateModalOpen,
@@ -483,6 +491,42 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     openAuthModal(targetTab || 'owner');
   };
 
+  useEffect(() => {
+    if (checkoutAuthRequested && !currentUser) {
+      setCheckoutAuthRequested(false);
+      openAuthModal('owner');
+    }
+  }, [checkoutAuthRequested, currentUser, setCheckoutAuthRequested]);
+
+  const activeCheckoutTier = useMemo(() => {
+    if (!pendingCheckoutIntent || pendingCheckoutIntent.planId === 'free') return null;
+    return (
+      DEFAULT_PRICING_TIERS.find((t) => t.id === pendingCheckoutIntent.planId) ||
+      DEFAULT_PRICING_TIERS[2]
+    );
+  }, [pendingCheckoutIntent]);
+
+  const isCheckoutContextActive = Boolean(
+    activeCheckoutTier &&
+      pendingCheckoutIntent &&
+      (activeTab === 'owner' || activeTab === 'register') &&
+      !pendingVerificationEmail
+  );
+
+  const handleToggleCheckoutBilling = (nextBilling: 'monthly' | 'annual') => {
+    if (!pendingCheckoutIntent || !activeCheckoutTier) return;
+    if (pendingCheckoutIntent.billingCycle === nextBilling) return;
+    const nextAmount =
+      nextBilling === 'annual' ? activeCheckoutTier.annualPrice : activeCheckoutTier.monthlyPrice;
+    selectCheckoutPackage(pendingCheckoutIntent.planId, nextBilling);
+    setPendingCheckoutIntent({
+      ...pendingCheckoutIntent,
+      billingCycle: nextBilling,
+      amountKes: nextAmount,
+      timestamp: Date.now(),
+    });
+  };
+
   // Prevent background scrolling and lock body/viewport when modal is open
   useEffect(() => {
     if (!isAuthModalOpen) return;
@@ -772,11 +816,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     }
 
     trackPlatformEvent('signin_start', {
-      channel: 'email',
+      channel: pendingCheckoutIntent && pendingCheckoutIntent.planId !== 'free' ? 'checkout_email' : 'email',
+      planId: pendingCheckoutIntent?.planId,
       dedupeKey: 'signin-start',
       dedupeTtlMs: 15_000,
     });
 
+    setVerificationContext('owner');
     setIsAuthenticatingEmail(true);
     try {
       const res = await loginWithFirebaseEmailPassword(email, password, false);
@@ -823,11 +869,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     }
 
     trackPlatformEvent('signin_start', {
-      channel: 'register',
+      channel: pendingCheckoutIntent && pendingCheckoutIntent.planId !== 'free' ? 'checkout_register' : 'register',
+      planId: pendingCheckoutIntent?.planId,
       dedupeKey: 'signin-start',
       dedupeTtlMs: 15_000,
     });
 
+    setVerificationContext('owner');
     setIsAuthenticatingEmail(true);
     try {
       const res = await loginWithFirebaseEmailPassword(ownerEmail, password, true, storeName);
@@ -1009,9 +1057,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     return (
       <PricingPageView
         onBackToLogin={returnToLogin}
-        onSelectPlan={(_planId) => {
+        onSelectPlan={(planId) => {
           returnToLogin();
-          setTimeout(() => scrollToAuthCard('owner'), 100);
+          if (planId === 'free') {
+            setTimeout(() => scrollToAuthCard('owner'), 100);
+          }
         }}
       />
     );
@@ -2069,7 +2119,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             style={{
               fontFamily: '"Bricolage Grotesque", system-ui, -apple-system, "Segoe UI", sans-serif',
             }}
-            className="relative w-full max-w-[420px] bg-white rounded-3xl border border-[#d9e1e6] p-6 sm:p-7 shadow-2xl shadow-slate-950/25 my-auto animate-in zoom-in-95 fade-in duration-200"
+            className={`relative w-full bg-white rounded-3xl border border-[#d9e1e6] shadow-2xl shadow-slate-950/25 my-auto animate-in zoom-in-95 fade-in duration-200 ${
+              isCheckoutContextActive
+                ? 'max-w-[460px] md:max-w-[780px] overflow-hidden grid grid-cols-1 md:grid-cols-[315px_1fr]'
+                : 'max-w-[420px] p-6 sm:p-7'
+            }`}
           >
             {/* Dismissal X Button */}
             <button
@@ -2077,11 +2131,170 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               id="auth-modal-close-btn"
               onClick={closeAuthModal}
               aria-label="Close dialog"
-              className="absolute top-4 right-4 p-2 rounded-xl text-[#4c5a6b] hover:text-[#0e1a2b] hover:bg-slate-100 transition cursor-pointer z-10"
+              className="absolute top-3.5 right-3.5 p-2 rounded-xl text-[#4c5a6b] hover:text-[#090d16] hover:bg-slate-100 transition cursor-pointer z-20"
             >
               <X className="w-5 h-5" />
             </button>
 
+            {/* LIVE PLAN SUMMARY & CONVERSION CARD (Visible when logged-out visitor enters via paid plan CTA) */}
+            {isCheckoutContextActive && activeCheckoutTier && pendingCheckoutIntent && (() => {
+              const isAnnualBilling = pendingCheckoutIntent.billingCycle === 'annual';
+              const monthlyTotalYear = activeCheckoutTier.monthlyPrice * 12;
+              const annualSavingsKes = Math.max(0, monthlyTotalYear - activeCheckoutTier.annualPrice);
+              const annualSavePct = monthlyTotalYear > 0 ? Math.round((annualSavingsKes / monthlyTotalYear) * 100) : 0;
+              const displayedKes = isAnnualBilling ? activeCheckoutTier.annualPrice : activeCheckoutTier.monthlyPrice;
+              const effectiveMonthlyKes = Math.round(activeCheckoutTier.annualPrice / 12);
+              const branchSummary =
+                activeCheckoutTier.maxBranches === -1
+                  ? 'Unlimited branches'
+                  : activeCheckoutTier.maxBranches === 1
+                  ? '1 store branch'
+                  : `Up to ${activeCheckoutTier.maxBranches} branches`;
+              const staffSummary =
+                activeCheckoutTier.maxStaffUsers === -1
+                  ? 'Unlimited staff'
+                  : `${activeCheckoutTier.maxStaffUsers} staff users`;
+
+              return (
+                <aside
+                  aria-label="Selected checkout plan summary"
+                  className="bg-[#f8fafc] border-b md:border-b-0 md:border-r border-[#e2e8f0] p-5 sm:p-6 flex flex-col justify-between gap-5"
+                >
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between pr-8 md:pr-0">
+                      <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-[#059669]">
+                        Checkout Summary
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          closeAuthModal();
+                          navigateToPricing();
+                        }}
+                        className="text-xs font-bold text-[#475569] hover:text-[#090d16] hover:underline underline-offset-2 transition cursor-pointer"
+                      >
+                        Change plan
+                      </button>
+                    </div>
+
+                    <div>
+                      <div className="flex items-baseline gap-1.5 flex-wrap">
+                        <h3 className="text-xl font-extrabold text-[#090d16] tracking-tight">
+                          {pendingCheckoutIntent.planName} Plan
+                        </h3>
+                        <span className="text-xs font-semibold text-[#475569]">
+                          &middot; {activeCheckoutTier.alias}
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#475569] font-medium mt-1">
+                        {branchSummary} &middot; {staffSummary}
+                      </p>
+                    </div>
+
+                    {/* Live Price & Monthly vs Annual Billing Switch */}
+                    <div className="pt-1">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-[28px] leading-none font-extrabold text-[#090d16] tracking-tight tabular-nums">
+                          Ksh {displayedKes.toLocaleString('en-KE')}
+                        </span>
+                        <span className="text-xs font-semibold text-[#475569]">
+                          {isAnnualBilling ? '/ year' : '/ month'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] font-medium text-[#475569] mt-1 tabular-nums">
+                        {isAnnualBilling
+                          ? `Ksh ${effectiveMonthlyKes.toLocaleString('en-KE')}/mo equivalent · Billed annually`
+                          : 'Billed monthly · Switch anytime'}
+                      </p>
+
+                      <div
+                        role="group"
+                        aria-label="Billing cycle"
+                        className="mt-3 bg-[#e2e8f0]/75 p-1 rounded-xl grid grid-cols-2 gap-1"
+                      >
+                        <button
+                          type="button"
+                          aria-pressed={!isAnnualBilling}
+                          onClick={() => handleToggleCheckoutBilling('monthly')}
+                          className={`py-1.5 px-2.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                            !isAnnualBilling
+                              ? 'bg-white text-[#090d16] shadow-xs'
+                              : 'text-[#475569] hover:text-[#090d16]'
+                          }`}
+                        >
+                          Monthly
+                        </button>
+                        <button
+                          type="button"
+                          aria-pressed={isAnnualBilling}
+                          onClick={() => handleToggleCheckoutBilling('annual')}
+                          className={`py-1.5 px-2.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1 ${
+                            isAnnualBilling
+                              ? 'bg-white text-[#090d16] shadow-xs'
+                              : 'text-[#475569] hover:text-[#090d16]'
+                          }`}
+                        >
+                          <span>Annual</span>
+                          {annualSavePct > 0 && (
+                            <span className="text-[10px] font-extrabold text-[#059669] tabular-nums">
+                              -{annualSavePct}%
+                            </span>
+                          )}
+                        </button>
+                      </div>
+
+                      {annualSavingsKes > 0 && (
+                        isAnnualBilling ? (
+                          <div className="mt-2.5 px-3 py-2 rounded-xl bg-[#ecfdf5] border border-[#a7f3d0] text-[#047857] text-xs font-semibold flex items-center gap-2 tabular-nums">
+                            <Check className="w-3.5 h-3.5 shrink-0 text-[#059669]" />
+                            <span>You save Ksh {annualSavingsKes.toLocaleString('en-KE')}/yr (2 months free)</span>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleCheckoutBilling('annual')}
+                            className="mt-2.5 w-full px-3 py-2 rounded-xl bg-white hover:bg-[#ecfdf5]/70 border border-dashed border-[#059669]/50 text-[#090d16] text-xs font-semibold flex items-center justify-between gap-2 transition cursor-pointer tabular-nums text-left"
+                          >
+                            <span>Save Ksh {annualSavingsKes.toLocaleString('en-KE')}/yr with Annual</span>
+                            <ArrowRight className="w-3.5 h-3.5 shrink-0 text-[#059669]" />
+                          </button>
+                        )
+                      )}
+                    </div>
+
+                    {/* Trust Signals */}
+                    <div className="pt-3 border-t border-[#e2e8f0] space-y-2.5">
+                      <div className="flex items-start gap-2.5">
+                        <Zap className="w-4 h-4 text-[#059669] shrink-0 mt-0.5" />
+                        <div className="text-xs leading-snug">
+                          <span className="font-bold text-[#090d16] block">M-Pesa Instant Activation</span>
+                          <span className="text-[#475569]">STK Push &amp; card unlock your shop immediately.</span>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2.5">
+                        <ShieldCheck className="w-4 h-4 text-[#090d16] shrink-0 mt-0.5" />
+                        <div className="text-xs leading-snug">
+                          <span className="font-bold text-[#090d16] block">99.9% Uptime SLA &amp; Offline Sync</span>
+                          <span className="text-[#475569]">Sell without interruption even if Wi-Fi drops.</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-[#e2e8f0]/80 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => clearPendingCheckoutIntent()}
+                      className="text-[11px] font-semibold text-[#64748b] hover:text-[#090d16] transition cursor-pointer"
+                    >
+                      Just signing in? Dismiss plan
+                    </button>
+                  </div>
+                </aside>
+              );
+            })()}
+
+            <div className={isCheckoutContextActive ? 'p-5 sm:p-7 flex flex-col justify-center' : ''}>
             {pendingVerificationEmail ? (
               <div id="p-verify-email" className="space-y-4 pt-2">
                 <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#059669]">
@@ -2103,6 +2316,15 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     <span className="font-bold text-[#0e1a2b]">{pendingVerificationEmail}</span>.
                   </p>
                 </div>
+
+                {verificationContext !== 'partner' && pendingCheckoutIntent && pendingCheckoutIntent.planId !== 'free' && (
+                  <div className="p-3 rounded-xl bg-[#ecfdf5] border border-[#a7f3d0] text-[#047857] text-xs font-semibold flex items-start gap-2">
+                    <Zap className="w-4 h-4 shrink-0 mt-0.5 text-[#059669]" />
+                    <span>
+                      Your <strong>{pendingCheckoutIntent.planName} Plan ({pendingCheckoutIntent.billingCycle === 'annual' ? 'Annual' : 'Monthly'})</strong> checkout is saved and will open automatically once verified.
+                    </span>
+                  </div>
+                )}
 
                 {verificationFeedback && (
                   <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-medium flex items-start gap-2">
@@ -2321,12 +2543,14 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   <div>
                     <h2
                       id="auth-modal-title"
-                      className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-1 text-left"
+                      className="text-xl sm:text-[22px] font-extrabold text-[#090d16] tracking-tight mb-1 text-left"
                     >
-                      Welcome back!
+                      {isCheckoutContextActive ? 'Sign in to continue' : 'Welcome back!'}
                     </h2>
-                    <p className="text-xs text-[#556375] mb-4 text-left">
-                      Sign in with your email and password to manage your shop.
+                    <p className="text-xs text-[#475569] mb-4 text-left">
+                      {isCheckoutContextActive && pendingCheckoutIntent
+                        ? `Sign in to activate ${pendingCheckoutIntent.planName} (${pendingCheckoutIntent.billingCycle === 'annual' ? 'Annual' : 'Monthly'}) via M-Pesa or card.`
+                        : 'Sign in with your email and password to manage your shop.'}
                     </p>
 
                     {/* Email & Password Sign-In Form */}
@@ -2417,7 +2641,14 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                             <span>Signing in...</span>
                           </>
                         ) : (
-                          <span>Sign in with Email &amp; Password</span>
+                          <>
+                            <span>
+                              {isCheckoutContextActive
+                                ? 'Sign in & Continue to Checkout'
+                                : 'Sign in with Email & Password'}
+                            </span>
+                            {isCheckoutContextActive && <ArrowRight className="w-4 h-4" />}
+                          </>
                         )}
                       </button>
                     </form>
@@ -2838,11 +3069,16 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               <div id="p-register">
                 <h2
                   id="auth-modal-title"
-                  className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-3 text-left"
+                  className="text-xl sm:text-[22px] font-extrabold text-[#090d16] tracking-tight mb-1 text-left"
                 >
-                  Add a new shop
+                  {isCheckoutContextActive ? 'Create your shop' : 'Add a new shop'}
                 </h2>
-                <form id="regForm" onSubmit={handleRegisterFormSubmit} className="space-y-3 mb-4">
+                {isCheckoutContextActive && pendingCheckoutIntent && (
+                  <p className="text-xs text-[#475569] mb-3 text-left">
+                    Set up your shop first, then complete payment for {pendingCheckoutIntent.planName} ({pendingCheckoutIntent.billingCycle === 'annual' ? 'Annual' : 'Monthly'}).
+                  </p>
+                )}
+                <form id="regForm" onSubmit={handleRegisterFormSubmit} className={`space-y-3 mb-4 ${!isCheckoutContextActive ? 'mt-2' : ''}`}>
                   <div>
                     <label className="block text-xs font-bold text-[#0e1a2b] mb-1" htmlFor="shop">
                       Shop or business name
@@ -2929,7 +3165,14 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         <span>Creating account...</span>
                       </>
                     ) : (
-                      <span>Create shop with Email &amp; Password</span>
+                      <>
+                        <span>
+                          {isCheckoutContextActive
+                            ? 'Create shop & Continue to Checkout'
+                            : 'Create shop with Email & Password'}
+                        </span>
+                        {isCheckoutContextActive && <ArrowRight className="w-4 h-4" />}
+                      </>
                     )}
                   </button>
                 </form>
@@ -2943,6 +3186,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   ? 'Already have a registered shop or partner account?'
                   : activeTab === 'partner'
                   ? 'Want to open and manage a physical retail store?'
+                  : isCheckoutContextActive
+                  ? 'New to SokoPoS? Register your shop first:'
                   : 'Need to register a new location?'}
               </p>
               <button
@@ -2962,19 +3207,20 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 }}
                 className={`w-full h-11 rounded-xl font-bold text-sm sm:text-[15px] flex items-center justify-center transition-all cursor-pointer ${
                   activeTab === 'register'
-                    ? 'bg-transparent text-[#0e1a2b] border border-[#d9e1e6] hover:bg-slate-50'
+                    ? 'bg-transparent text-[#090d16] border border-[#d9e1e6] hover:bg-slate-50'
+                    : isCheckoutContextActive
+                    ? 'bg-white text-[#090d16] border border-[#090d16] hover:bg-[#f8fafc] active:scale-[0.99]'
                     : 'bg-[#c8231b] hover:bg-[#b01e17] active:scale-[0.99] text-white shadow-xs'
                 }`}
               >
                 {activeTab === 'register'
                   ? 'Return to login'
-                  : activeTab === 'partner'
-                  ? 'Add new shop'
                   : 'Add new shop'}
               </button>
             </div>
               </>
             )}
+            </div>
           </div>
         </div>,
         document.body
