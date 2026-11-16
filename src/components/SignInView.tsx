@@ -37,6 +37,11 @@ import { AffiliatePortalModal } from './AffiliatePortalModal';
 import { enrollAffiliate, fetchAffiliateDashboard } from '../lib/affiliateService';
 import { auth } from '../lib/firebase';
 import { trackPlatformEvent } from '../lib/telemetryService';
+import heroKenyanPos from '../assets/images/hero_kenyan_pos_1794857444336.jpg';
+import industryRetailShop from '../assets/images/industry_retail_shop_1794857445198.jpg';
+import industryBarRestaurant from '../assets/images/industry_bar_restaurant_1794857445769.jpg';
+import industrySupermarket from '../assets/images/industry_supermarket_1794857446020.jpg';
+import industryPharmacy from '../assets/images/industry_pharmacy_1794857446477.jpg';
 
 // Isolated Animated Counter Subcomponent: Keeps main-thread 60fps by updating the DOM ref directly without React state churn
 const AnimatedMetricCounter: React.FC<{ target?: number; duration?: number }> = React.memo(
@@ -85,31 +90,74 @@ interface SignInViewProps {
   onLoginSuccess?: () => void;
 }
 
-const INDUSTRY_DATA: Record<string, [string, string, string, string]> = {
-  'Retail shops': [
-    'Fast counters for everyday stock',
-    'Scan, weigh or search items in seconds.',
-    'Low-stock alerts before shelves run empty',
-    'Price changes apply across every till',
-  ],
-  'Bars & restaurants': [
-    'Tabs, tables and rounds without the chaos',
-    'Open and split tabs per table or customer.',
-    'Send orders to the bar or kitchen',
-    'Track pours and stock by the bottle',
-  ],
-  'Supermarkets': [
-    'Many tills, one view of the business',
-    'Handle long baskets and barcode-heavy sales.',
-    'Manage staff shifts and cashier PINs',
-    'Compare branches from one dashboard',
-  ],
-  'Pharmacies': [
-    'Stock you can trust, batch by batch',
-    'Track expiry dates and batch numbers.',
-    'Flag items that need extra care',
-    'Issue clear receipts for every sale',
-  ],
+interface IndustrySectorConfig {
+  title: string;
+  subtitle: string;
+  bullets: string[];
+  image: string;
+  alt: string;
+  badge: string;
+  statLabel: string;
+  statValue: string;
+}
+
+const INDUSTRY_DATA: Record<string, IndustrySectorConfig> = {
+  'Retail shops': {
+    title: 'Fast counters for everyday stock',
+    subtitle: 'Scan, weigh or search items in seconds.',
+    bullets: [
+      'Low-stock alerts before shelves run empty',
+      'Price changes apply across every till',
+      'Works with M-Pesa and eTIMS',
+    ],
+    image: industryRetailShop,
+    alt: 'Kenyan retail shop checkout counter with barcode scanner and stocked shelves',
+    badge: 'General Retail & Agrovets',
+    statLabel: 'Counter scan speed',
+    statValue: '< 2s / item',
+  },
+  'Bars & restaurants': {
+    title: 'Tabs, tables and rounds without the chaos',
+    subtitle: 'Open and split tabs per table or customer.',
+    bullets: [
+      'Send orders to the bar or kitchen',
+      'Track pours and stock by the bottle',
+      'Works with M-Pesa and eTIMS',
+    ],
+    image: industryBarRestaurant,
+    alt: 'Contemporary Nairobi bistro and bar counter with POS order tabs terminal',
+    badge: 'Hospitality & Lounges',
+    statLabel: 'Tab split & settle',
+    statValue: 'Instant STK',
+  },
+  'Supermarkets': {
+    title: 'Many tills, one view of the business',
+    subtitle: 'Handle long baskets and barcode-heavy sales.',
+    bullets: [
+      'Handle high-volume baskets with zero lag',
+      'Manage staff shifts and cashier PINs',
+      'Compare branches from one dashboard',
+    ],
+    image: industrySupermarket,
+    alt: 'Kenyan supermarket express checkout till with thermal printer and basket items',
+    badge: 'Supermarkets & Groceries',
+    statLabel: 'Peak lane volume',
+    statValue: '45+ tx/hr',
+  },
+  'Pharmacies': {
+    title: 'Stock you can trust, batch by batch',
+    subtitle: 'Track expiry dates and batch numbers.',
+    bullets: [
+      'Batch-level traceability and expiry alerts',
+      'Flag sensitive drugs and dispense histories',
+      'Issue clear eTIMS receipts for every sale',
+    ],
+    image: industryPharmacy,
+    alt: 'Kenyan community pharmacy dispensary counter with digital batch tracking POS',
+    badge: 'Chemists & Dispensaries',
+    statLabel: 'Batch compliance',
+    statValue: '100% audit',
+  },
 };
 
 export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
@@ -1163,8 +1211,43 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           font-size: 0.85rem;
         }
         .sp-hero {
-          padding: 56px 0 72px;
-          text-align: center;
+          padding: 44px 0 64px;
+        }
+        .sp-hero-grid {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 32px;
+          align-items: center;
+        }
+        @media (min-width: 980px) {
+          .sp-hero-grid {
+            grid-template-columns: 1.15fr 0.95fr;
+            gap: 48px;
+          }
+          .sp-hero-left {
+            text-align: left;
+          }
+          .sp-hero-left .sp-h1 {
+            text-align: left;
+            margin: 0 0 20px 0;
+            max-width: none;
+          }
+          .sp-hero-left .sp-lead {
+            text-align: left;
+            margin: 0 0 26px 0;
+            max-width: 48ch;
+          }
+          .sp-hero-left .sp-cta {
+            justify-content: flex-start;
+          }
+          .sp-hero-left .sp-fine {
+            text-align: left;
+            margin: 0 0 32px 0;
+          }
+          .sp-hero-left .sp-stats {
+            margin: 0;
+            max-width: 100%;
+          }
         }
         .sp-h1 {
           font-size: clamp(2.2rem, 5.6vw, 3.8rem);
@@ -1791,43 +1874,103 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
       {/* MAIN BODY: Strictly Light Mode UI Layout from Attached Design */}
       <main id="top" className="flex-1 w-full">
-        {/* HERO SECTION (Centered content, preview card removed per user request) */}
+        {/* HERO SECTION: Split Layout with Framed Kenyan POS Terminal Showcase */}
         <section className="sp-hero">
           <div className="sp-wrap">
-            <div className="max-w-3xl mx-auto flex flex-col items-center text-center">
-              <h1 className="sp-h1">The ultimate POS built for retail, bars and supermarkets.</h1>
-              <p className="sp-lead">
-                Selling is easier than ever. Cut operational layers, automate receipt production, payment collection, stock reconciliation, and sales reporting!
-              </p>
-              <div className="sp-cta">
-                <button
-                  type="button"
-                  className="sp-btn sp-btn-blue"
-                  id="demo"
-                  onClick={handleLaunchDemoSandbox}
-                >
-                  <Zap className="w-4 h-4 fill-white" />
-                  <span>Try the demo account</span>
-                </button>
-              </div>
-              <p className="sp-fine">Live sandbox in 5 seconds · No credit card · Pre-loaded inventory</p>
+            <div className="sp-hero-grid">
+              {/* Left Column: Value Proposition & Stats */}
+              <div className="sp-hero-left flex flex-col items-center lg:items-start text-center lg:text-left">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold mb-4 shadow-2xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+                  <span>Kenya&apos;s Fastest Retail POS Terminal</span>
+                </div>
+                <h1 className="sp-h1">The ultimate POS built for retail, bars and supermarkets.</h1>
+                <p className="sp-lead">
+                  Selling is easier than ever. Cut operational layers, automate receipt production, payment collection, stock reconciliation, and sales reporting!
+                </p>
+                <div className="sp-cta">
+                  <button
+                    type="button"
+                    className="sp-btn sp-btn-blue"
+                    id="demo"
+                    onClick={handleLaunchDemoSandbox}
+                  >
+                    <Zap className="w-4 h-4 fill-white" />
+                    <span>Try the demo account</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="sp-btn sp-btn-ghost"
+                    onClick={() => openAuthModal('owner')}
+                  >
+                    <span>Create Free Account</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+                <p className="sp-fine">Live sandbox in 5 seconds · No credit card · Pre-loaded inventory</p>
 
-              <div className="sp-stats">
-                <div>
-                  <b>KES <AnimatedMetricCounter target={25} />M+</b>
-                  <span>Processed monthly</span>
+                <div className="sp-stats">
+                  <div>
+                    <b>KES <AnimatedMetricCounter target={25} />M+</b>
+                    <span>Processed monthly</span>
+                  </div>
+                  <div>
+                    <b>100%</b>
+                    <span>Works offline</span>
+                  </div>
+                  <div>
+                    <b>&lt; 18s</b>
+                    <span>Average checkout</span>
+                  </div>
+                  <div>
+                    <b>eTIMS</b>
+                    <span>Digitax partner</span>
+                  </div>
                 </div>
-                <div>
-                  <b>100%</b>
-                  <span>Works offline</span>
-                </div>
-                <div>
-                  <b>&lt; 18s</b>
-                  <span>Average checkout</span>
-                </div>
-                <div>
-                  <b>eTIMS</b>
-                  <span>Digitax partner</span>
+              </div>
+
+              {/* Right Column: High-Resolution Kenyan POS Showcase Frame */}
+              <div className="w-full">
+                <div className="relative rounded-2xl md:rounded-3xl border border-[#e2e8f0] bg-white shadow-xl shadow-slate-950/5 overflow-hidden transition-all duration-300 hover:shadow-2xl hover:shadow-emerald-950/10">
+                  {/* Top Header Strip */}
+                  <div className="px-4 py-2.5 bg-[#f8fafc] border-b border-[#e2e8f0] flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2 font-semibold text-[#090d16]">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
+                      <span>SokoPoS Terminal</span>
+                      <span className="text-[11px] font-mono text-slate-400">v2.4</span>
+                    </div>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span>Live Nairobi Till</span>
+                    </span>
+                  </div>
+
+                  {/* High-Resolution Hero Visual with Admin Override Support */}
+                  <div className="relative aspect-[16/10] sm:aspect-[4/3] lg:aspect-[16/11] bg-slate-900 overflow-hidden group">
+                    <img
+                      src={loginBgGraphic || heroKenyanPos}
+                      alt="Modern Kenyan retail checkout counter with POS terminal and M-Pesa payment"
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                    />
+                    {loginBgGraphic && (
+                      <span className="absolute top-2.5 right-2.5 bg-slate-950/80 backdrop-blur-xs text-white text-[10px] font-semibold px-2 py-0.5 rounded-md border border-white/20">
+                        Custom Platform Visual
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Bottom Trust & Feature Badges */}
+                  <div className="p-3 bg-white border-t border-[#e2e8f0] flex flex-wrap items-center justify-between gap-2 text-xs text-[#475569]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      <span className="font-semibold text-[#090d16]">M-Pesa STK Instant Sync</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      <span className="font-semibold text-[#090d16]">KRA eTIMS Auto-Filing</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1883,14 +2026,30 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
             <div className="sp-panel animate-sp-fade-slide" id="indPanel" key={selectedIndustry}>
               <div>
-                <h3>{activeIndDetails[0]}</h3>
-                <p style={{ color: 'var(--muted)', margin: 0 }}>{activeIndDetails[1]}</p>
+                <span className="sp-tag">{activeIndDetails.badge}</span>
+                <h3>{activeIndDetails.title}</h3>
+                <p style={{ color: 'var(--muted)', margin: '0 0 18px' }}>{activeIndDetails.subtitle}</p>
+                <ul>
+                  {activeIndDetails.bullets.map((bullet, idx) => (
+                    <li key={idx}>{bullet}</li>
+                  ))}
+                  <li>Works natively with M-Pesa STK &amp; eTIMS</li>
+                </ul>
               </div>
-              <ul>
-                <li>{activeIndDetails[2]}</li>
-                <li>{activeIndDetails[3]}</li>
-                <li>Works with M-Pesa and eTIMS</li>
-              </ul>
+              <div className="relative rounded-2xl overflow-hidden border border-[#e2e8f0] bg-slate-900 shadow-sm aspect-[4/3] group">
+                <img
+                  src={activeIndDetails.image}
+                  alt={activeIndDetails.alt}
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                />
+                <div className="absolute bottom-3 left-3 right-3 bg-slate-950/80 backdrop-blur-sm px-3.5 py-2 rounded-xl text-white flex items-center justify-between text-xs border border-white/10">
+                  <span className="font-semibold">{activeIndDetails.badge}</span>
+                  <span className="text-[11px] text-emerald-300 font-mono font-medium">
+                    {activeIndDetails.statLabel}: <strong className="text-white">{activeIndDetails.statValue}</strong>
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -2098,18 +2257,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           }}
           className="fixed inset-0 z-[100] bg-slate-950/60 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200"
         >
-          {loginBgGraphic && (
-            <>
-              <img
-                src={loginBgGraphic}
-                alt=""
-                aria-hidden="true"
-                referrerPolicy="no-referrer"
-                className="fixed inset-0 w-full h-full object-cover pointer-events-none"
-              />
-              <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-xs pointer-events-none" />
-            </>
-          )}
           <div
             ref={modalCardRef}
             role="dialog"

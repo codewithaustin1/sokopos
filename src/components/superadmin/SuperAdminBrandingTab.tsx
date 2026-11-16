@@ -37,6 +37,7 @@ import bgModernHypermarket from '../../assets/images/bg_modern_hypermarket_17947
 import bgEveningMarket from '../../assets/images/bg_evening_market_1794745035836.jpg';
 import bgMinimalBoutique from '../../assets/images/bg_minimal_boutique_1794745035140.jpg';
 import bgDarkTechPos from '../../assets/images/bg_dark_tech_pos_1794745035491.jpg';
+import heroKenyanPos from '../../assets/images/hero_kenyan_pos_1794857444336.jpg';
 
 type BrandingAssetTab = 'logo' | 'favicon' | 'login-bg';
 
@@ -92,6 +93,12 @@ const FAVICON_PRESETS = [
 ];
 
 const LOGIN_BG_PRESETS = [
+  {
+    id: 'preset-kenyan-flagship',
+    name: 'Nairobi Retail Till (Curated Default)',
+    tag: 'Kenyan Flagship · 16:9',
+    url: heroKenyanPos,
+  },
   {
     id: 'preset-hypermarket',
     name: 'Modern Hypermarket',
@@ -461,14 +468,14 @@ export const SuperAdminBrandingTab: React.FC = () => {
       selectButtonLabel: 'Choose Favicon File',
     },
     'login-bg': {
-      title: 'Terminal Sign-In Background',
-      subtitle: 'Full-bleed backdrop behind the POS terminal login dialog with automatic contrast scrim.',
+      title: 'Landing Hero Showcase Image',
+      subtitle: 'Primary visual featured in the landing page Hero Showcase frame. Overrides the default curated Kenyan POS photograph.',
       accept: 'image/png,image/jpeg,image/webp,image/svg+xml',
       formatsLabel: 'PNG, JPG, WebP, SVG · Max 5 MB',
-      dimensionsHint: 'Recommended: 1920 × 1080 px (16:9 widescreen)',
+      dimensionsHint: 'Recommended: 1920 × 1080 px (16:9 widescreen) or 1600 × 1200 px (4:3)',
       inputId: 'login-bg-file-input',
       dropzoneId: 'login-bg-dropzone',
-      urlPlaceholder: 'https://cdn.example.com/terminal-backdrop.jpg',
+      urlPlaceholder: 'https://cdn.example.com/hero-showcase.jpg',
       buttonLabel: 'Verify & Apply',
       selectButtonLabel: 'Select Image File',
     },
@@ -573,7 +580,7 @@ export const SuperAdminBrandingTab: React.FC = () => {
           {[
             { id: 'logo' as const, label: 'Brand Logo', icon: LayoutTemplate, active: Boolean(platformLogo) },
             { id: 'favicon' as const, label: 'Browser Favicon', icon: Globe, active: Boolean(platformFavicon) },
-            { id: 'login-bg' as const, label: 'Login Background', icon: ImageIcon, active: Boolean(loginBgGraphic) },
+            { id: 'login-bg' as const, label: 'Hero Visual', icon: ImageIcon, active: Boolean(loginBgGraphic) },
           ].map((item) => {
             const Icon = item.icon;
             const isSelected = subTab === item.id;
@@ -610,7 +617,7 @@ export const SuperAdminBrandingTab: React.FC = () => {
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700 dark:hover:text-rose-400 border border-slate-200 dark:border-slate-800 hover:border-rose-200 dark:hover:border-rose-800/60 transition cursor-pointer whitespace-nowrap shrink-0"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>Revert {subTab === 'logo' ? 'Logo' : subTab === 'favicon' ? 'Favicon' : 'Background'}</span>
+            <span>Revert {subTab === 'logo' ? 'Logo' : subTab === 'favicon' ? 'Favicon' : 'Hero Visual'}</span>
           </button>
         )}
       </div>
@@ -855,7 +862,7 @@ export const SuperAdminBrandingTab: React.FC = () => {
               <span>
                 {subTab === 'logo' && 'Default SokoPoS wordmark and badge lockup active.'}
                 {subTab === 'favicon' && 'Default SokoPoS blue S mark active in browser tabs.'}
-                {subTab === 'login-bg' && 'Default dark slate (#020617) terminal backdrop active.'}
+                {subTab === 'login-bg' && 'Default curated Kenyan retail POS showcase photograph active.'}
               </span>
             </div>
           )}
@@ -1257,7 +1264,7 @@ export const SuperAdminBrandingTab: React.FC = () => {
               {subTab === 'login-bg' && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
-                    <span className="font-medium">16:9 Terminal Sign-In Simulation</span>
+                    <span className="font-medium">Landing Hero Showcase Simulation</span>
                     {activeMetrics?.valid && (
                       <span className="font-mono text-[10px] tabular-nums">
                         {activeMetrics.width} × {activeMetrics.height} px
@@ -1265,51 +1272,46 @@ export const SuperAdminBrandingTab: React.FC = () => {
                     )}
                   </div>
 
-                  <div className="relative rounded-xl overflow-hidden border border-slate-800 aspect-[16/10] flex flex-col justify-between select-none bg-slate-950">
-                    {loginBgGraphic && !previewLoadError ? (
+                  <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-md">
+                    {/* Top Device Header Strip */}
+                    <div className="px-3 py-2 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between text-[10px]">
+                      <div className="flex items-center gap-1.5 font-semibold text-slate-900 dark:text-slate-100">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                        <span>SokoPoS Terminal</span>
+                        <span className="font-mono text-slate-400">v2.4</span>
+                      </div>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span>Live Nairobi Till</span>
+                      </span>
+                    </div>
+
+                    {/* Image Viewport */}
+                    <div className="relative aspect-[16/10] bg-slate-950 overflow-hidden">
                       <img
-                        src={loginBgGraphic}
-                        alt="Login background simulation"
+                        src={loginBgGraphic || heroKenyanPos}
+                        alt="Landing Hero Showcase Simulation"
                         referrerPolicy="no-referrer"
                         onError={() => setPreviewLoadError(true)}
-                        className="absolute inset-0 w-full h-full object-cover"
+                        className="w-full h-full object-cover"
                       />
-                    ) : null}
-
-                    {loginBgGraphic && enableBgScrim && !previewLoadError && (
-                      <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[1px]" />
-                    )}
-
-                    <div className="relative z-10 px-3 py-2 border-b border-white/10 bg-slate-950/60 flex items-center justify-between text-white">
-                      <AppLogo theme="dark" size="sm" />
-                      <span className="text-[9px] text-slate-300">Terminal Ready</span>
+                      {loginBgGraphic && (
+                        <span className="absolute top-2 right-2 bg-slate-950/80 backdrop-blur-xs text-white text-[9px] font-semibold px-2 py-0.5 rounded border border-white/20">
+                          Custom Admin Override
+                        </span>
+                      )}
                     </div>
 
-                    <div className="relative z-10 flex items-center justify-center p-2 my-auto">
-                      <div className="w-44 rounded-lg border shadow-lg overflow-hidden text-center bg-[#18202c] border-slate-700/60">
-                        <div className="p-2 space-y-1.5">
-                          <div className="grid grid-cols-2 gap-0.5 bg-[#0e131c] p-0.5 rounded-md border border-slate-800 text-[7px] font-bold">
-                            <span className="bg-[#343e4f] text-white rounded py-0.5">Login</span>
-                            <span className="text-slate-400 py-0.5">PIN Pad</span>
-                          </div>
-                          <div className="text-[9px] font-bold text-white leading-tight py-0.5">
-                            Log In to POS Terminal
-                          </div>
-                          <div className="w-full py-1 px-1.5 rounded-md bg-[#1d8af3] text-white font-semibold text-[8px] flex items-center justify-center">
-                            <span>Continue with Google</span>
-                          </div>
-                        </div>
-                        <div className="bg-[#283243] p-1.5 border-t border-slate-700/60 space-y-1">
-                          <div className="text-[6.5px] text-slate-300">Need to register a new location?</div>
-                          <div className="w-full py-0.5 px-1.5 rounded bg-[#DC2626] text-white font-semibold text-[7px] flex items-center justify-center">
-                            <span>Set Up a New Store</span>
-                          </div>
-                        </div>
+                    {/* Frame Bottom Feature Strip */}
+                    <div className="p-2.5 bg-slate-50/70 dark:bg-slate-950/50 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-[10px] text-slate-600 dark:text-slate-400">
+                      <div className="flex items-center gap-1 font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        <span>M-Pesa STK Instant Sync</span>
                       </div>
-                    </div>
-
-                    <div className="relative z-10 px-3 py-1.5 border-t border-white/10 bg-slate-950/60 text-center text-[8px] text-slate-400">
-                      © 2026 SokoPoS Enterprise Platform
+                      <div className="flex items-center gap-1 font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        <span>eTIMS Auto-Filing</span>
+                      </div>
                     </div>
                   </div>
                 </div>

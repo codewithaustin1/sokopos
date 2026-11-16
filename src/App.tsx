@@ -577,14 +577,8 @@ function PosAppContent() {
     return (
       <div
         id="pos-landing-viewport"
-        className="h-screen w-screen overflow-y-auto scroll-smooth dark-scrollbar font-sans bg-slate-950 relative"
+        className="h-screen w-screen overflow-y-auto scroll-smooth dark-scrollbar font-sans bg-[#f8fafc] relative"
       >
-        {loginBgGraphic && (
-          <div
-            className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center bg-no-repeat"
-            style={{ backgroundImage: `url(${loginBgGraphic})` }}
-          />
-        )}
         {/* Framer Motion Toast Notification Stack */}
         <ToastContainer toasts={toasts} onDismiss={dismissToast} topOffsetClass="top-6" />
         <SignInView onLoginSuccess={navigateToTerminal} />

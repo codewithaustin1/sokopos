@@ -472,11 +472,6 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
         }
       `}</style>
 
-      {/* Darkening background overlay when custom image graphic is configured */}
-      {loginBgGraphic && (
-        <div className="fixed inset-0 bg-[#0F1613]/70 backdrop-blur-[1px] pointer-events-none -z-5" />
-      )}
-
       {/* Top Navigation Bar: Light mode matching landing page */}
       <header
         className="px-4 sm:px-8 py-3.5 border-b border-[#d9e1e6] bg-[#f4f7f6]/95 backdrop-blur-md shadow-xs flex items-center justify-between shrink-0 sticky top-0 z-50 transition-colors"
