@@ -39,7 +39,7 @@ export const MobileHeaderNav: React.FC<MobileHeaderNavProps> = ({
         aria-expanded={isOpen}
         aria-controls="slide-menu"
         aria-label="Toggle navigation menu"
-        className="relative inline-flex items-center justify-center p-2 rounded-lg text-slate-700 hover:text-blue-600 hover:bg-slate-100 focus:outline-none transition-colors border border-slate-200/80 cursor-pointer shadow-xs active:scale-95"
+        className="relative inline-flex items-center justify-center p-2 rounded-lg text-slate-800 hover:text-[#059669] hover:bg-emerald-50/60 focus:outline-none transition-colors border border-slate-200/80 cursor-pointer shadow-xs active:scale-95"
       >
         <div className="w-6 h-5 flex flex-col justify-between items-center pointer-events-none">
           <span className="bar-top w-full h-0.5 bg-current rounded-full" />
