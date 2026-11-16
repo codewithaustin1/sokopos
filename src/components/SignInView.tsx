@@ -37,11 +37,8 @@ import { AffiliatePortalModal } from './AffiliatePortalModal';
 import { enrollAffiliate, fetchAffiliateDashboard } from '../lib/affiliateService';
 import { auth } from '../lib/firebase';
 import { trackPlatformEvent } from '../lib/telemetryService';
+import { SolutionsGallery } from './landing/SolutionsGallery';
 import heroKenyanPos from '../assets/images/hero_kenyan_pos_1794857444336.jpg';
-import industryRetailShop from '../assets/images/industry_retail_shop_1794857445198.jpg';
-import industryBarRestaurant from '../assets/images/industry_bar_restaurant_1794857445769.jpg';
-import industrySupermarket from '../assets/images/industry_supermarket_1794857446020.jpg';
-import industryPharmacy from '../assets/images/industry_pharmacy_1794857446477.jpg';
 
 // Isolated Animated Counter Subcomponent: Keeps main-thread 60fps by updating the DOM ref directly without React state churn
 const AnimatedMetricCounter: React.FC<{ target?: number; duration?: number }> = React.memo(
@@ -90,76 +87,6 @@ interface SignInViewProps {
   onLoginSuccess?: () => void;
 }
 
-interface IndustrySectorConfig {
-  title: string;
-  subtitle: string;
-  bullets: string[];
-  image: string;
-  alt: string;
-  badge: string;
-  statLabel: string;
-  statValue: string;
-}
-
-const INDUSTRY_DATA: Record<string, IndustrySectorConfig> = {
-  'Retail shops': {
-    title: 'Fast counters for everyday stock',
-    subtitle: 'Scan, weigh or search items in seconds.',
-    bullets: [
-      'Low-stock alerts before shelves run empty',
-      'Price changes apply across every till',
-      'Works with M-Pesa and eTIMS',
-    ],
-    image: industryRetailShop,
-    alt: 'Kenyan retail shop checkout counter with barcode scanner and stocked shelves',
-    badge: 'General Retail & Agrovets',
-    statLabel: 'Counter scan speed',
-    statValue: '< 2s / item',
-  },
-  'Bars & restaurants': {
-    title: 'Tabs, tables and rounds without the chaos',
-    subtitle: 'Open and split tabs per table or customer.',
-    bullets: [
-      'Send orders to the bar or kitchen',
-      'Track pours and stock by the bottle',
-      'Works with M-Pesa and eTIMS',
-    ],
-    image: industryBarRestaurant,
-    alt: 'Contemporary Nairobi bistro and bar counter with POS order tabs terminal',
-    badge: 'Hospitality & Lounges',
-    statLabel: 'Tab split & settle',
-    statValue: 'Instant STK',
-  },
-  'Supermarkets': {
-    title: 'Many tills, one view of the business',
-    subtitle: 'Handle long baskets and barcode-heavy sales.',
-    bullets: [
-      'Handle high-volume baskets with zero lag',
-      'Manage staff shifts and cashier PINs',
-      'Compare branches from one dashboard',
-    ],
-    image: industrySupermarket,
-    alt: 'Kenyan supermarket express checkout till with thermal printer and basket items',
-    badge: 'Supermarkets & Groceries',
-    statLabel: 'Peak lane volume',
-    statValue: '45+ tx/hr',
-  },
-  'Pharmacies': {
-    title: 'Stock you can trust, batch by batch',
-    subtitle: 'Track expiry dates and batch numbers.',
-    bullets: [
-      'Batch-level traceability and expiry alerts',
-      'Flag sensitive drugs and dispense histories',
-      'Issue clear eTIMS receipts for every sale',
-    ],
-    image: industryPharmacy,
-    alt: 'Kenyan community pharmacy dispensary counter with digital batch tracking POS',
-    badge: 'Chemists & Dispensaries',
-    statLabel: 'Batch compliance',
-    statValue: '100% audit',
-  },
-};
-
 export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const {
     currentUser,
@@ -196,9 +123,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const [activeLegalPage, setActiveLegalPage] = useState<LegalTab | null>(null);
   const [isPricingPageOpen, setIsPricingPageOpen] = useState(false);
   const [isDemoModeActive, setIsDemoModeActive] = useState<boolean>(false);
-
-  // Industry solutions tab state
-  const [selectedIndustry, setSelectedIndustry] = useState<string>('Retail shops');
 
   // Staff credentials / ID and PIN login state
   const [staffCredentialInput, setStaffCredentialInput] = useState<string>('');
@@ -1126,8 +1050,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     );
   }
 
-  const activeIndDetails = INDUSTRY_DATA[selectedIndustry] || INDUSTRY_DATA['Retail shops'];
-
   // Determine staff profiles to show in staff list
   const displayStaff =
     systemUsers.length > 0
@@ -1880,10 +1802,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             <div className="sp-hero-grid">
               {/* Left Column: Value Proposition & Stats */}
               <div className="sp-hero-left flex flex-col items-center lg:items-start text-center lg:text-left">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold mb-4 shadow-2xs">
-                  <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
-                  <span>Kenya&apos;s Fastest Retail POS Terminal</span>
-                </div>
                 <h1 className="sp-h1">The ultimate POS built for retail, bars and supermarkets.</h1>
                 <p className="sp-lead">
                   Selling is easier than ever. Cut operational layers, automate receipt production, payment collection, stock reconciliation, and sales reporting!
@@ -2004,53 +1922,18 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           </div>
         </section>
 
-        {/* SECTION 2: INDUSTRY SOLUTIONS (#solutions) */}
+        {/* SECTION 2: INDUSTRY SOLUTIONS GALLERY (#solutions) */}
         <section className="sp-s sp-reveal" id="solutions">
           <div className="sp-wrap">
             <h2 className="sp-t">One POS, set up for your kind of shop.</h2>
-            <p className="sp-sub">Pick your business to see what changes at the till.</p>
+            <p className="sp-sub">
+              Explore tailored counter workflows across Kenya&apos;s key retail sectors. Select any business type to inspect full till capabilities.
+            </p>
 
-            <div className="sp-tabs" role="tablist" id="ind">
-              {Object.keys(INDUSTRY_DATA).map((indName) => (
-                <button
-                  key={indName}
-                  type="button"
-                  role="tab"
-                  aria-selected={selectedIndustry === indName}
-                  onClick={() => setSelectedIndustry(indName)}
-                >
-                  {indName}
-                </button>
-              ))}
-            </div>
-
-            <div className="sp-panel animate-sp-fade-slide" id="indPanel" key={selectedIndustry}>
-              <div>
-                <span className="sp-tag">{activeIndDetails.badge}</span>
-                <h3>{activeIndDetails.title}</h3>
-                <p style={{ color: 'var(--muted)', margin: '0 0 18px' }}>{activeIndDetails.subtitle}</p>
-                <ul>
-                  {activeIndDetails.bullets.map((bullet, idx) => (
-                    <li key={idx}>{bullet}</li>
-                  ))}
-                  <li>Works natively with M-Pesa STK &amp; eTIMS</li>
-                </ul>
-              </div>
-              <div className="relative rounded-2xl overflow-hidden border border-[#e2e8f0] bg-slate-900 shadow-sm aspect-[4/3] group">
-                <img
-                  src={activeIndDetails.image}
-                  alt={activeIndDetails.alt}
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                />
-                <div className="absolute bottom-3 left-3 right-3 bg-slate-950/80 backdrop-blur-sm px-3.5 py-2 rounded-xl text-white flex items-center justify-between text-xs border border-white/10">
-                  <span className="font-semibold">{activeIndDetails.badge}</span>
-                  <span className="text-[11px] text-emerald-300 font-mono font-medium">
-                    {activeIndDetails.statLabel}: <strong className="text-white">{activeIndDetails.statValue}</strong>
-                  </span>
-                </div>
-              </div>
-            </div>
+            <SolutionsGallery
+              onLaunchDemo={handleLaunchDemoSandbox}
+              onCreateAccount={() => openAuthModal('register')}
+            />
           </div>
         </section>
 
@@ -2130,7 +2013,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         {/* SECTION: CUSTOMER SUCCESS STORIES & TRUST BADGES */}
         <section className="sp-s sp-reveal" id="success-stories">
           <div className="sp-wrap">
-            <span className="sp-tag">Merchant Success</span>
             <h2 className="sp-t">Trusted by thousands of retailers across Kenya.</h2>
             <p className="sp-sub">
               See how shop owners in Nairobi, Mombasa, and Nakuru run faster tills and eliminate stock shrinkage with SokoPoS.
@@ -2197,7 +2079,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         {/* SECTION 5: FINAL CTA BANNER (Optimized for maximum conversion) */}
         <section className="sp-s sp-reveal sp-final bg-gradient-to-b from-transparent to-blue-50/40">
           <div className="sp-wrap max-w-3xl mx-auto">
-            <span className="sp-tag mb-3">Get Started Today</span>
             <h2>Ready to transform your retail business?</h2>
             <p className="text-base text-[#4c5a6b] mb-8 leading-relaxed">
               Join thousands of Kenyan merchants saving 10+ hours weekly with automated receipting, instant M-Pesa collections, and bulletproof stock control.
