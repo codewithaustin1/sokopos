@@ -62,6 +62,18 @@
             "printerHeaderNote": { "type": "string" },
             "printerFooterNote": { "type": "string" }
           }
+        },
+        "brandingSettings": {
+          "type": "object",
+          "properties": {
+            "logoBase64": { "type": "string" },
+            "logoFileName": { "type": "string" },
+            "aspectRatio": { "type": "string" },
+            "width": { "type": "number" },
+            "height": { "type": "number" },
+            "updatedAt": { "type": "string" },
+            "updatedBy": { "type": "string" }
+          }
         }
       },
       "required": ["id", "name", "ownerEmail", "currency"]
@@ -237,6 +249,7 @@
         "width": { "type": "number" },
         "height": { "type": "number" },
         "format": { "type": "string" },
+        "tiers": { "type": "array" },
         "updatedAt": { "type": "string" },
         "updatedBy": { "type": "string" }
       },
@@ -429,10 +442,12 @@
         "mpesaReceiptNumber": { "type": "string", "maxLength": 64 },
         "phone": { "type": "string", "maxLength": 32 },
         "customerEmail": { "type": "string", "maxLength": 160 },
+        "ownerEmail": { "type": "string", "maxLength": 160 },
         "resultCode": { "type": "number" },
         "pollAttempts": { "type": "number" },
         "resolvedBy": { "type": "string", "maxLength": 64 },
         "gatewayResponse": { "type": "string", "maxLength": 256 },
+        "authorizationUrl": { "type": "string", "maxLength": 512 },
         "paidAt": { "type": "string", "maxLength": 64 },
         "createdAt": { "type": "string", "maxLength": 64 },
         "updatedAt": { "type": "string", "maxLength": 64 }

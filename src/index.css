@@ -325,6 +325,24 @@ html.dark .bg-black\/60 {
     display: none !important;
   }
 
+  body.printing-subscription-receipt > *:not(#subscription-receipt-printable),
+  body:has(#subscription-receipt-printable) > *:not(#subscription-receipt-printable) {
+    display: none !important;
+  }
+
+  #subscription-receipt-printable {
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: 540px !important;
+    margin: 0 auto !important;
+    padding: 20px !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
   #report-print-modal-backdrop {
     position: static !important;
     display: block !important;

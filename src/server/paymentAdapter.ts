@@ -565,10 +565,12 @@ export class DarajaAdapter implements PaymentProviderAdapter {
   }
 
   private getCredentials() {
+    const shortCode = (process.env.DARAJA_SHORTCODE || '').trim();
     return {
       consumerKey: (process.env.DARAJA_CONSUMER_KEY || '').trim(),
       consumerSecret: (process.env.DARAJA_CONSUMER_SECRET || '').trim(),
-      shortCode: (process.env.DARAJA_SHORTCODE || '').trim(),
+      shortCode,
+      partyB: (process.env.DARAJA_PARTY_B || '').trim() || shortCode,
       passkey: (process.env.DARAJA_PASSKEY || '').trim(),
       transactionType:
         (process.env.DARAJA_TRANSACTION_TYPE || '').trim() === 'CustomerBuyGoodsOnline'
@@ -582,8 +584,8 @@ export class DarajaAdapter implements PaymentProviderAdapter {
     return Boolean(consumerKey && consumerSecret && shortCode && passkey);
   }
 
-  private async getAccessToken(): Promise<string> {
-    if (this.cachedToken && Date.now() < this.cachedToken.expiresAt - 60_000) {
+  private async getAccessToken(forceRefresh = false): Promise<string> {
+    if (!forceRefresh && this.cachedToken && Date.now() < this.cachedToken.expiresAt - 60_000) {
       return this.cachedToken.token;
     }
 
@@ -593,20 +595,31 @@ export class DarajaAdapter implements PaymentProviderAdapter {
     }
 
     const authBasic = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
-    const resp = await fetch(
-      `${this.getBaseUrl()}/oauth/v1/generate?grant_type=client_credentials`,
-      {
-        method: 'GET',
-        headers: {
-          Authorization: `Basic ${authBasic}`,
-        },
-      }
-    );
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+    let resp: Response;
+    try {
+      resp = await fetch(
+        `${this.getBaseUrl()}/oauth/v1/generate?grant_type=client_credentials`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Basic ${authBasic}`,
+          },
+          signal: controller.signal,
+        }
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
 
     const data: any = await resp.json().catch(() => ({}));
     if (!resp.ok || !data?.access_token) {
+      this.cachedToken = null;
       throw new Error(
-        data?.errorMessage || data?.error_description || `Daraja OAuth failed (${resp.status}).`
+        data?.errorMessage ||
+          data?.error_description ||
+          `Daraja OAuth failed (${resp.status}). Verify DARAJA_CONSUMER_KEY and DARAJA_CONSUMER_SECRET match DARAJA_ENV=${this.getEnvironment()}.`
       );
     }
 
@@ -671,11 +684,7 @@ export class DarajaAdapter implements PaymentProviderAdapter {
     }
 
     try {
-      const token = await this.getAccessToken();
-      const { shortCode, passkey, transactionType } = this.getCredentials();
-      const timestamp = formatDarajaTimestamp();
-      const password = this.buildPassword(shortCode, passkey, timestamp);
-
+      const { shortCode, partyB, passkey, transactionType } = this.getCredentials();
       const accountReference = String(params.accountReference || params.reference || 'SokoPoS')
         .replace(/[^a-zA-Z0-9_-]/g, '')
         .slice(0, 12) || 'SokoPoS';
@@ -683,30 +692,51 @@ export class DarajaAdapter implements PaymentProviderAdapter {
         .replace(/[^a-zA-Z0-9 _-]/g, '')
         .slice(0, 13) || 'SokoPoS Plan';
 
-      const payload = {
-        BusinessShortCode: shortCode,
-        Password: password,
-        Timestamp: timestamp,
-        TransactionType: transactionType,
-        Amount: amountKes,
-        PartyA: msisdn,
-        PartyB: shortCode,
-        PhoneNumber: msisdn,
-        CallBackURL: params.callbackUrl,
-        AccountReference: accountReference,
-        TransactionDesc: transactionDesc,
+      const sendStkRequest = async (token: string) => {
+        const timestamp = formatDarajaTimestamp();
+        const password = this.buildPassword(shortCode, passkey, timestamp);
+        const payload = {
+          BusinessShortCode: shortCode,
+          Password: password,
+          Timestamp: timestamp,
+          TransactionType: transactionType,
+          Amount: amountKes,
+          PartyA: msisdn,
+          PartyB: partyB,
+          PhoneNumber: msisdn,
+          CallBackURL: params.callbackUrl,
+          AccountReference: accountReference,
+          TransactionDesc: transactionDesc,
+        };
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 20_000);
+        try {
+          const resp = await fetch(`${this.getBaseUrl()}/mpesa/stkpush/v1/processrequest`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal,
+          });
+          const data: any = await resp.json().catch(() => ({}));
+          return { resp, data };
+        } finally {
+          clearTimeout(timeout);
+        }
       };
 
-      const resp = await fetch(`${this.getBaseUrl()}/mpesa/stkpush/v1/processrequest`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
+      let token = await this.getAccessToken();
+      let { resp, data } = await sendStkRequest(token);
 
-      const data: any = await resp.json().catch(() => ({}));
+      // Retry once with a fresh OAuth token if Daraja rejected a cached access token
+      if (resp.status === 401) {
+        token = await this.getAccessToken(true);
+        ({ resp, data } = await sendStkRequest(token));
+      }
+
       if (!resp.ok || String(data?.ResponseCode) !== '0' || !data?.CheckoutRequestID) {
         const errMsg =
           data?.errorMessage ||
@@ -779,33 +809,58 @@ export class DarajaAdapter implements PaymentProviderAdapter {
     }
 
     try {
-      const token = await this.getAccessToken();
       const { shortCode, passkey } = this.getCredentials();
-      const timestamp = formatDarajaTimestamp();
-      const password = this.buildPassword(shortCode, passkey, timestamp);
+      const sendQuery = async (token: string) => {
+        const timestamp = formatDarajaTimestamp();
+        const password = this.buildPassword(shortCode, passkey, timestamp);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15_000);
+        try {
+          const resp = await fetch(`${this.getBaseUrl()}/mpesa/stkpushquery/v1/query`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              BusinessShortCode: shortCode,
+              Password: password,
+              Timestamp: timestamp,
+              CheckoutRequestID: checkoutRequestId,
+            }),
+            signal: controller.signal,
+          });
+          const data: any = await resp.json().catch(() => ({}));
+          return { resp, data };
+        } finally {
+          clearTimeout(timeout);
+        }
+      };
 
-      const resp = await fetch(`${this.getBaseUrl()}/mpesa/stkpushquery/v1/query`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          BusinessShortCode: shortCode,
-          Password: password,
-          Timestamp: timestamp,
-          CheckoutRequestID: checkoutRequestId,
-        }),
-      });
+      let token = await this.getAccessToken();
+      let { resp, data } = await sendQuery(token);
+      if (resp.status === 401) {
+        token = await this.getAccessToken(true);
+        ({ resp, data } = await sendQuery(token));
+      }
 
-      const data: any = await resp.json().catch(() => ({}));
       const errorCode = String(data?.errorCode || '');
-      const errorMessage = String(data?.errorMessage || '').toLowerCase();
+      const rawErrorMessage = String(data?.errorMessage || '').trim();
+      const errorMessageLower = rawErrorMessage.toLowerCase();
 
-      // Daraja returns 500.001.1001 ("The transaction is being processed") while awaiting customer PIN
+      // Daraja uses 500.001.1001 for both "The transaction is being processed" and credential validation errors.
+      const isProcessing500 =
+        errorCode === '500.001.1001' &&
+        !errorMessageLower.includes('credential') &&
+        !errorMessageLower.includes('wrong') &&
+        !errorMessageLower.includes('invalid') &&
+        !errorMessageLower.includes('mismatch') &&
+        !errorMessageLower.includes('merchant') &&
+        !errorMessageLower.includes('not found');
+
       if (
-        errorCode === '500.001.1001' ||
-        errorMessage.includes('being processed') ||
+        errorMessageLower.includes('being processed') ||
+        isProcessing500 ||
         (resp.ok && data?.ResultCode === undefined && String(data?.ResponseCode) === '0')
       ) {
         return {
@@ -813,17 +868,35 @@ export class DarajaAdapter implements PaymentProviderAdapter {
           provider: this.providerName,
           reference: checkoutRequestId,
           status: 'pending',
-          gatewayResponse: data?.errorMessage || data?.ResponseDescription || 'Awaiting M-Pesa PIN confirmation',
+          gatewayResponse: rawErrorMessage || data?.ResponseDescription || 'Awaiting M-Pesa PIN confirmation',
         };
       }
 
       if (!resp.ok && data?.ResultCode === undefined) {
+        // Fail fast on explicit credential or validation errors rather than polling indefinitely
+        if (
+          errorMessageLower.includes('credential') ||
+          errorMessageLower.includes('wrong') ||
+          errorMessageLower.includes('invalid') ||
+          resp.status === 400 ||
+          resp.status === 403
+        ) {
+          const errMsg = rawErrorMessage || `Daraja STK query failed (${resp.status}).`;
+          return {
+            verified: false,
+            provider: this.providerName,
+            reference: checkoutRequestId,
+            status: 'failed',
+            gatewayResponse: errMsg,
+            error: errMsg,
+          };
+        }
         return {
           verified: false,
           provider: this.providerName,
           reference: checkoutRequestId,
           status: 'pending',
-          gatewayResponse: data?.errorMessage || `STK query returned ${resp.status}`,
+          gatewayResponse: rawErrorMessage || `STK query returned ${resp.status}`,
         };
       }
 
@@ -850,6 +923,19 @@ export class DarajaAdapter implements PaymentProviderAdapter {
           status: 'abandoned',
           gatewayResponse: resultDesc || 'M-Pesa prompt was cancelled by the user.',
           error: resultDesc || 'M-Pesa prompt was cancelled by the user.',
+        };
+      }
+
+      if (resultCode === 1037) {
+        const timeoutMsg =
+          resultDesc || 'M-Pesa prompt timed out on phone. Unlock your phone and retry.';
+        return {
+          verified: false,
+          provider: this.providerName,
+          reference: checkoutRequestId,
+          status: 'failed',
+          gatewayResponse: timeoutMsg,
+          error: timeoutMsg,
         };
       }
 

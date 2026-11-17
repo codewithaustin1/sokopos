@@ -578,3 +578,142 @@ export async function optimizeBrandingSlotFile(
 
   return { dataUrl: optimized, metrics: check };
 }
+
+export interface StandardizedCanvasResizeOptions {
+  targetWidth?: number;
+  targetHeight?: number;
+  mode?: 'contain' | 'cover';
+  outputMimeType?: 'image/png' | 'image/jpeg' | 'image/webp';
+  quality?: number;
+  maxBase64Bytes?: number;
+  backgroundColor?: string | null;
+}
+
+export interface StandardizedCanvasResizeResult {
+  base64DataUrl: string;
+  width: number;
+  height: number;
+  aspectRatioLabel: string;
+  sizeKb: number;
+}
+
+/**
+ * Resizes a user-selected image File to a standardized aspect ratio and exact pixel dimensions
+ * using an offscreen HTMLCanvasElement, returning a Firestore-safe base64 data URL.
+ */
+export async function resizeImageToStandardAspectRatio(
+  file: File,
+  options: StandardizedCanvasResizeOptions = {}
+): Promise<StandardizedCanvasResizeResult> {
+  const {
+    targetWidth = 400,
+    targetHeight = 100,
+    mode = 'contain',
+    outputMimeType = 'image/png',
+    quality = 0.92,
+    maxBase64Bytes = 450 * 1024,
+    backgroundColor = null,
+  } = options;
+
+  const validation = validateBrandingAssetFile(file, {
+    allowIco: false,
+    maxBytes: 5 * 1024 * 1024,
+    label: 'business logo',
+  });
+  if (!validation.valid) {
+    throw new Error(validation.error || 'Please choose a valid PNG, JPG, WebP, or SVG image.');
+  }
+
+  let sourceUrl: string;
+  if (file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg')) {
+    const svgText = await file.text();
+    const safeSvg = sanitizeSvgTextIfNeeded(svgText);
+    sourceUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(safeSvg)}`;
+  } else {
+    sourceUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('Failed to read the selected image from your device.'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const imageEl = new Image();
+    imageEl.onload = () => resolve(imageEl);
+    imageEl.onerror = () => reject(new Error('Could not decode the selected image file.'));
+    imageEl.src = sourceUrl;
+  });
+
+  const srcWidth = img.naturalWidth || img.width;
+  const srcHeight = img.naturalHeight || img.height;
+  if (!srcWidth || !srcHeight) {
+    throw new Error('Selected image has invalid dimensions (0 × 0).');
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Canvas 2D context is not available in this browser.');
+  }
+
+  if (backgroundColor) {
+    ctx.fillStyle = backgroundColor;
+    ctx.fillRect(0, 0, targetWidth, targetHeight);
+  } else if (outputMimeType === 'image/jpeg') {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, targetWidth, targetHeight);
+  } else {
+    ctx.clearRect(0, 0, targetWidth, targetHeight);
+  }
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  const scale =
+    mode === 'cover'
+      ? Math.max(targetWidth / srcWidth, targetHeight / srcHeight)
+      : Math.min(targetWidth / srcWidth, targetHeight / srcHeight);
+
+  const drawWidth = Math.max(1, Math.round(srcWidth * scale));
+  const drawHeight = Math.max(1, Math.round(srcHeight * scale));
+  const offsetX = Math.round((targetWidth - drawWidth) / 2);
+  const offsetY = Math.round((targetHeight - drawHeight) / 2);
+
+  ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+
+  let base64DataUrl = canvas.toDataURL(outputMimeType, quality);
+
+  // Compact gracefully if base64 exceeds target Firestore budget
+  if (base64DataUrl.length > maxBase64Bytes) {
+    const webpUrl = canvas.toDataURL('image/webp', 0.85);
+    if (webpUrl.startsWith('data:image/webp') && webpUrl.length < base64DataUrl.length) {
+      base64DataUrl = webpUrl;
+    }
+    let stepQuality = 0.8;
+    while (base64DataUrl.length > maxBase64Bytes && stepQuality >= 0.45) {
+      base64DataUrl = canvas.toDataURL('image/jpeg', stepQuality);
+      stepQuality -= 0.12;
+    }
+  }
+
+  if (base64DataUrl.length > 750 * 1024) {
+    throw new Error('Resized branding image exceeds the 750 KB Firestore limit. Choose a simpler graphic.');
+  }
+
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+  const divisor = gcd(targetWidth, targetHeight);
+  const aspectRatioLabel = `${targetWidth / divisor}:${targetHeight / divisor}`;
+
+  return {
+    base64DataUrl,
+    width: targetWidth,
+    height: targetHeight,
+    aspectRatioLabel,
+    sizeKb: estimateAssetSizeKb(base64DataUrl),
+  };
+}
+

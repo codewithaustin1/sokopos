@@ -1,3 +1,5 @@
+import type { PricingTier } from './types/pricing';
+
 export type PaymentMethod = 'mpesa' | 'cash' | 'card' | 'split' | 'store_credit';
 
 export interface CustomerCreditLedgerEntry {
@@ -56,6 +58,16 @@ export interface BusinessHardwareSettings {
   updatedAt?: string;
 }
 
+export interface BusinessBrandingSettings {
+  logoBase64?: string | null;
+  logoFileName?: string;
+  aspectRatio?: string;
+  width?: number;
+  height?: number;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 export type IndustrySolutionId = 'retail' | 'bars' | 'supermarkets' | 'pharmacies';
 
 export type BrandingSlotId =
@@ -87,7 +99,15 @@ export interface PlatformSettings {
   platformFavicon?: string | null;
   platformFaviconName?: string;
   industryImages?: Partial<Record<IndustrySolutionId, { url: string | null; name?: string }>>;
+  tiers?: PricingTier[];
   updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface PlatformPricingConfig {
+  id: 'pricing_tiers';
+  tiers: PricingTier[];
+  updatedAt: string;
   updatedBy?: string;
 }
 
@@ -160,6 +180,7 @@ export interface Business {
   taxNumber: string;
   phone?: string;
   hardwareSettings?: BusinessHardwareSettings;
+  brandingSettings?: BusinessBrandingSettings;
   retailTheme?: RetailTheme;
   taxSettings?: BusinessTaxSettings;
   loyaltySettings?: BusinessLoyaltySettings;

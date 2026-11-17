@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Monitor,
   ArrowRight,
@@ -9,6 +9,7 @@ import { AppFooter } from './common/AppFooter';
 import { MobileHeaderNav } from './common/MobileHeaderNav';
 import { WhatsAppFloatingButton } from './landing/WhatsAppFloatingButton';
 import { usePos } from '../context/PosContext';
+import { DEFAULT_PRICING_TIERS } from '../types/pricing';
 import { scrollToTop } from '../utils/scrollUtils';
 import { trackPlatformEvent } from '../lib/telemetryService';
 
@@ -146,6 +147,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
 }) => {
   const {
     currentUser,
+    pricingTiers,
     loginBgGraphic: contextLoginBgGraphic,
     setIsSubscriptionModalOpen,
     selectCheckoutPackage,
@@ -159,7 +161,37 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
   const [recommendedId, setRecommendedId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string>('');
 
-  const savePercentage = Math.round((1 - TIERS[1].a / (TIERS[1].m * 12)) * 100);
+  const liveTiers = useMemo<TierDefinition[]>(() => {
+    const source = pricingTiers && pricingTiers.length > 0 ? pricingTiers : DEFAULT_PRICING_TIERS;
+    const active = source.filter((t) => t.isActive !== false);
+    const list = active.length > 0 ? active : DEFAULT_PRICING_TIERS;
+    return list.map((t) => {
+      const isFree = t.id === 'free';
+      return {
+        id: t.id,
+        name: t.name,
+        alias: t.alias,
+        badge: t.badge || '',
+        m: t.monthlyPrice,
+        a: t.annualPrice,
+        setup: isFree ? (t.consultationFee ?? 1999) : t.consultationFee,
+        setupNote: t.consultationDescription,
+        tagline: t.tagline,
+        branches: t.maxBranches === -1 ? 'Unlimited' : String(t.maxBranches),
+        staff: t.maxStaffUsers === -1 ? 'Unlimited' : String(t.maxStaffUsers),
+        support: t.supportLevel,
+        cta: isFree ? 'Book a setup session' : `Choose ${t.name}`,
+        f: t.features,
+        pop: Boolean(t.isPopular),
+      };
+    });
+  }, [pricingTiers]);
+
+  const firstPaidTier = liveTiers.find((t) => t.m > 0);
+  const savePercentage =
+    firstPaidTier && firstPaidTier.m > 0
+      ? Math.max(0, Math.round((1 - firstPaidTier.a / (firstPaidTier.m * 12)) * 100))
+      : 17;
 
   useEffect(() => {
     trackPlatformEvent('pricing_view', {
@@ -174,7 +206,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
     setSelectedBranches(n);
     const recId = recommendTier(n);
     setRecommendedId(recId);
-    const target = TIERS.find((t) => t.id === recId);
+    const target = liveTiers.find((t) => t.id === recId) || TIERS.find((t) => t.id === recId);
     if (target) {
       const extra = recId === 'starter' ? ' Starting out? The free plan also covers one branch.' : '';
       setStatusMessage(`${target.name} fits best: ${STEPS[recId]}${extra}`);
@@ -186,8 +218,9 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
     selectCheckoutPackage(selectedPlan, billing);
 
     if (tier.id === 'free') {
+      const setupKes = fmt.format(tier.setup ?? 1999);
       const text = encodeURIComponent(
-        'Hello SokoPoS! I would like to register for the Free Account and schedule the 1-on-1 Store Setup & Advisory Consultation (Ksh 1,999).'
+        `Hello SokoPoS! I would like to register for the Free Account and schedule the 1-on-1 Store Setup & Advisory Consultation (Ksh ${setupKes}).`
       );
       window.open(`https://wa.me/254740463021?text=${text}`, '_blank', 'noopener,noreferrer');
       if (onSelectPlan) {
@@ -642,23 +675,24 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
 
         {/* 4 Cards Grid */}
         <section className="sp-grid" aria-label="Plans">
-          {TIERS.map((t) => {
+          {liveTiers.map((t) => {
             const big = isYearly ? t.a : t.m;
             const per = t.m === 0 ? '/month' : isYearly ? '/year' : '/month';
             const isRec = recommendedId === t.id;
 
             let sub: React.ReactNode;
-            if (t.setup) {
+            if (t.setup !== undefined && t.id === 'free') {
               sub = (
                 <span>
                   <strong>+ Ksh {fmt.format(t.setup)}</strong> one-time setup. {t.setupNote}
                 </span>
               );
             } else if (isYearly) {
+              const savings = Math.max(0, t.m * 12 - t.a);
               sub = (
                 <span>
                   About Ksh {fmt.format(Math.round(t.a / 12))} a month. You save{' '}
-                  <strong>Ksh {fmt.format(t.m * 12 - t.a)}</strong>.
+                  <strong>Ksh {fmt.format(savings)}</strong>.
                 </span>
               );
             } else {

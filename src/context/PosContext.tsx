@@ -8,6 +8,7 @@ import { trackPlatformEvent } from '../lib/telemetryService';
 import {
   AuthUser,
   Business,
+  BusinessBrandingSettings,
   CartItem,
   Cashier,
   Category,
@@ -119,6 +120,7 @@ import {
   purgeTenantTransactionsFromFirestore,
   saveBusinessToFirestore,
   updateBusinessInFirestore,
+  ensureBusinessDocInFirestore,
   deleteBusinessFromFirestore,
   purgeTenantAllDataFromFirestore,
   getBusinessesFromFirestore,
@@ -139,6 +141,8 @@ import {
   savePlatformSettingsToFirestore,
   saveBrandingSlotToFirestore,
   clearAllBrandingSlotsInFirestore,
+  subscribeToPricingTiers,
+  savePricingTiersToFirestore,
   saveCustomerToFirestore,
   updateCustomerInFirestore,
   deleteCustomerFromFirestore,
@@ -147,6 +151,9 @@ import {
   updateSupplierInFirestore,
   deleteSupplierFromFirestore,
   getTenantSuppliersFromFirestore,
+  subscribeToBusinessDocument,
+  subscribeToPaymentRecord,
+  PaymentRecordSnapshot,
 } from '../lib/firestoreService';
 import {
   hashPinOnServer,
@@ -179,7 +186,13 @@ import {
   isQuotaAtOrAboveLimit,
   formatTierDisplayName,
 } from '../utils/subscriptionEntitlements';
-import { verifyServerPayment } from '../lib/paymentService';
+import {
+  verifyServerPayment,
+  PendingSubscriptionCheckout,
+  savePendingSubscriptionCheckout,
+  loadPendingSubscriptionCheckout,
+  clearPendingSubscriptionCheckout,
+} from '../lib/paymentService';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 interface PosContextType {
@@ -215,6 +228,7 @@ interface PosContextType {
   logout: () => boolean;
   provisionBusiness: (name: string, ownerEmail: string, ownerName: string, plan: BusinessPlanTier) => Business;
   updateBusinessProfile: (updates: Partial<Business>) => void;
+  saveBusinessBrandingLogo: (branding: BusinessBrandingSettings | null) => Promise<void>;
   applyBusinessLocalUpdate: (businessId: string, updates: Partial<Business>, syncToFirestore?: boolean) => void;
   updateBusinessStatus: (businessId: string, status: 'active' | 'suspended') => Promise<void>;
   performSystemCleanup: () => Promise<{ removedCount: number; removedBusinesses: string[] }>;
@@ -224,12 +238,14 @@ interface PosContextType {
   // Business Profile Settings & Branch Management
   isBusinessSettingsOpen: boolean;
   setIsBusinessSettingsOpen: (open: boolean) => void;
-  businessSettingsDefaultTab: 'profile' | 'branches' | 'settlement' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset';
-  openBusinessSettings: (initialTab?: 'profile' | 'branches' | 'settlement' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset') => void;
+  businessSettingsDefaultTab: 'profile' | 'branches' | 'billing' | 'settlement' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset';
+  openBusinessSettings: (initialTab?: 'profile' | 'branches' | 'billing' | 'settlement' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset') => void;
   updateActiveUserCredentials: (newPin?: string, newUsername?: string) => Promise<boolean>;
 
   // Pricing Architecture, Package Tiers & Entitlement Enforcement
   pricingTiers: PricingTier[];
+  pricingSyncStatus: 'idle' | 'saving' | 'synced' | 'error';
+  pricingSyncError: string | null;
   updatePricingTier: (tierId: string, updates: Partial<PricingTier>) => void;
   resetPricingTiersToDefault: () => void;
   updateBusinessPlan: (businessId: string, plan: BusinessPlanTier) => Promise<void>;
@@ -256,6 +272,16 @@ interface PosContextType {
     amountKes: number
   ) => void;
   activateBusinessSubscription: (businessId: string, plan: BusinessPlanTier, paymentReference?: string) => Promise<{ success: boolean; message: string }>;
+  pendingSubscriptionCheckout: PendingSubscriptionCheckout | null;
+  trackPendingSubscription: (pending: PendingSubscriptionCheckout) => void;
+  clearPendingSubscription: () => void;
+  livePaymentRecordSnapshot: PaymentRecordSnapshot | null;
+  ensureBusinessSyncedForCheckout: () => Promise<{
+    ok: boolean;
+    idToken?: string;
+    code?: 'FIREBASE_AUTH_REQUIRED' | 'EMAIL_VERIFICATION_REQUIRED' | 'DEMO_STORE' | 'OWNER_MISMATCH' | 'SYNC_FAILED';
+    error?: string;
+  }>;
   isPricingPageOpen: boolean;
   setIsPricingPageOpen: React.Dispatch<React.SetStateAction<boolean>>;
   openPricingPage: () => void;
@@ -905,21 +931,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       try {
         if (remoteBusinessIds.has(winner.id) && !isSuperAdminEmail) {
           await updateBusinessInFirestore(winner.id, { lastLoginAt: winner.lastLoginAt });
+        } else if (isSuperAdminEmail) {
+          await saveBusinessToFirestore(winner);
         } else {
-          const {
-            subscription: _omitSub,
-            paystackSubaccountStatus: _omitPsStatus,
-            ...safeWinnerBase
-          } = winner;
-          const createPayload: Business = isSuperAdminEmail
-            ? winner
-            : {
-                ...safeWinnerBase,
-                ownerEmail: normalizedEmail,
-                plan: 'free',
-                status: 'active',
-              };
-          await saveBusinessToFirestore(createPayload);
+          await ensureBusinessDocInFirestore(winner, normalizedEmail);
         }
       } catch (e) {
         console.warn('Firestore sync winner note:', e);
@@ -1232,23 +1247,127 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     return DEFAULT_PRICING_TIERS;
   });
+  const [pricingSyncStatus, setPricingSyncStatus] = useState<'idle' | 'saving' | 'synced' | 'error'>('idle');
+  const [pricingSyncError, setPricingSyncError] = useState<string | null>(null);
+  const pricingTiersRef = useRef<PricingTier[]>(pricingTiers);
+  const pricingSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastPricingToastAtRef = useRef<number>(0);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.PRICING_TIERS, JSON.stringify(pricingTiers));
+    pricingTiersRef.current = pricingTiers;
+    try {
+      localStorage.setItem(STORAGE_KEYS.PRICING_TIERS, JSON.stringify(pricingTiers));
+    } catch {
+      // ignore storage quota errors
+    }
   }, [pricingTiers]);
 
-  const updatePricingTier = (tierId: string, updates: Partial<PricingTier>) => {
-    setPricingTiers((prev) =>
-      prev.map((t) => (t.id === tierId ? { ...t, ...updates } : t))
+  // Live Firestore real-time subscription so Super Admin price edits propagate instantly to all devices
+  useEffect(() => {
+    const unsubscribe = subscribeToPricingTiers(
+      ({ tiers, updatedAt }) => {
+        if (pricingSaveTimerRef.current) {
+          // Local debounce save is still in flight; skip overwriting active edits
+          return;
+        }
+        pricingTiersRef.current = tiers;
+        setPricingTiers(tiers);
+        try {
+          localStorage.setItem(STORAGE_KEYS.PRICING_TIERS, JSON.stringify(tiers));
+        } catch {
+          // ignore storage quota errors
+        }
+        if (updatedAt) {
+          setPricingSyncStatus('synced');
+          setPricingSyncError(null);
+        }
+      },
+      (errMsg) => {
+        setPricingSyncError(errMsg);
+      }
     );
-    showToast(`Pricing tier updated successfully`, 'success');
-  };
+    return () => {
+      unsubscribe();
+      if (pricingSaveTimerRef.current) {
+        clearTimeout(pricingSaveTimerRef.current);
+        pricingSaveTimerRef.current = null;
+      }
+    };
+  }, []);
 
-  const resetPricingTiersToDefault = () => {
+  const persistPricingTiersSnapshot = useCallback(
+    async (tiersToSave: PricingTier[], toastMessageText?: string) => {
+      setPricingSyncStatus('saving');
+      setPricingSyncError(null);
+      const res = await savePricingTiersToFirestore(
+        tiersToSave,
+        auth.currentUser?.email || currentUser?.email || SUPER_ADMIN_EMAIL
+      );
+      if (res.ok) {
+        setPricingSyncStatus('synced');
+        setPricingSyncError(null);
+        const now = Date.now();
+        if (toastMessageText && now - lastPricingToastAtRef.current > 2000) {
+          lastPricingToastAtRef.current = now;
+          showToast(toastMessageText, 'success');
+        }
+      } else {
+        setPricingSyncStatus('error');
+        setPricingSyncError(res.error || 'Cloud sync requires verified Super Admin Google sign-in.');
+        const now = Date.now();
+        if (now - lastPricingToastAtRef.current > 4000) {
+          lastPricingToastAtRef.current = now;
+          showToast(
+            `Saved locally, but cloud pricing sync failed: ${res.error || 'Verify Super Admin sign-in.'}`,
+            'warning'
+          );
+        }
+      }
+    },
+    [currentUser?.email, showToast]
+  );
+
+  const updatePricingTier = useCallback(
+    (tierId: string, updates: Partial<PricingTier>) => {
+      const nextTiers = pricingTiersRef.current.map((t) =>
+        t.id === tierId ? { ...t, ...updates } : t
+      );
+      pricingTiersRef.current = nextTiers;
+      setPricingTiers(nextTiers);
+      setPricingSyncStatus('saving');
+      setPricingSyncError(null);
+
+      if (pricingSaveTimerRef.current) {
+        clearTimeout(pricingSaveTimerRef.current);
+      }
+      pricingSaveTimerRef.current = setTimeout(() => {
+        pricingSaveTimerRef.current = null;
+        void persistPricingTiersSnapshot(
+          pricingTiersRef.current,
+          'Pricing updated and synced live to all devices'
+        );
+      }, 500);
+    },
+    [persistPricingTiersSnapshot]
+  );
+
+  const resetPricingTiersToDefault = useCallback(() => {
+    if (pricingSaveTimerRef.current) {
+      clearTimeout(pricingSaveTimerRef.current);
+      pricingSaveTimerRef.current = null;
+    }
+    pricingTiersRef.current = DEFAULT_PRICING_TIERS;
     setPricingTiers(DEFAULT_PRICING_TIERS);
-    localStorage.setItem(STORAGE_KEYS.PRICING_TIERS, JSON.stringify(DEFAULT_PRICING_TIERS));
-    showToast('Pricing tiers reset to default architecture', 'info');
-  };
+    try {
+      localStorage.setItem(STORAGE_KEYS.PRICING_TIERS, JSON.stringify(DEFAULT_PRICING_TIERS));
+    } catch {
+      // ignore storage errors
+    }
+    void persistPricingTiersSnapshot(
+      DEFAULT_PRICING_TIERS,
+      'Pricing tiers reset to defaults and synced globally'
+    );
+  }, [persistPricingTiersSnapshot]);
 
   const entitlements = useMemo<SubscriptionEntitlements>(
     () => resolveBusinessEntitlements(currentBusiness, pricingTiers),
@@ -6696,12 +6815,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             });
 
             const targetBiz = validRemote[0];
+            const validRemoteIds = new Set(validRemote.map((b) => b.id));
             setActiveBusinessIdState((prev) => {
               if (isSA) {
                 localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, 'biz-upfront');
                 return 'biz-upfront';
               }
-              if (!prev || prev === 'biz-upfront' || prev === 'biz-soko' || prev === 'biz-quickmart') {
+              if (!prev || prev === 'biz-upfront' || prev === 'biz-soko' || prev === 'biz-quickmart' || !validRemoteIds.has(prev)) {
                 if (targetBiz) {
                   localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBiz.id);
                   return targetBiz.id;
@@ -6739,7 +6859,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const ownsActiveBiz = Boolean(
       targetBizObj?.ownerEmail && targetBizObj.ownerEmail.toLowerCase().trim() === signedInEmail
     );
-    if (!isSA && currentUser.businessId !== activeBusinessId && !ownsActiveBiz) return;
+    if (!isSA) {
+      if (currentUser.authProvider !== 'firebase' || currentUser.firebaseUid !== auth.currentUser.uid) {
+        return;
+      }
+      if (currentUser.businessId !== activeBusinessId && !ownsActiveBiz) return;
+      if (targetBizObj?.ownerEmail && !ownsActiveBiz) return;
+    }
 
     let unsubProducts: (() => void) | undefined;
     let unsubLocations: (() => void) | undefined;
@@ -8110,7 +8236,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Business Profile Settings & Credential Management
   const [isBusinessSettingsOpen, setIsBusinessSettingsOpen] = useState<boolean>(false);
-  const [businessSettingsDefaultTab, setBusinessSettingsDefaultTab] = useState<'profile' | 'branches' | 'settlement' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset'>('profile');
+  const [businessSettingsDefaultTab, setBusinessSettingsDefaultTab] = useState<'profile' | 'branches' | 'billing' | 'settlement' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset'>('profile');
 
   // Hardware & Auto-Print Preferences (Browser Print Dialog on Checkout) - Scoped Strictly per Tenant
   const [autoPrintReceipt, setAutoPrintReceiptState] = useState<boolean>(() => {
@@ -8412,7 +8538,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
   };
 
-  const openBusinessSettings = (initialTab: 'profile' | 'branches' | 'settlement' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset' = 'profile') => {
+  const openBusinessSettings = (initialTab: 'profile' | 'branches' | 'billing' | 'settlement' | 'tax' | 'loyalty' | 'pricing' | 'accounts' | 'credentials' | 'appearance' | 'hardware' | 'reset' = 'profile') => {
     if (initialTab === 'pricing') {
       openPricingPage();
       return;
@@ -8508,6 +8634,48 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       );
     }
     showToast(`Business profile updated for ${updatedBiz.name}`, 'success');
+  };
+
+  const saveBusinessBrandingLogo = async (branding: BusinessBrandingSettings | null): Promise<void> => {
+    if (!currentBusiness) return;
+    const oldBiz = currentBusiness;
+    const nextBranding: BusinessBrandingSettings = branding
+      ? {
+          ...branding,
+          updatedAt: branding.updatedAt || new Date().toISOString(),
+          updatedBy: branding.updatedBy || currentUser?.email || currentBusiness.ownerEmail,
+        }
+      : {
+          logoBase64: null,
+          logoFileName: undefined,
+          aspectRatio: '4:1',
+          width: 400,
+          height: 100,
+          updatedAt: new Date().toISOString(),
+          updatedBy: currentUser?.email || currentBusiness.ownerEmail,
+        };
+
+    const updatedBiz: Business = {
+      ...oldBiz,
+      brandingSettings: nextBranding,
+    };
+
+    setBusinesses((prev) =>
+      prev.map((b) => (b.id === activeBusinessId ? updatedBiz : b))
+    );
+
+    if (isOnline && activeBusinessId !== 'biz-demo') {
+      try {
+        await updateBusinessInFirestore(activeBusinessId, {
+          brandingSettings: nextBranding,
+        });
+      } catch (err) {
+        setBusinesses((prev) =>
+          prev.map((b) => (b.id === activeBusinessId ? oldBiz : b))
+        );
+        throw err;
+      }
+    }
   };
 
   const updateBusinessStatus = async (businessId: string, status: 'active' | 'suspended'): Promise<void> => {
@@ -8793,6 +8961,29 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     [selectCheckoutPackage, setPendingCheckoutIntent]
   );
 
+  // Keep any open unauthenticated checkout intent synchronized if live prices update
+  useEffect(() => {
+    if (!pendingCheckoutIntent) return;
+    const liveTier = pricingTiers.find((t) => t.id === pendingCheckoutIntent.planId);
+    if (!liveTier) return;
+    const liveAmount =
+      pendingCheckoutIntent.planId === 'free'
+        ? (liveTier.consultationFee ?? 1999)
+        : pendingCheckoutIntent.billingCycle === 'annual'
+        ? liveTier.annualPrice
+        : liveTier.monthlyPrice;
+    if (
+      liveAmount !== pendingCheckoutIntent.amountKes ||
+      liveTier.name !== pendingCheckoutIntent.planName
+    ) {
+      setPendingCheckoutIntent({
+        ...pendingCheckoutIntent,
+        planName: liveTier.name,
+        amountKes: liveAmount,
+      });
+    }
+  }, [pricingTiers, pendingCheckoutIntent, setPendingCheckoutIntent]);
+
   // Dedicated Full-Page Pricing State (Seamless access across logged-in and public views)
   const [isPricingPageOpen, setIsPricingPageOpen] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -8917,6 +9108,287 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     [currentBusiness?.id, currentBusiness?.name, isSuperAdmin, applyBusinessLocalUpdate, updateBusinessProfile, showToast]
   );
 
+  // Unified Pending Subscription Checkout Persistence & Real-Time Firestore Push Sync
+  const [pendingSubscriptionCheckout, setPendingSubscriptionCheckoutState] =
+    useState<PendingSubscriptionCheckout | null>(() => loadPendingSubscriptionCheckout());
+  const [livePaymentRecordSnapshot, setLivePaymentRecordSnapshot] =
+    useState<PaymentRecordSnapshot | null>(null);
+  const notifiedPaymentRefsRef = useRef<Set<string>>(new Set());
+
+  const trackPendingSubscription = useCallback((pending: PendingSubscriptionCheckout) => {
+    savePendingSubscriptionCheckout(pending);
+    setPendingSubscriptionCheckoutState(pending);
+  }, []);
+
+  const clearPendingSubscription = useCallback(() => {
+    clearPendingSubscriptionCheckout();
+    setPendingSubscriptionCheckoutState(null);
+    setLivePaymentRecordSnapshot(null);
+  }, []);
+
+  // Real-time Firestore listener on active business document so backend webhook/poller/callback
+  // subscription updates (and late M-Pesa receipt codes) push straight into client UI immediately.
+  useEffect(() => {
+    if (!isOnline || isFirebaseAuthLoading || !currentUser || !firebaseUser || !auth.currentUser) {
+      return;
+    }
+    const bizId = activeBusinessId;
+    if (!bizId || isDemoBusinessId(bizId) || currentBusiness?.id !== bizId) {
+      return;
+    }
+
+    const signedInEmail = (auth.currentUser.email || '').toLowerCase().trim();
+    const isSA = signedInEmail === SUPER_ADMIN_EMAIL.toLowerCase() || currentUser.role === 'super_admin';
+
+    if (!isSA && !auth.currentUser.emailVerified) return;
+    if (!isSA && bizId === 'biz-upfront') return;
+
+    const targetBizObj = businesses.find((b) => b.id === bizId);
+    if (!targetBizObj) return;
+
+    if (!isSA) {
+      if (currentUser.authProvider !== 'firebase' || currentUser.firebaseUid !== auth.currentUser.uid) {
+        return;
+      }
+      if (currentUser.businessId !== bizId) return;
+      const targetOwnerEmail = (targetBizObj.ownerEmail || '').toLowerCase().trim();
+      if (!targetOwnerEmail || targetOwnerEmail !== signedInEmail) return;
+    }
+
+    const unsub = subscribeToBusinessDocument(bizId, (remoteBiz) => {
+      setBusinesses((prev) => {
+        let changed = false;
+        const next = prev.map((b) => {
+          if (b.id !== bizId) return b;
+          const prevSub = b.subscription || {};
+          const remSub = remoteBiz.subscription || {};
+          const subChanged =
+            prevSub.status !== remSub.status ||
+            prevSub.expiresAt !== remSub.expiresAt ||
+            prevSub.lastPaymentReference !== remSub.lastPaymentReference ||
+            prevSub.mpesaReceiptNumber !== remSub.mpesaReceiptNumber ||
+            prevSub.lastMpesaReceipt !== remSub.lastMpesaReceipt ||
+            prevSub.planId !== remSub.planId ||
+            b.plan !== remoteBiz.plan ||
+            b.status !== remoteBiz.status;
+          if (!subChanged) return b;
+          changed = true;
+          return {
+            ...b,
+            plan: remoteBiz.plan || b.plan,
+            status: remoteBiz.status || b.status,
+            subscription: {
+              ...prevSub,
+              ...remSub,
+            },
+          };
+        });
+        return changed ? next : prev;
+      });
+    });
+    return () => unsub();
+  }, [
+    isOnline,
+    isFirebaseAuthLoading,
+    currentUser,
+    firebaseUser,
+    activeBusinessId,
+    currentBusiness?.id,
+    businesses,
+  ]);
+
+  // Real-time Firestore listener on the active pending payment_records/{reference}
+  // so modal-closed, cross-reload, or late M-Pesa receipt updates sync live without polling delay.
+  useEffect(() => {
+    const pendingRef = pendingSubscriptionCheckout?.reference;
+    if (
+      !isOnline ||
+      isFirebaseAuthLoading ||
+      !currentUser ||
+      !firebaseUser ||
+      !auth.currentUser ||
+      !pendingRef
+    ) {
+      setLivePaymentRecordSnapshot(null);
+      return;
+    }
+
+    const signedInEmail = (auth.currentUser.email || '').toLowerCase().trim();
+    const isSA = signedInEmail === SUPER_ADMIN_EMAIL.toLowerCase() || currentUser.role === 'super_admin';
+
+    if (!isSA && !auth.currentUser.emailVerified) {
+      setLivePaymentRecordSnapshot(null);
+      return;
+    }
+    if (!isSA) {
+      if (currentUser.authProvider !== 'firebase' || currentUser.firebaseUid !== auth.currentUser.uid) {
+        setLivePaymentRecordSnapshot(null);
+        return;
+      }
+      const pendingBizId = pendingSubscriptionCheckout?.businessId;
+      if (pendingBizId && pendingBizId !== activeBusinessId) {
+        setLivePaymentRecordSnapshot(null);
+        return;
+      }
+      const targetBizObj = businesses.find((b) => b.id === (pendingBizId || activeBusinessId));
+      const targetOwnerEmail = (targetBizObj?.ownerEmail || '').toLowerCase().trim();
+      if (!targetOwnerEmail || targetOwnerEmail !== signedInEmail) {
+        setLivePaymentRecordSnapshot(null);
+        return;
+      }
+    }
+
+    const unsub = subscribeToPaymentRecord(pendingRef, (record) => {
+      setLivePaymentRecordSnapshot(record);
+
+      if (record.status === 'success') {
+        const targetId = record.businessId || pendingSubscriptionCheckout.businessId;
+        const resolvedTier = normalizePlanTier(record.planId || pendingSubscriptionCheckout.planId);
+        if (targetId && !isDemoBusinessId(targetId)) {
+          setBusinesses((prev) =>
+            prev.map((b) => {
+              if (b.id !== targetId) return b;
+              const prevSub = b.subscription || {};
+              const needsUpdate =
+                b.plan !== resolvedTier ||
+                b.status !== 'active' ||
+                prevSub.lastPaymentReference !== record.reference ||
+                (record.mpesaReceiptNumber && prevSub.mpesaReceiptNumber !== record.mpesaReceiptNumber);
+              if (!needsUpdate) return b;
+              return {
+                ...b,
+                plan: resolvedTier,
+                status: 'active',
+                subscription: {
+                  ...prevSub,
+                  status: 'active',
+                  plan: resolvedTier,
+                  planId: resolvedTier,
+                  activatedAt: prevSub.activatedAt || record.paidAt || new Date().toISOString(),
+                  lastPaymentReference: record.reference,
+                  paymentProvider: record.provider,
+                  ...(record.mpesaReceiptNumber
+                    ? {
+                        mpesaReceiptNumber: record.mpesaReceiptNumber,
+                        lastMpesaReceipt: record.mpesaReceiptNumber,
+                      }
+                    : {}),
+                },
+              };
+            })
+          );
+        }
+
+        if (!isSubscriptionModalOpen && !notifiedPaymentRefsRef.current.has(record.reference)) {
+          notifiedPaymentRefsRef.current.add(record.reference);
+          showToast(
+            record.mpesaReceiptNumber
+              ? `Payment verified (${record.mpesaReceiptNumber})! ${formatTierDisplayName(resolvedTier)} plan is now active.`
+              : `Payment verified! ${formatTierDisplayName(resolvedTier)} plan is now active.`,
+            'success'
+          );
+        }
+      } else if (
+        (record.status === 'failed' || record.status === 'abandoned') &&
+        !isSubscriptionModalOpen &&
+        !notifiedPaymentRefsRef.current.has(`${record.reference}-fail`)
+      ) {
+        notifiedPaymentRefsRef.current.add(`${record.reference}-fail`);
+        showToast(
+          record.gatewayResponse || 'Pending subscription payment was declined or cancelled.',
+          'error'
+        );
+      }
+    });
+
+    return () => unsub();
+  }, [
+    isOnline,
+    isFirebaseAuthLoading,
+    currentUser,
+    firebaseUser,
+    activeBusinessId,
+    businesses,
+    pendingSubscriptionCheckout?.reference,
+    pendingSubscriptionCheckout?.businessId,
+    pendingSubscriptionCheckout?.planId,
+    isSubscriptionModalOpen,
+    showToast,
+  ]);
+
+  const ensureBusinessSyncedForCheckout = useCallback(async (): Promise<{
+    ok: boolean;
+    idToken?: string;
+    code?: 'FIREBASE_AUTH_REQUIRED' | 'EMAIL_VERIFICATION_REQUIRED' | 'DEMO_STORE' | 'OWNER_MISMATCH' | 'SYNC_FAILED';
+    error?: string;
+  }> => {
+    const fbUser = auth.currentUser;
+    if (!fbUser || !fbUser.email) {
+      return {
+        ok: false,
+        code: 'FIREBASE_AUTH_REQUIRED',
+        error: 'Please sign in with your verified Business Owner Google or email account to pay for this subscription.',
+      };
+    }
+
+    try {
+      await fbUser.reload().catch(() => {});
+      const fbEmail = String(fbUser.email || '').trim().toLowerCase();
+      const isSuperAdminFb = fbEmail === SUPER_ADMIN_EMAIL.toLowerCase();
+
+      if (!fbUser.emailVerified && !isSuperAdminFb) {
+        return {
+          ok: false,
+          code: 'EMAIL_VERIFICATION_REQUIRED',
+          error: `Please verify your email (${fbEmail}) before starting subscription checkout.`,
+        };
+      }
+
+      if (!currentBusiness || currentBusiness.id === 'biz-demo') {
+        return {
+          ok: false,
+          code: 'DEMO_STORE',
+          error: 'Demo sandbox stores cannot be billed. Please sign in with your own business account.',
+        };
+      }
+
+      const bizOwnerEmail = String(currentBusiness.ownerEmail || '').trim().toLowerCase();
+      if (!isSuperAdminFb && bizOwnerEmail && bizOwnerEmail !== fbEmail) {
+        return {
+          ok: false,
+          code: 'OWNER_MISMATCH',
+          error: `Signed-in account (${fbEmail}) does not match "${currentBusiness.name}" owner (${bizOwnerEmail}). Sign in with the store owner account to activate billing.`,
+        };
+      }
+
+      const syncRes = await ensureBusinessDocInFirestore(currentBusiness, fbEmail);
+      if (!syncRes.ok) {
+        return {
+          ok: false,
+          code: 'SYNC_FAILED',
+          error: syncRes.error || 'Could not sync your store profile for billing. Please refresh and try again.',
+        };
+      }
+
+      await saveUserProfileToFirestore({
+        uid: fbUser.uid,
+        email: fbEmail,
+        role: isSuperAdminFb ? 'super_admin' : 'business_owner',
+        businessId: currentBusiness.id,
+        displayName: fbUser.displayName || currentUser?.name || '',
+      });
+
+      const idToken = await fbUser.getIdToken(true);
+      return { ok: true, idToken };
+    } catch (err: any) {
+      return {
+        ok: false,
+        code: 'SYNC_FAILED',
+        error: err?.message || 'Unable to verify checkout session. Please refresh and try again.',
+      };
+    }
+  }, [currentBusiness, currentUser?.name]);
+
   return (
     <PosContext.Provider
       value={{
@@ -8946,6 +9418,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         logout,
         provisionBusiness,
         updateBusinessProfile,
+        saveBusinessBrandingLogo,
         applyBusinessLocalUpdate,
         updateBusinessStatus,
         performSystemCleanup,
@@ -8959,6 +9432,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updateActiveUserCredentials,
 
         pricingTiers,
+        pricingSyncStatus,
+        pricingSyncError,
         updatePricingTier,
         resetPricingTiersToDefault,
         updateBusinessPlan,
@@ -8980,6 +9455,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setCheckoutAuthRequested,
         requestCheckoutAuth,
         activateBusinessSubscription,
+        pendingSubscriptionCheckout,
+        trackPendingSubscription,
+        clearPendingSubscription,
+        livePaymentRecordSnapshot,
+        ensureBusinessSyncedForCheckout,
         isPricingPageOpen,
         setIsPricingPageOpen,
         openPricingPage,

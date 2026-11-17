@@ -303,6 +303,15 @@ export const ReceiptModal: React.FC = () => {
                 <Printer className="w-3 h-3 text-blue-700" /> Duplicate Receipt • Manager Reprint
               </div>
             )}
+            {currentBusiness?.brandingSettings?.logoBase64 && (
+              <div className="flex justify-center pb-1.5">
+                <img
+                  src={currentBusiness.brandingSettings.logoBase64}
+                  alt={`${currentBusiness?.name || 'Business'} Logo`}
+                  className="h-9 max-w-[160px] object-contain"
+                />
+              </div>
+            )}
             <h2 className="text-lg font-black tracking-tight text-slate-900 font-sans leading-none uppercase">
               {currentBusiness?.name || 'SokoPoS Retail'}
             </h2>

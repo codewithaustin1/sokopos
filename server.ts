@@ -270,21 +270,31 @@ Sitemap: ${origin}/sitemap.xml
 
   async function requireVerifiedCaller(
     req: express.Request,
-    res: express.Response
+    res: express.Response,
+    options?: { unverifiedStatus?: number }
   ): Promise<AuthenticatedCaller | null> {
     const bearerToken = extractBearerToken(req);
     if (!bearerToken) {
-      res.status(401).json({ error: 'Authentication required. Please sign in.' });
+      res.status(401).json({
+        code: 'AUTH_REQUIRED',
+        error: 'Authentication required. Please sign in with your verified Google or email account.',
+      });
       return null;
     }
     const verified = await verifyFirebaseIdToken(bearerToken);
     if (!verified) {
-      res.status(401).json({ error: 'Invalid or expired authentication session.' });
+      res.status(401).json({
+        code: 'INVALID_SESSION',
+        error: 'Invalid or expired authentication session. Please refresh or sign in again.',
+      });
       return null;
     }
     const isSuperAdmin = verified.email === SUPER_ADMIN_EMAIL && verified.emailVerified;
     if (!verified.emailVerified && !isSuperAdmin) {
-      res.status(403).json({ error: 'Email verification is required for this action.' });
+      res.status(options?.unverifiedStatus ?? 403).json({
+        code: 'EMAIL_VERIFICATION_REQUIRED',
+        error: 'Email verification is required for this action. Please verify your email and retry.',
+      });
       return null;
     }
     return {
@@ -307,19 +317,32 @@ Sitemap: ${origin}/sitemap.xml
     return caller;
   }
 
+  type TenantAccessDeniedReason =
+    | 'missing_business_id'
+    | 'demo_store'
+    | 'store_not_synced'
+    | 'owner_mismatch'
+    | 'insufficient_role';
+
   async function verifyTenantCallerAccess(
     caller: AuthenticatedCaller,
     businessId: string,
     requireManagerOrOwner = false
-  ): Promise<{ allowed: boolean; bizDoc: Record<string, any> | null }> {
+  ): Promise<{
+    allowed: boolean;
+    bizDoc: Record<string, any> | null;
+    reason?: TenantAccessDeniedReason;
+  }> {
     const cleanBizId = String(businessId || '').trim();
-    if (!cleanBizId) return { allowed: false, bizDoc: null };
+    if (!cleanBizId) {
+      return { allowed: false, bizDoc: null, reason: 'missing_business_id' };
+    }
     if (caller.isSuperAdmin) {
       const bizDoc = await getFirestoreDoc('businesses', cleanBizId, caller.bearerToken);
       return { allowed: true, bizDoc };
     }
     if (cleanBizId === 'biz-demo') {
-      return { allowed: false, bizDoc: null };
+      return { allowed: false, bizDoc: null, reason: 'demo_store' };
     }
     const [bizDoc, userDoc] = await Promise.all([
       getFirestoreDoc('businesses', cleanBizId, caller.bearerToken),
@@ -334,7 +357,15 @@ Sitemap: ${origin}/sitemap.xml
         (!requireManagerOrOwner ||
           ['business_owner', 'manager', 'super_admin'].includes(String(userDoc.role || '')))
     );
-    return { allowed: isOwner || isMember, bizDoc };
+    if (isOwner || isMember) {
+      return { allowed: true, bizDoc };
+    }
+    const reason: TenantAccessDeniedReason = !bizDoc && !userDoc
+      ? 'store_not_synced'
+      : bizDoc
+      ? 'owner_mismatch'
+      : 'insufficient_role';
+    return { allowed: false, bizDoc, reason };
   }
 
   // Cryptographic PIN Hashing with Bcrypt (requires authenticated session)
@@ -457,13 +488,6 @@ Sitemap: ${origin}/sitemap.xml
     return 'free';
   }
 
-  const SERVER_TIER_MIN_KES: Record<CanonicalServerTier, { monthly: number; annual: number }> = {
-    free: { monthly: 1999, annual: 1999 },
-    starter: { monthly: 599, annual: 5990 },
-    business: { monthly: 1299, annual: 12990 },
-    premium: { monthly: 2999, annual: 29990 },
-  };
-
   const SERVER_TIER_STAFF_LIMIT: Record<CanonicalServerTier, number> = {
     free: 1,
     starter: 2,
@@ -497,22 +521,163 @@ Sitemap: ${origin}/sitemap.xml
   }
 
   let cachedAdcToken: { token: string; expiresAt: number } | null = null;
+  let cachedServiceAccountToken: { token: string; expiresAt: number } | null = null;
   let gcpTokenFirestoreDenied = false;
+  let serviceAccountDenied = false;
   let lastFirestoreHydrationAt = 0;
 
-  async function resolveFirestoreCandidateTokens(preferredBearerToken?: string): Promise<string[]> {
-    const tokens: string[] = [];
-    const cleanPreferred = String(preferredBearerToken || '').trim();
-    if (cleanPreferred) {
-      tokens.push(cleanPreferred);
-    }
-    if (!gcpTokenFirestoreDenied) {
-      const gcpToken = await getGcpAccessToken();
-      if (gcpToken && gcpToken !== cleanPreferred) {
-        tokens.push(gcpToken);
+  interface ParsedServiceAccount {
+    clientEmail: string;
+    privateKey: string;
+    projectId?: string;
+  }
+
+  function parseServiceAccountConfig(): ParsedServiceAccount | null {
+    const rawJson = (process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '').trim();
+    if (rawJson) {
+      try {
+        const jsonText = rawJson.startsWith('{')
+          ? rawJson
+          : Buffer.from(rawJson, 'base64').toString('utf8');
+        const parsed = JSON.parse(jsonText);
+        if (parsed?.client_email && parsed?.private_key) {
+          return {
+            clientEmail: String(parsed.client_email).trim(),
+            privateKey: String(parsed.private_key).replace(/\\n/g, '\n'),
+            projectId: parsed.project_id ? String(parsed.project_id).trim() : undefined,
+          };
+        }
+      } catch (err) {
+        console.warn('Invalid FIREBASE_SERVICE_ACCOUNT_JSON format:', err);
       }
     }
-    return tokens;
+    const clientEmail = (process.env.FIREBASE_CLIENT_EMAIL || '').trim();
+    const privateKeyRaw = (process.env.FIREBASE_PRIVATE_KEY || '').trim();
+    if (clientEmail && privateKeyRaw) {
+      return {
+        clientEmail,
+        privateKey: privateKeyRaw.replace(/\\n/g, '\n'),
+      };
+    }
+    return null;
+  }
+
+  function hasServiceAccountCredentials(): boolean {
+    return Boolean(parseServiceAccountConfig());
+  }
+
+  function base64UrlEncode(input: string | Buffer): string {
+    return Buffer.from(input)
+      .toString('base64')
+      .replace(/=/g, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_');
+  }
+
+  async function getServiceAccountAccessToken(): Promise<string | null> {
+    if (serviceAccountDenied) return null;
+    if (cachedServiceAccountToken && Date.now() < cachedServiceAccountToken.expiresAt - 60_000) {
+      return cachedServiceAccountToken.token;
+    }
+    const sa = parseServiceAccountConfig();
+    if (!sa) return null;
+
+    try {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const header = base64UrlEncode(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+      const payload = base64UrlEncode(
+        JSON.stringify({
+          iss: sa.clientEmail,
+          sub: sa.clientEmail,
+          aud: 'https://oauth2.googleapis.com/token',
+          scope: 'https://www.googleapis.com/auth/datastore',
+          iat: nowSec,
+          exp: nowSec + 3600,
+        })
+      );
+      const signingInput = `${header}.${payload}`;
+      const signer = crypto.createSign('RSA-SHA256');
+      signer.update(signingInput);
+      signer.end();
+      const signature = base64UrlEncode(signer.sign(sa.privateKey));
+      const assertion = `${signingInput}.${signature}`;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const resp = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+          assertion,
+        }).toString(),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        console.warn(`Firebase Service Account token exchange failed (${resp.status}):`, errText);
+        if (resp.status === 400 || resp.status === 401 || resp.status === 403) {
+          serviceAccountDenied = true;
+        }
+        return null;
+      }
+      const data: any = await resp.json();
+      if (data?.access_token) {
+        cachedServiceAccountToken = {
+          token: String(data.access_token),
+          expiresAt: Date.now() + (Number(data.expires_in) || 3600) * 1000,
+        };
+        return cachedServiceAccountToken.token;
+      }
+    } catch (err) {
+      console.warn('Firebase Service Account JWT exchange error:', err);
+    }
+    return null;
+  }
+
+  async function getAdminFirestoreToken(): Promise<{ token: string; source: 'service_account' | 'adc' } | null> {
+    const saToken = await getServiceAccountAccessToken();
+    if (saToken) {
+      return { token: saToken, source: 'service_account' };
+    }
+    if (!gcpTokenFirestoreDenied) {
+      const adcToken = await getGcpAccessToken();
+      if (adcToken) {
+        return { token: adcToken, source: 'adc' };
+      }
+    }
+    return null;
+  }
+
+  type FirestoreTokenCandidate = {
+    token: string;
+    source: 'service_account' | 'adc' | 'user';
+  };
+
+  async function resolveFirestoreCandidateTokens(
+    preferredBearerToken?: string,
+    preferAdminFirst = false
+  ): Promise<FirestoreTokenCandidate[]> {
+    const candidates: FirestoreTokenCandidate[] = [];
+    const cleanPreferred = String(preferredBearerToken || '').trim();
+    const admin = await getAdminFirestoreToken();
+
+    if (preferAdminFirst || admin?.source === 'service_account') {
+      if (admin) candidates.push(admin);
+      if (cleanPreferred && cleanPreferred !== admin?.token) {
+        candidates.push({ token: cleanPreferred, source: 'user' });
+      }
+    } else {
+      if (cleanPreferred) {
+        candidates.push({ token: cleanPreferred, source: 'user' });
+      }
+      if (admin && admin.token !== cleanPreferred) {
+        candidates.push(admin);
+      }
+    }
+    return candidates;
   }
 
   async function getGcpAccessToken(): Promise<string | null> {
@@ -555,8 +720,8 @@ Sitemap: ${origin}/sitemap.xml
       return creds;
     }
 
-    const token = await getGcpAccessToken();
-    if (!token) {
+    const admin = await getAdminFirestoreToken();
+    if (!admin) {
       return creds;
     }
 
@@ -566,9 +731,14 @@ Sitemap: ${origin}/sitemap.xml
       do {
         const url = `${firestoreDocBaseUrl()}?pageSize=500${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
         const resp = await fetch(url, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${admin.token}` },
         });
-        if (!resp.ok) break;
+        if (!resp.ok) {
+          if ((resp.status === 401 || resp.status === 403) && admin.source === 'adc') {
+            gcpTokenFirestoreDenied = true;
+          }
+          break;
+        }
         const data: any = await resp.json();
         const docs = Array.isArray(data.documents) ? data.documents : [];
         for (const doc of docs) {
@@ -608,8 +778,8 @@ Sitemap: ${origin}/sitemap.xml
   }
 
   async function persistStaffCredentialToFirestore(cred: StoredStaffCredential, preferredBearerToken?: string): Promise<boolean> {
-    const tokens = await resolveFirestoreCandidateTokens(preferredBearerToken);
-    if (tokens.length === 0) return false;
+    const candidates = await resolveFirestoreCandidateTokens(preferredBearerToken);
+    if (candidates.length === 0) return false;
 
     const fields: Record<string, { stringValue: string }> = {
       cashierId: { stringValue: cred.cashierId },
@@ -623,10 +793,9 @@ Sitemap: ${origin}/sitemap.xml
     if (cred.username) fields.username = { stringValue: cred.username };
 
     const docUrl = `${firestoreDocBaseUrl()}/${encodeURIComponent(cred.cashierId)}`;
-    const cleanPreferred = String(preferredBearerToken || '').trim();
 
-    for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i];
+    for (let i = 0; i < candidates.length; i++) {
+      const { token, source } = candidates[i];
       try {
         const resp = await fetch(docUrl, {
           method: 'PATCH',
@@ -637,16 +806,16 @@ Sitemap: ${origin}/sitemap.xml
           body: JSON.stringify({ fields }),
         });
         if (resp.ok) return true;
-        if ((resp.status === 401 || resp.status === 403) && token !== cleanPreferred) {
+        if ((resp.status === 401 || resp.status === 403) && source === 'adc') {
           gcpTokenFirestoreDenied = true;
         }
-        const hasNext = i < tokens.length - 1;
+        const hasNext = i < candidates.length - 1;
         if (!hasNext) {
           const errText = await resp.text().catch(() => '');
           console.warn('Firestore staff_credentials persist status:', resp.status, errText);
         }
       } catch (err) {
-        if (i === tokens.length - 1) {
+        if (i === candidates.length - 1) {
           console.warn('Firestore staff_credentials persist notice:', err);
         }
       }
@@ -1496,13 +1665,16 @@ Extract:
     amountKes: number;
     status: 'pending' | 'pay_offline' | 'success' | 'failed' | 'abandoned';
     businessId?: string;
+    ownerEmail?: string;
     planId?: string;
     billingCycle?: 'monthly' | 'annual';
     durationDays?: number;
     checkoutRequestId?: string;
     merchantRequestId?: string;
     mpesaReceiptNumber?: string;
+    authorizationUrl?: string;
     phone?: string;
+    resolvedBy?: string;
     activatedSubscription?: Record<string, any>;
     gatewayResponse?: string;
     paidAt?: string;
@@ -1557,17 +1729,75 @@ Extract:
     const cycle: 'monthly' | 'annual' = params.billingCycle === 'annual' ? 'annual' : 'monthly';
     const durationDays =
       Number(params.durationDays) || (cycle === 'annual' ? 365 : 30);
+    const cachedIntent = paymentIntents.get(params.reference);
+    const alreadyActivatedInMem =
+      processedSubscriptionRefs.has(params.reference) && cachedIntent?.activatedSubscription;
+
+    // Idempotency guard: if this payment reference has already activated the store,
+    // never re-extend expiresAt or double-credit affiliate commission.
+    // Still backfill late-arriving mpesaReceiptNumber if present.
+    let isAlreadyActivated = Boolean(alreadyActivatedInMem);
+    let existingSubscription: Record<string, any> | undefined = cachedIntent?.activatedSubscription;
+
+    if (!isAlreadyActivated) {
+      const existingBiz = await getFirestoreDoc('businesses', params.businessId, params.preferredBearerToken);
+      const existingSub = existingBiz?.subscription;
+      if (
+        existingSub &&
+        existingSub.lastPaymentReference === params.reference &&
+        existingSub.status === 'active'
+      ) {
+        isAlreadyActivated = true;
+        existingSubscription = existingSub;
+        processedSubscriptionRefs.add(params.reference);
+      }
+    }
+
+    if (isAlreadyActivated && existingSubscription) {
+      if (
+        params.mpesaReceiptNumber &&
+        existingSubscription.mpesaReceiptNumber !== params.mpesaReceiptNumber
+      ) {
+        const mergedSub = {
+          ...existingSubscription,
+          mpesaReceiptNumber: params.mpesaReceiptNumber,
+          lastMpesaReceipt: params.mpesaReceiptNumber,
+        };
+        await patchFirestoreDoc(
+          'businesses',
+          params.businessId,
+          {
+            subscription: {
+              mpesaReceiptNumber: params.mpesaReceiptNumber,
+              lastMpesaReceipt: params.mpesaReceiptNumber,
+            },
+          },
+          ['subscription.mpesaReceiptNumber', 'subscription.lastMpesaReceipt'],
+          params.preferredBearerToken
+        );
+        return mergedSub;
+      }
+      return existingSubscription;
+    }
+
     const nowIso = params.paidAt || new Date().toISOString();
     const expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
     const activatedSubscription: Record<string, any> = {
       status: 'active',
       plan: resolvedPlan,
       planId: resolvedPlan,
+      billingCycle: cycle,
+      amountKes: params.amountKes,
       activatedAt: nowIso,
       expiresAt,
       lastPaymentReference: params.reference,
       paymentProvider: params.provider,
-      ...(params.mpesaReceiptNumber ? { mpesaReceiptNumber: params.mpesaReceiptNumber } : {}),
+      ...(params.mpesaReceiptNumber
+        ? {
+            mpesaReceiptNumber: params.mpesaReceiptNumber,
+            lastMpesaReceipt: params.mpesaReceiptNumber,
+          }
+        : {}),
     };
 
     await patchFirestoreDoc(
@@ -1745,6 +1975,7 @@ Extract:
       darajaConfigured: darajaAdapter.isConfigured(),
       darajaEnv: darajaAdapter.getEnvironment(),
       paystackConfigured: paystackAdapter.isConfigured(),
+      firestoreAdminConfigured: hasServiceAccountCredentials(),
       channels: ['mpesa_stk', 'card'],
     });
   });
@@ -1851,16 +2082,18 @@ Extract:
       );
 
       if (!isCallerSuperAdmin && !isCallerOwner) {
-        return res.status(403).json({
+        return res.status(422).json({
           success: false,
+          code: 'TENANT_ACCESS_DENIED',
           error: 'Only the verified Business Owner or Super Admin can modify Paystack settlement settings.',
         });
       }
 
       const paystack = new PaystackAdapter();
       if (action !== 'unlink' && !paystack.isConfigured()) {
-        return res.status(503).json({
+        return res.status(422).json({
           success: false,
+          code: 'GATEWAY_NOT_CONFIGURED',
           error: 'PAYSTACK_SECRET_KEY is not configured on the server.',
         });
       }
@@ -2000,15 +2233,27 @@ Extract:
       const bearerToken = extractBearerToken(req);
       let verifiedCaller: AuthenticatedCaller | null = null;
       if (resolvedFlow === 'subscription') {
-        verifiedCaller = await requireVerifiedCaller(req, res);
+        verifiedCaller = await requireVerifiedCaller(req, res, { unverifiedStatus: 401 });
         if (!verifiedCaller) return;
         const cleanSubBizId = String(businessId || '').trim();
         if (cleanSubBizId) {
           const access = await verifyTenantCallerAccess(verifiedCaller, cleanSubBizId, false);
           if (!access.allowed) {
-            return res.status(403).json({
+            const errorByReason: Record<TenantAccessDeniedReason, string> = {
+              missing_business_id: 'No store ID was selected for subscription checkout.',
+              demo_store: 'Demo sandbox stores cannot be billed. Please sign in with your own business account.',
+              store_not_synced:
+                'Your store profile is not synced to cloud billing yet. Please refresh or sign out and sign back in with your business owner Google/email account.',
+              owner_mismatch:
+                `Your signed-in account (${verifiedCaller.email}) does not match the owner or manager of this store (${cleanSubBizId}). Please sign in with the store owner account.`,
+              insufficient_role:
+                'Only an authorized store owner or team member can initiate subscription billing for this store.',
+            };
+            return res.status(422).json({
               success: false,
-              error: 'Access denied: you do not have permission to initiate subscription billing for this business.',
+              code: 'TENANT_ACCESS_DENIED',
+              reason: access.reason || 'insufficient_role',
+              error: errorByReason[access.reason || 'insufficient_role'],
             });
           }
         }
@@ -2017,6 +2262,7 @@ Extract:
         if (!tokenUser) {
           return res.status(401).json({
             success: false,
+            code: 'INVALID_SESSION',
             error: 'Invalid or expired authentication token.',
           });
         }
@@ -2029,8 +2275,10 @@ Extract:
         if (cleanPosBizId && cleanPosBizId !== 'biz-demo') {
           const access = await verifyTenantCallerAccess(verifiedCaller, cleanPosBizId, false);
           if (!access.allowed) {
-            return res.status(403).json({
+            return res.status(422).json({
               success: false,
+              code: 'TENANT_ACCESS_DENIED',
+              reason: access.reason || 'insufficient_role',
               error: 'Access denied: your account is not authorized for this business terminal.',
             });
           }
@@ -2040,8 +2288,9 @@ Extract:
       const adapter = resolveAdapterForPayment(resolvedFlow, resolvedChannel);
 
       if (!adapter.isConfigured()) {
-        return res.status(503).json({
+        return res.status(422).json({
           success: false,
+          code: 'GATEWAY_NOT_CONFIGURED',
           provider: adapter.providerName,
           error:
             adapter.providerName === 'daraja'
@@ -2066,13 +2315,88 @@ Extract:
           ? Number(metadata?.durationDays) || (billingCycle === 'annual' ? 365 : 30)
           : undefined;
 
-      if (resolvedFlow === 'subscription' && normalizedPlanId) {
-        const minExpectedKes = SERVER_TIER_MIN_KES[normalizedPlanId]?.[billingCycle] ?? 599;
-        if (numericAmount < minExpectedKes) {
-          return res.status(400).json({
+      let subscriptionOwnerEmail = verifiedCaller?.email || '';
+      if (resolvedFlow === 'subscription' && businessId && !metadata?.forceNew) {
+        const cleanSubBizId = String(businessId).trim();
+        const bizDocForOwner = await getFirestoreDoc('businesses', cleanSubBizId, bearerToken).catch(() => null);
+        if (bizDocForOwner?.ownerEmail) {
+          subscriptionOwnerEmail = String(bizDocForOwner.ownerEmail).trim().toLowerCase();
+        }
+
+        const PENDING_WINDOW_MS = 90_000;
+        const nowMs = Date.now();
+        let activePending: StoredPaymentIntent | undefined;
+
+        for (const candidate of paymentIntents.values()) {
+          if (
+            candidate.flowType === 'subscription' &&
+            candidate.businessId === cleanSubBizId &&
+            (candidate.status === 'pending' || candidate.status === 'pay_offline')
+          ) {
+            const ageMs = nowMs - new Date(candidate.createdAt).getTime();
+            if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= PENDING_WINDOW_MS) {
+              activePending = candidate;
+              break;
+            }
+          }
+        }
+
+        if (!activePending) {
+          const recentDocs = await queryFirestoreDocs('payment_records', 'businessId', cleanSubBizId, 15).catch(() => []);
+          for (const doc of recentDocs) {
+            if (
+              doc.flowType === 'subscription' &&
+              (doc.status === 'pending' || doc.status === 'pay_offline') &&
+              doc.reference &&
+              doc.createdAt
+            ) {
+              const ageMs = nowMs - new Date(String(doc.createdAt)).getTime();
+              if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= PENDING_WINDOW_MS) {
+                activePending = {
+                  reference: String(doc.reference),
+                  provider: doc.provider === 'daraja' ? 'daraja' : 'paystack',
+                  flowType: 'subscription',
+                  channel: doc.channel === 'card' ? 'card' : 'mpesa_stk',
+                  amountKes: Number(doc.amountKes || 0),
+                  status: doc.status as StoredPaymentIntent['status'],
+                  businessId: cleanSubBizId,
+                  ownerEmail: doc.ownerEmail ? String(doc.ownerEmail) : subscriptionOwnerEmail,
+                  planId: doc.planId ? String(doc.planId) : undefined,
+                  billingCycle: doc.billingCycle === 'annual' ? 'annual' : 'monthly',
+                  durationDays: doc.durationDays ? Number(doc.durationDays) : undefined,
+                  checkoutRequestId: doc.checkoutRequestId ? String(doc.checkoutRequestId) : undefined,
+                  authorizationUrl: doc.authorizationUrl ? String(doc.authorizationUrl) : undefined,
+                  phone: doc.phone ? String(doc.phone) : undefined,
+                  createdAt: String(doc.createdAt),
+                };
+                paymentIntents.set(activePending.reference, activePending);
+                if (activePending.checkoutRequestId) {
+                  checkoutRequestToRef.set(activePending.checkoutRequestId, activePending.reference);
+                }
+                break;
+              }
+            }
+          }
+        }
+
+        if (activePending) {
+          return res.status(409).json({
             success: false,
-            code: 'INVALID_TIER_AMOUNT',
-            error: `Subscription checkout for ${normalizedPlanId.toUpperCase()} (${billingCycle}) requires at least KES ${minExpectedKes.toLocaleString()}.`,
+            code: 'DUPLICATE_PENDING_PAYMENT',
+            error: `A subscription payment (${activePending.reference}) is already awaiting confirmation for this store. Resuming active verification to prevent double payment.`,
+            existingIntent: {
+              reference: activePending.reference,
+              provider: activePending.provider,
+              channel: activePending.channel,
+              planId: activePending.planId,
+              billingCycle: activePending.billingCycle || 'monthly',
+              amountKes: activePending.amountKes,
+              phone: activePending.phone,
+              status: activePending.status,
+              checkoutRequestId: activePending.checkoutRequestId,
+              authorizationUrl: activePending.authorizationUrl,
+              createdAt: activePending.createdAt,
+            },
           });
         }
       }
@@ -2082,7 +2406,7 @@ Extract:
       if (resolvedFlow === 'pos_sale') {
         const cleanBizId = String(businessId || '').trim();
         if (!cleanBizId || cleanBizId === 'biz-demo') {
-          return res.status(403).json({
+          return res.status(422).json({
             success: false,
             code: 'SUBACCOUNT_REQUIRED',
             error: 'Live Paystack checkout is unavailable for sandbox or unassigned stores.',
@@ -2096,7 +2420,7 @@ Extract:
         const resolvedStatus = String(bizDoc?.paystackSubaccountStatus || cachedSa?.status || '').trim();
 
         if (!resolvedCode || !resolvedCode.startsWith('ACCT_') || resolvedStatus !== 'verified') {
-          return res.status(403).json({
+          return res.status(422).json({
             success: false,
             code: 'SUBACCOUNT_REQUIRED',
             error: 'Paystack subaccount not verified for this store. Link or create an ACCT_ subaccount in Business Settings → Paystack Settlement before accepting live M-Pesa STK or Card payments.',
@@ -2125,10 +2449,21 @@ Extract:
         ...(posSubaccountCode ? { subaccount: posSubaccountCode } : {}),
       };
 
-      const appBaseUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+      const forwardedProto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https')
+        .split(',')[0]
+        .trim();
+      const reqHost = req.get('host') || 'localhost:3000';
+      const isLocalHost = reqHost.startsWith('localhost') || reqHost.startsWith('127.0.0.1');
+      const computedProto = isLocalHost ? forwardedProto : 'https';
+      const appBaseUrl = (process.env.APP_URL || `${computedProto}://${reqHost}`).replace(/\/+$/, '');
       const darajaCallbackSecret = (process.env.DARAJA_CALLBACK_SECRET || '').trim();
       const callbackSig = signDarajaCallbackRef(reference);
-      const darajaCallbackUrl = `${appBaseUrl}/api/payments/daraja/callback?ref=${encodeURIComponent(reference)}&sig=${encodeURIComponent(callbackSig)}${
+      const customDarajaCallback = (process.env.DARAJA_CALLBACK_URL || '').trim();
+      const darajaCallbackBase = customDarajaCallback
+        ? customDarajaCallback.replace(/\/+$/, '')
+        : `${appBaseUrl}/api/payments/daraja/callback`;
+      const callbackSep = darajaCallbackBase.includes('?') ? '&' : '?';
+      const darajaCallbackUrl = `${darajaCallbackBase}${callbackSep}ref=${encodeURIComponent(reference)}&sig=${encodeURIComponent(callbackSig)}${
         darajaCallbackSecret ? `&token=${encodeURIComponent(darajaCallbackSecret)}` : ''
       }`;
 
@@ -2170,6 +2505,7 @@ Extract:
           amountKes: numericAmount,
           status: result.status,
           businessId,
+          ownerEmail: subscriptionOwnerEmail || verifiedCaller?.email || payerEmail,
           planId: normalizedPlanId || planId,
           billingCycle: resolvedFlow === 'subscription' ? billingCycle : undefined,
           durationDays,
@@ -2191,6 +2527,7 @@ Extract:
           amountKes: numericAmount,
           status: result.status,
           businessId: businessId || '',
+          ownerEmail: subscriptionOwnerEmail || verifiedCaller?.email || payerEmail,
           planId: normalizedPlanId || planId || '',
           billingCycle: resolvedFlow === 'subscription' ? billingCycle : '',
           durationDays: durationDays || 30,
@@ -2260,9 +2597,11 @@ Extract:
         amountKes: numericAmount,
         status: 'pending',
         businessId,
+        ownerEmail: subscriptionOwnerEmail || verifiedCaller?.email || payerEmail,
         planId: normalizedPlanId || planId,
         billingCycle: resolvedFlow === 'subscription' ? billingCycle : undefined,
         durationDays,
+        authorizationUrl: cardResult.authorizationUrl,
         createdAt: nowIso,
       });
 
@@ -2274,10 +2613,12 @@ Extract:
         amountKes: numericAmount,
         status: 'pending',
         businessId: businessId || '',
+        ownerEmail: subscriptionOwnerEmail || verifiedCaller?.email || payerEmail,
         planId: normalizedPlanId || planId || '',
         billingCycle: resolvedFlow === 'subscription' ? billingCycle : '',
         durationDays: durationDays || 30,
         customerEmail: payerEmail,
+        authorizationUrl: cardResult.authorizationUrl || '',
         createdAt: nowIso,
         updatedAt: nowIso,
       }).catch(() => {});
@@ -2391,6 +2732,8 @@ Extract:
           return res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
         }
 
+        const resolvedPaidAt = intent?.paidAt || nowIso;
+        const resolvedReceipt = parsed.mpesaReceiptNumber || intent?.mpesaReceiptNumber;
         const updatedIntent: StoredPaymentIntent = {
           ...(intent || {
             reference: resolvedRef,
@@ -2403,9 +2746,10 @@ Extract:
           status: 'success',
           checkoutRequestId: parsed.checkoutRequestId,
           merchantRequestId: parsed.merchantRequestId || intent?.merchantRequestId,
-          mpesaReceiptNumber: parsed.mpesaReceiptNumber || intent?.mpesaReceiptNumber,
+          mpesaReceiptNumber: resolvedReceipt,
+          resolvedBy: intent?.resolvedBy || 'daraja_callback',
           gatewayResponse: parsed.resultDesc,
-          paidAt: nowIso,
+          paidAt: resolvedPaidAt,
         };
         paymentIntents.set(resolvedRef, updatedIntent);
 
@@ -2419,8 +2763,8 @@ Extract:
             durationDays: updatedIntent.durationDays,
             amountKes: updatedIntent.amountKes || parsed.amountKes || 0,
             channel: 'mpesa_stk',
-            paidAt: nowIso,
-            mpesaReceiptNumber: updatedIntent.mpesaReceiptNumber,
+            paidAt: resolvedPaidAt,
+            mpesaReceiptNumber: resolvedReceipt,
             telemetrySessionPrefix: 'daraja-cb',
           });
           if (activatedSub) {
@@ -2441,11 +2785,12 @@ Extract:
           planId: updatedIntent.planId || '',
           checkoutRequestId: parsed.checkoutRequestId,
           merchantRequestId: updatedIntent.merchantRequestId || '',
-          mpesaReceiptNumber: updatedIntent.mpesaReceiptNumber || '',
+          mpesaReceiptNumber: resolvedReceipt || '',
           phone: parsed.phoneNumber || updatedIntent.phone || '',
           resultCode: 0,
+          resolvedBy: updatedIntent.resolvedBy || 'daraja_callback',
           gatewayResponse: parsed.resultDesc,
-          paidAt: nowIso,
+          paidAt: resolvedPaidAt,
           updatedAt: nowIso,
         }).catch(() => {});
 
@@ -2524,13 +2869,14 @@ Extract:
       const isSubscriptionRef = cached?.flowType === 'subscription' || reference.startsWith('SOKO-SUB-');
       let verifiedVerifyCaller: AuthenticatedCaller | null = null;
       if (isSubscriptionRef) {
-        verifiedVerifyCaller = await requireVerifiedCaller(req, res);
+        verifiedVerifyCaller = await requireVerifiedCaller(req, res, { unverifiedStatus: 401 });
         if (!verifiedVerifyCaller) return;
         if (cached?.businessId) {
           const access = await verifyTenantCallerAccess(verifiedVerifyCaller, cached.businessId, false);
           if (!access.allowed) {
-            return res.status(403).json({
+            return res.status(422).json({
               verified: false,
+              code: 'TENANT_ACCESS_DENIED',
               status: 'failed',
               error: 'Access denied: you cannot verify payments belonging to another business.',
             });
@@ -2539,12 +2885,20 @@ Extract:
       }
 
       if (cached && cached.status === 'success') {
+        if (!cached.mpesaReceiptNumber) {
+          const freshDbDoc = await getFirestoreDoc('payment_records', reference).catch(() => null);
+          if (freshDbDoc?.mpesaReceiptNumber) {
+            cached.mpesaReceiptNumber = String(freshDbDoc.mpesaReceiptNumber);
+            if (freshDbDoc.resolvedBy) cached.resolvedBy = String(freshDbDoc.resolvedBy);
+            paymentIntents.set(reference, cached);
+          }
+        }
         const normalizedCachedPlan =
           cached.flowType === 'subscription'
             ? normalizeServerPlanTier(cached.planId, undefined)
             : cached.planId;
         let cachedActivatedSub = cached.activatedSubscription;
-        if (cached.flowType === 'subscription' && cached.businessId && !cachedActivatedSub) {
+        if (cached.flowType === 'subscription' && cached.businessId && (!cachedActivatedSub || (cached.mpesaReceiptNumber && !cachedActivatedSub.mpesaReceiptNumber))) {
           cachedActivatedSub = await activateSubscriptionFromPayment({
             reference: cached.reference,
             provider: cached.provider,
@@ -2571,6 +2925,10 @@ Extract:
           status: 'success',
           amountKes: cached.amountKes,
           channel: cached.channel,
+          billingCycle: cached.billingCycle,
+          phone: cached.phone,
+          createdAt: cached.createdAt,
+          ...(cached.resolvedBy ? { resolvedBy: cached.resolvedBy } : {}),
           ...(cached.mpesaReceiptNumber ? { mpesaReceiptNumber: cached.mpesaReceiptNumber } : {}),
           flowType: cached.flowType,
           businessId: cached.businessId,
@@ -2623,14 +2981,15 @@ Extract:
           : 'monthly';
 
       if (resolvedFlowType === 'subscription' && resolvedBusinessId && !verifiedVerifyCaller) {
-        verifiedVerifyCaller = await requireVerifiedCaller(req, res);
+        verifiedVerifyCaller = await requireVerifiedCaller(req, res, { unverifiedStatus: 401 });
         if (!verifiedVerifyCaller) return;
       }
       if (resolvedFlowType === 'subscription' && resolvedBusinessId && verifiedVerifyCaller) {
         const access = await verifyTenantCallerAccess(verifiedVerifyCaller, resolvedBusinessId, false);
         if (!access.allowed) {
-          return res.status(403).json({
+          return res.status(422).json({
             verified: false,
+            code: 'TENANT_ACCESS_DENIED',
             status: 'failed',
             error: 'Access denied: you cannot activate subscriptions for another business.',
           });
@@ -2647,14 +3006,12 @@ Extract:
         normalizedPlanId
       ) {
         const paidKes = Number(verification.amountKes || cached?.amountKes || 0);
-        const minExpectedKes =
-          SERVER_TIER_MIN_KES[normalizedPlanId as CanonicalServerTier]?.[billingCycle] ?? 599;
-        if (paidKes > 0 && paidKes < minExpectedKes) {
+        if (cached?.amountKes && paidKes > 0 && Math.round(paidKes) < Math.round(cached.amountKes)) {
           return res.status(400).json({
             verified: false,
             reference: clientReference,
             status: 'failed',
-            error: `Verified amount (KES ${paidKes.toLocaleString()}) is below the minimum KES ${minExpectedKes.toLocaleString()} required for ${normalizedPlanId.toUpperCase()}.`,
+            error: `Verified amount (KES ${paidKes.toLocaleString()}) is less than the expected checkout amount (KES ${cached.amountKes.toLocaleString()}).`,
           });
         }
 
@@ -2710,6 +3067,9 @@ Extract:
       return res.json({
         ...verification,
         reference: clientReference,
+        billingCycle,
+        phone: cached?.phone,
+        createdAt: cached?.createdAt,
         ...(cached?.mpesaReceiptNumber && !verification.mpesaReceiptNumber
           ? { mpesaReceiptNumber: cached.mpesaReceiptNumber }
           : {}),
@@ -2725,6 +3085,101 @@ Extract:
         reference: req.params.reference,
         status: 'failed',
         error: err?.message || 'Verification failed.',
+      });
+    }
+  });
+
+  app.get('/api/payments/history/:businessId', async (req, res) => {
+    try {
+      const cleanBusinessId = String(req.params.businessId || '').trim();
+      if (!cleanBusinessId) {
+        return res.status(400).json({ success: false, records: [], error: 'businessId is required.' });
+      }
+
+      const caller = await requireVerifiedCaller(req, res, { unverifiedStatus: 401 });
+      if (!caller) return;
+
+      const access = await verifyTenantCallerAccess(caller, cleanBusinessId, false);
+      if (!access.allowed) {
+        return res.status(422).json({
+          success: false,
+          code: 'TENANT_ACCESS_DENIED',
+          records: [],
+          error: 'Access denied: you cannot view billing history for another business.',
+        });
+      }
+
+      const flowFilter = String(req.query?.flow || 'subscription').trim();
+      const dbDocs = await queryFirestoreDocs('payment_records', 'businessId', cleanBusinessId, 100).catch(() => []);
+      const mergedMap = new Map<string, Record<string, any>>();
+
+      for (const doc of dbDocs) {
+        if (!doc.reference) continue;
+        const ref = String(doc.reference);
+        if (flowFilter !== 'all' && doc.flowType && doc.flowType !== flowFilter) continue;
+        mergedMap.set(ref, {
+          reference: ref,
+          provider: doc.provider === 'daraja' ? 'daraja' : 'paystack',
+          flowType: doc.flowType || 'subscription',
+          channel: doc.channel === 'card' ? 'card' : 'mpesa_stk',
+          amountKes: Number(doc.amountKes || 0),
+          status: doc.status || 'pending',
+          businessId: String(doc.businessId || cleanBusinessId),
+          planId: doc.planId ? String(doc.planId) : undefined,
+          billingCycle: doc.billingCycle === 'annual' ? 'annual' : 'monthly',
+          durationDays: doc.durationDays ? Number(doc.durationDays) : undefined,
+          checkoutRequestId: doc.checkoutRequestId ? String(doc.checkoutRequestId) : undefined,
+          mpesaReceiptNumber: doc.mpesaReceiptNumber ? String(doc.mpesaReceiptNumber) : undefined,
+          phone: doc.phone ? String(doc.phone) : undefined,
+          customerEmail: doc.customerEmail ? String(doc.customerEmail) : undefined,
+          resolvedBy: doc.resolvedBy ? String(doc.resolvedBy) : undefined,
+          gatewayResponse: doc.gatewayResponse ? String(doc.gatewayResponse) : undefined,
+          paidAt: doc.paidAt ? String(doc.paidAt) : undefined,
+          createdAt: String(doc.createdAt || ''),
+          updatedAt: String(doc.updatedAt || doc.createdAt || ''),
+        });
+      }
+
+      for (const intent of paymentIntents.values()) {
+        if (intent.businessId !== cleanBusinessId) continue;
+        if (flowFilter !== 'all' && intent.flowType !== flowFilter) continue;
+        const prev = mergedMap.get(intent.reference);
+        mergedMap.set(intent.reference, {
+          ...(prev || {}),
+          reference: intent.reference,
+          provider: intent.provider,
+          flowType: intent.flowType,
+          channel: intent.channel,
+          amountKes: intent.amountKes,
+          status: intent.status,
+          businessId: cleanBusinessId,
+          planId: intent.planId || prev?.planId,
+          billingCycle: intent.billingCycle || prev?.billingCycle || 'monthly',
+          durationDays: intent.durationDays || prev?.durationDays,
+          checkoutRequestId: intent.checkoutRequestId || prev?.checkoutRequestId,
+          mpesaReceiptNumber: intent.mpesaReceiptNumber || prev?.mpesaReceiptNumber,
+          phone: intent.phone || prev?.phone,
+          resolvedBy: intent.resolvedBy || prev?.resolvedBy,
+          gatewayResponse: intent.gatewayResponse || prev?.gatewayResponse,
+          paidAt: intent.paidAt || prev?.paidAt,
+          createdAt: intent.createdAt || prev?.createdAt || '',
+          updatedAt: prev?.updatedAt || intent.paidAt || intent.createdAt || '',
+        });
+      }
+
+      const records = Array.from(mergedMap.values()).sort((a, b) => {
+        const aTime = new Date(a.createdAt || a.paidAt || 0).getTime() || 0;
+        const bTime = new Date(b.createdAt || b.paidAt || 0).getTime() || 0;
+        return bTime - aTime;
+      });
+
+      return res.json({ success: true, records });
+    } catch (err: any) {
+      console.error('Error in /api/payments/history:', err);
+      return res.status(500).json({
+        success: false,
+        records: [],
+        error: err?.message || 'Failed to load billing history.',
       });
     }
   });
@@ -2761,8 +3216,8 @@ Extract:
     preferredBearerToken?: string
   ): Promise<boolean> {
     if (!docId) return false;
-    const tokens = await resolveFirestoreCandidateTokens(preferredBearerToken);
-    if (tokens.length === 0) return false;
+    const candidates = await resolveFirestoreCandidateTokens(preferredBearerToken, true);
+    if (candidates.length === 0) return false;
 
     const fields: Record<string, any> = {};
     const paths = fieldPaths || Object.keys(data);
@@ -2772,10 +3227,9 @@ Extract:
 
     const maskQuery = paths.map((p) => `updateMask.fieldPaths=${encodeURIComponent(p)}`).join('&');
     const url = `${firestoreCollectionUrl(collection)}/${encodeURIComponent(docId)}?${maskQuery}`;
-    const cleanPreferred = String(preferredBearerToken || '').trim();
 
-    for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i];
+    for (let i = 0; i < candidates.length; i++) {
+      const { token, source } = candidates[i];
       try {
         const resp = await fetch(url, {
           method: 'PATCH',
@@ -2790,18 +3244,18 @@ Extract:
           return true;
         }
 
-        if ((resp.status === 401 || resp.status === 403) && token !== cleanPreferred) {
+        if ((resp.status === 401 || resp.status === 403) && source === 'adc') {
           gcpTokenFirestoreDenied = true;
-          return false;
+          continue;
         }
 
-        const hasNext = i < tokens.length - 1;
+        const hasNext = i < candidates.length - 1;
         if (!hasNext) {
           const errText = await resp.text().catch(() => '');
           console.warn(`Firestore PATCH ${collection}/${docId} failed (${resp.status}):`, errText);
         }
       } catch (err) {
-        if (i === tokens.length - 1) {
+        if (i === candidates.length - 1) {
           console.warn(`Firestore PATCH ${collection}/${docId} notice:`, err);
         }
       }
@@ -2850,14 +3304,13 @@ Extract:
     preferredBearerToken?: string
   ): Promise<Record<string, any> | null> {
     if (!docId) return null;
-    const tokens = await resolveFirestoreCandidateTokens(preferredBearerToken);
-    if (tokens.length === 0) return null;
+    const candidates = await resolveFirestoreCandidateTokens(preferredBearerToken);
+    if (candidates.length === 0) return null;
 
     const url = `${firestoreCollectionUrl(collection)}/${encodeURIComponent(docId)}`;
-    const cleanPreferred = String(preferredBearerToken || '').trim();
 
-    for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i];
+    for (let i = 0; i < candidates.length; i++) {
+      const { token, source } = candidates[i];
       try {
         const resp = await fetch(url, {
           headers: { Authorization: `Bearer ${token}` },
@@ -2866,9 +3319,9 @@ Extract:
           const doc = await resp.json();
           return fromFirestoreDoc(doc);
         }
-        if ((resp.status === 401 || resp.status === 403) && token !== cleanPreferred) {
+        if ((resp.status === 401 || resp.status === 403) && source === 'adc') {
           gcpTokenFirestoreDenied = true;
-          return null;
+          continue;
         }
         if (resp.status === 404) {
           return null;
@@ -2885,12 +3338,11 @@ Extract:
     pageSize = 200,
     preferredBearerToken?: string
   ): Promise<Record<string, any>[]> {
-    const tokens = await resolveFirestoreCandidateTokens(preferredBearerToken);
-    if (tokens.length === 0) return [];
-    const cleanPreferred = String(preferredBearerToken || '').trim();
+    const candidates = await resolveFirestoreCandidateTokens(preferredBearerToken);
+    if (candidates.length === 0) return [];
 
-    for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i];
+    for (let i = 0; i < candidates.length; i++) {
+      const { token, source } = candidates[i];
       try {
         const url = `${firestoreCollectionUrl(collection)}?pageSize=${pageSize}`;
         const resp = await fetch(url, {
@@ -2901,8 +3353,9 @@ Extract:
           const docs = Array.isArray(json.documents) ? json.documents : [];
           return docs.map((d: any) => fromFirestoreDoc(d)).filter(Boolean) as Record<string, any>[];
         }
-        if ((resp.status === 401 || resp.status === 403) && token !== cleanPreferred) {
+        if ((resp.status === 401 || resp.status === 403) && source === 'adc') {
           gcpTokenFirestoreDenied = true;
+          continue;
         }
       } catch {
         // try next candidate token
@@ -2917,14 +3370,14 @@ Extract:
     value: string | number | boolean,
     pageSize = 100
   ): Promise<Record<string, any>[]> {
-    const token = await getGcpAccessToken();
-    if (!token) return [];
+    const admin = await getAdminFirestoreToken();
+    if (!admin) return [];
     try {
       const runQueryUrl = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(firebaseProjectId)}/databases/${encodeURIComponent(firestoreDatabaseId)}/documents:runQuery`;
       const resp = await fetch(runQueryUrl, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${admin.token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -2941,7 +3394,12 @@ Extract:
           },
         }),
       });
-      if (!resp.ok) return [];
+      if (!resp.ok) {
+        if ((resp.status === 401 || resp.status === 403) && admin.source === 'adc') {
+          gcpTokenFirestoreDenied = true;
+        }
+        return [];
+      }
       const rows: any = await resp.json().catch(() => []);
       if (!Array.isArray(rows)) return [];
       return rows

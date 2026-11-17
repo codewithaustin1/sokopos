@@ -108,6 +108,8 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
     isRealGoogleAccount,
     updateBusinessStatus,
     pricingTiers,
+    pricingSyncStatus,
+    pricingSyncError,
     updatePricingTier,
     resetPricingTiersToDefault,
     refreshAllBusinessesForSuperAdmin,
@@ -918,41 +920,71 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
               <div className="space-y-6">
                 <SettingsSectionHeader
                   title="POS Packages & Pricing Tiers"
-                  description="Configure live subscription pricing, billing cycles, capacity limits, and feature entitlements across Starter, Business, and Premium plans."
+                  description="Configure live subscription pricing, billing cycles, capacity limits, and feature entitlements across Free, Starter, Business, and Premium plans."
                   actions={
-                    confirmResetPricing ? (
-                      <div className="inline-flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {pricingSyncStatus === 'saving' && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>Syncing prices...</span>
+                        </span>
+                      )}
+                      {pricingSyncStatus === 'synced' && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>Live Cloud Synced</span>
+                        </span>
+                      )}
+                      {pricingSyncStatus === 'error' && (
+                        <span
+                          title={pricingSyncError || 'Cloud sync failed'}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
+                        >
+                          <AlertTriangle className="w-3 h-3" />
+                          <span>Local Only (Sync Error)</span>
+                        </span>
+                      )}
+                      {confirmResetPricing ? (
+                        <div className="inline-flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              resetPricingTiersToDefault();
+                              setConfirmResetPricing(false);
+                            }}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-600 hover:bg-rose-700 text-white cursor-pointer whitespace-nowrap transition"
+                          >
+                            Confirm Reset
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmResetPricing(false)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer whitespace-nowrap transition"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
                         <button
                           type="button"
-                          onClick={() => {
-                            resetPricingTiersToDefault();
-                            setConfirmResetPricing(false);
-                          }}
-                          className="px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-600 hover:bg-rose-700 text-white cursor-pointer whitespace-nowrap transition"
+                          onClick={() => setConfirmResetPricing(true)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer whitespace-nowrap"
+                          title="Restore default packages"
                         >
-                          Confirm Reset
+                          <RotateCcw className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                          <span>Reset to Default Packages</span>
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmResetPricing(false)}
-                          className="px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer whitespace-nowrap transition"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setConfirmResetPricing(true)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer whitespace-nowrap"
-                        title="Restore default packages"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-                        <span>Reset to Default Packages</span>
-                      </button>
-                    )
+                      )}
+                    </div>
                   }
                 />
+
+                {pricingSyncStatus === 'error' && pricingSyncError && (
+                  <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>{pricingSyncError}</span>
+                  </div>
+                )}
 
                 {/* Connected Tier & MRR Summary Strip */}
                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800">
@@ -1196,6 +1228,34 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                                 </span>
                               </div>
                             </div>
+
+                            {currentTier.id === 'free' && (
+                              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                    One-Time Onboarding Fee ({currentTier.currency})
+                                  </label>
+                                  <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono text-slate-400 dark:text-slate-500">
+                                      {currentTier.currency}
+                                    </span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={currentTier.consultationFee ?? 1999}
+                                      onChange={(e) => {
+                                        const val = Number(e.target.value) || 0;
+                                        updatePricingTier(currentTier.id, { consultationFee: val });
+                                      }}
+                                      className="w-full pl-12 pr-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono tabular-nums font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                  </div>
+                                  <span className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 block">
+                                    Charged once for 1-on-1 store setup &amp; hardware onboarding
+                                  </span>
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           {/* Tenant Architecture & Limits */}

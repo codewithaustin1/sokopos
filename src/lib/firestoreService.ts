@@ -28,6 +28,9 @@ import {
   StockTransfer,
   StoreSalesBackup,
   PlatformSettings,
+  PlatformPricingConfig,
+  PricingTier,
+  DEFAULT_PRICING_TIERS,
   BrandingSlotAsset,
   BrandingSlotId,
   IndustrySolutionId,
@@ -254,6 +257,93 @@ export async function updateBusinessInFirestore(
   }
 }
 
+export async function ensureBusinessDocInFirestore(
+  biz: Business,
+  ownerEmail: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!db || !auth.currentUser) {
+    return { ok: false, error: 'Firebase session is not active.' };
+  }
+  if (!biz?.id || isDemoBusinessId(biz.id)) {
+    return { ok: false, error: 'Demo stores cannot be synced for live billing.' };
+  }
+  const normalizedOwnerEmail = ownerEmail.trim().toLowerCase();
+  try {
+    const docRef = doc(db, 'businesses', biz.id);
+    let existing: Business | null = null;
+    try {
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        existing = snap.data() as Business;
+      }
+    } catch (getErr: any) {
+      // Firestore rules require `resource != null` on `get` when `users/{uid}` is not linked yet.
+      // Treat permission-denied/not-found on initial lookup as non-existent so create can proceed.
+      const code = String(getErr?.code || '').toLowerCase();
+      if (!code.includes('permission-denied') && !code.includes('not-found')) {
+        throw getErr;
+      }
+    }
+    const nowIso = new Date().toISOString();
+
+    if (existing) {
+      const existingOwner = String(existing.ownerEmail || '').trim().toLowerCase();
+      const callerEmail = String(auth.currentUser.email || '').trim().toLowerCase();
+      if (existingOwner && existingOwner !== normalizedOwnerEmail && callerEmail !== 'upfrontretaile@gmail.com') {
+        return {
+          ok: false,
+          error: `Store "${biz.name}" is registered under a different owner (${existingOwner}).`,
+        };
+      }
+      await setDoc(
+        docRef,
+        sanitizeForFirestore({
+          name: biz.name,
+          code: biz.code,
+          ownerName: biz.ownerName || existing.ownerName || 'Business Owner',
+          lastLoginAt: nowIso,
+        }),
+        { merge: true }
+      );
+      return { ok: true };
+    }
+
+    const {
+      plan: _omitPlan,
+      status: _omitStatus,
+      subscription: _omitSub,
+      referredByCode: _omitRef,
+      referredAt: _omitRefAt,
+      paystackSubaccountCode: _omitPsCode,
+      paystackSettlementBank: _omitPsBank,
+      paystackSettlementAccountMask: _omitPsMask,
+      paystackSubaccountStatus: _omitPsStatus,
+      paystackSubaccountVerifiedAt: _omitPsVerifiedAt,
+      paystackFeeBearer: _omitPsBearer,
+      ...safeProfile
+    } = biz;
+
+    await setDoc(
+      docRef,
+      sanitizeForFirestore({
+        ...safeProfile,
+        id: biz.id,
+        ownerEmail: normalizedOwnerEmail,
+        plan: 'free',
+        status: 'active',
+        lastLoginAt: nowIso,
+      })
+    );
+    return { ok: true };
+  } catch (error: any) {
+    console.warn(`ensureBusinessDocInFirestore failed for ${biz.id}:`, error);
+    return {
+      ok: false,
+      error: error?.message || 'Could not sync store record to cloud database.',
+    };
+  }
+}
+
 export async function deleteBusinessFromFirestore(businessId: string): Promise<void> {
   if (!db || !auth.currentUser || isDemoBusinessId(businessId)) return;
   const path = `businesses/${businessId}`;
@@ -426,9 +516,8 @@ export async function saveUserProfileToFirestore(user: {
   role: string;
   businessId?: string | null;
   displayName?: string;
-}): Promise<void> {
-  if (!db) return;
-  const path = `users/${user.uid}`;
+}): Promise<boolean> {
+  if (!db || !auth.currentUser) return false;
   try {
     await setDoc(
       doc(db, 'users', user.uid),
@@ -442,8 +531,10 @@ export async function saveUserProfileToFirestore(user: {
       }),
       { merge: true }
     );
+    return true;
   } catch (error) {
     console.warn('Failed to sync user profile in Firestore:', error);
+    return false;
   }
 }
 
@@ -1584,6 +1675,159 @@ export async function savePlatformSettingsToFirestore(
 }
 
 // -------------------------------------------------------------
+// Global Pricing Tiers (platform_settings/pricing_tiers)
+// -------------------------------------------------------------
+const PRICING_TIERS_DOC_ID = 'pricing_tiers';
+
+function normalizePricingTiersArray(rawTiers: unknown): PricingTier[] | null {
+  if (!Array.isArray(rawTiers) || rawTiers.length === 0) return null;
+
+  const byId = new Map<string, any>();
+  for (const item of rawTiers) {
+    if (item && typeof item === 'object' && typeof item.id === 'string') {
+      byId.set(item.id.toLowerCase(), item);
+    }
+  }
+  if (byId.size === 0) return null;
+
+  const merged: PricingTier[] = DEFAULT_PRICING_TIERS.map((defTier) => {
+    const remote = byId.get(defTier.id.toLowerCase());
+    if (!remote) return defTier;
+
+    const monthlyPrice =
+      typeof remote.monthlyPrice === 'number' && Number.isFinite(remote.monthlyPrice) && remote.monthlyPrice >= 0
+        ? remote.monthlyPrice
+        : defTier.monthlyPrice;
+    const annualPrice =
+      typeof remote.annualPrice === 'number' && Number.isFinite(remote.annualPrice) && remote.annualPrice >= 0
+        ? remote.annualPrice
+        : defTier.annualPrice;
+    const consultationFee =
+      typeof remote.consultationFee === 'number' &&
+      Number.isFinite(remote.consultationFee) &&
+      remote.consultationFee >= 0
+        ? remote.consultationFee
+        : defTier.consultationFee;
+
+    return {
+      ...defTier,
+      ...remote,
+      id: defTier.id,
+      monthlyPrice,
+      annualPrice,
+      ...(consultationFee !== undefined ? { consultationFee } : {}),
+      maxBranches:
+        typeof remote.maxBranches === 'number' && Number.isFinite(remote.maxBranches)
+          ? remote.maxBranches
+          : defTier.maxBranches,
+      maxStaffUsers:
+        typeof remote.maxStaffUsers === 'number' && Number.isFinite(remote.maxStaffUsers)
+          ? remote.maxStaffUsers
+          : defTier.maxStaffUsers,
+      features: Array.isArray(remote.features)
+        ? remote.features.filter((f: unknown) => typeof f === 'string' && f.trim().length > 0)
+        : defTier.features,
+      isPopular: typeof remote.isPopular === 'boolean' ? remote.isPopular : defTier.isPopular,
+      isActive: typeof remote.isActive === 'boolean' ? remote.isActive : defTier.isActive,
+    };
+  });
+
+  return merged;
+}
+
+export async function getPricingTiersFromFirestore(): Promise<{
+  tiers: PricingTier[];
+  updatedAt?: string;
+  updatedBy?: string;
+} | null> {
+  if (!db || isFirestoreQuotaCooldownActive()) return null;
+  try {
+    const snap = await getDoc(doc(db, 'platform_settings', PRICING_TIERS_DOC_ID));
+    if (!snap.exists()) return null;
+    const data = snap.data() as Partial<PlatformPricingConfig>;
+    const normalized = normalizePricingTiersArray(data?.tiers);
+    if (!normalized) return null;
+    return {
+      tiers: normalized,
+      updatedAt: data?.updatedAt,
+      updatedBy: data?.updatedBy,
+    };
+  } catch (error) {
+    if (isFirestoreQuotaError(error)) {
+      markFirestoreQuotaExceeded();
+      return null;
+    }
+    console.warn('Failed to fetch global pricing tiers from Firestore:', error);
+    return null;
+  }
+}
+
+export function subscribeToPricingTiers(
+  onUpdate: (payload: { tiers: PricingTier[]; updatedAt?: string; updatedBy?: string }) => void,
+  onError?: (errMsg: string) => void
+): Unsubscribe {
+  if (!db || isFirestoreQuotaCooldownActive()) {
+    return () => {};
+  }
+  const pricingDocRef = doc(db, 'platform_settings', PRICING_TIERS_DOC_ID);
+  return onSnapshot(
+    pricingDocRef,
+    (snapshot) => {
+      if (!snapshot.exists()) return;
+      const data = snapshot.data() as Partial<PlatformPricingConfig>;
+      const normalized = normalizePricingTiersArray(data?.tiers);
+      if (normalized) {
+        onUpdate({
+          tiers: normalized,
+          updatedAt: data?.updatedAt,
+          updatedBy: data?.updatedBy,
+        });
+      }
+    },
+    (error: any) => {
+      if (isFirestoreQuotaError(error)) {
+        markFirestoreQuotaExceeded();
+        onError?.('Firestore quota temporarily exceeded.');
+        return;
+      }
+      console.warn('Firestore pricing_tiers real-time listener notice:', error);
+      onError?.(error?.message || 'Unable to listen for live pricing updates.');
+    }
+  );
+}
+
+export async function savePricingTiersToFirestore(
+  tiers: PricingTier[],
+  updatedBy?: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!db) {
+    return { ok: false, error: 'Database client is not initialized.' };
+  }
+  if (!auth.currentUser) {
+    return { ok: false, error: 'Sign in with a verified Super Admin Google account to sync pricing globally.' };
+  }
+
+  const nowIso = new Date().toISOString();
+  try {
+    await setDoc(
+      doc(db, 'platform_settings', PRICING_TIERS_DOC_ID),
+      sanitizeForFirestore({
+        id: PRICING_TIERS_DOC_ID,
+        tiers,
+        updatedAt: nowIso,
+        updatedBy: updatedBy || auth.currentUser.email || 'super_admin',
+      }),
+      { merge: true }
+    );
+    return { ok: true };
+  } catch (error: any) {
+    const message = error?.message || 'Failed to persist global pricing tiers to Firestore.';
+    console.warn('Failed to save pricing tiers to Firestore:', error);
+    return { ok: false, error: message };
+  }
+}
+
+// -------------------------------------------------------------
 // Customers & Store Credit Directory (Tenant Scoped)
 // -------------------------------------------------------------
 export async function saveCustomerToFirestore(customer: Customer): Promise<void> {
@@ -1748,4 +1992,96 @@ export async function getTenantSuppliersFromFirestore(businessId: string): Promi
     return [];
   }
 }
+
+export interface PaymentRecordSnapshot {
+  reference: string;
+  provider: 'paystack' | 'daraja';
+  flowType: 'subscription' | 'pos_sale';
+  channel: 'mpesa_stk' | 'card';
+  amountKes: number;
+  status: 'pending' | 'pay_offline' | 'success' | 'failed' | 'abandoned';
+  businessId: string;
+  planId?: string;
+  billingCycle?: 'monthly' | 'annual';
+  mpesaReceiptNumber?: string;
+  phone?: string;
+  resolvedBy?: string;
+  gatewayResponse?: string;
+  paidAt?: string;
+  updatedAt?: string;
+}
+
+export function subscribeToBusinessDocument(
+  businessId: string,
+  onUpdate: (business: Business) => void
+): Unsubscribe {
+  if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
+    return () => {};
+  }
+  const path = `businesses/${businessId}`;
+  return onSnapshot(
+    doc(db, 'businesses', businessId),
+    (snap) => {
+      if (!snap.exists()) return;
+      onUpdate({ ...(snap.data() as Business), id: snap.id });
+    },
+    (error) => {
+      if (!auth.currentUser || isFirestoreQuotaError(error)) {
+        if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+        return;
+      }
+      try {
+        handleFirestoreError(error, OperationType.GET, path);
+      } catch (err) {
+        console.warn(`Firestore business subscription notice on "${path}":`, err);
+      }
+    }
+  );
+}
+
+export function subscribeToPaymentRecord(
+  reference: string,
+  onUpdate: (record: PaymentRecordSnapshot) => void
+): Unsubscribe {
+  if (!db || !reference || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
+    return () => {};
+  }
+  const path = `payment_records/${reference}`;
+  return onSnapshot(
+    doc(db, 'payment_records', reference),
+    (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data() as Record<string, any>;
+      onUpdate({
+        reference: String(data.reference || snap.id),
+        provider: data.provider === 'daraja' ? 'daraja' : 'paystack',
+        flowType: data.flowType === 'pos_sale' ? 'pos_sale' : 'subscription',
+        channel: data.channel === 'card' ? 'card' : 'mpesa_stk',
+        amountKes: Number(data.amountKes || 0),
+        status: (data.status as PaymentRecordSnapshot['status']) || 'pending',
+        businessId: String(data.businessId || ''),
+        planId: data.planId ? String(data.planId) : undefined,
+        billingCycle: data.billingCycle === 'annual' ? 'annual' : 'monthly',
+        mpesaReceiptNumber: data.mpesaReceiptNumber ? String(data.mpesaReceiptNumber) : undefined,
+        phone: data.phone ? String(data.phone) : undefined,
+        resolvedBy: data.resolvedBy ? String(data.resolvedBy) : undefined,
+        gatewayResponse: data.gatewayResponse ? String(data.gatewayResponse) : undefined,
+        paidAt: data.paidAt ? String(data.paidAt) : undefined,
+        updatedAt: data.updatedAt ? String(data.updatedAt) : undefined,
+      });
+    },
+    (error) => {
+      if (!auth.currentUser || isFirestoreQuotaError(error)) {
+        if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+        return;
+      }
+      try {
+        handleFirestoreError(error, OperationType.GET, path);
+      } catch (err) {
+        console.warn(`Firestore payment record subscription notice on "${path}":`, err);
+      }
+    }
+  );
+}
+
 

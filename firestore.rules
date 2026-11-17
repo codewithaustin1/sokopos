@@ -547,8 +547,16 @@ service cloud.firestore {
     }
 
     match /payment_records/{recordId} {
-      allow get: if isSuperAdmin() && isValidPaymentRecordId(recordId);
-      allow list: if isSuperAdmin();
+      allow get: if isValidPaymentRecordId(recordId) && (
+        isSuperAdmin() ||
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId)) ||
+        (isEmailVerified() && resource != null && resource.data.ownerEmail is string && resource.data.ownerEmail.lower() == request.auth.token.email.lower())
+      );
+      allow list: if isSuperAdmin() || (
+        isEmailVerified() &&
+        resource.data.ownerEmail is string &&
+        resource.data.ownerEmail.lower() == request.auth.token.email.lower()
+      );
       allow write: if false;
     }
   }

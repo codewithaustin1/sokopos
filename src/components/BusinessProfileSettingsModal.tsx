@@ -44,15 +44,22 @@ import {
   Copy,
   Mail,
   Landmark,
+  UploadCloud,
+  Image as ImageIcon,
+  Loader2,
+  AlertCircle,
+  CreditCard,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { Location, Cashier, BusinessSecuritySettings } from '../types';
+import { resizeImageToStandardAspectRatio, estimateAssetSizeKb } from '../utils/imageOptimizer';
 import { RETAIL_THEMES } from '../data/retailThemes';
 import { SUPER_ADMIN_EMAIL } from '../data/initialData';
 import { ResetStoreModal } from './ResetStoreModal';
 import { TaxManagementPanel } from './TaxManagementPanel';
 import { LoyaltySettingsPanel } from './LoyaltySettingsPanel';
 import { PaystackSubaccountPanel } from './common/PaystackSubaccountPanel';
+import { BillingHistoryPanel } from './BillingHistoryPanel';
 import { SettingsSectionHeader } from './common/SettingsSectionHeader';
 import {
   generateTotpSecret,
@@ -71,6 +78,7 @@ import {
 export type BusinessSettingsTabId =
   | 'profile'
   | 'branches'
+  | 'billing'
   | 'settlement'
   | 'tax'
   | 'loyalty'
@@ -118,6 +126,13 @@ const NAV_GROUPS: Array<{
   {
     label: 'Payments & Compliance',
     items: [
+      {
+        id: 'billing',
+        domId: 'tab-billing-btn',
+        label: 'Billing & Receipts',
+        group: 'Payments & Compliance',
+        icon: CreditCard,
+      },
       {
         id: 'settlement',
         domId: 'tab-settlement-btn',
@@ -200,6 +215,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
     activeBusinessId,
     setActiveBusinessId,
     updateBusinessProfile,
+    saveBusinessBrandingLogo,
     locations,
     currentLocation,
     setCurrentLocationId,
@@ -272,6 +288,11 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
   const [profileCurrency, setProfileCurrency] = useState(currentBusiness?.currency || 'KES');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
+  // Store Branding Logo Upload State
+  const brandLogoInputRef = React.useRef<HTMLInputElement>(null);
+  const [isUploadingBrandLogo, setIsUploadingBrandLogo] = useState(false);
+  const [brandLogoError, setBrandLogoError] = useState<string | null>(null);
+
   // Branch Management State
   const [isAddingBranch, setIsAddingBranch] = useState(false);
   const [editingBranchId, setEditingBranchId] = useState<string | null>(null);
@@ -343,6 +364,61 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
       showToast('Failed to update business profile', 'error');
     } finally {
       setIsSavingProfile(false);
+    }
+  };
+
+  // Pick image from device, resize to standardized 4:1 aspect ratio via canvas, and store base64 in Firestore business settings
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setBrandLogoError(null);
+    setIsUploadingBrandLogo(true);
+    try {
+      const resized = await resizeImageToStandardAspectRatio(file, {
+        targetWidth: 400,
+        targetHeight: 100,
+        mode: 'contain',
+        outputMimeType: 'image/png',
+        quality: 0.92,
+      });
+
+      await saveBusinessBrandingLogo({
+        logoBase64: resized.base64DataUrl,
+        logoFileName: file.name,
+        aspectRatio: resized.aspectRatioLabel,
+        width: resized.width,
+        height: resized.height,
+        updatedAt: new Date().toISOString(),
+        updatedBy: currentUser?.email || currentBusiness?.ownerEmail,
+      });
+
+      showToast(
+        `Store logo standardized to ${resized.width}×${resized.height} (${resized.aspectRatioLabel}) and saved`,
+        'success'
+      );
+    } catch (err: any) {
+      const msg = err?.message || 'Failed to process and save the selected logo image.';
+      setBrandLogoError(msg);
+      showToast(msg, 'error');
+    } finally {
+      setIsUploadingBrandLogo(false);
+    }
+  };
+
+  const handleRemoveBrandLogo = async () => {
+    setBrandLogoError(null);
+    setIsUploadingBrandLogo(true);
+    try {
+      await saveBusinessBrandingLogo(null);
+      showToast('Business branding logo removed', 'info');
+    } catch (err: any) {
+      const msg = err?.message || 'Failed to remove business branding logo.';
+      setBrandLogoError(msg);
+      showToast(msg, 'error');
+    } finally {
+      setIsUploadingBrandLogo(false);
     }
   };
 
@@ -686,6 +762,12 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
     switch (itemId) {
       case 'branches':
         return <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 tabular-nums">{locations.length}</span>;
+      case 'billing':
+        return (
+          <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 truncate max-w-[80px]">
+            {formatTierDisplayName(normalizePlanTier(currentBusiness?.plan, currentBusiness?.subscription?.planId))}
+          </span>
+        );
       case 'settlement':
         return (
           <span
@@ -1081,6 +1163,130 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                 </form>
               </div>
 
+              {/* Store Branding Logo Card (Standardized 4:1 Canvas Upload -> Firestore) */}
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+                <SettingsSectionHeader
+                  title="Store Branding Logo"
+                  description="Upload a logo from your device. Images are automatically standardized to a 4:1 aspect ratio (400 × 100 px) via canvas and synced to your business record in Firestore."
+                  meta={
+                    <span className="font-mono tabular-nums text-[11px] font-semibold px-2.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800/70 text-blue-700 dark:text-blue-300">
+                      400 × 100 px · 4:1
+                    </span>
+                  }
+                />
+
+                <input
+                  id="business-brand-logo-input"
+                  ref={brandLogoInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  onChange={handleImageUpload}
+                  className="hidden"
+                />
+
+                {brandLogoError && (
+                  <div
+                    role="alert"
+                    className="rounded-lg border border-rose-200 dark:border-rose-800/60 bg-rose-50 dark:bg-rose-950/30 p-3 flex items-start gap-2 text-xs text-rose-800 dark:text-rose-200"
+                  >
+                    <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                    <span className="flex-1 font-medium">{brandLogoError}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Upload business logo from device (standardized to 400 by 100 px, 4:1)"
+                    onClick={() => !isUploadingBrandLogo && brandLogoInputRef.current?.click()}
+                    onKeyDown={(e) => {
+                      if ((e.key === 'Enter' || e.key === ' ') && !isUploadingBrandLogo) {
+                        e.preventDefault();
+                        brandLogoInputRef.current?.click();
+                      }
+                    }}
+                    className="md:col-span-7 group relative aspect-[4/1] rounded-xl border border-dashed border-slate-300 dark:border-slate-700 hover:border-blue-500 bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-3 overflow-hidden cursor-pointer transition focus-visible:outline-2 focus-visible:outline-blue-600"
+                  >
+                    {isUploadingBrandLogo ? (
+                      <div className="flex items-center gap-2 text-xs font-medium text-blue-600 dark:text-blue-400">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Resizing to 4:1 &amp; saving...</span>
+                      </div>
+                    ) : currentBusiness?.brandingSettings?.logoBase64 ? (
+                      <>
+                        <img
+                          src={currentBusiness.brandingSettings.logoBase64}
+                          alt={`${currentBusiness.name} Logo`}
+                          className="max-h-full max-w-full object-contain"
+                        />
+                        <div className="absolute inset-0 bg-slate-950/55 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white text-xs font-medium">
+                          <UploadCloud className="w-4 h-4" />
+                          <span>Click to replace logo</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center gap-1 text-center">
+                        <ImageIcon className="w-5 h-5 text-slate-400 dark:text-slate-500" />
+                        <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                          Click to pick an image from your device
+                        </span>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                          PNG, JPG, WebP, SVG · Auto-fitted to 4:1
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="md:col-span-5 flex flex-col justify-between gap-3">
+                    <div className="text-xs space-y-1">
+                      <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                        {currentBusiness?.brandingSettings?.logoBase64
+                          ? currentBusiness.brandingSettings.logoFileName || 'Custom Business Logo'
+                          : 'No custom logo uploaded'}
+                      </div>
+                      <div className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                        {currentBusiness?.brandingSettings?.logoBase64
+                          ? `${currentBusiness.brandingSettings.width || 400} × ${
+                              currentBusiness.brandingSettings.height || 100
+                            } px · ${currentBusiness.brandingSettings.aspectRatio || '4:1'} · ${estimateAssetSizeKb(
+                              currentBusiness.brandingSettings.logoBase64
+                            )} KB`
+                          : 'Displayed on printed customer receipts'}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        id="btn-upload-business-logo"
+                        type="button"
+                        disabled={isUploadingBrandLogo}
+                        onClick={() => brandLogoInputRef.current?.click()}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold transition cursor-pointer whitespace-nowrap"
+                      >
+                        <UploadCloud className="w-3.5 h-3.5" />
+                        <span>
+                          {currentBusiness?.brandingSettings?.logoBase64 ? 'Replace Logo' : 'Upload Logo'}
+                        </span>
+                      </button>
+
+                      {currentBusiness?.brandingSettings?.logoBase64 && (
+                        <button
+                          id="btn-remove-business-logo"
+                          type="button"
+                          disabled={isUploadingBrandLogo}
+                          onClick={handleRemoveBrandLogo}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-rose-700 dark:text-rose-400 bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 transition cursor-pointer whitespace-nowrap"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Remove</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Tenant Architecture Summary Strip */}
               <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
                 <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
@@ -1426,6 +1632,15 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                   })}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* TAB: BILLING HISTORY & SUBSCRIPTION RECEIPTS */}
+          {/* ========================================================= */}
+          {activeTab === 'billing' && (
+            <div className="max-w-4xl mx-auto">
+              <BillingHistoryPanel />
             </div>
           )}
 

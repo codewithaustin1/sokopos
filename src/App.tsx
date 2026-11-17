@@ -41,7 +41,12 @@ import { getSystemPaths, generateSitemapJson } from './utils/sitemapManifest';
 import { isSuperAdminEmail } from './data/initialData';
 import { MobileBentoMenuOverlay } from './components/common/MobileBentoMenuOverlay';
 import { ToastContainer } from './components/common/ToastContainer';
-import { verifyServerPayment } from './lib/paymentService';
+import { PendingSubscriptionBanner } from './components/common/PendingSubscriptionBanner';
+import {
+  verifyServerPayment,
+  loadPendingSubscriptionCheckout,
+  clearPendingSubscriptionCheckout,
+} from './lib/paymentService';
 import { AffiliatePortalModal } from './components/AffiliatePortalModal';
 import { trackPlatformEvent } from './lib/telemetryService';
 import { UpgradePromptModal } from './components/common/UpgradePromptModal';
@@ -86,6 +91,7 @@ function PosAppContent() {
     clearPendingCheckoutIntent,
     isDemoSession,
     activateBusinessSubscription,
+    trackPendingSubscription,
     isPricingPageOpen,
     openPricingPage,
     closePricingPage,
@@ -190,20 +196,13 @@ function PosAppContent() {
     const cleanUrl = `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ''}${window.location.hash}`;
     window.history.replaceState(null, '', cleanUrl);
 
-    let pendingMeta: { businessId?: string; planId?: string; payer?: string } = {};
-    try {
-      const raw = sessionStorage.getItem('sokopos_pending_sub_payment');
-      if (raw) {
-        pendingMeta = JSON.parse(raw);
-        sessionStorage.removeItem('sokopos_pending_sub_payment');
-      }
-    } catch {
-      // ignore storage errors
-    }
+    const pendingMeta = loadPendingSubscriptionCheckout();
 
     let cancelled = false;
     const verifyAndProvision = async (attempt = 1) => {
-      showToast('Verifying your Paystack subscription payment...', 'info');
+      if (attempt === 1) {
+        showToast('Verifying your subscription payment...', 'info');
+      }
       const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
       const result = await verifyServerPayment(paymentRef, idToken);
       if (cancelled) return;
@@ -212,25 +211,39 @@ function PosAppContent() {
         const targetBusinessId =
           result.businessId ||
           (result.metadata?.businessId as string | undefined) ||
-          pendingMeta.businessId ||
+          pendingMeta?.businessId ||
           currentBusiness?.id ||
           'biz-default';
         const targetPlanId = (result.planId ||
           (result.metadata?.planId as string | undefined) ||
-          pendingMeta.planId ||
+          pendingMeta?.planId ||
           'business') as BusinessPlanTier;
+
+        trackPendingSubscription({
+          reference: paymentRef,
+          businessId: targetBusinessId,
+          businessName: currentBusiness?.name,
+          planId: (targetPlanId as any) || 'business',
+          billingCycle: result.billingCycle || pendingMeta?.billingCycle || 'monthly',
+          amountKes: Number(result.amountKes || pendingMeta?.amountKes || 0),
+          provider: result.provider || 'paystack',
+          channel: result.channel === 'mpesa_stk' ? 'mpesa_stk' : 'card',
+          initiatedAt: pendingMeta?.initiatedAt || new Date().toISOString(),
+        });
 
         const activation = await activateBusinessSubscription(targetBusinessId, targetPlanId, paymentRef);
         if (activation.success) {
-          setIsSubscriptionModalOpen(false);
-          showToast(`Subscription activated! Your ${targetPlanId.toUpperCase()} plan is now live.`, 'success');
+          setIsSubscriptionModalOpen(true);
         } else {
-          showToast(activation.message || 'Payment verified, but plan activation failed. Please contact support.', 'error');
+          showToast(
+            activation.message || 'Payment verified, but plan activation failed. Please contact support.',
+            'error'
+          );
         }
         return;
       }
 
-      if (result.status === 'pending' && attempt < 3) {
+      if (result.status === 'pending' && attempt < 4) {
         setTimeout(() => {
           if (!cancelled) verifyAndProvision(attempt + 1);
         }, 3000);
@@ -238,9 +251,10 @@ function PosAppContent() {
       }
 
       if (result.status === 'failed' || result.status === 'abandoned') {
+        clearPendingSubscriptionCheckout();
         showToast(result.error || result.gatewayResponse || 'Subscription payment was not completed.', 'error');
       } else {
-        showToast('Payment is still confirming. Refresh or reopen Activate Store in a moment.', 'info');
+        showToast('Payment is still confirming. Use the banner above to resume status anytime.', 'info');
       }
     };
 
@@ -248,7 +262,15 @@ function PosAppContent() {
     return () => {
       cancelled = true;
     };
-  }, [currentUser, currentBusiness?.id, currentBusiness?.ownerEmail, activateBusinessSubscription, setIsSubscriptionModalOpen, showToast]);
+  }, [
+    currentUser,
+    currentBusiness?.id,
+    currentBusiness?.name,
+    activateBusinessSubscription,
+    trackPendingSubscription,
+    setIsSubscriptionModalOpen,
+    showToast,
+  ]);
 
   // Hidden Dynamic Sitemap View Triggered by Console Command (sitemap() / window.sitemap())
   const [isSitemapOpen, setIsSitemapOpen] = useState<boolean>(() => {
@@ -616,6 +638,9 @@ function PosAppContent() {
         openSuperAdminModal={handleOpenSuperAdmin}
       />
 
+      {/* Recoverable Pending / Verified Subscription Banner */}
+      <PendingSubscriptionBanner />
+
       {/* Super Admin Alert Banner if current tenant is suspended */}
       {currentBusiness?.status === 'suspended' && isSuperAdmin && (
         <div className="bg-rose-900 text-white px-4 py-2 text-xs flex items-center justify-between border-b border-rose-800 shrink-0 z-30">
@@ -763,7 +788,6 @@ function PosAppContent() {
         onClose={() => setIsSubscriptionModalOpen(false)}
         onSuccess={() => {
           setIsSubscriptionModalOpen(false);
-          setIsPaymentOpen(true);
         }}
       />
 

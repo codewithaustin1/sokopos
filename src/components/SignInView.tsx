@@ -114,6 +114,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     setCheckoutAuthRequested,
     appointedDemoCashier,
     appointedDemoCashierId,
+    pricingTiers,
     isAffiliateModalOpen,
     setIsAffiliateModalOpen,
     loginBgGraphic,
@@ -472,11 +473,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
   const activeCheckoutTier = useMemo(() => {
     if (!pendingCheckoutIntent || pendingCheckoutIntent.planId === 'free') return null;
+    const sourceTiers = pricingTiers && pricingTiers.length > 0 ? pricingTiers : DEFAULT_PRICING_TIERS;
     return (
+      sourceTiers.find((t) => t.id === pendingCheckoutIntent.planId) ||
       DEFAULT_PRICING_TIERS.find((t) => t.id === pendingCheckoutIntent.planId) ||
       DEFAULT_PRICING_TIERS[2]
     );
-  }, [pendingCheckoutIntent]);
+  }, [pendingCheckoutIntent, pricingTiers]);
 
   const isCheckoutContextActive = Boolean(
     activeCheckoutTier &&
