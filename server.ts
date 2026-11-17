@@ -4071,18 +4071,23 @@ Extract:
     const r = remoteDoc;
     const maxNum = (k: keyof StoredDailyTrafficRollup) =>
       Math.max(Number((l as any)[k]) || 0, Number(r[k as string]) || 0);
-    const mergeMap = (m1: Record<string, number> = {}, m2: Record<string, number> = {}) => {
+    const mergeMap = (m1?: Record<string, number> | null, m2?: Record<string, number> | null) => {
+      const safe1 = m1 && typeof m1 === 'object' ? m1 : {};
+      const safe2 = m2 && typeof m2 === 'object' ? m2 : {};
       const out: Record<string, number> = {};
-      for (const k of new Set([...Object.keys(m1), ...Object.keys(m2)])) {
-        out[k] = Math.max(Number(m1[k]) || 0, Number(m2[k]) || 0);
+      for (const k of new Set([...Object.keys(safe1), ...Object.keys(safe2)])) {
+        out[k] = Math.max(Number(safe1[k]) || 0, Number(safe2[k]) || 0);
       }
       return out;
     };
 
-    const bizActivity: Record<string, StoredBusinessActivity> = { ...(r.businessActivity || {}) };
-    for (const [bId, bVal] of Object.entries(l.businessActivity || {})) {
+    const safeRBusiness = r.businessActivity && typeof r.businessActivity === 'object' ? r.businessActivity : {};
+    const safeLBusiness = l.businessActivity && typeof l.businessActivity === 'object' ? l.businessActivity : {};
+    const bizActivity: Record<string, StoredBusinessActivity> = { ...safeRBusiness };
+    for (const [bId, bVal] of Object.entries(safeLBusiness)) {
+      if (!bVal || typeof bVal !== 'object') continue;
       const existing = bizActivity[bId];
-      if (!existing) {
+      if (!existing || typeof existing !== 'object') {
         bizActivity[bId] = bVal;
       } else {
         bizActivity[bId] = {
@@ -4181,7 +4186,99 @@ Extract:
     }
   });
 
+  function buildTrafficDateKeys(rangeDays: 7 | 30 | 90): string[] {
+    const dateKeys: string[] = [];
+    const now = new Date();
+    for (let i = rangeDays - 1; i >= 0; i--) {
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
+      dateKeys.push(d.toISOString().slice(0, 10));
+    }
+    return dateKeys;
+  }
+
+  function buildEmptyTrafficOverview(rangeDays: 7 | 30 | 90, excludeDemo: boolean, dateKeys: string[]) {
+    const dailySeries = dateKeys.map((dateKey) => {
+      const parsedDate = new Date(`${dateKey}T00:00:00Z`);
+      const label = parsedDate.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        timeZone: 'UTC',
+      });
+      return {
+        dateKey,
+        label,
+        pageViews: 0,
+        uniqueSessions: 0,
+        landingViews: 0,
+        pricingViews: 0,
+        demoStarts: 0,
+        signInStarts: 0,
+        signUpsCompleted: 0,
+        activeStoresCount: 0,
+        posSessions: 0,
+        posCheckouts: 0,
+        posGmvKes: 0,
+        subscriptionModalOpens: 0,
+        subscriptionCheckouts: 0,
+        subscriptionActivations: 0,
+        subscriptionRevenueKes: 0,
+        botHitsBlocked: 0,
+      };
+    });
+
+    return {
+      rangeDays,
+      excludeDemo,
+      generatedAt: new Date().toISOString(),
+      firestoreSynced: false,
+      totals: {
+        pageViews: 0,
+        uniqueSessions: 0,
+        landingViews: 0,
+        pricingViews: 0,
+        demoStarts: 0,
+        signInStarts: 0,
+        signUpsCompleted: 0,
+        signupConversionRate: 0,
+        posSessions: 0,
+        activeStoresInRange: 0,
+        totalRegisteredStores: 0,
+        paidStoresCount: 0,
+        verifiedSubaccountsCount: 0,
+        posCheckouts: 0,
+        posGmvKes: 0,
+        subscriptionModalOpens: 0,
+        subscriptionCheckouts: 0,
+        subscriptionActivations: 0,
+        subscriptionRevenueKes: 0,
+        botHitsBlocked: 0,
+      },
+      dailySeries,
+      funnel: [
+        { id: 'landing', label: 'Landing Page Views', count: 0, rateFromPrevious: 100, rateFromLanding: 0 },
+        { id: 'pricing', label: 'Pricing Page Views', count: 0, rateFromPrevious: 0, rateFromLanding: 0 },
+        { id: 'signin', label: 'Sign-In / Demo Started', count: 0, rateFromPrevious: 0, rateFromLanding: 0 },
+        { id: 'signup', label: 'New Stores Created', count: 0, rateFromPrevious: 0, rateFromLanding: 0 },
+        { id: 'paid', label: 'Paid Subscriptions', count: 0, rateFromPrevious: 0, rateFromLanding: 0 },
+      ],
+      utmSources: [],
+      utmCampaigns: [],
+      referrers: [],
+      devices: [],
+      topPages: [],
+      posTabs: [],
+      checkoutChannels: [],
+      topStores: [],
+      recentEvents: [],
+    };
+  }
+
   app.get('/api/telemetry/overview', async (req, res) => {
+    const rawDays = Number(req.query.days) || 30;
+    const rangeDays: 7 | 30 | 90 = rawDays === 7 ? 7 : rawDays === 90 ? 90 : 30;
+    const excludeDemo = String(req.query.excludeDemo ?? 'true') !== 'false';
+    const dateKeys = buildTrafficDateKeys(rangeDays);
+
     try {
       const authHeader = req.headers.authorization;
       const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
@@ -4190,33 +4287,25 @@ Extract:
         return res.status(403).json({ error: 'Super Admin authentication required for platform traffic telemetry.' });
       }
 
-      const rawDays = Number(req.query.days) || 30;
-      const rangeDays = rawDays === 7 ? 7 : rawDays === 90 ? 90 : 30;
-      const excludeDemo = String(req.query.excludeDemo ?? 'true') !== 'false';
-
-      // Build exact list of dateKeys for [today - (rangeDays - 1) ... today]
-      const dateKeys: string[] = [];
-      const now = new Date();
-      for (let i = rangeDays - 1; i >= 0; i--) {
-        const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
-        dateKeys.push(d.toISOString().slice(0, 10));
-      }
-
-      // Fetch Firestore daily rollups, milestone feed, and businesses in parallel using verified Super Admin token
+      // Fetch Firestore daily rollups, milestone feed, and businesses in parallel; fall back to [] if empty or unreachable
       const [remoteDailyDocs, remoteEvents, remoteBusinesses] = await Promise.all([
-        listFirestoreDocs('platform_traffic_daily', 120, bearerToken),
-        listFirestoreDocs('platform_traffic_events', 150, bearerToken),
-        listFirestoreDocs('businesses', 500, bearerToken),
+        listFirestoreDocs('platform_traffic_daily', 120, bearerToken).catch(() => []),
+        listFirestoreDocs('platform_traffic_events', 150, bearerToken).catch(() => []),
+        listFirestoreDocs('businesses', 500, bearerToken).catch(() => []),
       ]);
 
+      const safeDailyDocs = Array.isArray(remoteDailyDocs) ? remoteDailyDocs : [];
+      const safeEvents = Array.isArray(remoteEvents) ? remoteEvents : [];
+      const safeBusinesses = Array.isArray(remoteBusinesses) ? remoteBusinesses : [];
+
       const remoteDailyMap = new Map<string, Record<string, any>>();
-      for (const doc of remoteDailyDocs) {
-        const key = String(doc.dateKey || doc.id || '');
+      for (const doc of safeDailyDocs) {
+        const key = String(doc?.dateKey || doc?.id || '');
         if (key) remoteDailyMap.set(key, doc);
       }
 
       // Merge local store and Firestore store per dateKey
-      for (const key of new Set([...Object.keys(trafficStore.daily), ...Array.from(remoteDailyMap.keys())])) {
+      for (const key of new Set([...Object.keys(trafficStore.daily || {}), ...Array.from(remoteDailyMap.keys())])) {
         const merged = mergeRollupPair(trafficStore.daily[key], remoteDailyMap.get(key), key);
         trafficStore.daily[key] = merged;
         if (dirtyRollupDates.has(key) || !remoteDailyMap.has(key)) {
@@ -4226,7 +4315,7 @@ Extract:
       saveTrafficStore(trafficStore);
 
       // Flush local buffered rollups/events up to Firestore with Super Admin's token
-      const firestoreSynced = await flushTelemetryToFirestore(bearerToken);
+      const firestoreSynced = await flushTelemetryToFirestore(bearerToken).catch(() => false);
 
       // Aggregate range metrics
       const utmSourceTotals: Record<string, number> = {};
@@ -4258,7 +4347,8 @@ Extract:
       let subscriptionRevenueKes = 0;
       let botHitsBlocked = 0;
 
-      const addMap = (target: Record<string, number>, source: Record<string, number> = {}) => {
+      const addMap = (target: Record<string, number>, source?: Record<string, number> | null) => {
+        if (!source || typeof source !== 'object') return;
         for (const [k, v] of Object.entries(source)) {
           target[k] = (target[k] || 0) + (Number(v) || 0);
         }
@@ -4364,13 +4454,13 @@ Extract:
       };
 
       const bizById = new Map<string, Record<string, any>>();
-      for (const b of remoteBusinesses) {
+      for (const b of safeBusinesses) {
         if (b?.id) bizById.set(String(b.id), b);
       }
 
       const registeredStores = excludeDemo
-        ? remoteBusinesses.filter((b) => b.id !== 'biz-demo')
-        : remoteBusinesses;
+        ? safeBusinesses.filter((b) => b.id !== 'biz-demo')
+        : safeBusinesses;
       const paidStoresCount = registeredStores.filter(
         (b) => b.status === 'active' && b.plan && b.plan !== 'free'
       ).length;
@@ -4398,7 +4488,8 @@ Extract:
 
       // Merge local & remote recent milestone events cleanly
       const eventMap = new Map<string, StoredTrafficMilestone>();
-      for (const evt of [...trafficStore.recentEvents, ...(remoteEvents as StoredTrafficMilestone[])]) {
+      const localEvents = Array.isArray(trafficStore.recentEvents) ? trafficStore.recentEvents : [];
+      for (const evt of [...localEvents, ...(safeEvents as StoredTrafficMilestone[])]) {
         if (!evt?.id) continue;
         if (excludeDemo && (evt.isDemo || evt.businessId === 'biz-demo')) continue;
         if (!dateKeys.includes(evt.dateKey || String(evt.timestamp || '').slice(0, 10))) continue;
@@ -4470,8 +4561,8 @@ Extract:
         recentEvents,
       });
     } catch (err: any) {
-      console.error('Error in /api/telemetry/overview:', err);
-      return res.status(500).json({ error: 'Failed to aggregate platform traffic overview.' });
+      console.warn('Telemetry overview fallback activated (empty/unreachable Firestore):', err?.message || err);
+      return res.json(buildEmptyTrafficOverview(rangeDays, excludeDemo, dateKeys));
     }
   });
 

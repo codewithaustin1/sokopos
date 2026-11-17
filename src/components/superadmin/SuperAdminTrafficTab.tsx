@@ -24,6 +24,7 @@ import {
   Tablet,
   ArrowUpRight,
 } from 'lucide-react';
+import { auth } from '../../lib/firebase';
 import { fetchPlatformTrafficOverview } from '../../lib/telemetryService';
 import { PlatformTrafficOverviewResponse } from '../../types/traffic';
 import { SettingsSectionHeader } from '../common/SettingsSectionHeader';
@@ -52,6 +53,7 @@ export const SuperAdminTrafficTab: React.FC = () => {
   const [overview, setOverview] = useState<PlatformTrafficOverviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [isRetrying, setIsRetrying] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadOverview = useCallback(
@@ -71,6 +73,32 @@ export const SuperAdminTrafficTab: React.FC = () => {
     },
     [rangeDays, excludeDemo]
   );
+
+  const handleRetry = useCallback(async () => {
+    if (isRetrying) return;
+    setIsRetrying(true);
+    setError(null);
+    try {
+      if (typeof (auth as any).authStateReady === 'function') {
+        await (auth as any).authStateReady().catch(() => undefined);
+      }
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error('No active authenticated session found. Please sign in again.');
+      }
+      const freshToken = await user.getIdToken(true);
+      const data = await fetchPlatformTrafficOverview(rangeDays, excludeDemo, {
+        idTokenOverride: freshToken,
+      });
+      setOverview(data);
+    } catch (err: any) {
+      setError(err?.message || 'Unable to load platform traffic metrics.');
+    } finally {
+      setIsRetrying(false);
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [excludeDemo, isRetrying, rangeDays]);
 
   useEffect(() => {
     loadOverview(false);
@@ -215,11 +243,15 @@ export const SuperAdminTrafficTab: React.FC = () => {
 
             <button
               type="button"
-              onClick={() => loadOverview(true)}
-              disabled={isRefreshing}
+              onClick={() => (error ? handleRetry() : loadOverview(true))}
+              disabled={isRefreshing || isRetrying}
               className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-blue-600 dark:text-blue-400' : ''}`} />
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${
+                  isRefreshing || isRetrying ? 'animate-spin text-blue-600 dark:text-blue-400' : ''
+                }`}
+              />
               <span>Refresh</span>
             </button>
 
@@ -245,10 +277,12 @@ export const SuperAdminTrafficTab: React.FC = () => {
           </div>
           <button
             type="button"
-            onClick={() => loadOverview(false)}
-            className="px-3 py-1 rounded-lg bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 font-medium text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-950/50 cursor-pointer whitespace-nowrap shrink-0"
+            onClick={handleRetry}
+            disabled={isRetrying}
+            className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 font-medium text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-950/50 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            Retry
+            <RefreshCw className={`w-3.5 h-3.5 ${isRetrying ? 'animate-spin' : ''}`} />
+            <span>{isRetrying ? 'Retrying...' : 'Retry'}</span>
           </button>
         </div>
       )}

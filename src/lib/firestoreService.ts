@@ -28,6 +28,9 @@ import {
   StockTransfer,
   StoreSalesBackup,
   PlatformSettings,
+  BrandingSlotAsset,
+  BrandingSlotId,
+  IndustrySolutionId,
 } from '../types';
 
 export enum OperationType {
@@ -1307,10 +1310,40 @@ export async function seedInitialTenantDataToFirestore(params: {
 }
 
 // -------------------------------------------------------------
-// Platform Global Settings & Branding (Super Admin, 30-min TTL Cache)
+// Platform Global Settings & Per-Slot Branding (Super Admin, 30-min TTL Cache)
 // -------------------------------------------------------------
-const PLATFORM_SETTINGS_CACHE_KEY = 'sokopos_platform_settings_cache_v1';
+const PLATFORM_SETTINGS_CACHE_KEY = 'sokopos_platform_settings_cache_v2';
 const PLATFORM_SETTINGS_TTL_MS = 30 * 60 * 1000;
+
+const BRANDING_SLOT_DOC_MAP: Record<BrandingSlotId, string> = {
+  logo: 'branding_logo',
+  favicon: 'branding_favicon',
+  hero: 'branding_hero',
+  industry_retail: 'branding_industry_retail',
+  industry_bars: 'branding_industry_bars',
+  industry_supermarkets: 'branding_industry_supermarkets',
+  industry_pharmacies: 'branding_industry_pharmacies',
+};
+
+const ALL_BRANDING_SLOTS: BrandingSlotId[] = [
+  'logo',
+  'favicon',
+  'hero',
+  'industry_retail',
+  'industry_bars',
+  'industry_supermarkets',
+  'industry_pharmacies',
+];
+
+async function getBrandingSlotDoc(slotId: BrandingSlotId): Promise<BrandingSlotAsset | null> {
+  if (!db) return null;
+  try {
+    const snap = await getDoc(doc(db, 'platform_settings', BRANDING_SLOT_DOC_MAP[slotId]));
+    return snap.exists() ? (snap.data() as BrandingSlotAsset) : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function getPlatformSettingsFromFirestore(forceRefresh = false): Promise<PlatformSettings | null> {
   if (typeof window !== 'undefined' && !forceRefresh) {
@@ -1329,19 +1362,67 @@ export async function getPlatformSettingsFromFirestore(forceRefresh = false): Pr
 
   if (!db || isFirestoreQuotaCooldownActive()) return null;
   try {
-    const snap = await getDoc(doc(db, 'platform_settings', 'global'));
-    const data = snap.exists() ? (snap.data() as PlatformSettings) : null;
+    const [globalSnap, ...slotDocs] = await Promise.all([
+      getDoc(doc(db, 'platform_settings', 'global')).catch(() => null),
+      ...ALL_BRANDING_SLOTS.map((slotId) => getBrandingSlotDoc(slotId)),
+    ]);
+
+    const globalData = globalSnap && globalSnap.exists() ? (globalSnap.data() as PlatformSettings) : null;
+    const slotMap = new Map<BrandingSlotId, BrandingSlotAsset>();
+    ALL_BRANDING_SLOTS.forEach((slotId, index) => {
+      const docData = slotDocs[index];
+      if (docData) slotMap.set(slotId, docData);
+    });
+
+    const hasAnyDoc = Boolean(globalData || slotMap.size > 0);
+    if (!hasAnyDoc) return null;
+
+    const logoSlot = slotMap.get('logo');
+    const faviconSlot = slotMap.get('favicon');
+    const heroSlot = slotMap.get('hero');
+
+    const industryEntries: Array<[IndustrySolutionId, BrandingSlotId]> = [
+      ['retail', 'industry_retail'],
+      ['bars', 'industry_bars'],
+      ['supermarkets', 'industry_supermarkets'],
+      ['pharmacies', 'industry_pharmacies'],
+    ];
+
+    const industryImages: Partial<Record<IndustrySolutionId, { url: string | null; name?: string }>> = {};
+    for (const [indId, slotId] of industryEntries) {
+      const slot = slotMap.get(slotId);
+      if (slot !== undefined) {
+        industryImages[indId] = {
+          url: slot.assetUrl ?? null,
+          name: slot.assetName || undefined,
+        };
+      } else if (globalData?.industryImages?.[indId]) {
+        industryImages[indId] = globalData.industryImages[indId];
+      }
+    }
+
+    const merged: PlatformSettings = {
+      ...(globalData || {}),
+      platformLogo: logoSlot !== undefined ? (logoSlot.assetUrl ?? null) : (globalData?.platformLogo ?? undefined),
+      platformLogoName: logoSlot !== undefined ? (logoSlot.assetName || '') : (globalData?.platformLogoName ?? undefined),
+      platformFavicon: faviconSlot !== undefined ? (faviconSlot.assetUrl ?? null) : (globalData?.platformFavicon ?? undefined),
+      platformFaviconName: faviconSlot !== undefined ? (faviconSlot.assetName || '') : (globalData?.platformFaviconName ?? undefined),
+      loginBgGraphic: heroSlot !== undefined ? (heroSlot.assetUrl ?? null) : (globalData?.loginBgGraphic ?? undefined),
+      loginBgGraphicName: heroSlot !== undefined ? (heroSlot.assetName || '') : (globalData?.loginBgGraphicName ?? undefined),
+      industryImages,
+    };
+
     if (typeof window !== 'undefined') {
       try {
         localStorage.setItem(
           PLATFORM_SETTINGS_CACHE_KEY,
-          JSON.stringify({ data, fetchedAt: Date.now() })
+          JSON.stringify({ data: merged, fetchedAt: Date.now() })
         );
       } catch {
         // ignore quota error
       }
     }
-    return data;
+    return merged;
   } catch (error) {
     if (isFirestoreQuotaError(error)) {
       markFirestoreQuotaExceeded();
@@ -1349,6 +1430,130 @@ export async function getPlatformSettingsFromFirestore(forceRefresh = false): Pr
     }
     console.warn('Failed to load platform settings from Firestore:', error);
     return null;
+  }
+}
+
+export async function saveBrandingSlotToFirestore(
+  slotAsset: BrandingSlotAsset
+): Promise<{ ok: boolean; error?: string }> {
+  if (!db) {
+    return { ok: false, error: 'Database client is not initialized.' };
+  }
+  if (!auth.currentUser) {
+    return { ok: false, error: 'Sign in with a verified Super Admin Google account to sync branding to cloud.' };
+  }
+
+  const docId = BRANDING_SLOT_DOC_MAP[slotAsset.slotId];
+  const nowIso = slotAsset.updatedAt || new Date().toISOString();
+
+  try {
+    await setDoc(
+      doc(db, 'platform_settings', docId),
+      sanitizeForFirestore({
+        slotId: slotAsset.slotId,
+        assetUrl: slotAsset.assetUrl ?? null,
+        assetName: slotAsset.assetName || '',
+        width: slotAsset.width,
+        height: slotAsset.height,
+        format: slotAsset.format,
+        updatedAt: nowIso,
+        updatedBy: slotAsset.updatedBy || auth.currentUser.email || 'super_admin',
+      }),
+      { merge: true }
+    );
+
+    // Keep global doc slim by clearing legacy base64 blobs once per-slot doc is authoritative
+    if (slotAsset.slotId === 'logo' || slotAsset.slotId === 'favicon' || slotAsset.slotId === 'hero') {
+      const legacyClear: Partial<PlatformSettings> = {
+        updatedAt: nowIso,
+        updatedBy: slotAsset.updatedBy || auth.currentUser.email || 'super_admin',
+      };
+      if (slotAsset.slotId === 'logo') {
+        legacyClear.platformLogo = null;
+        legacyClear.platformLogoName = '';
+      } else if (slotAsset.slotId === 'favicon') {
+        legacyClear.platformFavicon = null;
+        legacyClear.platformFaviconName = '';
+      } else if (slotAsset.slotId === 'hero') {
+        legacyClear.loginBgGraphic = null;
+        legacyClear.loginBgGraphicName = '';
+      }
+      await setDoc(doc(db, 'platform_settings', 'global'), sanitizeForFirestore(legacyClear), { merge: true }).catch(() => undefined);
+    }
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem(PLATFORM_SETTINGS_CACHE_KEY);
+      } catch {
+        // ignore storage errors
+      }
+    }
+    return { ok: true };
+  } catch (error: any) {
+    const message = error?.message || 'Failed to persist branding slot asset to Firestore.';
+    console.warn(`Failed to save branding slot ${slotAsset.slotId} to Firestore:`, error);
+    return { ok: false, error: message };
+  }
+}
+
+export async function clearAllBrandingSlotsInFirestore(
+  updatedBy?: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!db) {
+    return { ok: false, error: 'Database client is not initialized.' };
+  }
+  if (!auth.currentUser) {
+    return { ok: false, error: 'Sign in with a verified Super Admin Google account to reset cloud branding.' };
+  }
+
+  const nowIso = new Date().toISOString();
+  const actor = updatedBy || auth.currentUser.email || 'super_admin';
+
+  try {
+    const batch = writeBatch(db);
+    batch.set(
+      doc(db, 'platform_settings', 'global'),
+      sanitizeForFirestore({
+        loginBgGraphic: null,
+        loginBgGraphicName: '',
+        platformLogo: null,
+        platformLogoName: '',
+        platformFavicon: null,
+        platformFaviconName: '',
+        updatedAt: nowIso,
+        updatedBy: actor,
+      }),
+      { merge: true }
+    );
+
+    for (const slotId of ALL_BRANDING_SLOTS) {
+      batch.set(
+        doc(db, 'platform_settings', BRANDING_SLOT_DOC_MAP[slotId]),
+        sanitizeForFirestore({
+          slotId,
+          assetUrl: null,
+          assetName: '',
+          updatedAt: nowIso,
+          updatedBy: actor,
+        }),
+        { merge: true }
+      );
+    }
+
+    await batch.commit();
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem(PLATFORM_SETTINGS_CACHE_KEY);
+      } catch {
+        // ignore storage errors
+      }
+    }
+    return { ok: true };
+  } catch (error: any) {
+    const message = error?.message || 'Failed to reset platform branding slots in Firestore.';
+    console.warn('Failed to clear all branding slots in Firestore:', error);
+    return { ok: false, error: message };
   }
 }
 

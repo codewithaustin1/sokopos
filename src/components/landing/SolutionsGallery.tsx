@@ -16,6 +16,7 @@ import industryRetailShop from '../../assets/images/industry_retail_shop_1794857
 import industryBarRestaurant from '../../assets/images/industry_bar_restaurant_1794857445769.jpg';
 import industrySupermarket from '../../assets/images/industry_supermarket_1794857446020.jpg';
 import industryPharmacy from '../../assets/images/industry_pharmacy_1794857446477.jpg';
+import { usePos } from '../../context/PosContext';
 
 export interface RetailIndustryItem {
   id: 'retail' | 'bars' | 'supermarkets' | 'pharmacies';
@@ -158,13 +159,21 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
   onLaunchDemo,
   onCreateAccount,
 }) => {
+  const { industryImages } = usePos();
   const [selectedIndustryId, setSelectedIndustryId] = useState<RetailIndustryItem['id'] | null>(
     null
   );
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
 
+  useEffect(() => {
+    setFailedImages({});
+  }, [industryImages]);
+
   const activeIndustry =
     RETAIL_INDUSTRIES.find((item) => item.id === selectedIndustryId) || null;
+  const activeIndustryImage = activeIndustry
+    ? industryImages[activeIndustry.id]?.url || activeIndustry.image
+    : '';
   const activeIndex = activeIndustry
     ? RETAIL_INDUSTRIES.findIndex((item) => item.id === activeIndustry.id)
     : -1;
@@ -206,6 +215,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
           const Icon = industry.icon;
           const isFailed = Boolean(failedImages[industry.id]);
           const isSelected = selectedIndustryId === industry.id;
+          const resolvedImage = industryImages[industry.id]?.url || industry.image;
 
           return (
             <article
@@ -228,7 +238,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
                   </div>
                 ) : (
                   <img
-                    src={industry.image}
+                    src={resolvedImage}
                     alt={industry.imageAlt}
                     referrerPolicy="no-referrer"
                     loading="lazy"
@@ -363,7 +373,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
                       </div>
                     ) : (
                       <img
-                        src={activeIndustry.image}
+                        src={activeIndustryImage}
                         alt={activeIndustry.imageAlt}
                         referrerPolicy="no-referrer"
                         onError={() => markImageFailed(activeIndustry.id)}

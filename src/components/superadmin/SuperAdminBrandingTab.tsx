@@ -20,17 +20,20 @@ import {
   Trash2,
   UploadCloud,
   X,
+  Store,
 } from 'lucide-react';
 import { usePos } from '../../context/PosContext';
+import { BrandingSlotId, IndustrySolutionId } from '../../types';
 import { AppLogo } from '../common/AppLogo';
 import { SettingsSectionHeader } from '../common/SettingsSectionHeader';
+import { RETAIL_INDUSTRIES } from '../landing/SolutionsGallery';
 import {
+  BRANDING_SLOT_SPECS,
   detectImageFormatLabel,
   estimateAssetSizeKb,
   inspectImageAsset,
   InspectedImageAsset,
-  processAndOptimizeImage,
-  validateBrandingAssetFile,
+  optimizeBrandingSlotFile,
   validateBrandingAssetUrl,
 } from '../../utils/imageOptimizer';
 import bgModernHypermarket from '../../assets/images/bg_modern_hypermarket_1794745035042.jpg';
@@ -39,7 +42,7 @@ import bgMinimalBoutique from '../../assets/images/bg_minimal_boutique_179474503
 import bgDarkTechPos from '../../assets/images/bg_dark_tech_pos_1794745035491.jpg';
 import heroKenyanPos from '../../assets/images/hero_kenyan_pos_1794857444336.jpg';
 
-type BrandingAssetTab = 'logo' | 'favicon' | 'login-bg';
+type BrandingAssetTab = 'logo' | 'favicon' | 'login-bg' | 'industries';
 
 const DEFAULT_FAVICON_SVG =
   'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="%232563eb"/><text x="16" y="23" font-size="20" font-family="sans-serif" font-weight="900" fill="white" text-anchor="middle">S</text></svg>';
@@ -236,6 +239,9 @@ export const SuperAdminBrandingTab: React.FC = () => {
     loginBgGraphicName,
     setLoginBgGraphic,
     removeLoginBgGraphic,
+    industryImages,
+    setIndustryImage,
+    removeIndustryImage,
     refreshPlatformSettings,
     resetAllPlatformBranding,
     isRealGoogleAccount,
@@ -251,6 +257,7 @@ export const SuperAdminBrandingTab: React.FC = () => {
   // Per-tab upload & URL states
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isPreviewDragging, setIsPreviewDragging] = useState(false);
   const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [isApplyingUrl, setIsApplyingUrl] = useState(false);
   const [urlInput, setUrlInput] = useState('');
@@ -258,12 +265,23 @@ export const SuperAdminBrandingTab: React.FC = () => {
   const [previewLoadError, setPreviewLoadError] = useState(false);
   const [activeMetrics, setActiveMetrics] = useState<InspectedImageAsset | null>(null);
 
+  // Per-industry card upload, drag-drop, URL & dimension metrics state
+  const industryFileInputRefs = useRef<Partial<Record<IndustrySolutionId, HTMLInputElement | null>>>({});
+  const [industryDraggingId, setIndustryDraggingId] = useState<IndustrySolutionId | null>(null);
+  const [industryProcessingId, setIndustryProcessingId] = useState<IndustrySolutionId | null>(null);
+  const [industryUrlOpenId, setIndustryUrlOpenId] = useState<IndustrySolutionId | null>(null);
+  const [industryUrlValues, setIndustryUrlValues] = useState<Partial<Record<IndustrySolutionId, string>>>({});
+  const [industryErrors, setIndustryErrors] = useState<Partial<Record<IndustrySolutionId, string | null>>>({});
+  const [industryMetrics, setIndustryMetrics] = useState<Partial<Record<IndustrySolutionId, InspectedImageAsset>>>({});
+
   const currentAssetUrl =
     subTab === 'logo'
       ? platformLogo
       : subTab === 'favicon'
       ? platformFavicon
-      : loginBgGraphic;
+      : subTab === 'login-bg'
+      ? loginBgGraphic
+      : null;
 
   const currentAssetName =
     subTab === 'logo'
@@ -277,6 +295,7 @@ export const SuperAdminBrandingTab: React.FC = () => {
     setAssetError(null);
     setUrlInput('');
     setIsDragging(false);
+    setIsPreviewDragging(false);
     setPreviewLoadError(false);
     setConfirmResetAll(false);
   }, [subTab]);
@@ -306,14 +325,45 @@ export const SuperAdminBrandingTab: React.FC = () => {
     };
   }, [currentAssetUrl]);
 
-  const applyAssetForTab = async (url: string, name: string) => {
+  // Inspect natural dimensions for any custom industry images
+  useEffect(() => {
+    let cancelled = false;
+    const ids: IndustrySolutionId[] = ['retail', 'bars', 'supermarkets', 'pharmacies'];
+    ids.forEach((id) => {
+      const customUrl = industryImages[id]?.url;
+      if (!customUrl) {
+        setIndustryMetrics((prev) => {
+          if (!prev[id]) return prev;
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        return;
+      }
+      inspectImageAsset(customUrl).then((res) => {
+        if (cancelled) return;
+        if (res.valid) {
+          setIndustryMetrics((prev) => ({ ...prev, [id]: res }));
+        }
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [industryImages]);
+
+  const applyAssetForTab = async (
+    url: string,
+    name: string,
+    meta?: { width?: number; height?: number; format?: string }
+  ) => {
     setAssetError(null);
     if (subTab === 'logo') {
-      await setPlatformLogo(url, name);
+      await setPlatformLogo(url, name, meta);
     } else if (subTab === 'favicon') {
-      await setPlatformFavicon(url, name);
-    } else {
-      await setLoginBgGraphic(url, name);
+      await setPlatformFavicon(url, name, meta);
+    } else if (subTab === 'login-bg') {
+      await setLoginBgGraphic(url, name, meta);
     }
   };
 
@@ -323,7 +373,7 @@ export const SuperAdminBrandingTab: React.FC = () => {
       await removePlatformLogo();
     } else if (subTab === 'favicon') {
       await removePlatformFavicon();
-    } else {
+    } else if (subTab === 'login-bg') {
       await removeLoginBgGraphic();
     }
   };
@@ -331,6 +381,7 @@ export const SuperAdminBrandingTab: React.FC = () => {
   const handleResetAllBranding = async () => {
     setIsResettingAll(true);
     setAssetError(null);
+    setIndustryErrors({});
     try {
       await resetAllPlatformBranding();
       setConfirmResetAll(false);
@@ -350,43 +401,84 @@ export const SuperAdminBrandingTab: React.FC = () => {
   };
 
   const handleProcessFile = async (file: File) => {
-    const validation = validateBrandingAssetFile(file, {
-      allowIco: subTab === 'favicon',
-      maxBytes: subTab === 'login-bg' ? 5 * 1024 * 1024 : 2 * 1024 * 1024,
-      label:
-        subTab === 'logo'
-          ? 'platform logo'
-          : subTab === 'favicon'
-          ? 'favicon'
-          : 'login background',
-    });
-
-    if (!validation.valid) {
-      setAssetError(validation.error || 'Invalid asset file.');
-      return;
-    }
+    const slotId: BrandingSlotId =
+      subTab === 'logo' ? 'logo' : subTab === 'favicon' ? 'favicon' : 'hero';
 
     setAssetError(null);
     setIsProcessingFile(true);
     try {
-      const optimized =
-        subTab === 'logo'
-          ? await processAndOptimizeImage(file, 800, 400, 0.94, 'image/png')
-          : subTab === 'favicon'
-          ? await processAndOptimizeImage(file, 128, 128, 0.94, 'image/png')
-          : await processAndOptimizeImage(file, 1920, 1080, 0.85, 'auto');
-
-      const check = await inspectImageAsset(optimized);
-      if (!check.valid) {
-        setAssetError(check.error || 'Processed image could not be rendered.');
-        return;
-      }
-
-      await applyAssetForTab(optimized, file.name);
+      const { dataUrl, metrics } = await optimizeBrandingSlotFile(slotId, file);
+      await applyAssetForTab(dataUrl, file.name, {
+        width: metrics.width,
+        height: metrics.height,
+        format: metrics.format,
+      });
     } catch (err: any) {
       setAssetError(err?.message || 'Failed to process image file.');
     } finally {
       setIsProcessingFile(false);
+    }
+  };
+
+  const handleProcessIndustryFile = async (industryId: IndustrySolutionId, file: File) => {
+    const slotId = `industry_${industryId}` as BrandingSlotId;
+    setIndustryErrors((prev) => ({ ...prev, [industryId]: null }));
+    setIndustryProcessingId(industryId);
+    try {
+      const { dataUrl, metrics } = await optimizeBrandingSlotFile(slotId, file);
+      await setIndustryImage(industryId, dataUrl, file.name, {
+        width: metrics.width,
+        height: metrics.height,
+        format: metrics.format,
+      });
+    } catch (err: any) {
+      setIndustryErrors((prev) => ({
+        ...prev,
+        [industryId]: err?.message || 'Failed to process industry photo.',
+      }));
+    } finally {
+      setIndustryProcessingId(null);
+    }
+  };
+
+  const handleApplyIndustryUrl = async (e: React.FormEvent, industryId: IndustrySolutionId) => {
+    e.preventDefault();
+    const raw = (industryUrlValues[industryId] || '').trim();
+    const urlCheck = validateBrandingAssetUrl(raw);
+    if (!urlCheck.valid) {
+      setIndustryErrors((prev) => ({
+        ...prev,
+        [industryId]: urlCheck.error || 'Enter a valid image URL.',
+      }));
+      return;
+    }
+
+    setIndustryErrors((prev) => ({ ...prev, [industryId]: null }));
+    setIndustryProcessingId(industryId);
+    try {
+      const check = await inspectImageAsset(raw);
+      if (!check.valid) {
+        setIndustryErrors((prev) => ({
+          ...prev,
+          [industryId]:
+            check.error || 'URL did not resolve to a loadable image. Verify the link and CORS headers.',
+        }));
+        return;
+      }
+      await setIndustryImage(industryId, raw, `External ${industryId} Image`, {
+        width: check.width,
+        height: check.height,
+        format: check.format,
+      });
+      setIndustryUrlValues((prev) => ({ ...prev, [industryId]: '' }));
+      setIndustryUrlOpenId(null);
+    } catch {
+      setIndustryErrors((prev) => ({
+        ...prev,
+        [industryId]: 'Could not validate or apply this image URL.',
+      }));
+    } finally {
+      setIndustryProcessingId(null);
     }
   };
 
@@ -415,8 +507,12 @@ export const SuperAdminBrandingTab: React.FC = () => {
           ? 'External Brand Logo'
           : subTab === 'favicon'
           ? 'External Favicon Asset'
-          : 'External Login Background';
-      await applyAssetForTab(raw, fallbackLabel);
+          : 'External Hero Visual';
+      await applyAssetForTab(raw, fallbackLabel, {
+        width: check.width,
+        height: check.height,
+        format: check.format,
+      });
       setUrlInput('');
     } catch {
       setAssetError('Could not validate or apply this image URL.');
@@ -425,9 +521,13 @@ export const SuperAdminBrandingTab: React.FC = () => {
     }
   };
 
+  const customIndustryCount = Object.values(industryImages).filter((v) => Boolean(v?.url)).length;
   const advisoryWarning = getFormatAdvisory(subTab, activeMetrics);
-  const hasAnyCustomAsset = Boolean(platformLogo || platformFavicon || loginBgGraphic);
-  const activeCount = [platformLogo, platformFavicon, loginBgGraphic].filter(Boolean).length;
+  const hasAnyCustomAsset = Boolean(
+    platformLogo || platformFavicon || loginBgGraphic || customIndustryCount > 0
+  );
+  const activeCount =
+    [platformLogo, platformFavicon, loginBgGraphic].filter(Boolean).length + customIndustryCount;
   const assetSizeKb = currentAssetUrl ? estimateAssetSizeKb(currentAssetUrl) : 0;
   const assetFormat = currentAssetUrl
     ? activeMetrics?.format || detectImageFormatLabel(currentAssetUrl, currentAssetName)
@@ -442,13 +542,15 @@ export const SuperAdminBrandingTab: React.FC = () => {
 
   const inlineUrlValidation = urlInput.trim() ? validateBrandingAssetUrl(urlInput) : null;
 
+  const coreTabKey = subTab === 'industries' ? 'login-bg' : subTab;
   const tabMeta = {
     logo: {
       title: 'Platform Brand Logo',
       subtitle: 'Rendered in the POS top bar, mobile drawer, and terminal sign-in header.',
-      accept: 'image/png,image/svg+xml,image/webp,image/jpeg',
-      formatsLabel: 'PNG, SVG, WebP, JPG · Max 2 MB',
-      dimensionsHint: 'Recommended: 400 × 100 px (4:1 horizontal) or 512 × 512 px (1:1 mark)',
+      accept: BRANDING_SLOT_SPECS.logo.accept,
+      formatsLabel: BRANDING_SLOT_SPECS.logo.formatsLabel,
+      dimensionsHint: BRANDING_SLOT_SPECS.logo.recommendedHint,
+      recommendedBadge: BRANDING_SLOT_SPECS.logo.recommendedDimensions,
       inputId: 'platform-logo-file-input',
       dropzoneId: 'platform-logo-dropzone',
       urlPlaceholder: 'https://cdn.example.com/brand-logo.svg',
@@ -458,9 +560,10 @@ export const SuperAdminBrandingTab: React.FC = () => {
     favicon: {
       title: 'Browser Favicon & Shortcut Icon',
       subtitle: 'Updates browser tabs, bookmarks, and mobile home-screen shortcut icons immediately.',
-      accept: 'image/png,image/x-icon,image/vnd.microsoft.icon,image/svg+xml,image/webp,image/jpeg,.ico',
-      formatsLabel: 'PNG, ICO, SVG, WebP · Max 2 MB',
-      dimensionsHint: 'Recommended: 64 × 64 px or 128 × 128 px (1:1 square)',
+      accept: BRANDING_SLOT_SPECS.favicon.accept,
+      formatsLabel: BRANDING_SLOT_SPECS.favicon.formatsLabel,
+      dimensionsHint: BRANDING_SLOT_SPECS.favicon.recommendedHint,
+      recommendedBadge: '64 × 64 px / 128 × 128 px',
       inputId: 'platform-favicon-file-input',
       dropzoneId: 'platform-favicon-dropzone',
       urlPlaceholder: 'https://cdn.example.com/favicon.png',
@@ -470,22 +573,23 @@ export const SuperAdminBrandingTab: React.FC = () => {
     'login-bg': {
       title: 'Landing Hero Showcase Image',
       subtitle: 'Primary visual featured in the landing page Hero Showcase frame. Overrides the default curated Kenyan POS photograph.',
-      accept: 'image/png,image/jpeg,image/webp,image/svg+xml',
-      formatsLabel: 'PNG, JPG, WebP, SVG · Max 5 MB',
-      dimensionsHint: 'Recommended: 1920 × 1080 px (16:9 widescreen) or 1600 × 1200 px (4:3)',
+      accept: BRANDING_SLOT_SPECS.hero.accept,
+      formatsLabel: BRANDING_SLOT_SPECS.hero.formatsLabel,
+      dimensionsHint: BRANDING_SLOT_SPECS.hero.recommendedHint,
+      recommendedBadge: BRANDING_SLOT_SPECS.hero.recommendedDimensions,
       inputId: 'login-bg-file-input',
       dropzoneId: 'login-bg-dropzone',
       urlPlaceholder: 'https://cdn.example.com/hero-showcase.jpg',
       buttonLabel: 'Verify & Apply',
       selectButtonLabel: 'Select Image File',
     },
-  }[subTab];
+  }[coreTabKey];
 
   return (
     <div className="space-y-6">
       <SettingsSectionHeader
         title="Platform Branding"
-        description="Manage the global brand logo, browser favicon, and terminal sign-in backdrop synced across all POS terminals."
+        description="Manage the global brand logo, browser favicon, Hero showcase visual, and Industry cards synced across all POS terminals."
         meta={
           <div className="flex flex-wrap items-center gap-2 text-xs tabular-nums">
             <span
@@ -495,13 +599,13 @@ export const SuperAdminBrandingTab: React.FC = () => {
                   : 'text-slate-500 dark:text-slate-400'
               }
             >
-              {activeCount} of 3 custom assets active
+              {activeCount} of 7 custom assets active
             </span>
             <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">
               ·
             </span>
             <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
-              platform_settings/global
+              platform_settings/branding_*
             </span>
             <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">
               ·
@@ -581,6 +685,13 @@ export const SuperAdminBrandingTab: React.FC = () => {
             { id: 'logo' as const, label: 'Brand Logo', icon: LayoutTemplate, active: Boolean(platformLogo) },
             { id: 'favicon' as const, label: 'Browser Favicon', icon: Globe, active: Boolean(platformFavicon) },
             { id: 'login-bg' as const, label: 'Hero Visual', icon: ImageIcon, active: Boolean(loginBgGraphic) },
+            {
+              id: 'industries' as const,
+              label: 'Industry Cards (4)',
+              icon: Store,
+              active: customIndustryCount > 0,
+              countLabel: customIndustryCount > 0 ? `${customIndustryCount}/4` : undefined,
+            },
           ].map((item) => {
             const Icon = item.icon;
             const isSelected = subTab === item.id;
@@ -600,8 +711,8 @@ export const SuperAdminBrandingTab: React.FC = () => {
                 <Icon className="w-3.5 h-3.5 shrink-0" />
                 <span>{item.label}</span>
                 {item.active && (
-                  <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-                    Custom
+                  <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 tabular-nums">
+                    {item.countLabel || 'Custom'}
                   </span>
                 )}
               </button>
@@ -609,7 +720,7 @@ export const SuperAdminBrandingTab: React.FC = () => {
           })}
         </div>
 
-        {currentAssetUrl && (
+        {currentAssetUrl && subTab !== 'industries' && (
           <button
             id={subTab === 'login-bg' ? 'remove-login-bg-top-btn' : undefined}
             type="button"
@@ -641,15 +752,269 @@ export const SuperAdminBrandingTab: React.FC = () => {
       )}
 
       {/* Format / Resolution Advisory */}
-      {!assetError && advisoryWarning && (
+      {subTab !== 'industries' && !assetError && advisoryWarning && (
         <div className="bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200">
           <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
           <div className="flex-1 leading-relaxed">{advisoryWarning}</div>
         </div>
       )}
 
-      {/* Two-Column Studio Workspace */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      {/* Industry Solutions 4-Card Upload Studio */}
+      {subTab === 'industries' ? (
+        <div className="space-y-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Industry Solutions Gallery Imagery (4 Slots)
+              </h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Click any highlighted card preview or drop an image file from your computer to replace the landing page sector photography. Oversized images auto-optimize to 1200 × 900 px.
+              </p>
+            </div>
+            <span className="font-mono tabular-nums text-[11px] font-semibold px-2.5 py-1 rounded-md bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800/70 text-blue-700 dark:text-blue-300 whitespace-nowrap shrink-0">
+              Recommended: 1200 × 900 px (4:3)
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {RETAIL_INDUSTRIES.map((industry) => {
+              const slotId = `industry_${industry.id}` as BrandingSlotId;
+              const spec = BRANDING_SLOT_SPECS[slotId];
+              const customEntry = industryImages[industry.id];
+              const activeUrl = customEntry?.url || industry.image;
+              const isCustom = Boolean(customEntry?.url);
+              const isCardDragging = industryDraggingId === industry.id;
+              const isCardProcessing = industryProcessingId === industry.id;
+              const cardError = industryErrors[industry.id];
+              const cardMetrics = industryMetrics[industry.id];
+              const sizeKb = isCustom && customEntry?.url ? estimateAssetSizeKb(customEntry.url) : 0;
+              const urlVal = industryUrlValues[industry.id] || '';
+              const inlineIndUrlCheck = urlVal.trim() ? validateBrandingAssetUrl(urlVal) : null;
+              const isPortraitWarning =
+                isCustom && cardMetrics?.valid && cardMetrics.aspectRatio < 1.05;
+
+              return (
+                <div
+                  key={industry.id}
+                  className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col"
+                >
+                  {/* Top Spec Bar */}
+                  <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 bg-slate-50/70 dark:bg-slate-950/40">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-slate-900 dark:text-slate-100">
+                        <span>{industry.name}</span>
+                        <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">·</span>
+                        <span
+                          className={
+                            isCustom
+                              ? 'text-emerald-600 dark:text-emerald-400 font-medium'
+                              : 'text-slate-500 dark:text-slate-400 font-normal'
+                          }
+                        >
+                          {isCustom ? 'Custom upload' : 'Default photo'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                        {industry.sectorLabel}
+                      </p>
+                    </div>
+                    <span className="font-mono tabular-nums text-[10px] font-semibold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800/70 text-blue-700 dark:text-blue-300 whitespace-nowrap shrink-0">
+                      {spec.recommendedDimensions} · {spec.aspectRatioLabel}
+                    </span>
+                  </div>
+
+                  {/* Hidden Per-Card File Input */}
+                  <input
+                    id={`industry-file-input-${industry.id}`}
+                    ref={(el) => {
+                      industryFileInputRefs.current[industry.id] = el;
+                    }}
+                    type="file"
+                    accept={spec.accept}
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files.length > 0) {
+                        handleProcessIndustryFile(industry.id, e.target.files[0]);
+                        e.target.value = '';
+                      }
+                    }}
+                    className="hidden"
+                  />
+
+                  {/* Clickable & Drag-Drop 4:3 Preview Upload Target */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Upload custom image for ${industry.name} (${spec.recommendedDimensions})`}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        industryFileInputRefs.current[industry.id]?.click();
+                      }
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setIndustryDraggingId(null);
+                      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                        handleProcessIndustryFile(industry.id, e.dataTransfer.files[0]);
+                      }
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIndustryDraggingId(industry.id);
+                    }}
+                    onDragLeave={(e) => {
+                      e.preventDefault();
+                      setIndustryDraggingId(null);
+                    }}
+                    onClick={() => industryFileInputRefs.current[industry.id]?.click()}
+                    className={`group relative aspect-[4/3] w-full bg-slate-100 dark:bg-slate-950 overflow-hidden cursor-pointer border-b transition focus-visible:outline-2 focus-visible:outline-blue-600 ${
+                      isCardDragging
+                        ? 'border-blue-500 ring-2 ring-inset ring-blue-500/40'
+                        : 'border-slate-200 dark:border-slate-800'
+                    }`}
+                  >
+                    <img
+                      src={activeUrl}
+                      alt={industry.imageAlt}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                    />
+                    <div
+                      className={`absolute inset-0 flex flex-col items-center justify-center p-4 text-center transition-opacity ${
+                        isCardProcessing || isCardDragging
+                          ? 'bg-slate-950/70 opacity-100'
+                          : 'bg-slate-950/55 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'
+                      }`}
+                    >
+                      {isCardProcessing ? (
+                        <>
+                          <Loader2 className="w-6 h-6 text-white animate-spin mb-1.5" />
+                          <span className="text-xs font-semibold text-white">
+                            Optimizing for {spec.recommendedDimensions}...
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <UploadCloud className="w-6 h-6 text-white mb-1.5" />
+                          <span className="text-xs font-semibold text-white">
+                            {isCardDragging ? 'Drop image to upload' : 'Click or drop image from computer'}
+                          </span>
+                          <span className="text-[11px] font-mono tabular-nums text-blue-200 mt-0.5">
+                            Recommended: {spec.recommendedDimensions} ({spec.aspectRatioLabel})
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Card Footer: Metadata, Advisories & Controls */}
+                  <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                        <span className="truncate font-sans font-medium text-slate-700 dark:text-slate-300">
+                          {isCustom ? customEntry?.name || 'Custom Asset' : 'Bundled Kenyan Retail Asset'}
+                        </span>
+                        {isCustom && cardMetrics?.valid && (
+                          <span>
+                            {cardMetrics.width} × {cardMetrics.height} px · {sizeKb > 0 ? `${sizeKb} KB` : 'URL'}
+                          </span>
+                        )}
+                      </div>
+
+                      {cardError && (
+                        <div className="text-[11px] text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-lg px-2.5 py-2 flex items-start gap-2">
+                          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                          <span className="flex-1">{cardError}</span>
+                        </div>
+                      )}
+
+                      {!cardError && isPortraitWarning && (
+                        <div className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-lg px-2.5 py-1.5 flex items-start gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                          <span>
+                            Portrait image ({cardMetrics?.width} × {cardMetrics?.height} px); landscape 4:3 fits best.
+                          </span>
+                        </div>
+                      )}
+
+                      {industryUrlOpenId === industry.id && (
+                        <form
+                          onSubmit={(e) => handleApplyIndustryUrl(e, industry.id)}
+                          className="flex items-center gap-1.5 pt-1"
+                        >
+                          <input
+                            type="url"
+                            value={urlVal}
+                            onChange={(e) =>
+                              setIndustryUrlValues((prev) => ({
+                                ...prev,
+                                [industry.id]: e.target.value,
+                              }))
+                            }
+                            placeholder="https://cdn.example.com/shop-photo.jpg"
+                            className="flex-1 min-w-0 px-2.5 py-1.5 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          <button
+                            type="submit"
+                            disabled={
+                              isCardProcessing ||
+                              !urlVal.trim() ||
+                              Boolean(inlineIndUrlCheck && !inlineIndUrlCheck.valid)
+                            }
+                            className="px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-blue-600 hover:bg-slate-800 dark:hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-medium whitespace-nowrap cursor-pointer"
+                          >
+                            Apply
+                          </button>
+                        </form>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => industryFileInputRefs.current[industry.id]?.click()}
+                          disabled={isCardProcessing}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-medium transition cursor-pointer whitespace-nowrap"
+                        >
+                          <UploadCloud className="w-3.5 h-3.5" />
+                          <span>Upload Photo</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setIndustryUrlOpenId((prev) =>
+                              prev === industry.id ? null : industry.id
+                            )
+                          }
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium transition cursor-pointer whitespace-nowrap"
+                        >
+                          <LinkIcon className="w-3 h-3" />
+                          <span>{industryUrlOpenId === industry.id ? 'Hide URL' : 'URL'}</span>
+                        </button>
+                      </div>
+
+                      {isCustom && (
+                        <button
+                          type="button"
+                          onClick={() => removeIndustryImage(industry.id)}
+                          disabled={isCardProcessing}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 transition cursor-pointer whitespace-nowrap"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Revert</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        /* Two-Column Studio Workspace for Logo, Favicon & Hero Visual */
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Column: Upload, URL Validation, Active Asset & Presets */}
         <div className="lg:col-span-7 space-y-5">
           {/* Card 1: Upload & External URL */}
@@ -726,11 +1091,11 @@ export const SuperAdminBrandingTab: React.FC = () => {
               ) : (
                 <>
                   <UploadCloud className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                  <div>
+                  <div className="space-y-1.5">
                     <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                      Drag &amp; drop an image file here, or click to browse
+                      Drag &amp; drop an image file here, or click to upload from your computer
                     </p>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    <p className="inline-block font-mono tabular-nums text-[11px] font-semibold px-2.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800/70 text-blue-700 dark:text-blue-300">
                       {tabMeta.dimensionsHint}
                     </p>
                   </div>
@@ -1125,35 +1490,74 @@ export const SuperAdminBrandingTab: React.FC = () => {
                   </div>
 
                   <div className="space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 gap-2">
                       <span className="font-medium flex items-center gap-1">
                         <Crop className="w-3 h-3 text-blue-600 dark:text-blue-400" />
                         <span>Safe Frame Alignment (4:1)</span>
                       </span>
-                      {activeMetrics?.valid && (
-                        <span className="font-mono text-[10px] tabular-nums">
-                          {activeMetrics.width} × {activeMetrics.height} px
-                        </span>
-                      )}
+                      <span className="font-mono text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800/70 text-blue-700 dark:text-blue-300 tabular-nums">
+                        {activeMetrics?.valid
+                          ? `${activeMetrics.width} × ${activeMetrics.height} px`
+                          : '400 × 100 px'}
+                      </span>
                     </div>
                     <div
-                      className={`aspect-[4/1] rounded-xl border border-dashed flex items-center justify-center p-3 relative overflow-hidden ${
-                        previewSurface === 'light'
-                          ? 'bg-slate-50 border-slate-300'
-                          : 'bg-slate-950 border-slate-700'
+                      role="button"
+                      tabIndex={0}
+                      aria-label="Upload platform logo from computer (Recommended 400 by 100 px)"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          fileInputRef.current?.click();
+                        }
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsPreviewDragging(false);
+                        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                          handleProcessFile(e.dataTransfer.files[0]);
+                        }
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setIsPreviewDragging(true);
+                      }}
+                      onDragLeave={(e) => {
+                        e.preventDefault();
+                        setIsPreviewDragging(false);
+                      }}
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`group aspect-[4/1] rounded-xl border border-dashed flex items-center justify-center p-3 relative overflow-hidden cursor-pointer transition focus-visible:outline-2 focus-visible:outline-blue-600 ${
+                        isPreviewDragging
+                          ? 'border-blue-500 ring-2 ring-blue-500/30 bg-blue-50/70 dark:bg-blue-950/30'
+                          : previewSurface === 'light'
+                          ? 'bg-slate-50 border-slate-300 hover:border-blue-500'
+                          : 'bg-slate-950 border-slate-700 hover:border-blue-500'
                       }`}
                     >
                       {platformLogo && !previewLoadError ? (
-                        <img
-                          src={platformLogo}
-                          alt="Logo blueprint fit"
-                          referrerPolicy="no-referrer"
-                          onError={() => setPreviewLoadError(true)}
-                          className="max-h-14 max-w-[240px] object-contain"
-                        />
+                        <>
+                          <img
+                            src={platformLogo}
+                            alt="Logo blueprint fit"
+                            referrerPolicy="no-referrer"
+                            onError={() => setPreviewLoadError(true)}
+                            className="max-h-14 max-w-[240px] object-contain"
+                          />
+                          <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white text-xs font-medium">
+                            <UploadCloud className="w-4 h-4" />
+                            <span>Replace logo from computer (400 × 100 px)</span>
+                          </div>
+                        </>
                       ) : (
-                        <div className="text-[11px] font-mono text-slate-400 text-center">
-                          400 × 100 px lockup area
+                        <div className="flex flex-col items-center justify-center gap-1 text-center">
+                          <span className="text-[11px] font-mono font-semibold text-blue-700 dark:text-blue-300">
+                            400 × 100 px lockup area
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 dark:text-slate-300 group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                            <UploadCloud className="w-3.5 h-3.5" />
+                            <span>Click or drop to upload from computer</span>
+                          </span>
                         </div>
                       )}
                     </div>
@@ -1220,17 +1624,46 @@ export const SuperAdminBrandingTab: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Mobile / Bookmark Tile Preview */}
+                  {/* Mobile / Bookmark Tile Preview (Clickable Upload Target) */}
                   <div className="space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 gap-2">
                       <span className="font-medium">App Shortcut &amp; Bookmark Tile</span>
-                      <span className="tabular-nums">64 × 64 px</span>
+                      <span className="font-mono text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800/70 text-blue-700 dark:text-blue-300 tabular-nums">
+                        64 × 64 px / 128 × 128 px
+                      </span>
                     </div>
                     <div
-                      className={`p-5 rounded-xl border flex items-center justify-center ${
-                        previewSurface === 'light'
-                          ? 'bg-slate-50 border-slate-200'
-                          : 'bg-slate-950 border-slate-800'
+                      role="button"
+                      tabIndex={0}
+                      aria-label="Upload favicon from computer (Recommended 64 by 64 px or 128 by 128 px)"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          fileInputRef.current?.click();
+                        }
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsPreviewDragging(false);
+                        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                          handleProcessFile(e.dataTransfer.files[0]);
+                        }
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setIsPreviewDragging(true);
+                      }}
+                      onDragLeave={(e) => {
+                        e.preventDefault();
+                        setIsPreviewDragging(false);
+                      }}
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`group p-5 rounded-xl border border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition focus-visible:outline-2 focus-visible:outline-blue-600 ${
+                        isPreviewDragging
+                          ? 'border-blue-500 ring-2 ring-blue-500/30 bg-blue-50/70 dark:bg-blue-950/30'
+                          : previewSurface === 'light'
+                          ? 'bg-slate-50 border-slate-300 hover:border-blue-500'
+                          : 'bg-slate-950 border-slate-700 hover:border-blue-500'
                       }`}
                     >
                       <div className="flex flex-col items-center gap-1.5">
@@ -1256,6 +1689,10 @@ export const SuperAdminBrandingTab: React.FC = () => {
                           SokoPoS
                         </span>
                       </div>
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 dark:text-blue-400">
+                        <UploadCloud className="w-3.5 h-3.5" />
+                        <span>Click or drop icon to upload from computer</span>
+                      </span>
                     </div>
                   </div>
                 </>
@@ -1263,55 +1700,91 @@ export const SuperAdminBrandingTab: React.FC = () => {
 
               {subTab === 'login-bg' && (
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 gap-2">
                     <span className="font-medium">Landing Hero Showcase Simulation</span>
-                    {activeMetrics?.valid && (
-                      <span className="font-mono text-[10px] tabular-nums">
-                        {activeMetrics.width} × {activeMetrics.height} px
-                      </span>
-                    )}
+                    <span className="font-mono text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800/70 text-blue-700 dark:text-blue-300 tabular-nums">
+                      {activeMetrics?.valid
+                        ? `${activeMetrics.width} × ${activeMetrics.height} px`
+                        : '1920 × 1080 px (16:9)'}
+                    </span>
                   </div>
 
                   <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-md">
                     {/* Top Device Header Strip */}
                     <div className="px-3 py-2 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between text-[10px]">
                       <div className="flex items-center gap-1.5 font-semibold text-slate-900 dark:text-slate-100">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
                         <span>SokoPoS Terminal</span>
                         <span className="font-mono text-slate-400">v2.4</span>
                       </div>
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        <span>Live Nairobi Till</span>
+                      <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
+                        Live Nairobi Till
                       </span>
                     </div>
 
-                    {/* Image Viewport */}
-                    <div className="relative aspect-[16/10] bg-slate-950 overflow-hidden">
+                    {/* Clickable & Drag-Drop Hero Showcase Image Viewport */}
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      aria-label="Upload Hero Showcase image from computer (Recommended 1920 by 1080 px)"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          fileInputRef.current?.click();
+                        }
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsPreviewDragging(false);
+                        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                          handleProcessFile(e.dataTransfer.files[0]);
+                        }
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setIsPreviewDragging(true);
+                      }}
+                      onDragLeave={(e) => {
+                        e.preventDefault();
+                        setIsPreviewDragging(false);
+                      }}
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`group relative aspect-[16/10] bg-slate-950 overflow-hidden cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600 ${
+                        isPreviewDragging ? 'ring-2 ring-inset ring-blue-500' : ''
+                      }`}
+                    >
                       <img
                         src={loginBgGraphic || heroKenyanPos}
                         alt="Landing Hero Showcase Simulation"
                         referrerPolicy="no-referrer"
                         onError={() => setPreviewLoadError(true)}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
                       />
                       {loginBgGraphic && (
                         <span className="absolute top-2 right-2 bg-slate-950/80 backdrop-blur-xs text-white text-[9px] font-semibold px-2 py-0.5 rounded border border-white/20">
                           Custom Admin Override
                         </span>
                       )}
+                      <div
+                        className={`absolute inset-0 flex flex-col items-center justify-center p-4 text-center transition-opacity ${
+                          isPreviewDragging
+                            ? 'bg-slate-950/70 opacity-100'
+                            : 'bg-slate-950/55 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'
+                        }`}
+                      >
+                        <UploadCloud className="w-6 h-6 text-white mb-1.5" />
+                        <span className="text-xs font-semibold text-white">
+                          Click or drop image from computer
+                        </span>
+                        <span className="text-[11px] font-mono tabular-nums text-blue-200 mt-0.5">
+                          Recommended: 1920 × 1080 px (16:9)
+                        </span>
+                      </div>
                     </div>
 
                     {/* Frame Bottom Feature Strip */}
                     <div className="p-2.5 bg-slate-50/70 dark:bg-slate-950/50 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-[10px] text-slate-600 dark:text-slate-400">
-                      <div className="flex items-center gap-1 font-medium">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                        <span>M-Pesa STK Instant Sync</span>
-                      </div>
-                      <div className="flex items-center gap-1 font-medium">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                        <span>eTIMS Auto-Filing</span>
-                      </div>
+                      <span className="font-medium">M-Pesa STK Instant Sync</span>
+                      <span className="font-medium">eTIMS Auto-Filing</span>
                     </div>
                   </div>
                 </div>
@@ -1347,6 +1820,7 @@ export const SuperAdminBrandingTab: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };

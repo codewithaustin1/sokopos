@@ -268,26 +268,73 @@ export function trackPlatformEvent(
   }
 }
 
+export interface FetchTrafficOverviewOptions {
+  forceTokenRefresh?: boolean;
+  idTokenOverride?: string;
+}
+
 export async function fetchPlatformTrafficOverview(
   rangeDays: 7 | 30 | 90 = 30,
-  excludeDemo = true
+  excludeDemo = true,
+  options: FetchTrafficOverviewOptions = {}
 ): Promise<PlatformTrafficOverviewResponse> {
   const user = auth.currentUser;
-  const idToken = user ? await user.getIdToken().catch(() => '') : '';
+  const idToken =
+    options.idTokenOverride ??
+    (user ? await user.getIdToken(Boolean(options.forceTokenRefresh)).catch(() => '') : '');
 
   const resp = await fetch(
     `/api/telemetry/overview?days=${rangeDays}&excludeDemo=${excludeDemo ? 'true' : 'false'}`,
     {
       method: 'GET',
       headers: {
+        Accept: 'application/json',
         ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
       },
     }
   );
 
-  const data = await resp.json().catch(() => null);
-  if (!resp.ok || !data) {
-    throw new Error(data?.error || `Failed to load traffic overview (${resp.status})`);
+  const rawText = await resp.text().catch(() => '');
+  let data: any = null;
+  let parseError = false;
+
+  if (rawText) {
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      parseError = true;
+    }
+  }
+
+  // Surface explicit API error messages first (including error payloads returned on HTTP 200)
+  const explicitError =
+    data && typeof data === 'object'
+      ? (typeof data.error === 'string' && data.error.trim()) ||
+        (!resp.ok && typeof data.message === 'string' && data.message.trim()) ||
+        ''
+      : '';
+
+  if (explicitError) {
+    throw new Error(explicitError);
+  }
+
+  if (parseError) {
+    const contentType = resp.headers.get('content-type') || '';
+    const looksLikeHtml = contentType.includes('text/html') || rawText.trimStart().startsWith('<');
+    if (looksLikeHtml) {
+      throw new Error(
+        `Telemetry API returned HTML instead of JSON (HTTP ${resp.status}). The backend server may need a restart or session refresh.`
+      );
+    }
+    throw new Error(`Malformed JSON response from traffic telemetry endpoint (HTTP ${resp.status}).`);
+  }
+
+  if (!resp.ok) {
+    throw new Error(`Failed to load traffic overview (HTTP ${resp.status}).`);
+  }
+
+  if (!data || typeof data !== 'object' || !data.totals) {
+    throw new Error('Incomplete traffic overview response received from server.');
   }
 
   return data as PlatformTrafficOverviewResponse;

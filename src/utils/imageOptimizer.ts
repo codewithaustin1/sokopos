@@ -3,6 +3,140 @@
  * Enforces format safety, file size bounds, natural dimension inspection, and Firestore-safe payload sizes.
  */
 
+import { BrandingSlotId } from '../types';
+
+export interface BrandingSlotSpec {
+  slotId: BrandingSlotId;
+  docId: string;
+  label: string;
+  recommendedDimensions: string;
+  aspectRatioLabel: string;
+  recommendedHint: string;
+  maxWidth: number;
+  maxHeight: number;
+  quality: number;
+  outputFormat: 'auto' | 'image/png' | 'image/jpeg' | 'image/webp';
+  maxFileBytes: number;
+  allowIco: boolean;
+  accept: string;
+  formatsLabel: string;
+}
+
+export const BRANDING_SLOT_SPECS: Record<BrandingSlotId, BrandingSlotSpec> = {
+  logo: {
+    slotId: 'logo',
+    docId: 'branding_logo',
+    label: 'platform logo',
+    recommendedDimensions: '400 × 100 px',
+    aspectRatioLabel: '4:1 or 1:1',
+    recommendedHint: 'Recommended: 400 × 100 px (4:1 horizontal) or 512 × 512 px (1:1 mark)',
+    maxWidth: 800,
+    maxHeight: 400,
+    quality: 0.94,
+    outputFormat: 'image/png',
+    maxFileBytes: 2 * 1024 * 1024,
+    allowIco: false,
+    accept: 'image/png,image/svg+xml,image/webp,image/jpeg',
+    formatsLabel: 'PNG, SVG, WebP, JPG · Max 2 MB',
+  },
+  favicon: {
+    slotId: 'favicon',
+    docId: 'branding_favicon',
+    label: 'favicon',
+    recommendedDimensions: '128 × 128 px',
+    aspectRatioLabel: '1:1',
+    recommendedHint: 'Recommended: 64 × 64 px or 128 × 128 px (1:1 square)',
+    maxWidth: 128,
+    maxHeight: 128,
+    quality: 0.94,
+    outputFormat: 'image/png',
+    maxFileBytes: 2 * 1024 * 1024,
+    allowIco: true,
+    accept: 'image/png,image/x-icon,image/vnd.microsoft.icon,image/svg+xml,image/webp,image/jpeg,.ico',
+    formatsLabel: 'PNG, ICO, SVG, WebP · Max 2 MB',
+  },
+  hero: {
+    slotId: 'hero',
+    docId: 'branding_hero',
+    label: 'hero showcase visual',
+    recommendedDimensions: '1920 × 1080 px',
+    aspectRatioLabel: '16:9',
+    recommendedHint: 'Recommended: 1920 × 1080 px (16:9 widescreen) or 1600 × 1200 px (4:3)',
+    maxWidth: 1920,
+    maxHeight: 1080,
+    quality: 0.85,
+    outputFormat: 'auto',
+    maxFileBytes: 5 * 1024 * 1024,
+    allowIco: false,
+    accept: 'image/png,image/jpeg,image/webp,image/svg+xml',
+    formatsLabel: 'PNG, JPG, WebP, SVG · Max 5 MB',
+  },
+  industry_retail: {
+    slotId: 'industry_retail',
+    docId: 'branding_industry_retail',
+    label: 'Retail card photo',
+    recommendedDimensions: '1200 × 900 px',
+    aspectRatioLabel: '4:3',
+    recommendedHint: 'Recommended: 1200 × 900 px (4:3 landscape)',
+    maxWidth: 1200,
+    maxHeight: 900,
+    quality: 0.84,
+    outputFormat: 'auto',
+    maxFileBytes: 5 * 1024 * 1024,
+    allowIco: false,
+    accept: 'image/png,image/jpeg,image/webp,image/svg+xml',
+    formatsLabel: 'PNG, JPG, WebP · Max 5 MB',
+  },
+  industry_bars: {
+    slotId: 'industry_bars',
+    docId: 'branding_industry_bars',
+    label: 'Bars card photo',
+    recommendedDimensions: '1200 × 900 px',
+    aspectRatioLabel: '4:3',
+    recommendedHint: 'Recommended: 1200 × 900 px (4:3 landscape)',
+    maxWidth: 1200,
+    maxHeight: 900,
+    quality: 0.84,
+    outputFormat: 'auto',
+    maxFileBytes: 5 * 1024 * 1024,
+    allowIco: false,
+    accept: 'image/png,image/jpeg,image/webp,image/svg+xml',
+    formatsLabel: 'PNG, JPG, WebP · Max 5 MB',
+  },
+  industry_supermarkets: {
+    slotId: 'industry_supermarkets',
+    docId: 'branding_industry_supermarkets',
+    label: 'Supermarkets card photo',
+    recommendedDimensions: '1200 × 900 px',
+    aspectRatioLabel: '4:3',
+    recommendedHint: 'Recommended: 1200 × 900 px (4:3 landscape)',
+    maxWidth: 1200,
+    maxHeight: 900,
+    quality: 0.84,
+    outputFormat: 'auto',
+    maxFileBytes: 5 * 1024 * 1024,
+    allowIco: false,
+    accept: 'image/png,image/jpeg,image/webp,image/svg+xml',
+    formatsLabel: 'PNG, JPG, WebP · Max 5 MB',
+  },
+  industry_pharmacies: {
+    slotId: 'industry_pharmacies',
+    docId: 'branding_industry_pharmacies',
+    label: 'Pharmacies card photo',
+    recommendedDimensions: '1200 × 900 px',
+    aspectRatioLabel: '4:3',
+    recommendedHint: 'Recommended: 1200 × 900 px (4:3 landscape)',
+    maxWidth: 1200,
+    maxHeight: 900,
+    quality: 0.84,
+    outputFormat: 'auto',
+    maxFileBytes: 5 * 1024 * 1024,
+    allowIco: false,
+    accept: 'image/png,image/jpeg,image/webp,image/svg+xml',
+    formatsLabel: 'PNG, JPG, WebP · Max 5 MB',
+  },
+};
+
 export interface BrandingFileValidationOptions {
   allowIco?: boolean;
   maxBytes?: number;
@@ -372,8 +506,8 @@ export async function processAndOptimizeImage(
           : 'image/jpeg';
         let dataUrl = canvas.toDataURL(mimeType, quality);
 
-        // Ensure payload stays safely under Firestore 1MB document limit (~720 KB max data URL)
-        const MAX_DATA_URL_CHARS = 720 * 1024;
+        // Ensure payload stays safely under Firestore 1MB per-slot document limit (~650 KB max data URL)
+        const MAX_DATA_URL_CHARS = 650 * 1024;
         if (dataUrl.length > MAX_DATA_URL_CHARS) {
           if (sourceIsPngOrWebp) {
             const webpUrl = canvas.toDataURL('image/webp', 0.86);
@@ -412,4 +546,35 @@ export async function processAndOptimizeImage(
     reader.onerror = () => reject(new Error('Failed to read image file from disk.'));
     reader.readAsDataURL(file);
   });
+}
+
+export async function optimizeBrandingSlotFile(
+  slotId: BrandingSlotId,
+  file: File
+): Promise<{ dataUrl: string; metrics: InspectedImageAsset }> {
+  const spec = BRANDING_SLOT_SPECS[slotId];
+  const validation = validateBrandingAssetFile(file, {
+    allowIco: spec.allowIco,
+    maxBytes: spec.maxFileBytes,
+    label: spec.label,
+  });
+
+  if (!validation.valid) {
+    throw new Error(validation.error || 'Invalid image file.');
+  }
+
+  const optimized = await processAndOptimizeImage(
+    file,
+    spec.maxWidth,
+    spec.maxHeight,
+    spec.quality,
+    spec.outputFormat
+  );
+
+  const check = await inspectImageAsset(optimized);
+  if (!check.valid) {
+    throw new Error(check.error || 'Processed image could not be rendered.');
+  }
+
+  return { dataUrl: optimized, metrics: check };
 }

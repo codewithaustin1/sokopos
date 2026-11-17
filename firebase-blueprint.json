@@ -231,6 +231,12 @@
         "platformLogoName": { "type": "string" },
         "platformFavicon": { "type": "string" },
         "platformFaviconName": { "type": "string" },
+        "slotId": { "type": "string" },
+        "assetUrl": { "type": "string" },
+        "assetName": { "type": "string" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "format": { "type": "string" },
         "updatedAt": { "type": "string" },
         "updatedBy": { "type": "string" }
       },

@@ -56,6 +56,28 @@ export interface BusinessHardwareSettings {
   updatedAt?: string;
 }
 
+export type IndustrySolutionId = 'retail' | 'bars' | 'supermarkets' | 'pharmacies';
+
+export type BrandingSlotId =
+  | 'logo'
+  | 'favicon'
+  | 'hero'
+  | 'industry_retail'
+  | 'industry_bars'
+  | 'industry_supermarkets'
+  | 'industry_pharmacies';
+
+export interface BrandingSlotAsset {
+  slotId: BrandingSlotId;
+  assetUrl: string | null;
+  assetName?: string;
+  width?: number;
+  height?: number;
+  format?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 export interface PlatformSettings {
   id?: string;
   loginBgGraphic?: string | null;
@@ -64,6 +86,7 @@ export interface PlatformSettings {
   platformLogoName?: string;
   platformFavicon?: string | null;
   platformFaviconName?: string;
+  industryImages?: Partial<Record<IndustrySolutionId, { url: string | null; name?: string }>>;
   updatedAt?: string;
   updatedBy?: string;
 }
