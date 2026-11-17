@@ -1857,10 +1857,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       <span>SokoPoS Terminal</span>
                       <span className="text-[11px] font-mono text-slate-400">v2.4</span>
                     </div>
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      <span>Live Nairobi Till</span>
-                    </span>
                   </div>
 
                   {/* High-Resolution Hero Visual with Admin Override Support */}
@@ -1871,11 +1867,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       referrerPolicy="no-referrer"
                       className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                     />
-                    {loginBgGraphic && (
-                      <span className="absolute top-2.5 right-2.5 bg-slate-950/80 backdrop-blur-xs text-white text-[10px] font-semibold px-2 py-0.5 rounded-md border border-white/20">
-                        Custom Platform Visual
-                      </span>
-                    )}
                   </div>
 
                   {/* Bottom Trust & Feature Badges */}

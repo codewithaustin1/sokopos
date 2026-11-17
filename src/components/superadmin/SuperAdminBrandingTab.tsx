@@ -1716,9 +1716,6 @@ export const SuperAdminBrandingTab: React.FC = () => {
                         <span>SokoPoS Terminal</span>
                         <span className="font-mono text-slate-400">v2.4</span>
                       </div>
-                      <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
-                        Live Nairobi Till
-                      </span>
                     </div>
 
                     {/* Clickable & Drag-Drop Hero Showcase Image Viewport */}
@@ -1759,11 +1756,6 @@ export const SuperAdminBrandingTab: React.FC = () => {
                         onError={() => setPreviewLoadError(true)}
                         className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
                       />
-                      {loginBgGraphic && (
-                        <span className="absolute top-2 right-2 bg-slate-950/80 backdrop-blur-xs text-white text-[9px] font-semibold px-2 py-0.5 rounded border border-white/20">
-                          Custom Admin Override
-                        </span>
-                      )}
                       <div
                         className={`absolute inset-0 flex flex-col items-center justify-center p-4 text-center transition-opacity ${
                           isPreviewDragging
