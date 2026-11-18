@@ -34,7 +34,14 @@ import { scrollToTop } from '../utils/scrollUtils';
 import { SUPER_ADMIN_EMAIL } from '../data/initialData';
 import { PWAInstallButton } from './PWAInstallButton';
 import { AffiliatePortalModal } from './AffiliatePortalModal';
-import { enrollAffiliate, fetchAffiliateDashboard, requestLoginOtp, verifyLoginOtp } from '../lib/affiliateService';
+import {
+  enrollAffiliate,
+  fetchAffiliateDashboard,
+  fetchEmailOtpCapabilities,
+  EmailOtpCapabilities,
+  requestLoginOtp,
+  verifyLoginOtp,
+} from '../lib/affiliateService';
 import { auth } from '../lib/firebase';
 import { trackPlatformEvent } from '../lib/telemetryService';
 import { SolutionsGallery } from './landing/SolutionsGallery';
@@ -94,6 +101,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     loginWithGoogle,
     loginWithFirebaseGoogle,
     loginWithFirebaseEmailPassword,
+    loginWithFirebaseEmailOtp,
     sendPasswordResetEmailAction,
     pendingVerificationEmail,
     resendVerificationEmail,
@@ -194,7 +202,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     return null;
   }, [staffCredentialInput, allSystemUsers, businesses, appointedDemoCashier, isDemoModeActive]);
 
-  // Direct email & password login state
+  // Direct email & password vs passwordless OTP login state
+  const [ownerLoginMethod, setOwnerLoginMethod] = useState<'password' | 'otp'>('password');
   const [ownerEmailInput, setOwnerEmailInput] = useState<string>('');
   const [ownerPasswordInput, setOwnerPasswordInput] = useState<string>('');
   const [showOwnerPassword, setShowOwnerPassword] = useState<boolean>(false);
@@ -225,40 +234,118 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const [verificationError, setVerificationError] = useState<string | null>(null);
   const [verificationContext, setVerificationContext] = useState<'owner' | 'partner'>('owner');
 
-  // 4-Digit Login OTP Verification State
+  // 6-Digit Passwordless Email OTP State (Resend + Firebase Custom Token)
   const [pendingOtpEmail, setPendingOtpEmail] = useState<string | null>(null);
   const [loginOtpCode, setLoginOtpCode] = useState<string>('');
   const [isVerifyingLoginOtp, setIsVerifyingLoginOtp] = useState<boolean>(false);
   const [loginOtpError, setLoginOtpError] = useState<string | null>(null);
-  const [loginOtpSandboxHint, setLoginOtpSandboxHint] = useState<string | null>(null);
   const [isSendingLoginOtp, setIsSendingLoginOtp] = useState<boolean>(false);
+  const [otpResendCooldownSec, setOtpResendCooldownSec] = useState<number>(0);
+  const [otpExpirySeconds, setOtpExpirySeconds] = useState<number>(600);
+  const [otpRemainingAttempts, setOtpRemainingAttempts] = useState<number | null>(null);
+  const [otpCapabilities, setOtpCapabilities] = useState<EmailOtpCapabilities | null>(null);
+
+  useEffect(() => {
+    if (!pendingOtpEmail) return;
+    const timer = window.setInterval(() => {
+      setOtpResendCooldownSec((prev) => (prev > 0 ? prev - 1 : 0));
+      setOtpExpirySeconds((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [pendingOtpEmail]);
+
+  const formatCountdownClock = (totalSeconds: number) => {
+    const mins = Math.floor(Math.max(0, totalSeconds) / 60);
+    const secs = Math.max(0, totalSeconds) % 60;
+    return `${mins}:${String(secs).padStart(2, '0')}`;
+  };
+
+  const handleSendPasswordlessOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = ownerEmailInput.trim().toLowerCase();
+    setEmailAuthError(null);
+    setLoginOtpError(null);
+
+    if (!email) {
+      setEmailAuthError('Please enter your email address.');
+      return;
+    }
+
+    trackPlatformEvent('signin_start', {
+      channel: pendingCheckoutIntent && pendingCheckoutIntent.planId !== 'free' ? 'checkout_email_otp' : 'email_otp',
+      planId: pendingCheckoutIntent?.planId,
+      dedupeKey: 'signin-start',
+      dedupeTtlMs: 15_000,
+    });
+
+    setIsSendingLoginOtp(true);
+    try {
+      const res = await requestLoginOtp(email, 'passwordless_login');
+      if (res.success) {
+        setPendingOtpEmail(email);
+        setLoginOtpCode('');
+        setLoginOtpError(null);
+        setOtpRemainingAttempts(null);
+        setOtpResendCooldownSec(res.resendCooldownSeconds || 60);
+        setOtpExpirySeconds(res.expiresInSeconds || 600);
+        showToast(`6-digit verification code sent to ${email}.`, 'info');
+      } else {
+        if (typeof res.retryAfterSeconds === 'number' && res.retryAfterSeconds > 0) {
+          setOtpResendCooldownSec(res.retryAfterSeconds);
+        }
+        setEmailAuthError(res.error || 'Could not send 6-digit verification code.');
+        soundFx.playError();
+      }
+    } catch (err: any) {
+      setEmailAuthError(err?.message || 'Failed to send verification code.');
+      soundFx.playError();
+    } finally {
+      setIsSendingLoginOtp(false);
+    }
+  };
 
   const handleVerifyLoginOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pendingOtpEmail) return;
-    const cleanOtp = loginOtpCode.trim();
-    if (cleanOtp.length !== 4) {
-      setLoginOtpError('Please enter the full 4-digit OTP code sent to your email.');
+    const cleanOtp = loginOtpCode.replace(/\D/g, '').trim();
+    if (cleanOtp.length !== 6) {
+      setLoginOtpError('Please enter the full 6-digit verification code sent to your email.');
       return;
     }
+
     setIsVerifyingLoginOtp(true);
     setLoginOtpError(null);
     try {
-      const res = await verifyLoginOtp(pendingOtpEmail, cleanOtp);
-      if (res.success) {
+      const res = await verifyLoginOtp(pendingOtpEmail, cleanOtp, 'passwordless_login');
+      if (!res.success) {
+        if (typeof res.remainingAttempts === 'number') {
+          setOtpRemainingAttempts(res.remainingAttempts);
+        }
+        setLoginOtpError(res.error || 'Incorrect 6-digit verification code. Please try again.');
+        soundFx.playError();
+        return;
+      }
+
+      if (!res.customToken) {
+        setLoginOtpError('Code verified, but no Firebase authentication session token was issued.');
+        soundFx.playError();
+        return;
+      }
+
+      const sessionRes = await loginWithFirebaseEmailOtp(res.customToken);
+      if (sessionRes.success) {
         setPendingOtpEmail(null);
         setLoginOtpCode('');
-        setLoginOtpSandboxHint(null);
+        setLoginOtpError(null);
+        setOtpRemainingAttempts(null);
         setIsAuthModalOpen(false);
-        soundFx.playSuccess();
-        showToast('Secure 4-digit OTP verified successfully! Logged in.', 'success');
         onLoginSuccess?.();
       } else {
-        setLoginOtpError(res.error || 'Incorrect 4-digit OTP. Please try again.');
+        setLoginOtpError(sessionRes.error || 'Could not establish Firebase session.');
         soundFx.playError();
       }
     } catch (err: any) {
-      setLoginOtpError(err?.message || 'OTP verification failed.');
+      setLoginOtpError(err?.message || 'Verification failed.');
       soundFx.playError();
     } finally {
       setIsVerifyingLoginOtp(false);
@@ -266,21 +353,25 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   };
 
   const handleResendLoginOtp = async () => {
-    if (!pendingOtpEmail) return;
+    if (!pendingOtpEmail || otpResendCooldownSec > 0) return;
     setIsSendingLoginOtp(true);
     setLoginOtpError(null);
     try {
-      const res = await requestLoginOtp(pendingOtpEmail);
+      const res = await requestLoginOtp(pendingOtpEmail, 'passwordless_login');
       if (res.success) {
-        if (res.sandboxOtp) {
-          setLoginOtpSandboxHint(res.sandboxOtp);
-        }
-        showToast(`New 4-digit OTP dispatched to ${pendingOtpEmail}.`, 'info');
+        setLoginOtpCode('');
+        setOtpRemainingAttempts(null);
+        setOtpResendCooldownSec(res.resendCooldownSeconds || 60);
+        setOtpExpirySeconds(res.expiresInSeconds || 600);
+        showToast(`New 6-digit code sent to ${pendingOtpEmail}.`, 'info');
       } else {
-        setLoginOtpError(res.error || 'Failed to resend OTP.');
+        if (typeof res.retryAfterSeconds === 'number' && res.retryAfterSeconds > 0) {
+          setOtpResendCooldownSec(res.retryAfterSeconds);
+        }
+        setLoginOtpError(res.error || 'Failed to resend verification code.');
       }
     } catch (err: any) {
-      setLoginOtpError(err?.message || 'Failed to resend OTP.');
+      setLoginOtpError(err?.message || 'Failed to resend verification code.');
     } finally {
       setIsSendingLoginOtp(false);
     }
@@ -490,6 +581,19 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const modalCardRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
+  useEffect(() => {
+    if (!isAuthModalOpen || activeTab !== 'owner') return;
+    let cancelled = false;
+    fetchEmailOtpCapabilities().then((caps) => {
+      if (!cancelled && caps) {
+        setOtpCapabilities(caps);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthModalOpen, activeTab]);
+
   const openAuthModal = (targetTab: 'owner' | 'partner' | 'staff' | 'register' = 'owner') => {
     previousFocusRef.current = document.activeElement as HTMLElement | null;
     setIsDemoModeActive(false);
@@ -503,6 +607,10 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     setResetEmailSuccessMessage(null);
     setEmailAuthError(null);
     setPartnerAuthError(null);
+    setPendingOtpEmail(null);
+    setLoginOtpCode('');
+    setLoginOtpError(null);
+    setOtpRemainingAttempts(null);
     setIsAuthModalOpen(true);
   };
 
@@ -514,6 +622,10 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     setResetEmailSuccessMessage(null);
     setEmailAuthError(null);
     setPartnerAuthError(null);
+    setPendingOtpEmail(null);
+    setLoginOtpCode('');
+    setLoginOtpError(null);
+    setOtpRemainingAttempts(null);
     setIsDemoModeActive(false);
     localStorage.removeItem('sokopos_demo_intent');
     setTimeout(() => {
@@ -863,16 +975,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     try {
       const res = await loginWithFirebaseEmailPassword(email, password, false);
       if (res.success) {
-        const otpRes = await requestLoginOtp(email);
-        if (otpRes.success) {
-          setPendingOtpEmail(email);
-          if (otpRes.sandboxOtp) {
-            setLoginOtpSandboxHint(otpRes.sandboxOtp);
-          }
-        } else {
-          setIsAuthModalOpen(false);
-          onLoginSuccess?.();
-        }
+        setIsAuthModalOpen(false);
+        onLoginSuccess?.();
       } else if (res.requiresVerification) {
         setVerificationError(null);
         setVerificationFeedback(`A verification link was sent to ${res.email || email}. Please verify your inbox to continue.`);
@@ -924,16 +1028,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     try {
       const res = await loginWithFirebaseEmailPassword(ownerEmail, password, true, storeName);
       if (res.success) {
-        const otpRes = await requestLoginOtp(ownerEmail);
-        if (otpRes.success) {
-          setPendingOtpEmail(ownerEmail);
-          if (otpRes.sandboxOtp) {
-            setLoginOtpSandboxHint(otpRes.sandboxOtp);
-          }
-        } else {
-          setIsAuthModalOpen(false);
-          onLoginSuccess?.();
-        }
+        setIsAuthModalOpen(false);
+        onLoginSuccess?.();
       } else if (res.requiresVerification) {
         setVerificationError(null);
         setVerificationFeedback(`We sent a verification link to ${res.email || ownerEmail}. Verify your email to activate your shop.`);
@@ -2396,69 +2492,82 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             <div className={isCheckoutContextActive ? 'p-5 sm:p-7 flex flex-col justify-center' : ''}>
             {pendingOtpEmail ? (
               <div id="p-verify-login-otp" className="space-y-4 pt-2 text-left">
-                <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#059669]">
                   <ShieldCheck className="w-6 h-6" />
                 </div>
                 <div>
-                  <h2 className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-1">
-                    Enter 4-Digit Security OTP
+                  <h2 id="auth-modal-title" className="text-xl sm:text-[22px] font-extrabold text-[#090d16] tracking-tight mb-1">
+                    Check your email
                   </h2>
-                  <p className="text-xs sm:text-[13px] text-[#556375] leading-relaxed">
-                    We have sent a secure 4-digit authentication code to <span className="font-bold text-[#0e1a2b]">{pendingOtpEmail}</span>. Enter the code below to complete sign-in.
+                  <p className="text-xs sm:text-[13px] text-[#475569] leading-relaxed">
+                    Enter the 6-digit sign-in code sent to{' '}
+                    <span className="font-bold text-[#090d16]">{pendingOtpEmail}</span>.
+                  </p>
+                  <p className="text-[11px] font-medium text-[#64748b] mt-1 font-mono tabular-nums">
+                    {otpExpirySeconds > 0
+                      ? `Expires in ${formatCountdownClock(otpExpirySeconds)}`
+                      : 'Code expired · Request a new code below'}
                   </p>
                 </div>
-
-                {loginOtpSandboxHint && (
-                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold flex items-center justify-between">
-                    <span>Sandbox OTP Code: <strong className="font-mono text-base tracking-widest">{loginOtpSandboxHint}</strong></span>
-                    <button
-                      type="button"
-                      onClick={() => setLoginOtpCode(loginOtpSandboxHint)}
-                      className="px-2 py-1 rounded bg-amber-200 hover:bg-amber-300 text-xs font-bold text-amber-900 cursor-pointer transition"
-                    >
-                      Fill Code
-                    </button>
-                  </div>
-                )}
 
                 {loginOtpError && (
                   <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
-                    <span>{loginOtpError}</span>
+                    <div className="min-w-0">
+                      <span>{loginOtpError}</span>
+                      {typeof otpRemainingAttempts === 'number' && otpRemainingAttempts > 0 && (
+                        <span className="block text-[11px] text-red-700 font-semibold mt-0.5 tabular-nums">
+                          Attempts remaining before reset: {otpRemainingAttempts}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )}
 
-                <form onSubmit={handleVerifyLoginOtp} className="space-y-3 pt-1">
+                <form onSubmit={handleVerifyLoginOtp} className="space-y-3.5 pt-1">
                   <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                      4-Digit OTP Code
+                    <label
+                      htmlFor="email-otp-code-input"
+                      className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5"
+                    >
+                      6-Digit Verification Code
                     </label>
                     <input
+                      id="email-otp-code-input"
                       type="text"
-                      maxLength={4}
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
                       value={loginOtpCode}
                       onChange={(e) => {
-                        setLoginOtpCode(e.target.value.replace(/\D/g, '').slice(0, 4));
+                        setLoginOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6));
                         setLoginOtpError(null);
                       }}
-                      placeholder="e.g. 4829"
-                      className="w-full h-13 px-4 rounded-xl border border-[#d9e1e6] bg-[#f8fafc] text-center font-mono text-2xl tracking-[0.5em] font-extrabold text-[#0e1a2b] focus:outline-none focus:border-blue-600 focus:bg-white transition"
+                      placeholder="000000"
+                      className="w-full h-13 px-4 rounded-xl border border-[#d9e1e6] bg-[#f8fafc] text-center font-mono tabular-nums text-2xl tracking-[0.4em] font-extrabold text-[#090d16] focus:outline-none focus:border-[#059669] focus:bg-white transition"
                       autoFocus
                     />
                   </div>
 
                   <button
                     type="submit"
-                    disabled={isVerifyingLoginOtp || loginOtpCode.length !== 4}
-                    className="w-full h-12 bg-[#132c54] hover:bg-[#0e2140] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2"
+                    disabled={isVerifyingLoginOtp || loginOtpCode.length !== 6 || otpExpirySeconds <= 0}
+                    className="w-full h-11 bg-[#059669] hover:bg-[#047857] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2"
                   >
                     {isVerifyingLoginOtp ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Verifying 4-digit OTP...</span>
+                        <span>Verifying & Signing In...</span>
                       </>
                     ) : (
-                      <span>Verify & Complete Sign-In</span>
+                      <>
+                        <span>
+                          {isCheckoutContextActive
+                            ? 'Verify & Continue to Checkout'
+                            : 'Verify & Sign In'}
+                        </span>
+                        {isCheckoutContextActive && <ArrowRight className="w-4 h-4" />}
+                      </>
                     )}
                   </button>
 
@@ -2466,17 +2575,26 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     <button
                       type="button"
                       onClick={handleResendLoginOtp}
-                      disabled={isSendingLoginOtp}
-                      className="text-xs font-bold text-blue-600 hover:underline cursor-pointer disabled:opacity-60"
+                      disabled={isSendingLoginOtp || otpResendCooldownSec > 0}
+                      className="text-xs font-bold text-[#059669] hover:underline cursor-pointer disabled:text-slate-400 disabled:no-underline disabled:cursor-not-allowed font-mono tabular-nums"
                     >
-                      {isSendingLoginOtp ? 'Resending...' : 'Resend 4-digit OTP'}
+                      {isSendingLoginOtp
+                        ? 'Sending code...'
+                        : otpResendCooldownSec > 0
+                        ? `Resend code in ${formatCountdownClock(otpResendCooldownSec)}`
+                        : 'Resend 6-digit code'}
                     </button>
                     <button
                       type="button"
-                      onClick={() => setPendingOtpEmail(null)}
+                      onClick={() => {
+                        setPendingOtpEmail(null);
+                        setLoginOtpCode('');
+                        setLoginOtpError(null);
+                        setOtpRemainingAttempts(null);
+                      }}
                       className="text-xs font-bold text-slate-500 hover:text-slate-900 cursor-pointer"
                     >
-                      Cancel / Back
+                      Change email
                     </button>
                   </div>
                 </form>
@@ -2733,111 +2851,219 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     >
                       {isCheckoutContextActive ? 'Sign in to continue' : 'Welcome back!'}
                     </h2>
-                    <p className="text-xs text-[#475569] mb-4 text-left">
+                    <p className="text-xs text-[#475569] mb-3.5 text-left">
                       {isCheckoutContextActive && pendingCheckoutIntent
                         ? `Sign in to activate ${pendingCheckoutIntent.planName} (${pendingCheckoutIntent.billingCycle === 'annual' ? 'Annual' : 'Monthly'}) via M-Pesa or card.`
+                        : ownerLoginMethod === 'otp'
+                        ? 'Receive a one-time 6-digit verification code via email — no password required.'
                         : 'Sign in with your email and password to manage your shop.'}
                     </p>
 
-                    {/* Email & Password Sign-In Form */}
-                    <form id="emailForm" onSubmit={handleEmailFormSubmit} className="space-y-3.5 mb-4">
-                      <div>
-                        <label htmlFor="owner-email-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
-                          Email address
-                        </label>
-                        <div className="relative flex items-center">
-                          <input
-                            ref={emailInputRef}
-                            type="email"
-                            id="owner-email-input"
-                            placeholder="yourname@gmail.com"
-                            aria-label="Email address"
-                            autoComplete="email"
-                            required
-                            value={ownerEmailInput}
-                            onChange={(e) => {
-                              setOwnerEmailInput(e.target.value);
-                              setEmailAuthError(null);
-                            }}
-                            className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#059669] focus:outline-none transition-colors"
-                          />
-                          <Mail className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label htmlFor="owner-password-input" className="block text-xs font-bold text-[#0e1a2b]">
-                            Password
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsForgotPasswordMode(true);
-                              setEmailAuthError(null);
-                              setResetEmailSuccessMessage(null);
-                            }}
-                            className="text-[11px] font-bold text-[#059669] hover:underline cursor-pointer"
-                          >
-                            Forgot password?
-                          </button>
-                        </div>
-                        <div className="relative flex items-center">
-                          <input
-                            type={showOwnerPassword ? 'text' : 'password'}
-                            id="owner-password-input"
-                            placeholder="••••••••"
-                            aria-label="Password"
-                            autoComplete="current-password"
-                            required
-                            value={ownerPasswordInput}
-                            onChange={(e) => {
-                              setOwnerPasswordInput(e.target.value);
-                              setEmailAuthError(null);
-                            }}
-                            className="w-full h-11 pl-3.5 pr-10 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#059669] focus:outline-none transition-colors"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowOwnerPassword((prev) => !prev)}
-                            aria-label={showOwnerPassword ? 'Hide password' : 'Show password'}
-                            className="absolute right-2.5 p-1 text-[#556375] hover:text-[#0e1a2b] transition cursor-pointer"
-                          >
-                            {showOwnerPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Error alert banner */}
-                      {emailAuthError && (
-                        <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
-                          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
-                          <span>{emailAuthError}</span>
-                        </div>
-                      )}
-
+                    {/* Owner Auth Method Switcher: Password vs Email Code (OTP) */}
+                    <div
+                      className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#f0f3f6] border border-[#e2e8f0] mb-4"
+                      role="radiogroup"
+                      aria-label="Owner Sign-In Method"
+                    >
                       <button
-                        type="submit"
-                        disabled={isAuthenticatingEmail}
-                        className="w-full h-11 bg-[#059669] hover:bg-[#047857] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1"
+                        type="button"
+                        role="radio"
+                        aria-checked={ownerLoginMethod === 'password'}
+                        onClick={() => {
+                          setOwnerLoginMethod('password');
+                          setEmailAuthError(null);
+                        }}
+                        className={`py-1.5 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
+                          ownerLoginMethod === 'password'
+                            ? 'bg-white text-[#090d16] shadow-xs'
+                            : 'text-[#4c5a6b] hover:text-[#090d16]'
+                        }`}
                       >
-                        {isAuthenticatingEmail ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            <span>Signing in...</span>
-                          </>
-                        ) : (
-                          <>
-                            <span>
-                              {isCheckoutContextActive
-                                ? 'Sign in & Continue to Checkout'
-                                : 'Sign in with Email & Password'}
-                            </span>
-                            {isCheckoutContextActive && <ArrowRight className="w-4 h-4" />}
-                          </>
-                        )}
+                        <Lock className="w-3.5 h-3.5 shrink-0" />
+                        <span>Email & Password</span>
                       </button>
-                    </form>
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={ownerLoginMethod === 'otp'}
+                        onClick={() => {
+                          setOwnerLoginMethod('otp');
+                          setEmailAuthError(null);
+                        }}
+                        className={`py-1.5 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
+                          ownerLoginMethod === 'otp'
+                            ? 'bg-white text-[#059669] shadow-xs'
+                            : 'text-[#4c5a6b] hover:text-[#090d16]'
+                        }`}
+                      >
+                        <Mail className="w-3.5 h-3.5 shrink-0" />
+                        <span>Email Code (OTP)</span>
+                      </button>
+                    </div>
+
+                    {ownerLoginMethod === 'password' ? (
+                      <form id="emailForm" onSubmit={handleEmailFormSubmit} className="space-y-3.5 mb-4">
+                        <div>
+                          <label htmlFor="owner-email-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
+                            Email address
+                          </label>
+                          <div className="relative flex items-center">
+                            <input
+                              ref={emailInputRef}
+                              type="email"
+                              id="owner-email-input"
+                              placeholder="yourname@gmail.com"
+                              aria-label="Email address"
+                              autoComplete="email"
+                              required
+                              value={ownerEmailInput}
+                              onChange={(e) => {
+                                setOwnerEmailInput(e.target.value);
+                                setEmailAuthError(null);
+                              }}
+                              className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#059669] focus:outline-none transition-colors"
+                            />
+                            <Mail className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label htmlFor="owner-password-input" className="block text-xs font-bold text-[#0e1a2b]">
+                              Password
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsForgotPasswordMode(true);
+                                setEmailAuthError(null);
+                                setResetEmailSuccessMessage(null);
+                              }}
+                              className="text-[11px] font-bold text-[#059669] hover:underline cursor-pointer"
+                            >
+                              Forgot password?
+                            </button>
+                          </div>
+                          <div className="relative flex items-center">
+                            <input
+                              type={showOwnerPassword ? 'text' : 'password'}
+                              id="owner-password-input"
+                              placeholder="••••••••"
+                              aria-label="Password"
+                              autoComplete="current-password"
+                              required
+                              value={ownerPasswordInput}
+                              onChange={(e) => {
+                                setOwnerPasswordInput(e.target.value);
+                                setEmailAuthError(null);
+                              }}
+                              className="w-full h-11 pl-3.5 pr-10 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#059669] focus:outline-none transition-colors"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowOwnerPassword((prev) => !prev)}
+                              aria-label={showOwnerPassword ? 'Hide password' : 'Show password'}
+                              className="absolute right-2.5 p-1 text-[#556375] hover:text-[#0e1a2b] transition cursor-pointer"
+                            >
+                              {showOwnerPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Error alert banner */}
+                        {emailAuthError && (
+                          <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
+                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                            <span>{emailAuthError}</span>
+                          </div>
+                        )}
+
+                        <button
+                          type="submit"
+                          disabled={isAuthenticatingEmail}
+                          className="w-full h-11 bg-[#059669] hover:bg-[#047857] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1"
+                        >
+                          {isAuthenticatingEmail ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <span>Signing in...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>
+                                {isCheckoutContextActive
+                                  ? 'Sign in & Continue to Checkout'
+                                  : 'Sign in with Email & Password'}
+                              </span>
+                              {isCheckoutContextActive && <ArrowRight className="w-4 h-4" />}
+                            </>
+                          )}
+                        </button>
+                      </form>
+                    ) : (
+                      <form id="emailOtpForm" onSubmit={handleSendPasswordlessOtp} className="space-y-3.5 mb-4">
+                        {otpCapabilities &&
+                          (!otpCapabilities.emailProviderConfigured || !otpCapabilities.customTokenConfigured) && (
+                            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-xs leading-relaxed">
+                              <span className="font-bold text-[#090d16] block mb-0.5">
+                                Server secrets required for live Email OTP
+                              </span>
+                              {!otpCapabilities.customTokenConfigured
+                                ? 'Requires FIREBASE_SERVICE_ACCOUNT_JSON (user-owned Firebase IAM key) and RESEND_API_KEY in AI Studio Secrets.'
+                                : 'Requires RESEND_API_KEY in AI Studio Secrets to dispatch emails.'}
+                            </div>
+                          )}
+
+                        <div>
+                          <label htmlFor="owner-otp-email-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
+                            Email address
+                          </label>
+                          <div className="relative flex items-center">
+                            <input
+                              ref={emailInputRef}
+                              type="email"
+                              id="owner-otp-email-input"
+                              placeholder="yourname@gmail.com"
+                              aria-label="Email address for 6-digit sign-in code"
+                              autoComplete="email"
+                              required
+                              value={ownerEmailInput}
+                              onChange={(e) => {
+                                setOwnerEmailInput(e.target.value);
+                                setEmailAuthError(null);
+                              }}
+                              className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#059669] focus:outline-none transition-colors"
+                            />
+                            <Mail className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
+                          </div>
+                        </div>
+
+                        {emailAuthError && (
+                          <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
+                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                            <span>{emailAuthError}</span>
+                          </div>
+                        )}
+
+                        <button
+                          type="submit"
+                          disabled={isSendingLoginOtp}
+                          className="w-full h-11 bg-[#059669] hover:bg-[#047857] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1"
+                        >
+                          {isSendingLoginOtp ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <span>Sending 6-digit code...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>Send 6-Digit Code</span>
+                              <ArrowRight className="w-4 h-4" />
+                            </>
+                          )}
+                        </button>
+                      </form>
+                    )}
                   </div>
                 )}
               </div>

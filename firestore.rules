@@ -496,6 +496,12 @@ service cloud.firestore {
              dateKey.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
     }
 
+    function isValidPeriodKey(periodKey) {
+      return periodKey is string &&
+             periodKey.size() == 7 &&
+             periodKey.matches('^[0-9]{4}-[0-9]{2}$');
+    }
+
     function isValidTrafficDaily(data) {
       return data.keys().hasAll(['id', 'dateKey', 'pageViews', 'uniqueSessions', 'updatedAt']) &&
              data.id is string &&
@@ -558,6 +564,189 @@ service cloud.firestore {
         resource.data.ownerEmail.lower() == request.auth.token.email.lower()
       );
       allow write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Tenant Business Intelligence Suite Collections (Rollups, Targets, Saved Views)
+    // -------------------------------------------------------------------------
+    function isValidAnalyticsRollup(data, docId) {
+      return data.keys().hasAll([
+               'id', 'businessId', 'locationId', 'locationName', 'dateKey',
+               'grossSales', 'refundsTotal', 'discountsTotal', 'netSales', 'taxTotal',
+               'cogsTotal', 'grossProfit', 'operatingExpenses', 'transactionCount', 'unitsSold',
+               'mpesaTotal', 'cashTotal', 'cardTotal', 'storeCreditTotal', 'uncostedRevenue', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'id', 'businessId', 'locationId', 'locationName', 'dateKey',
+               'grossSales', 'refundsTotal', 'discountsTotal', 'netSales', 'taxTotal',
+               'cogsTotal', 'grossProfit', 'operatingExpenses', 'transactionCount', 'unitsSold',
+               'mpesaTotal', 'cashTotal', 'cardTotal', 'storeCreditTotal', 'uncostedRevenue', 'updatedAt'
+             ]) &&
+             isValidId(data.id) &&
+             data.id == docId &&
+             isValidId(data.businessId) &&
+             data.businessId != 'biz-demo' &&
+             isValidId(data.locationId) &&
+             data.locationName is string && data.locationName.size() > 0 && data.locationName.size() <= 160 &&
+             isValidDateKey(data.dateKey) &&
+             data.grossSales is number && data.grossSales >= 0 &&
+             data.refundsTotal is number && data.refundsTotal >= 0 &&
+             data.discountsTotal is number && data.discountsTotal >= 0 &&
+             data.netSales is number && data.netSales >= 0 &&
+             data.taxTotal is number && data.taxTotal >= 0 &&
+             data.cogsTotal is number && data.cogsTotal >= 0 &&
+             data.grossProfit is number &&
+             data.operatingExpenses is number && data.operatingExpenses >= 0 &&
+             data.transactionCount is number && data.transactionCount >= 0 &&
+             data.unitsSold is number && data.unitsSold >= 0 &&
+             data.mpesaTotal is number && data.mpesaTotal >= 0 &&
+             data.cashTotal is number && data.cashTotal >= 0 &&
+             data.cardTotal is number && data.cardTotal >= 0 &&
+             data.storeCreditTotal is number && data.storeCreditTotal >= 0 &&
+             data.uncostedRevenue is number && data.uncostedRevenue >= 0 &&
+             data.updatedAt is string && data.updatedAt.size() <= 64;
+    }
+
+    match /analytics_daily_rollups/{rollupId} {
+      allow get: if isSignedIn() && isValidId(rollupId) && (
+        isSuperAdmin() ||
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
+      );
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
+      );
+      allow create: if isEmailVerified() && isValidId(rollupId) &&
+        isValidAnalyticsRollup(request.resource.data, rollupId) && (
+          isSuperAdmin() ||
+          hasTenantAccess(request.resource.data.businessId)
+        );
+      allow update: if isEmailVerified() && isValidId(rollupId) &&
+        isValidAnalyticsRollup(request.resource.data, rollupId) && (
+          isSuperAdmin() ||
+          (
+            resource != null &&
+            resource.data.businessId is string &&
+            hasTenantAccess(resource.data.businessId) &&
+            request.resource.data.businessId == resource.data.businessId
+          )
+        );
+      allow delete: if isEmailVerified() && isValidId(rollupId) && (
+        isSuperAdmin() ||
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
+      );
+    }
+
+    function isValidAnalyticsTarget(data, docId) {
+      return data.keys().hasAll([
+               'id', 'businessId', 'locationId', 'periodKey',
+               'revenueTarget', 'grossMarginTargetPct', 'maxDiscountPct', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'id', 'businessId', 'locationId', 'periodKey',
+               'revenueTarget', 'grossMarginTargetPct', 'maxDiscountPct',
+               'updatedAt', 'updatedByUid', 'updatedByEmail'
+             ]) &&
+             isValidId(data.id) &&
+             data.id == docId &&
+             isValidId(data.businessId) &&
+             data.businessId != 'biz-demo' &&
+             isValidId(data.locationId) &&
+             isValidPeriodKey(data.periodKey) &&
+             data.revenueTarget is number && data.revenueTarget >= 0 &&
+             data.grossMarginTargetPct is number && data.grossMarginTargetPct >= 0 && data.grossMarginTargetPct <= 100 &&
+             data.maxDiscountPct is number && data.maxDiscountPct >= 0 && data.maxDiscountPct <= 100 &&
+             data.updatedAt is string && data.updatedAt.size() <= 64 &&
+             (!('updatedByUid' in data) || (data.updatedByUid is string && data.updatedByUid.size() <= 128)) &&
+             (!('updatedByEmail' in data) || (data.updatedByEmail is string && data.updatedByEmail.size() <= 160));
+    }
+
+    match /analytics_targets/{targetId} {
+      allow get: if isSignedIn() && isValidId(targetId) && (
+        isSuperAdmin() ||
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
+      );
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
+      );
+      allow create: if isEmailVerified() && isValidId(targetId) &&
+        isValidAnalyticsTarget(request.resource.data, targetId) && (
+          isSuperAdmin() ||
+          hasTenantAccess(request.resource.data.businessId)
+        );
+      allow update: if isEmailVerified() && isValidId(targetId) &&
+        isValidAnalyticsTarget(request.resource.data, targetId) && (
+          isSuperAdmin() ||
+          (
+            resource != null &&
+            resource.data.businessId is string &&
+            hasTenantAccess(resource.data.businessId) &&
+            request.resource.data.businessId == resource.data.businessId
+          )
+        );
+      allow delete: if isEmailVerified() && isValidId(targetId) && (
+        isSuperAdmin() ||
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
+      );
+    }
+
+    function isValidAnalyticsSavedView(data, docId) {
+      return data.keys().hasAll([
+               'id', 'businessId', 'name', 'locationId', 'preset',
+               'focusTab', 'chartMetric', 'isPinned', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'id', 'businessId', 'name', 'locationId', 'preset',
+               'customStartIso', 'customEndIso', 'focusTab', 'chartMetric',
+               'createdByUid', 'isPinned', 'createdAt', 'updatedAt'
+             ]) &&
+             isValidId(data.id) &&
+             data.id == docId &&
+             isValidId(data.businessId) &&
+             data.businessId != 'biz-demo' &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 80 &&
+             isValidId(data.locationId) &&
+             data.preset in ['today', 'last_24h', 'last_7d', 'last_30d', 'last_90d', 'last_180d', 'last_1y', 'custom', 'all'] &&
+             (!('customStartIso' in data) || (data.customStartIso is string && data.customStartIso.size() <= 64)) &&
+             (!('customEndIso' in data) || (data.customEndIso is string && data.customEndIso.size() <= 64)) &&
+             data.focusTab in ['sku_margin', 'category_pl', 'ledger'] &&
+             data.chartMetric in ['net_sales', 'gross_profit', 'margin_pct', 'orders'] &&
+             (!('createdByUid' in data) || (data.createdByUid is string && data.createdByUid.size() <= 128)) &&
+             data.isPinned is bool &&
+             data.createdAt is string && data.createdAt.size() <= 64 &&
+             data.updatedAt is string && data.updatedAt.size() <= 64;
+    }
+
+    match /analytics_saved_views/{viewId} {
+      allow get: if isSignedIn() && isValidId(viewId) && (
+        isSuperAdmin() ||
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
+      );
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
+      );
+      allow create: if isEmailVerified() && isValidId(viewId) &&
+        isValidAnalyticsSavedView(request.resource.data, viewId) && (
+          isSuperAdmin() ||
+          hasTenantAccess(request.resource.data.businessId)
+        );
+      allow update: if isEmailVerified() && isValidId(viewId) &&
+        isValidAnalyticsSavedView(request.resource.data, viewId) && (
+          isSuperAdmin() ||
+          (
+            resource != null &&
+            resource.data.businessId is string &&
+            hasTenantAccess(resource.data.businessId) &&
+            request.resource.data.businessId == resource.data.businessId &&
+            request.resource.data.createdAt == resource.data.createdAt
+          )
+        );
+      allow delete: if isEmailVerified() && isValidId(viewId) && (
+        isSuperAdmin() ||
+        (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
+      );
     }
   }
 }
