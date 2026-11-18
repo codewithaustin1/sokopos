@@ -43,7 +43,7 @@ export const ShiftSessionClosedCard: React.FC<ShiftSessionClosedCardProps> = ({
 
       {/* Main Card Body */}
       <div className="p-6 sm:p-7 space-y-4 bg-white">
-        {/* 4 Metadata Cards (2 x 2 Grid) */}
+        {/* Metadata Cards (2 Cards) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           {/* Card 1: TERMINAL LOCATION */}
           <div className="bg-[#f0f4f8] border border-slate-200/90 rounded-2xl p-4 transition-all">
@@ -69,47 +69,6 @@ export const ShiftSessionClosedCard: React.FC<ShiftSessionClosedCardProps> = ({
             <div className="text-xs text-slate-500 mt-0.5 truncate">
               {formattedRole}
             </div>
-          </div>
-
-          {/* Card 3: TILL STATUS */}
-          <div className="bg-[#f0f4f8] border border-slate-200/90 rounded-2xl p-4 transition-all">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-              TILL STATUS
-            </div>
-            <div className="text-base font-bold text-slate-900 leading-snug flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-slate-400 shrink-0 inline-block" />
-              <span>Closed & Inactive</span>
-            </div>
-            <div className="text-xs text-slate-500 mt-0.5">
-              No active trading shift
-            </div>
-          </div>
-
-          {/* Card 4: FISCAL POLICY */}
-          <div className="bg-[#f0f4f8] border border-slate-200/90 rounded-2xl p-4 transition-all">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-              FISCAL POLICY
-            </div>
-            <div className="text-base font-bold text-slate-900 leading-snug">
-              Strict Fiscal Control
-            </div>
-            <div className="text-xs text-slate-500 mt-0.5">
-              Float declaration required
-            </div>
-          </div>
-        </div>
-
-        {/* Fiscal & Audit Rule Box */}
-        <div className="bg-[#e6ebf2] border border-slate-300/60 rounded-2xl p-4 flex items-start gap-3">
-          <ShieldAlert className="w-5 h-5 text-slate-600 shrink-0 mt-0.5" />
-          <div className="text-xs leading-relaxed text-slate-700">
-            <p className="text-slate-900">
-              <strong className="font-bold text-slate-900">Fiscal & Audit Rule:</strong>{' '}
-              Transactions cannot be initiated or completed
-            </p>
-            <p className="text-slate-600 mt-0.5">
-              Transactions require a declared shift float.
-            </p>
           </div>
         </div>
 

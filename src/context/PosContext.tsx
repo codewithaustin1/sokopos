@@ -7609,6 +7609,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } else {
       const newBizId = getStableBusinessIdForEmail(normalizedEmail);
       const businessName = newBusinessName || `${name || 'Retail'}'s Store`;
+      const capturedRefCode = getCapturedReferralCode();
       matchedBiz = {
         id: newBizId,
         name: businessName,
@@ -7621,7 +7622,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         status: 'active',
         currency: 'KES',
         taxNumber: `P0${Math.floor(100000000 + Math.random() * 900000000)}Z`,
+        ...(capturedRefCode ? { referredByCode: capturedRefCode, referredAt: now } : {}),
       };
+      if (capturedRefCode) {
+        clearCapturedReferralCode();
+      }
     }
 
     // Check for tenant ID conflicts across other emails

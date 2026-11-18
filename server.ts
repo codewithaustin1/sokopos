@@ -1275,6 +1275,47 @@ Sitemap: ${origin}/sitemap.xml
     }
   });
 
+  const pendingLoginOtps = new Map<string, { otp: string; expiresAt: number }>();
+
+  app.post('/api/auth/otp/send', async (req, res) => {
+    try {
+      const { email } = req.body || {};
+      const cleanEmail = String(email || '').trim().toLowerCase();
+      if (!cleanEmail) {
+        return res.status(400).json({ success: false, error: 'Email is required' });
+      }
+      const otp = Math.floor(1000 + Math.random() * 9000).toString();
+      const expiresAt = Date.now() + 5 * 60 * 1000; // 5 min TTL
+      pendingLoginOtps.set(cleanEmail, { otp, expiresAt });
+      console.log(`[Email OTP] Generated 4-digit OTP for ${cleanEmail}: ${otp}`);
+      return res.json({ success: true, message: `4-digit OTP dispatched to ${cleanEmail}`, sandboxOtp: otp });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || 'Failed to dispatch OTP' });
+    }
+  });
+
+  app.post('/api/auth/otp/verify', async (req, res) => {
+    try {
+      const { email, otp } = req.body || {};
+      const cleanEmail = String(email || '').trim().toLowerCase();
+      const cleanOtp = String(otp || '').trim();
+      if (!cleanEmail || !cleanOtp) {
+        return res.status(400).json({ success: false, error: 'Email and OTP are required' });
+      }
+      const record = pendingLoginOtps.get(cleanEmail);
+      if (!record || Date.now() > record.expiresAt) {
+        return res.status(400).json({ success: false, error: 'OTP has expired or was not requested. Please request a new code.' });
+      }
+      if (record.otp !== cleanOtp) {
+        return res.status(401).json({ success: false, error: 'Incorrect 4-digit OTP entered. Please try again.' });
+      }
+      pendingLoginOtps.delete(cleanEmail);
+      return res.json({ success: true, verified: true });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || 'OTP verification failed' });
+    }
+  });
+
   // Bulk PIN Hashing (authenticated, bounded batch migration)
   app.post('/api/auth/bulk-hash-pins', async (req, res) => {
     try {

@@ -206,3 +206,37 @@ export async function updateAffiliateRateOrStatus(params: {
     return { success: false, error: err?.message || 'Network error updating affiliate.' };
   }
 }
+
+export async function requestLoginOtp(email: string): Promise<{ success: boolean; sandboxOtp?: string; error?: string }> {
+  try {
+    const resp = await fetch('/api/auth/otp/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      return { success: false, error: data?.error || 'Failed to send OTP.' };
+    }
+    return { success: true, sandboxOtp: data.sandboxOtp };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Network error sending OTP.' };
+  }
+}
+
+export async function verifyLoginOtp(email: string, otp: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const resp = await fetch('/api/auth/otp/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, otp }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      return { success: false, error: data?.error || 'Invalid OTP.' };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Network error verifying OTP.' };
+  }
+}

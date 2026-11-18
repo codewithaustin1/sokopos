@@ -104,22 +104,6 @@ export const Header: React.FC<HeaderProps> = ({
     >
       {/* Zone 1: Brand & Active Branch Switcher */}
       <div className="flex items-center gap-2 sm:gap-3.5 min-w-0">
-        <button
-          type="button"
-          id="header-mobile-hamburger-btn"
-          onClick={toggleMobileMenu}
-          aria-label="Toggle navigation menu"
-          aria-expanded={isMobileMenuOpen}
-          aria-controls="slide-menu"
-          className="lg:hidden relative inline-flex items-center justify-center min-w-[40px] min-h-[40px] p-2 rounded-lg text-slate-700 hover:text-blue-600 hover:bg-slate-100 border border-slate-200 transition-colors duration-150 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600 shrink-0"
-        >
-          <div className="w-5 h-4 flex flex-col justify-between items-center pointer-events-none">
-            <span className="bar-top w-full h-0.5 bg-current rounded-full" />
-            <span className="bar-middle w-full h-0.5 bg-current rounded-full" />
-            <span className="bar-bottom w-full h-0.5 bg-current rounded-full" />
-          </div>
-        </button>
-
         <AppLogo
           theme="light"
           size="md"
