@@ -1,21 +1,45 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Cloud,
   CloudOff,
   RefreshCw,
   ShieldCheck,
   Building2,
-  Server,
-  Activity,
-  Lock,
-  ArrowRight,
   Database,
   CheckCircle2,
-  Clock,
   KeyRound,
-  FileCheck,
+  HardDrive,
+  Archive,
+  Download,
+  AlertTriangle,
+  Search,
+  Eye,
+  Trash2,
+  Lock,
+  ShieldAlert,
+  Plus,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
+import { OutboxMutationEntry } from '../types/storage';
+import { OutboxPayloadDrawer } from './cloud-sync/OutboxPayloadDrawer';
+
+type OutboxFilterTab = 'all' | 'pending' | 'dead_letter';
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const idx = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  const val = bytes / Math.pow(1024, idx);
+  return `${val >= 100 || idx === 0 ? val.toFixed(0) : val.toFixed(1)} ${units[idx]}`;
+}
+
+function deterministicNodeLatency(code: string): number {
+  let hash = 0;
+  for (let i = 0; i < code.length; i++) {
+    hash = (hash * 31 + code.charCodeAt(i)) % 35;
+  }
+  return 22 + hash;
+}
 
 export const CloudSyncView: React.FC = () => {
   const {
@@ -26,54 +50,160 @@ export const CloudSyncView: React.FC = () => {
     syncStatus,
     lastSyncTime,
     syncLogs,
-    pendingOfflineCount,
     triggerCloudSync,
-    isFirestoreConnected,
     firestoreDbId,
-    firestoreRlsStatus,
     seedTenantDataToFirestoreAction,
     currentBusiness,
     isSuperAdmin,
     currentUser,
+    outboxItems,
+    pendingOutboxCount,
+    deadLetterCount,
+    storageTelemetry,
+    opfsSnapshots,
+    retryOutboxItem,
+    retryAllDeadLetterItems,
+    discardOutboxItem,
+    createManualOpfsSnapshot,
+    verifyOpfsSnapshotIntegrity,
+    downloadOpfsArchive,
+    exportFullLocalStore,
   } = usePos();
 
   const [isSeeding, setIsSeeding] = useState(false);
+  const [isSnapshotting, setIsSnapshotting] = useState(false);
+  const [isExportingStore, setIsExportingStore] = useState(false);
+  const [outboxFilter, setOutboxFilter] = useState<OutboxFilterTab>('all');
+  const [outboxSearch, setOutboxSearch] = useState('');
+  const [inspectedEntry, setInspectedEntry] = useState<OutboxMutationEntry | null>(null);
+  const [confirmDiscardId, setConfirmDiscardId] = useState<string | null>(null);
+  const [verifiedSnapshots, setVerifiedSnapshots] = useState<
+    Record<string, { ok: boolean; checkedAt: string; message: string }>
+  >({});
+
+  const filteredOutbox = useMemo(() => {
+    const q = outboxSearch.trim().toLowerCase();
+    return outboxItems.filter((item) => {
+      if (outboxFilter === 'dead_letter' && item.status !== 'dead_letter') return false;
+      if (outboxFilter === 'pending' && item.status === 'dead_letter') return false;
+      if (!q) return true;
+      return (
+        (item.label || '').toLowerCase().includes(q) ||
+        item.docId.toLowerCase().includes(q) ||
+        item.collectionName.toLowerCase().includes(q) ||
+        (item.errorCode || '').toLowerCase().includes(q) ||
+        (item.lastError || '').toLowerCase().includes(q)
+      );
+    });
+  }, [outboxItems, outboxFilter, outboxSearch]);
 
   const handleSeed = async () => {
     setIsSeeding(true);
-    await seedTenantDataToFirestoreAction();
-    setIsSeeding(false);
+    try {
+      await seedTenantDataToFirestoreAction();
+    } finally {
+      setIsSeeding(false);
+    }
   };
 
+  const handleCreateSnapshot = async () => {
+    setIsSnapshotting(true);
+    try {
+      await createManualOpfsSnapshot();
+    } finally {
+      setIsSnapshotting(false);
+    }
+  };
+
+  const handleExportStore = async () => {
+    setIsExportingStore(true);
+    try {
+      await exportFullLocalStore();
+    } finally {
+      setIsExportingStore(false);
+    }
+  };
+
+  const handleVerifySnapshot = async (fileName: string) => {
+    const result = await verifyOpfsSnapshotIntegrity(fileName);
+    setVerifiedSnapshots((prev) => ({
+      ...prev,
+      [fileName]: {
+        ok: result.ok,
+        checkedAt: new Date().toLocaleTimeString(),
+        message: result.ok
+          ? `SHA-256 verified (${formatBytes(result.byteSize)})`
+          : `Checksum mismatch (${result.computedSha256.slice(0, 8)})`,
+      },
+    }));
+  };
+
+  const handleDiscardRow = async (entryId: string) => {
+    if (confirmDiscardId !== entryId) {
+      setConfirmDiscardId(entryId);
+      return;
+    }
+    setConfirmDiscardId(null);
+    await discardOutboxItem(entryId);
+  };
+
+  const quotaPct = Math.min(100, Math.max(0, storageTelemetry.usagePct || 0));
+  const latestSnap = storageTelemetry.lastSnapshot || opfsSnapshots[0] || null;
+
   return (
-    <div className="flex-1 flex flex-col bg-slate-100 overflow-y-auto">
-      {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3.5 sm:py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0 shadow-2xs">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-base sm:text-lg font-black text-slate-800">Cloud Sync Hub</h2>
-            <span className="bg-emerald-100 text-emerald-800 text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-              <ShieldCheck className="w-3 h-3" /> TLS 1.3 / AES-256
+    <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-950 overflow-y-auto">
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-20 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-3.5 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 shrink-0">
+        <div className="min-w-0">
+          <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-tight">
+            Cloud Sync & Local Vault
+          </h2>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <span>{storageTelemetry.engine}</span>
+            <span aria-hidden="true">·</span>
+            <span className={isOnline ? 'text-emerald-700 dark:text-emerald-400 font-medium' : 'text-amber-700 dark:text-amber-400 font-medium'}>
+              {isOnline ? 'Cloud Pipeline Online' : 'Offline Failover Mode'}
+            </span>
+            <span aria-hidden="true">·</span>
+            <span className="font-mono tabular-nums">
+              Last Sync {new Date(lastSyncTime).toLocaleTimeString()}
             </span>
           </div>
-          <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
-            Multi-branch replication with offline-first failover resilience
-          </p>
         </div>
 
-        {/* Global Sync Controls */}
         <div className="flex flex-wrap items-center gap-2">
           <button
+            type="button"
+            onClick={handleExportStore}
+            disabled={isExportingStore}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer disabled:opacity-50 whitespace-nowrap"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>{isExportingStore ? 'Exporting...' : 'Export Store (.json)'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleCreateSnapshot}
+            disabled={isSnapshotting}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer disabled:opacity-50 whitespace-nowrap"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>{isSnapshotting ? 'Archiving...' : 'Create Snapshot'}</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setIsOnline(!isOnline)}
-            className={`px-3 py-1.5 sm:py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 border cursor-pointer whitespace-nowrap ${
               isOnline
-                ? 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
-                : 'bg-amber-500 text-white border-amber-600'
+                ? 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700'
+                : 'bg-amber-600 text-white border-amber-700 hover:bg-amber-700'
             }`}
           >
             {isOnline ? (
               <>
-                <CloudOff className="w-3.5 h-3.5 text-slate-500" />
+                <CloudOff className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                 <span>Go Offline</span>
               </>
             ) : (
@@ -85,93 +215,482 @@ export const CloudSyncView: React.FC = () => {
           </button>
 
           <button
-            onClick={triggerCloudSync}
+            type="button"
+            onClick={() => triggerCloudSync(false)}
             disabled={!isOnline || syncStatus === 'syncing'}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-bold text-xs px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
+            className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-800 text-white font-semibold text-xs px-3.5 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed whitespace-nowrap"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
-            <span>Sync Branches</span>
+            <span>Flush Outbox</span>
           </button>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 pb-24 md:pb-8">
-        {/* Status Metrics Ribbon */}
+      <div className="p-4 sm:p-6 space-y-6 pb-24 md:pb-8 max-w-7xl w-full mx-auto">
+        {/* 4-Column Storage & Outbox Telemetry Strip */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Cloud Connection State */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Connection Pipeline
-            </span>
-            <div className="text-lg font-black text-slate-800 mt-1 flex items-center gap-2">
-              <span
-                className={`w-3 h-3 rounded-full ${
-                  isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+          {/* Card 1: Browser Storage Quota */}
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+              <span>Local Terminal Quota</span>
+              <HardDrive className="w-4 h-4 text-slate-400" />
+            </div>
+            <div className="mt-1.5 text-lg font-bold text-slate-900 dark:text-white font-mono tabular-nums">
+              {formatBytes(storageTelemetry.usageBytes)}{' '}
+              <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
+                / {storageTelemetry.quotaBytes > 0 ? formatBytes(storageTelemetry.quotaBytes) : '∞'}
+              </span>
+            </div>
+            <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${
+                  quotaPct > 80 ? 'bg-rose-600' : quotaPct > 55 ? 'bg-amber-500' : 'bg-blue-600'
                 }`}
+                style={{ width: `${Math.max(2, quotaPct)}%` }}
               />
-              {isOnline ? 'Cloud Operational' : 'Offline Buffer Mode'}
             </div>
-            <span className="text-[11px] text-slate-400 mt-1 block">
-              {isOnline ? 'Direct bidirectional websocket sync' : 'Pending batch queue enabled'}
-            </span>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 font-mono tabular-nums">
+              {storageTelemetry.migratedFromLocalStorageAt
+                ? `Migrated ${storageTelemetry.migratedKeysCount} legacy keys`
+                : 'IndexedDB primary store active'}
+            </p>
           </div>
 
-          {/* Pending Queue Count */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Offline Mutation Queue
-            </span>
-            <div className="text-lg font-black text-slate-800 mt-1">
-              {pendingOfflineCount} Pending Changes
+          {/* Card 2: Pending / Retrying Outbox */}
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+              <span>Sync Outbox Queue</span>
+              <Database className="w-4 h-4 text-blue-600" />
             </div>
-            <span className="text-[11px] text-slate-400 mt-1 block">
-              {pendingOfflineCount === 0 ? 'All local register sales committed' : 'Will push on network reconnect'}
-            </span>
+            <div className="mt-1.5 text-lg font-bold text-slate-900 dark:text-white font-mono tabular-nums">
+              {pendingOutboxCount} Queued
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
+              {pendingOutboxCount === 0
+                ? 'All register & catalog writes replicated'
+                : 'Exponential backoff retry worker active'}
+            </p>
           </div>
 
-          {/* Cloud Replicas */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Active Store Nodes
-            </span>
-            <div className="text-lg font-black text-blue-600 mt-1 flex items-center gap-1.5">
-              <Server className="w-4 h-4" /> 4 of 4 Provisioned
+          {/* Card 3: Dead-Letter Queue */}
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+              <span>Dead-Letter Queue</span>
+              <ShieldAlert
+                className={`w-4 h-4 ${deadLetterCount > 0 ? 'text-rose-600' : 'text-slate-400'}`}
+              />
             </div>
-            <span className="text-[11px] text-slate-400 mt-1 block">
-              Multi-Region redundancy (East Africa)
-            </span>
+            <div
+              className={`mt-1.5 text-lg font-bold font-mono tabular-nums ${
+                deadLetterCount > 0
+                  ? 'text-rose-700 dark:text-rose-400'
+                  : 'text-slate-900 dark:text-white'
+              }`}
+            >
+              {deadLetterCount} Blocked
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
+              {deadLetterCount === 0
+                ? 'Zero rejected or poisoned mutations'
+                : 'Requires inspection & manual retry below'}
+            </p>
           </div>
 
-          {/* Security & Ledger */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Ledger Integrity
-            </span>
-            <div className="text-lg font-black text-emerald-600 mt-1 flex items-center gap-1.5">
-              <Lock className="w-4 h-4" /> Zero-Trust Verified
+          {/* Card 4: Latest OPFS Binary Snapshot */}
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+              <span>Latest OPFS Archive</span>
+              <Archive className="w-4 h-4 text-emerald-600" />
             </div>
-            <span className="text-[11px] text-slate-400 mt-1 block">
-              SHA-256 cryptographically signed receipts
-            </span>
+            <div className="mt-1.5 text-sm font-bold text-slate-900 dark:text-white font-mono tabular-nums truncate">
+              {latestSnap ? `SHA ${latestSnap.sha256.slice(0, 12)}` : 'No Snapshot Yet'}
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 font-mono tabular-nums truncate">
+              {latestSnap
+                ? `${latestSnap.trigger.replace('_', ' ')} · ${formatBytes(latestSnap.byteSize)}`
+                : 'Auto-created on Shift Close or Migration'}
+            </p>
           </div>
         </div>
 
-        {/* Multi-Location Node Status Matrix */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs">
-          <div className="flex items-center justify-between mb-4">
+        {/* Section 1: Outbox & Dead-Letter Queue Inspector */}
+        <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+          <div className="px-4 sm:px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div>
-              <h3 className="font-bold text-slate-800 text-sm">Store Node Synchronization Mesh</h3>
-              <p className="text-xs text-slate-400">
-                Live heartbeat, latency, and catalog synchronization across retail locations
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                Transactional Sync Outbox & Dead-Letter Inspector
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Every sale, inventory change, customer update, and BI view persists in IndexedDB until acknowledged by Firestore
               </p>
             </div>
-            <span className="text-xs font-mono font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">
-              Last Global Sync: {new Date(lastSyncTime).toLocaleTimeString()}
+
+            <div className="flex flex-wrap items-center gap-2">
+              {deadLetterCount > 0 && (
+                <button
+                  type="button"
+                  onClick={retryAllDeadLetterItems}
+                  className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Retry All Dead-Letter ({deadLetterCount})
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Filter & Search Toolbar */}
+          <div className="px-4 sm:px-5 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-0.5 self-start">
+              {(
+                [
+                  { id: 'all', label: `All (${outboxItems.length})` },
+                  { id: 'pending', label: `Pending & Retrying (${pendingOutboxCount})` },
+                  { id: 'dead_letter', label: `Dead-Letter (${deadLetterCount})` },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setOutboxFilter(tab.id)}
+                  className={`px-3 py-1 rounded-md text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
+                    outboxFilter === tab.id
+                      ? 'bg-slate-900 dark:bg-blue-600 text-white'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="relative w-full sm:w-64">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={outboxSearch}
+                onChange={(e) => setOutboxSearch(e.target.value)}
+                placeholder="Filter by doc ID, collection, error..."
+                className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          {filteredOutbox.length === 0 ? (
+            <div className="p-8 text-center">
+              <CheckCircle2 className="w-7 h-7 text-emerald-600 mx-auto mb-2" />
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                {outboxItems.length === 0
+                  ? 'Outbox Queue Empty'
+                  : 'No outbox entries match your current filter'}
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                {outboxItems.length === 0
+                  ? 'All local IndexedDB mutations have been confirmed by Firestore.'
+                  : 'Switch filter tabs or clear the search query to inspect other entries.'}
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Desktop Table */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 bg-slate-50/50 dark:bg-slate-950/30">
+                      <th className="py-2.5 px-4">Mutation</th>
+                      <th className="py-2.5 px-4">Operation</th>
+                      <th className="py-2.5 px-4">Queue State</th>
+                      <th className="py-2.5 px-4">Last Diagnostic</th>
+                      <th className="py-2.5 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                    {filteredOutbox.map((item) => {
+                      const isDead = item.status === 'dead_letter';
+                      const retryDueInSec = Math.max(
+                        0,
+                        Math.ceil((item.nextRetryAt - Date.now()) / 1000)
+                      );
+                      return (
+                        <tr
+                          key={item.id}
+                          className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition"
+                        >
+                          <td className="py-3 px-4">
+                            <div className="font-semibold text-slate-900 dark:text-white">
+                              {item.label || item.docId}
+                            </div>
+                            <div className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                              {item.collectionName}/{item.docId}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 font-mono uppercase text-[11px] text-slate-700 dark:text-slate-300">
+                            {item.operation}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div
+                              className={`font-semibold ${
+                                isDead
+                                  ? 'text-rose-700 dark:text-rose-400'
+                                  : item.status === 'retry_scheduled'
+                                  ? 'text-amber-700 dark:text-amber-400'
+                                  : 'text-blue-700 dark:text-blue-400'
+                              }`}
+                            >
+                              {isDead
+                                ? 'Dead-Letter'
+                                : item.status === 'retry_scheduled'
+                                ? retryDueInSec > 0
+                                  ? `Retry in ${retryDueInSec}s`
+                                  : 'Retry Due'
+                                : 'Pending'}
+                            </div>
+                            <div className="font-mono tabular-nums text-[11px] text-slate-500 dark:text-slate-400">
+                              Attempt {item.attempts}/{item.maxAttempts} ·{' '}
+                              {new Date(item.updatedAt).toLocaleTimeString()}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 max-w-xs">
+                            {item.lastError ? (
+                              <div className="text-[11px] text-rose-700 dark:text-rose-400 truncate font-mono">
+                                {item.errorCode ? `[${item.errorCode}] ` : ''}
+                                {item.lastError}
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-slate-400">Awaiting flush</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setInspectedEntry(item)}
+                                className="px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-[11px] font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <Eye className="w-3 h-3" />
+                                Inspect
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => retryOutboxItem(item.id)}
+                                className="px-2.5 py-1 rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50/70 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-[11px] font-semibold text-blue-700 dark:text-blue-300 inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <RefreshCw className="w-3 h-3" />
+                                Retry
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDiscardRow(item.id)}
+                                className={`px-2.5 py-1 rounded-md border text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer ${
+                                  confirmDiscardId === item.id
+                                    ? 'border-rose-600 bg-rose-600 text-white'
+                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30'
+                                }`}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                {confirmDiscardId === item.id ? 'Confirm?' : 'Discard'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Stacked Cards */}
+              <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
+                {filteredOutbox.map((item) => {
+                  const isDead = item.status === 'dead_letter';
+                  return (
+                    <div key={item.id} className="p-4 space-y-2.5 text-xs">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-slate-900 dark:text-white truncate">
+                            {item.label || item.docId}
+                          </p>
+                          <p className="font-mono text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                            {item.operation.toUpperCase()} · {item.collectionName}/{item.docId}
+                          </p>
+                        </div>
+                        <span
+                          className={`font-semibold shrink-0 ${
+                            isDead
+                              ? 'text-rose-700 dark:text-rose-400'
+                              : 'text-amber-700 dark:text-amber-400'
+                          }`}
+                        >
+                          {isDead ? 'Dead-Letter' : 'Retrying'}
+                        </span>
+                      </div>
+
+                      {item.lastError && (
+                        <p className="text-[11px] font-mono text-rose-700 dark:text-rose-400 break-words">
+                          {item.lastError}
+                        </p>
+                      )}
+
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                        <span className="font-mono tabular-nums text-[11px] text-slate-500 dark:text-slate-400">
+                          Attempt {item.attempts}/{item.maxAttempts}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setInspectedEntry(item)}
+                            className="px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 text-[11px] font-semibold text-slate-700 dark:text-slate-200 cursor-pointer"
+                          >
+                            Inspect
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => retryOutboxItem(item.id)}
+                            className="px-2.5 py-1 rounded-md bg-blue-600 text-white text-[11px] font-semibold cursor-pointer"
+                          >
+                            Retry
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDiscardRow(item.id)}
+                            className="px-2.5 py-1 rounded-md border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-400 text-[11px] font-semibold cursor-pointer"
+                          >
+                            {confirmDiscardId === item.id ? 'Confirm?' : 'Discard'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </section>
+
+        {/* Section 2: OPFS Binary Snapshot Vault */}
+        <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+          <div className="px-4 sm:px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                OPFS Binary Snapshot Vault
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Compressed SHA-256 verified store archives stored locally in Origin Private File System (opfs:/sokopos-snapshots/)
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+              <span>{opfsSnapshots.length} / 12 Retained</span>
+            </div>
+          </div>
+
+          {!storageTelemetry.opfsSupported && (
+            <div className="px-4 sm:px-5 py-3 border-b border-amber-200 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/30 flex items-center gap-2 text-xs text-amber-800 dark:text-amber-300">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>
+                Origin Private File System (OPFS) is unavailable in this browser context; IndexedDB remains active and one-click JSON store export works normally.
+              </span>
+            </div>
+          )}
+
+          {opfsSnapshots.length === 0 ? (
+            <div className="p-8 text-center">
+              <Archive className="w-7 h-7 text-slate-400 mx-auto mb-2" />
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                No OPFS Binary Snapshots Recorded Yet
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Snapshots generate automatically on Shift Close and legacy migration, or click Create Snapshot above.
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {opfsSnapshots.map((snap) => {
+                const verifyState = verifiedSnapshots[snap.fileName];
+                return (
+                  <div
+                    key={snap.fileName}
+                    className="px-4 sm:px-5 py-3.5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/30 transition"
+                  >
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-xs font-semibold text-slate-900 dark:text-white break-all">
+                          {snap.fileName}
+                        </span>
+                        <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 capitalize">
+                          · {snap.trigger.replace('_', ' ')}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+                        <span>{new Date(snap.createdAt).toLocaleString()}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>
+                          {formatBytes(snap.byteSize)} ({snap.compression === 'gzip' ? 'gzip' : 'json'} from{' '}
+                          {formatBytes(snap.uncompressedSize)})
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span>
+                          {snap.recordCounts.products} SKUs / {snap.recordCounts.transactions} sales /{' '}
+                          {snap.recordCounts.shifts} shifts
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span>SHA-256: {snap.sha256.slice(0, 14)}…</span>
+                      </div>
+                      {verifyState && (
+                        <p
+                          className={`text-[11px] font-mono ${
+                            verifyState.ok
+                              ? 'text-emerald-700 dark:text-emerald-400'
+                              : 'text-rose-700 dark:text-rose-400'
+                          }`}
+                        >
+                          {verifyState.message} · checked {verifyState.checkedAt}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleVerifySnapshot(snap.fileName)}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        Verify Integrity
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => downloadOpfsArchive(snap.fileName)}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        Download
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* Section 3: Multi-Location Node Status Mesh */}
+        <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+            <div>
+              <h3 className="font-bold text-slate-900 dark:text-white text-sm">
+                Store Node Synchronization Mesh
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Branch heartbeat, terminal status, and catalog synchronization across active locations
+              </p>
+            </div>
+            <span className="text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400">
+              {locations.length} Branch Node{locations.length === 1 ? '' : 's'}
             </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
             {locations.map((loc) => {
               const isCurrent = loc.id === currentLocation.id;
               return (
@@ -179,52 +698,54 @@ export const CloudSyncView: React.FC = () => {
                   key={loc.id}
                   className={`p-4 rounded-xl border transition ${
                     isCurrent
-                      ? 'border-blue-500 bg-blue-50/30 ring-2 ring-blue-500/10'
-                      : 'border-slate-200 bg-white'
+                      ? 'border-blue-500 bg-blue-50/30 dark:bg-blue-950/20'
+                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Building2 className="w-4 h-4 text-blue-600" />
-                      <h4 className="font-bold text-xs text-slate-800">{loc.name}</h4>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Building2 className="w-4 h-4 text-blue-600 shrink-0" />
+                      <h4 className="font-semibold text-xs text-slate-900 dark:text-white truncate">
+                        {loc.name}
+                      </h4>
                     </div>
                     <span
-                      className={`w-2.5 h-2.5 rounded-full ${
-                        loc.isOnline ? 'bg-emerald-500 shadow-xs' : 'bg-amber-400'
+                      className={`text-[11px] font-semibold shrink-0 ${
+                        loc.isOnline && isOnline
+                          ? 'text-emerald-700 dark:text-emerald-400'
+                          : 'text-amber-700 dark:text-amber-400'
                       }`}
-                    />
+                    >
+                      {loc.isOnline && isOnline ? 'Online' : 'Buffered'}
+                    </span>
                   </div>
 
-                  <div className="mt-3 space-y-1.5 text-[11px] text-slate-500">
+                  <div className="mt-3 space-y-1.5 text-[11px] text-slate-500 dark:text-slate-400">
                     <div className="flex justify-between">
-                      <span>Node Code:</span>
-                      <span className="font-mono font-bold text-slate-800">{loc.code}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Terminal:</span>
-                      <span className="font-medium text-slate-700">{loc.terminalName.split(' ')[0]}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Sync Latency:</span>
-                      <span className="font-mono text-emerald-600 font-bold">
-                        {loc.isOnline ? `${Math.floor(25 + Math.random() * 30)} ms` : 'Disconnected'}
+                      <span>Node Code</span>
+                      <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">
+                        {loc.code}
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Status:</span>
-                      <span
-                        className={`font-bold ${
-                          loc.isOnline ? 'text-emerald-700' : 'text-amber-700'
-                        }`}
-                      >
-                        {loc.isOnline ? 'Synchronized' : 'Buffered offline'}
+                      <span>Terminal</span>
+                      <span className="font-medium text-slate-700 dark:text-slate-300">
+                        {loc.terminalName.split(' ')[0]}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Latency</span>
+                      <span className="font-mono tabular-nums font-semibold text-slate-800 dark:text-slate-200">
+                        {loc.isOnline && isOnline
+                          ? `${deterministicNodeLatency(loc.code || loc.id)} ms`
+                          : 'Offline'}
                       </span>
                     </div>
                   </div>
 
                   {isCurrent && (
-                    <div className="mt-3 pt-2 border-t border-blue-200/60 text-[10px] text-blue-700 font-bold flex items-center justify-between">
-                      <span>Active Local Terminal</span>
+                    <div className="mt-3 pt-2 border-t border-blue-200/70 dark:border-blue-900/60 text-[11px] text-blue-700 dark:text-blue-400 font-semibold flex items-center justify-between">
+                      <span>Active Terminal</span>
                       <CheckCircle2 className="w-3.5 h-3.5" />
                     </div>
                   )}
@@ -232,140 +753,124 @@ export const CloudSyncView: React.FC = () => {
               );
             })}
           </div>
-        </div>
+        </section>
 
-        {/* Firestore Cloud Database & Row-Level Security (RLS) Hub */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+        {/* Section 4: Firestore Multi-Tenant RLS Hub */}
+        <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 space-y-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                <Database className="w-5 h-5" />
+              <div className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0">
+                <Lock className="w-4 h-4" />
               </div>
               <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-slate-800 text-sm">Firestore Multi-Tenant Row-Level Security (RLS)</h3>
-                  <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <ShieldCheck className="w-3 h-3" /> Rules Enforced
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400">
-                  Tenant data isolation enforced cryptographically at database engine level via security rules
+                <h3 className="font-bold text-slate-900 dark:text-white text-sm">
+                  Firestore Multi-Tenant Row-Level Security (RLS)
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Tenant isolation enforced at database level · Signed-in mutations scoped by authenticated businessId
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleSeed}
-                disabled={isSeeding}
-                className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSeeding ? 'animate-spin' : ''}`} />
-                <span>{isSeeding ? 'Seeding...' : 'Seed / Re-verify Firestore'}</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleSeed}
+              disabled={isSeeding}
+              className="bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white font-semibold text-xs px-3.5 py-2 rounded-lg transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 whitespace-nowrap"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSeeding ? 'animate-spin' : ''}`} />
+              <span>{isSeeding ? 'Verifying...' : 'Seed / Re-verify Firestore'}</span>
+            </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+          <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-200 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg">
+            <div className="p-3.5">
+              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
                 Database Target
               </span>
-              <div className="font-mono text-xs font-bold text-slate-800 mt-1 break-all">
+              <div className="font-mono text-xs font-semibold text-slate-900 dark:text-white mt-1 break-all">
                 {firestoreDbId}
               </div>
-              <div className="flex items-center gap-1.5 text-[11px] text-emerald-600 font-semibold mt-1">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Connected & Live</span>
-              </div>
             </div>
 
-            <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+            <div className="p-3.5">
+              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
                 Active Tenant Scope
               </span>
-              <div className="text-xs font-bold text-slate-800 mt-1">
+              <div className="text-xs font-semibold text-slate-900 dark:text-white mt-1">
                 {currentBusiness?.name || 'Unknown Tenant'}
               </div>
-              <div className="font-mono text-[10px] text-slate-500 mt-0.5">
-                ID: {currentBusiness?.id}
+              <div className="font-mono text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                {currentBusiness?.id}
               </div>
             </div>
 
-            <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                Access Token Claims
+            <div className="p-3.5">
+              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
+                Session Authority
               </span>
-              <div className="text-xs font-bold text-slate-800 mt-1 flex items-center gap-1">
-                <KeyRound className="w-3.5 h-3.5 text-blue-600" />
-                <span>{currentUser ? currentUser.email : 'Anonymous Session'}</span>
+              <div className="text-xs font-semibold text-slate-900 dark:text-white mt-1 flex items-center gap-1.5">
+                <KeyRound className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                <span className="truncate">{currentUser ? currentUser.email : 'Local Staff Terminal'}</span>
               </div>
-              <div className="text-[10px] text-slate-500 mt-0.5">
-                Role: <span className="font-bold text-slate-700">{currentUser?.role || 'Guest'}</span> {isSuperAdmin && '(Super-Admin Override)'}
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                Role: {currentUser?.role || 'cashier'}
+                {isSuperAdmin ? ' · Super Admin' : ''}
               </div>
             </div>
           </div>
+        </section>
 
-          {/* RLS Assertion Box */}
-          <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3 text-xs text-blue-900 font-mono flex items-start gap-2.5">
-            <Lock className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-            <div>
-              <div className="font-bold text-blue-950 font-sans text-xs">
-                Zero-Trust Row-Level Security Invariant:
-              </div>
-              <div className="mt-0.5 text-blue-800">
-                <code className="bg-blue-100/70 px-1.5 py-0.5 rounded text-blue-900 font-bold">
-                  request.auth.token.businessId == resource.data.businessId
-                </code>
-              </div>
-              <p className="font-sans text-[11px] text-blue-700 mt-1">
-                Every Firestore read, write, update, and delete operation across <span className="font-bold">products, transactions, locations, cashiers, stock transfers,</span> and <span className="font-bold">sync logs</span> is verified against the authenticated tenant identifier. Cross-tenant access is rejected at the database level.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Sync Audit Event Log */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs">
+        {/* Section 5: Sync Audit Event Log */}
+        <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5">
           <div className="flex items-center justify-between mb-3">
             <div>
-              <h3 className="font-bold text-slate-800 text-sm">Cloud Replication Audit Stream</h3>
-              <p className="text-xs text-slate-400">
-                Immutable audit trail of sales sync, stock adjustments, and inter-branch transfers
+              <h3 className="font-bold text-slate-900 dark:text-white text-sm">
+                Cloud Replication Audit Stream
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Recent sales replications, stock adjustments, and branch transfers
               </p>
             </div>
-            <span className="text-xs font-semibold text-slate-500">{syncLogs.length} Events Logged</span>
+            <span className="text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400">
+              {syncLogs.length} Events
+            </span>
           </div>
 
-          <div className="divide-y divide-slate-100">
-            {syncLogs.map((log) => (
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {syncLogs.slice(0, 20).map((log) => (
               <div key={log.id} className="py-3 flex items-start justify-between gap-4 text-xs">
-                <div className="flex items-start gap-3">
-                  <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 mt-0.5">
-                    <Database className="w-3.5 h-3.5" />
+                <div className="min-w-0">
+                  <div className="font-medium text-slate-800 dark:text-slate-200">
+                    {log.details}
                   </div>
-                  <div>
-                    <div className="font-semibold text-slate-800">{log.details}</div>
-                    <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
-                      <span className="font-medium text-slate-600">{log.locationName}</span>
-                      <span>•</span>
-                      <span className="capitalize">{log.type.replace('_', ' ')}</span>
-                      <span>•</span>
-                      <span>{new Date(log.timestamp).toLocaleTimeString()}</span>
-                    </div>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 font-mono tabular-nums">
+                    <span className="font-sans font-medium text-slate-600 dark:text-slate-300">
+                      {log.locationName}
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span className="capitalize font-sans">{log.type.replace('_', ' ')}</span>
+                    <span aria-hidden="true">·</span>
+                    <span>{new Date(log.timestamp).toLocaleTimeString()}</span>
                   </div>
                 </div>
 
-                <div className="shrink-0">
-                  <span className="bg-emerald-100 text-emerald-800 font-bold text-[10px] px-2 py-0.5 rounded-full">
-                    {log.status.toUpperCase()}
-                  </span>
-                </div>
+                <span className="shrink-0 font-mono text-[11px] font-semibold uppercase text-emerald-700 dark:text-emerald-400">
+                  {log.status}
+                </span>
               </div>
             ))}
           </div>
-        </div>
+        </section>
       </div>
+
+      {/* Outbox Mutation Payload Inspector Drawer */}
+      <OutboxPayloadDrawer
+        entry={inspectedEntry}
+        onClose={() => setInspectedEntry(null)}
+        onRetry={retryOutboxItem}
+        onDiscard={discardOutboxItem}
+      />
     </div>
   );
 };

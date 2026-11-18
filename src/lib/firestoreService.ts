@@ -35,6 +35,11 @@ import {
   BrandingSlotId,
   IndustrySolutionId,
 } from '../types';
+import {
+  AnalyticsDailyRollup,
+  AnalyticsTarget,
+  AnalyticsSavedView,
+} from '../types/reporting';
 
 export enum OperationType {
   CREATE = 'create',
@@ -2084,4 +2089,325 @@ export function subscribeToPaymentRecord(
   );
 }
 
+// -------------------------------------------------------------
+// Business Intelligence Suite (Daily Rollups, Targets, Saved Views)
+// -------------------------------------------------------------
+function pickRollupDoc(r: AnalyticsDailyRollup): AnalyticsDailyRollup {
+  return {
+    id: r.id,
+    businessId: r.businessId,
+    locationId: r.locationId,
+    locationName: (r.locationName || 'Main Branch').slice(0, 160),
+    dateKey: r.dateKey,
+    grossSales: Number(r.grossSales || 0),
+    refundsTotal: Number(r.refundsTotal || 0),
+    discountsTotal: Number(r.discountsTotal || 0),
+    netSales: Number(r.netSales || 0),
+    taxTotal: Number(r.taxTotal || 0),
+    cogsTotal: Number(r.cogsTotal || 0),
+    grossProfit: Number(r.grossProfit || 0),
+    operatingExpenses: Number(r.operatingExpenses || 0),
+    transactionCount: Number(r.transactionCount || 0),
+    unitsSold: Number(r.unitsSold || 0),
+    mpesaTotal: Number(r.mpesaTotal || 0),
+    cashTotal: Number(r.cashTotal || 0),
+    cardTotal: Number(r.cardTotal || 0),
+    storeCreditTotal: Number(r.storeCreditTotal || 0),
+    uncostedRevenue: Number(r.uncostedRevenue || 0),
+    updatedAt: r.updatedAt || new Date().toISOString(),
+  };
+}
 
+export function subscribeToAnalyticsRollups(
+  businessId: string,
+  onUpdate: (rollups: AnalyticsDailyRollup[]) => void
+): Unsubscribe {
+  if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
+    return () => {};
+  }
+  const path = 'analytics_daily_rollups';
+  const q = query(
+    collection(db, path),
+    where('businessId', '==', businessId),
+    limit(400)
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      const items: AnalyticsDailyRollup[] = [];
+      snap.forEach((d) => items.push(d.data() as AnalyticsDailyRollup));
+      items.sort((a, b) => (b.dateKey || '').localeCompare(a.dateKey || ''));
+      onUpdate(items);
+    },
+    (error) => {
+      if (!auth.currentUser || isFirestoreQuotaError(error)) {
+        if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+        return;
+      }
+      try {
+        handleFirestoreError(error, OperationType.LIST, path);
+      } catch (err) {
+        console.warn(`Firestore analytics rollups subscription notice on "${path}":`, err);
+      }
+    }
+  );
+}
+
+export async function upsertAnalyticsDailyRollupsBatch(
+  rollups: AnalyticsDailyRollup[]
+): Promise<number> {
+  if (!db || !auth.currentUser || !rollups || rollups.length === 0 || isFirestoreQuotaCooldownActive()) {
+    return 0;
+  }
+  const eligible = rollups.filter(
+    (r) =>
+      r.id &&
+      r.businessId &&
+      !isDemoBusinessId(r.businessId) &&
+      !isDemoRecordId(r.id) &&
+      /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(r.dateKey)
+  );
+  if (eligible.length === 0) return 0;
+
+  let committed = 0;
+  const CHUNK = 400;
+  for (let i = 0; i < eligible.length; i += CHUNK) {
+    const chunk = eligible.slice(i, i + CHUNK);
+    const batch = writeBatch(db);
+    for (const r of chunk) {
+      batch.set(
+        doc(db, 'analytics_daily_rollups', r.id),
+        sanitizeForFirestore(pickRollupDoc(r)),
+        { merge: true }
+      );
+    }
+    try {
+      await batch.commit();
+      committed += chunk.length;
+    } catch (error) {
+      if (isFirestoreQuotaError(error)) {
+        markFirestoreQuotaExceeded();
+        return committed;
+      }
+      handleFirestoreError(error, OperationType.WRITE, 'analytics_daily_rollups');
+    }
+  }
+  return committed;
+}
+
+export function subscribeToAnalyticsTargets(
+  businessId: string,
+  onUpdate: (targets: AnalyticsTarget[]) => void
+): Unsubscribe {
+  if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
+    return () => {};
+  }
+  const path = 'analytics_targets';
+  const q = query(collection(db, path), where('businessId', '==', businessId), limit(100));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const items: AnalyticsTarget[] = [];
+      snap.forEach((d) => items.push(d.data() as AnalyticsTarget));
+      onUpdate(items);
+    },
+    (error) => {
+      if (!auth.currentUser || isFirestoreQuotaError(error)) {
+        if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+        return;
+      }
+      try {
+        handleFirestoreError(error, OperationType.LIST, path);
+      } catch (err) {
+        console.warn(`Firestore analytics targets subscription notice on "${path}":`, err);
+      }
+    }
+  );
+}
+
+export async function saveAnalyticsTargetToFirestore(target: AnalyticsTarget): Promise<void> {
+  if (!db || !auth.currentUser || isDemoBusinessId(target.businessId) || isDemoRecordId(target.id)) {
+    return;
+  }
+  const path = `analytics_targets/${target.id}`;
+  const payload = sanitizeForFirestore({
+    id: target.id,
+    businessId: target.businessId,
+    locationId: target.locationId,
+    periodKey: target.periodKey,
+    revenueTarget: Math.max(0, Number(target.revenueTarget || 0)),
+    grossMarginTargetPct: Math.min(100, Math.max(0, Number(target.grossMarginTargetPct || 0))),
+    maxDiscountPct: Math.min(100, Math.max(0, Number(target.maxDiscountPct || 0))),
+    updatedAt: target.updatedAt || new Date().toISOString(),
+    updatedByUid: target.updatedByUid,
+    updatedByEmail: target.updatedByEmail,
+  });
+  try {
+    await setDoc(doc(db, 'analytics_targets', target.id), payload);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export function subscribeToAnalyticsSavedViews(
+  businessId: string,
+  onUpdate: (views: AnalyticsSavedView[]) => void
+): Unsubscribe {
+  if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
+    return () => {};
+  }
+  const path = 'analytics_saved_views';
+  const q = query(collection(db, path), where('businessId', '==', businessId), limit(100));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const items: AnalyticsSavedView[] = [];
+      snap.forEach((d) => items.push(d.data() as AnalyticsSavedView));
+      items.sort((a, b) => Number(b.isPinned) - Number(a.isPinned) || (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+      onUpdate(items);
+    },
+    (error) => {
+      if (!auth.currentUser || isFirestoreQuotaError(error)) {
+        if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+        return;
+      }
+      try {
+        handleFirestoreError(error, OperationType.LIST, path);
+      } catch (err) {
+        console.warn(`Firestore analytics saved views subscription notice on "${path}":`, err);
+      }
+    }
+  );
+}
+
+export async function saveAnalyticsSavedViewToFirestore(view: AnalyticsSavedView): Promise<void> {
+  if (!db || !auth.currentUser || isDemoBusinessId(view.businessId) || isDemoRecordId(view.id)) {
+    return;
+  }
+  const path = `analytics_saved_views/${view.id}`;
+  const payload = sanitizeForFirestore({
+    id: view.id,
+    businessId: view.businessId,
+    name: view.name.trim().slice(0, 80),
+    locationId: view.locationId,
+    preset: view.preset,
+    customStartIso: view.customStartIso,
+    customEndIso: view.customEndIso,
+    focusTab: view.focusTab,
+    chartMetric: view.chartMetric,
+    createdByUid: view.createdByUid,
+    isPinned: Boolean(view.isPinned),
+    createdAt: view.createdAt,
+    updatedAt: view.updatedAt || new Date().toISOString(),
+  });
+  try {
+    await setDoc(doc(db, 'analytics_saved_views', view.id), payload);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deleteAnalyticsSavedViewFromFirestore(viewId: string): Promise<void> {
+  if (!db || !auth.currentUser || isDemoRecordId(viewId)) return;
+  const path = `analytics_saved_views/${viewId}`;
+  try {
+    await deleteDoc(doc(db, 'analytics_saved_views', viewId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export type OutboxDispatchResult =
+  | { status: 'acked' }
+  | { status: 'skipped_offline_or_quota'; reason: string }
+  | { status: 'failed'; retryable: boolean; error: string; errorCode: string };
+
+/**
+ * Dispatches a single transactional Sync Outbox mutation to Firestore with
+ * strict sanitization, demo-tenant exclusion, cashier PIN masking, and quota guards.
+ */
+export async function flushOutboxMutationToFirestore(entry: {
+  businessId: string;
+  collectionName: string;
+  docId: string;
+  operation: 'upsert' | 'delete';
+  payload: Record<string, any>;
+}): Promise<OutboxDispatchResult> {
+  if (!db || !auth.currentUser) {
+    return { status: 'skipped_offline_or_quota', reason: 'Unauthenticated or offline' };
+  }
+  if (isDemoBusinessId(entry.businessId) || isDemoRecordId(entry.docId)) {
+    return { status: 'acked' };
+  }
+  if (isFirestoreQuotaCooldownActive()) {
+    return {
+      status: 'skipped_offline_or_quota',
+      reason: 'Firestore quota cooldown active',
+    };
+  }
+
+  const path = `${entry.collectionName}/${entry.docId}`;
+  try {
+    if (entry.operation === 'delete') {
+      await deleteDoc(doc(db, entry.collectionName, entry.docId));
+      return { status: 'acked' };
+    }
+
+    const rawPayload = { ...entry.payload };
+    if (entry.collectionName === 'transactions') {
+      rawPayload.syncedToCloud = true;
+      rawPayload.syncTimestamp = rawPayload.syncTimestamp || new Date().toISOString();
+    } else if (
+      entry.collectionName === 'products' ||
+      entry.collectionName === 'locations' ||
+      entry.collectionName === 'cashiers'
+    ) {
+      rawPayload.isPendingCloudSync = false;
+    }
+
+    if (entry.collectionName === 'cashiers') {
+      rawPayload.pin = '••••••••';
+    }
+
+    const cleanPayload = sanitizeForFirestore(rawPayload);
+    await setDoc(doc(db, entry.collectionName, entry.docId), cleanPayload, { merge: true });
+    return { status: 'acked' };
+  } catch (error: any) {
+    if (isFirestoreQuotaError(error)) {
+      markFirestoreQuotaExceeded();
+      return {
+        status: 'skipped_offline_or_quota',
+        reason: 'Firestore daily quota exhausted; cooled down for 5 minutes',
+      };
+    }
+
+    const code = String(error?.code || 'unknown');
+    const message = error instanceof Error ? error.message : String(error);
+    const nonRetryable =
+      code === 'permission-denied' ||
+      code === 'invalid-argument' ||
+      message.includes('Missing or insufficient permissions');
+
+    try {
+      handleFirestoreError(
+        error,
+        entry.operation === 'delete' ? OperationType.DELETE : OperationType.WRITE,
+        path
+      );
+    } catch (wrappedErr: any) {
+      return {
+        status: 'failed',
+        retryable: !nonRetryable,
+        error: wrappedErr?.message || message,
+        errorCode: code,
+      };
+    }
+
+    return {
+      status: 'failed',
+      retryable: !nonRetryable,
+      error: message,
+      errorCode: code,
+    };
+  }
+}

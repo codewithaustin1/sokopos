@@ -453,6 +453,74 @@
         "updatedAt": { "type": "string", "maxLength": 64 }
       },
       "required": ["reference", "provider", "status"]
+    },
+    "AnalyticsDailyRollup": {
+      "title": "AnalyticsDailyRollup",
+      "description": "Deterministic tenant daily P&L, COGS, margin, tender, and expense rollup snapshot scoped by businessId",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "businessId": { "type": "string", "maxLength": 128 },
+        "locationId": { "type": "string", "maxLength": 128 },
+        "locationName": { "type": "string", "maxLength": 160 },
+        "dateKey": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "maxLength": 10 },
+        "grossSales": { "type": "number" },
+        "refundsTotal": { "type": "number" },
+        "discountsTotal": { "type": "number" },
+        "netSales": { "type": "number" },
+        "taxTotal": { "type": "number" },
+        "cogsTotal": { "type": "number" },
+        "grossProfit": { "type": "number" },
+        "operatingExpenses": { "type": "number" },
+        "transactionCount": { "type": "number" },
+        "unitsSold": { "type": "number" },
+        "mpesaTotal": { "type": "number" },
+        "cashTotal": { "type": "number" },
+        "cardTotal": { "type": "number" },
+        "storeCreditTotal": { "type": "number" },
+        "uncostedRevenue": { "type": "number" },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "businessId", "locationId", "dateKey", "netSales", "cogsTotal", "grossProfit", "transactionCount", "updatedAt"]
+    },
+    "AnalyticsTarget": {
+      "title": "AnalyticsTarget",
+      "description": "Tenant monthly revenue, gross margin floor, and discount threshold target scoped by businessId and locationId",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "businessId": { "type": "string", "maxLength": 128 },
+        "locationId": { "type": "string", "maxLength": 128 },
+        "periodKey": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}$", "maxLength": 7 },
+        "revenueTarget": { "type": "number" },
+        "grossMarginTargetPct": { "type": "number" },
+        "maxDiscountPct": { "type": "number" },
+        "updatedAt": { "type": "string", "maxLength": 64 },
+        "updatedByUid": { "type": "string", "maxLength": 128 },
+        "updatedByEmail": { "type": "string", "maxLength": 160 }
+      },
+      "required": ["id", "businessId", "locationId", "periodKey", "revenueTarget", "grossMarginTargetPct", "maxDiscountPct", "updatedAt"]
+    },
+    "AnalyticsSavedView": {
+      "title": "AnalyticsSavedView",
+      "description": "Saved BI filter preset (location, date range, focus tab, chart metric) scoped by businessId",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "businessId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 80 },
+        "locationId": { "type": "string", "maxLength": 128 },
+        "preset": { "type": "string", "enum": ["today", "last_24h", "last_7d", "last_30d", "last_90d", "last_180d", "last_1y", "custom", "all"] },
+        "customStartIso": { "type": "string", "maxLength": 64 },
+        "customEndIso": { "type": "string", "maxLength": 64 },
+        "focusTab": { "type": "string", "enum": ["sku_margin", "category_pl", "ledger"] },
+        "chartMetric": { "type": "string", "enum": ["net_sales", "gross_profit", "margin_pct", "orders"] },
+        "createdByUid": { "type": "string", "maxLength": 128 },
+        "isPinned": { "type": "boolean" },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "businessId", "name", "locationId", "preset", "focusTab", "chartMetric", "isPinned", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -531,6 +599,18 @@
     "/payment_records/{recordId}": {
       "schema": "PaymentRecord",
       "description": "Server-side payment intents, Daraja STK Push callbacks, and Paystack webhook records"
+    },
+    "/analytics_daily_rollups/{rollupId}": {
+      "schema": "AnalyticsDailyRollup",
+      "description": "Tenant daily BI P&L and margin rollup snapshots scoped by businessId"
+    },
+    "/analytics_targets/{targetId}": {
+      "schema": "AnalyticsTarget",
+      "description": "Tenant monthly BI revenue and gross margin targets scoped by businessId"
+    },
+    "/analytics_saved_views/{viewId}": {
+      "schema": "AnalyticsSavedView",
+      "description": "Tenant saved BI filter presets scoped by businessId"
     }
   }
 }

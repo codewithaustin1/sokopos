@@ -3,27 +3,15 @@ import {
   Clock,
   CheckCircle2,
   AlertTriangle,
-  TrendingUp,
-  TrendingDown,
   Printer,
   Coins,
   Banknote,
-  DollarSign,
   Lock,
-  Unlock,
-  FileSpreadsheet,
   History,
-  UserCheck,
   Calculator,
-  PlusCircle,
   ArrowDownRight,
   ArrowUpRight,
   X,
-  ChevronRight,
-  Info,
-  Calendar,
-  Building2,
-  Users,
   Search,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
@@ -82,6 +70,7 @@ export const ShiftManagementView: React.FC = () => {
   const [dropReason, setDropReason] = useState<string>('Mid-day cash safe drop');
   const [dropAuthorizedBy, setDropAuthorizedBy] = useState<string>('Store Manager');
   const [dropEnvelope, setDropEnvelope] = useState<string>('');
+  const [dropWarningConfirmed, setDropWarningConfirmed] = useState<boolean>(false);
 
   // Petty Cash / Drawer Expense Modal State
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState<boolean>(false);
@@ -259,15 +248,19 @@ export const ShiftManagementView: React.FC = () => {
       return;
     }
 
-    if (liveStats && amount > liveStats.expectedCash) {
-      if (!confirm(`Warning: Drop amount (${currency} ${amount}) exceeds currently expected drawer cash (${currency} ${liveStats.expectedCash.toFixed(2)}). Continue?`)) {
-        return;
-      }
+    if (liveStats && amount > liveStats.expectedCash && !dropWarningConfirmed) {
+      setDropWarningConfirmed(true);
+      showToast(
+        `Drop amount exceeds expected drawer cash (${currency} ${liveStats.expectedCash.toFixed(2)}). Click Confirm again to proceed.`,
+        'info'
+      );
+      return;
     }
 
     recordCashDrop(amount, dropReason, dropAuthorizedBy, dropEnvelope);
     setDropAmount('');
     setDropEnvelope('');
+    setDropWarningConfirmed(false);
     setIsDropModalOpen(false);
   };
 
@@ -391,42 +384,40 @@ export const ShiftManagementView: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col h-full bg-slate-50 overflow-y-auto min-w-0">
       {/* View Header */}
-      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0 shadow-xs">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              Shift & Till Management
-            </h1>
-            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
-              Session Lifecycle
-            </span>
+      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+            Shift & Till Management
+          </h1>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mt-0.5">
+            <span>{currentBusiness?.name || 'Active Store'}</span>
+            <span aria-hidden="true">·</span>
+            <span>{currentLocation.name}</span>
+            <span aria-hidden="true">·</span>
+            <span>{currentLocation.terminalName}</span>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Drawer float declarations, mid-shift safe drops, petty cash expenses, and fiscal end-of-shift reconciliation.
-          </p>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0 self-start sm:self-auto">
+        {/* Segmented Navigation Tabs */}
+        <div className="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 shrink-0 self-start sm:self-auto">
           <button
+            type="button"
             onClick={() => setActiveTab('current')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer whitespace-nowrap shrink-0 min-h-[36px] ${
               activeTab === 'current'
-                ? 'bg-white text-blue-600 shadow-xs'
+                ? 'bg-white text-slate-900 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <Clock className="w-3.5 h-3.5" />
             <span>Active Session</span>
-            {activeShift && (
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-0.5" />
-            )}
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('history')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer whitespace-nowrap shrink-0 min-h-[36px] ${
               activeTab === 'history'
-                ? 'bg-white text-blue-600 shadow-xs'
+                ? 'bg-white text-slate-900 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -553,162 +544,194 @@ export const ShiftManagementView: React.FC = () => {
                 )}
               </div>
             ) : (
-              /* ================= ACTIVE SHIFT DASHBOARD HUD ================= */
+              /* ================= ACTIVE SHIFT SUMMARY & LEDGERS ================= */
               <div className="space-y-6">
-                {/* Active Shift Hero Card */}
-                <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200">
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-100">
-                    <div className="flex items-center gap-3.5">
-                      <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 flex items-center justify-center shrink-0">
-                        <Lock className="w-6 h-6 text-emerald-600" />
+                {/* Current Active Shift Summary Card */}
+                <section
+                  aria-label="Current Active Shift Summary"
+                  className="bg-white rounded-2xl border border-slate-200 overflow-hidden"
+                >
+                  {/* Summary Header & Quick Actions */}
+                  <div className="px-5 py-5 sm:px-6 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700">
+                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                        <span>Active Shift</span>
+                        <span aria-hidden="true" className="text-slate-300">·</span>
+                        <span className="text-slate-500 font-normal tabular-nums">
+                          Opened {new Date(activeShift.openedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
                       </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
-                            {activeShift.shiftNumber}
-                          </h2>
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-                            Drawer Active
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          Cashier: <strong className="text-slate-800">{activeShift.cashierName}</strong> • {activeShift.locationName} ({activeShift.terminalName})
-                        </p>
+                      <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight mt-1 tabular-nums">
+                        Shift #{activeShift.shiftNumber}
+                      </h2>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500 mt-1">
+                        <span>
+                          Operator: <strong className="font-semibold text-slate-800">{activeShift.cashierName}</strong>
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span>{activeShift.locationName}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>{activeShift.terminalName}</span>
                       </div>
                     </div>
 
-                    {/* Operational Action Buttons */}
-                    <div className="flex items-center gap-2 flex-wrap">
+                    {/* Quick-Action Buttons */}
+                    <div className="flex items-center gap-2 flex-wrap shrink-0">
                       <button
-                        onClick={() => setIsDropModalOpen(true)}
-                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition cursor-pointer"
+                        type="button"
+                        onClick={() => {
+                          setDropWarningConfirmed(false);
+                          setIsDropModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] rounded-xl text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 transition cursor-pointer whitespace-nowrap shrink-0"
                         title="Transfer excess cash to drop safe"
                       >
                         <ArrowDownRight className="w-4 h-4 text-amber-600" />
-                        <span>Cash Drop (Safe)</span>
+                        <span>Cash Drop</span>
                       </button>
 
                       <button
+                        type="button"
                         onClick={() => setIsExpenseModalOpen(true)}
-                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-rose-900 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition cursor-pointer"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] rounded-xl text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 transition cursor-pointer whitespace-nowrap shrink-0"
                         title="Record petty cash paid out from till"
                       >
                         <ArrowUpRight className="w-4 h-4 text-rose-600" />
-                        <span>Pay Out / Expense</span>
+                        <span>Add Expense</span>
                       </button>
 
                       <button
+                        type="button"
                         onClick={handleOpenMidShiftSlip}
-                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] rounded-xl text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 transition cursor-pointer whitespace-nowrap shrink-0"
                         title="Print mid-shift X-Report without closing drawer"
                       >
                         <Printer className="w-4 h-4 text-slate-600" />
-                        <span>X-Report Audit</span>
+                        <span>X-Report</span>
                       </button>
 
                       <button
+                        type="button"
                         onClick={handleStartCloseShift}
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black text-white bg-slate-900 hover:bg-black shadow-xs transition cursor-pointer"
-                        title="Reconcile cash and close shift"
+                        className="inline-flex items-center gap-2 px-5 py-2 min-h-[40px] rounded-xl text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 active:bg-black transition cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-blue-600"
+                        title="Count drawer cash and close active shift"
                       >
-                        <Lock className="w-4 h-4 text-amber-400" />
-                        <span>End Shift & Reconcile</span>
+                        <Lock className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Close Shift</span>
                       </button>
                     </div>
                   </div>
 
-                  {/* 4 Hero Metric Cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-5">
-                    {/* Expected Drawer Cash (HERO) */}
-                    <div className="bg-linear-to-br from-blue-600 to-indigo-700 text-white p-4 sm:p-5 rounded-2xl shadow-sm relative overflow-hidden">
-                      <div className="text-[11px] font-bold uppercase tracking-wider text-blue-200">
-                        Expected Drawer Cash
+                  {/* Primary 4-Column Financial Summary Strip */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+                    {/* Total Sales */}
+                    <div className="p-5 sm:p-6">
+                      <div className="text-xs font-medium text-slate-500">
+                        Total Sales
                       </div>
-                      <div className="text-2xl sm:text-3xl font-black mt-1 tracking-tight">
-                        {currency} {liveStats?.expectedCash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <div className="text-2xl sm:text-3xl font-bold text-slate-900 mt-1.5 font-mono tabular-nums tracking-tight">
+                        {currency} {(liveStats?.totalSales || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
-                      <div className="text-[11px] text-blue-100 mt-2 flex items-center justify-between">
-                        <span>Float: {currency} {activeShift.openingFloat.toLocaleString()}</span>
-                        <span>Net: {liveStats && liveStats.cashSales - liveStats.cashRefunds >= 0 ? '+' : ''}{liveStats && (liveStats.cashSales - liveStats.cashRefunds).toLocaleString()}</span>
+                      <div className="text-xs text-slate-500 mt-2 tabular-nums">
+                        {liveStats?.transactionCount || 0} {liveStats?.transactionCount === 1 ? 'transaction' : 'transactions'} completed
                       </div>
                     </div>
 
-                    {/* Cash Sales Inflow */}
-                    <div className="bg-slate-50 border border-slate-200 p-4 sm:p-5 rounded-2xl">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                          Cash Counter Sales Inflows
-                        </span>
-                        <TrendingUp className="w-4 h-4 text-emerald-600" />
+                    {/* Cash Collected */}
+                    <div className="p-5 sm:p-6">
+                      <div className="text-xs font-medium text-slate-500">
+                        Cash Collected
                       </div>
-                      <div className="text-xl sm:text-2xl font-black text-slate-900 mt-1">
-                        +{currency} {liveStats?.cashSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <div className="text-2xl sm:text-3xl font-bold text-emerald-700 mt-1.5 font-mono tabular-nums tracking-tight">
+                        {currency} {(liveStats?.cashSales || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
-                      <div className="text-[11px] text-slate-500 mt-2">
+                      <div className="text-xs mt-2 tabular-nums">
                         {liveStats && liveStats.cashRefunds > 0 ? (
-                          <span className="text-rose-600 font-bold">
-                            Returns: -{currency} {liveStats.cashRefunds.toLocaleString()}
+                          <span className="text-rose-600 font-medium">
+                            Cash refunds: -{currency} {liveStats.cashRefunds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         ) : (
-                          <span>{liveStats?.transactionCount || 0} counter transactions completed</span>
+                          <span className="text-slate-500">Gross cash tendered in shift</span>
                         )}
                       </div>
                     </div>
 
-                    {/* Safe Drops & Expenses Outflow */}
-                    <div className="bg-slate-50 border border-slate-200 p-4 sm:p-5 rounded-2xl">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                          Drawer Deductions
-                        </span>
-                        <TrendingDown className="w-4 h-4 text-amber-600" />
+                    {/* Expected in Drawer */}
+                    <div className="p-5 sm:p-6">
+                      <div className="text-xs font-medium text-slate-500">
+                        Expected in Drawer
                       </div>
-                      <div className="text-xl sm:text-2xl font-black text-slate-900 mt-1">
-                        -{currency} {((liveStats?.totalDrops || 0) + (liveStats?.totalExpenses || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <div className="text-2xl sm:text-3xl font-bold text-slate-900 mt-1.5 font-mono tabular-nums tracking-tight">
+                        {currency} {(liveStats?.expectedCash || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
-                      <div className="text-[11px] text-slate-500 mt-2 flex items-center justify-between">
-                        <span>Drops: -{currency} {liveStats?.totalDrops.toLocaleString()}</span>
-                        <span>Exp: -{currency} {liveStats?.totalExpenses.toLocaleString()}</span>
+                      <div className="text-xs text-slate-500 mt-2 tabular-nums">
+                        Opening float: {currency} {activeShift.openingFloat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
                     </div>
 
-                    {/* Digital Volume (M-Pesa + Card) */}
-                    <div className="bg-slate-50 border border-slate-200 p-4 sm:p-5 rounded-2xl">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                          Digital Non-Cash Tender
-                        </span>
-                        <DollarSign className="w-4 h-4 text-blue-600" />
+                    {/* Digital / Non-Cash Tenders */}
+                    <div className="p-5 sm:p-6">
+                      <div className="text-xs font-medium text-slate-500">
+                        M-Pesa & Card Sales
                       </div>
-                      <div className="text-xl sm:text-2xl font-black text-slate-900 mt-1">
+                      <div className="text-2xl sm:text-3xl font-bold text-slate-900 mt-1.5 font-mono tabular-nums tracking-tight">
                         {currency} {((liveStats?.mpesaSales || 0) + (liveStats?.cardSales || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
-                      <div className="text-[11px] text-slate-500 mt-2 flex items-center justify-between">
-                        <span>M-Pesa: {currency} {liveStats?.mpesaSales.toLocaleString()}</span>
-                        <span>Card: {currency} {liveStats?.cardSales.toLocaleString()}</span>
+                      <div className="text-xs text-slate-500 mt-2 flex items-center gap-2 tabular-nums">
+                        <span>M-Pesa {currency} {(liveStats?.mpesaSales || 0).toLocaleString()}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>Card {currency} {(liveStats?.cardSales || 0).toLocaleString()}</span>
                       </div>
                     </div>
                   </div>
-                </div>
 
-                {/* Activity Ledgers Grid: Drops, Expenses, Sales */}
+                  {/* Drawer Reconciliation Formula Summary Strip */}
+                  <div className="bg-slate-50/80 border-t border-slate-100 px-5 py-3 sm:px-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-xs text-slate-600 tabular-nums">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span>
+                        Float: <strong className="font-mono text-slate-800">{currency} {activeShift.openingFloat.toLocaleString()}</strong>
+                      </span>
+                      <span aria-hidden="true" className="text-slate-300">+</span>
+                      <span>
+                        Cash: <strong className="font-mono text-emerald-700">{currency} {(liveStats?.cashSales || 0).toLocaleString()}</strong>
+                      </span>
+                      <span aria-hidden="true" className="text-slate-300">-</span>
+                      <span>
+                        Drops: <strong className="font-mono text-slate-800">{currency} {(liveStats?.totalDrops || 0).toLocaleString()}</strong>
+                      </span>
+                      <span aria-hidden="true" className="text-slate-300">-</span>
+                      <span>
+                        Expenses: <strong className="font-mono text-slate-800">{currency} {(liveStats?.totalExpenses || 0).toLocaleString()}</strong>
+                      </span>
+                      {liveStats && liveStats.cashRefunds > 0 && (
+                        <>
+                          <span aria-hidden="true" className="text-slate-300">-</span>
+                          <span>
+                            Refunds: <strong className="font-mono text-rose-700">{currency} {liveStats.cashRefunds.toLocaleString()}</strong>
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    <div className="text-slate-500">
+                      {activeShift.cashDrops.length} {activeShift.cashDrops.length === 1 ? 'drop' : 'drops'} · {activeShift.expenses.length} {activeShift.expenses.length === 1 ? 'expense' : 'expenses'}
+                    </div>
+                  </div>
+                </section>
+
+                {/* Activity Ledgers Grid: Expenses & Cash Drops */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {/* Petty Cash Expenses List */}
-                  <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-200 flex flex-col">
+                  <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 flex flex-col">
                     <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
-                          <Coins className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <h3 className="text-sm font-black text-slate-900">Petty Cash Expenses</h3>
-                          <p className="text-[11px] text-slate-400">Paid out from active drawer</p>
-                        </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">Petty Cash Expenses</h3>
+                        <p className="text-xs text-slate-500 mt-0.5">Paid out directly from active till</p>
                       </div>
                       <button
+                        type="button"
                         onClick={() => setIsExpenseModalOpen(true)}
-                        className="text-xs font-bold text-rose-600 hover:text-rose-700 cursor-pointer"
+                        className="text-xs font-semibold text-rose-700 hover:text-rose-800 px-2.5 py-1.5 rounded-lg hover:bg-rose-50 transition cursor-pointer whitespace-nowrap shrink-0"
                       >
                         + Add Expense
                       </button>
@@ -716,24 +739,34 @@ export const ShiftManagementView: React.FC = () => {
 
                     <div className="flex-1 overflow-y-auto max-h-64 divide-y divide-slate-100 mt-2">
                       {activeShift.expenses.length === 0 ? (
-                        <div className="py-8 text-center text-slate-400 text-xs">
-                          No petty cash expenses paid from drawer yet.
+                        <div className="py-8 text-center space-y-2.5">
+                          <p className="text-xs text-slate-500">
+                            No petty cash expenses recorded for this shift yet.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setIsExpenseModalOpen(true)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer"
+                          >
+                            <Coins className="w-3.5 h-3.5 text-rose-600" />
+                            <span>Log First Expense</span>
+                          </button>
                         </div>
                       ) : (
                         activeShift.expenses.map((exp) => (
-                          <div key={exp.id} className="py-2.5 flex items-center justify-between gap-3 text-xs">
+                          <div key={exp.id} className="py-3 flex items-center justify-between gap-3 text-xs">
                             <div className="min-w-0">
-                              <div className="font-bold text-slate-800 truncate">{exp.description}</div>
-                              <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5">
-                                <span className="uppercase font-semibold text-rose-600 bg-rose-50 px-1.5 py-0.2 rounded">
-                                  {exp.category}
-                                </span>
-                                <span>• Payee: {exp.payee}</span>
-                                <span>• {new Date(exp.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                              <div className="font-semibold text-slate-800 truncate">{exp.description}</div>
+                              <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-1.5 mt-0.5">
+                                <span className="capitalize font-medium text-rose-700">{exp.category.replace('_', ' ')}</span>
+                                <span aria-hidden="true">·</span>
+                                <span>Payee: {exp.payee}</span>
+                                <span aria-hidden="true">·</span>
+                                <span className="tabular-nums">{new Date(exp.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                               </div>
                             </div>
-                            <div className="font-mono font-black text-rose-700 shrink-0">
-                              -{currency} {exp.amount.toLocaleString()}
+                            <div className="font-mono tabular-nums font-bold text-rose-700 shrink-0">
+                              -{currency} {exp.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </div>
                           </div>
                         ))
@@ -742,43 +775,61 @@ export const ShiftManagementView: React.FC = () => {
                   </div>
 
                   {/* Mid-Shift Cash Drops to Safe List */}
-                  <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-200 flex flex-col">
+                  <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 flex flex-col">
                     <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
-                          <Banknote className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <h3 className="text-sm font-black text-slate-900">Safe Cash Drops (Skims)</h3>
-                          <p className="text-[11px] text-slate-400">Cash removed to back-office safe</p>
-                        </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">Safe Cash Drops</h3>
+                        <p className="text-xs text-slate-500 mt-0.5">Excess till cash skimmed to safe</p>
                       </div>
                       <button
-                        onClick={() => setIsDropModalOpen(true)}
-                        className="text-xs font-bold text-amber-700 hover:text-amber-800 cursor-pointer"
+                        type="button"
+                        onClick={() => {
+                          setDropWarningConfirmed(false);
+                          setIsDropModalOpen(true);
+                        }}
+                        className="text-xs font-semibold text-amber-700 hover:text-amber-800 px-2.5 py-1.5 rounded-lg hover:bg-amber-50 transition cursor-pointer whitespace-nowrap shrink-0"
                       >
-                        + Add Safe Drop
+                        + Add Cash Drop
                       </button>
                     </div>
 
                     <div className="flex-1 overflow-y-auto max-h-64 divide-y divide-slate-100 mt-2">
                       {activeShift.cashDrops.length === 0 ? (
-                        <div className="py-8 text-center text-slate-400 text-xs">
-                          No cash drops recorded for this session.
+                        <div className="py-8 text-center space-y-2.5">
+                          <p className="text-xs text-slate-500">
+                            No mid-shift cash drops recorded for this session.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDropWarningConfirmed(false);
+                              setIsDropModalOpen(true);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer"
+                          >
+                            <Banknote className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Record Cash Drop</span>
+                          </button>
                         </div>
                       ) : (
                         activeShift.cashDrops.map((drop) => (
-                          <div key={drop.id} className="py-2.5 flex items-center justify-between gap-3 text-xs">
+                          <div key={drop.id} className="py-3 flex items-center justify-between gap-3 text-xs">
                             <div className="min-w-0">
-                              <div className="font-bold text-slate-800 truncate">{drop.reason}</div>
-                              <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5">
+                              <div className="font-semibold text-slate-800 truncate">{drop.reason}</div>
+                              <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-1.5 mt-0.5">
                                 <span>Auth: {drop.authorizedBy}</span>
-                                {drop.envelopeNumber && <span>• Env #{drop.envelopeNumber}</span>}
-                                <span>• {new Date(drop.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                {drop.envelopeNumber && (
+                                  <>
+                                    <span aria-hidden="true">·</span>
+                                    <span>Env #{drop.envelopeNumber}</span>
+                                  </>
+                                )}
+                                <span aria-hidden="true">·</span>
+                                <span className="tabular-nums">{new Date(drop.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                               </div>
                             </div>
-                            <div className="font-mono font-black text-amber-700 shrink-0">
-                              -{currency} {drop.amount.toLocaleString()}
+                            <div className="font-mono tabular-nums font-bold text-amber-700 shrink-0">
+                              -{currency} {drop.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </div>
                           </div>
                         ))
@@ -791,10 +842,10 @@ export const ShiftManagementView: React.FC = () => {
           </>
         ) : (
           /* ================= SHIFT AUDIT HISTORY TAB ================= */
-          <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 space-y-4">
+          <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
                   Past Shift Reconciliations & Z-Reports
                 </h2>
                 <p className="text-xs text-slate-500">
@@ -816,93 +867,98 @@ export const ShiftManagementView: React.FC = () => {
             </div>
 
             {/* Shifts Table */}
-            <div className="overflow-x-auto rounded-2xl border border-slate-200">
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                <thead className="bg-slate-50 text-[11px] font-semibold text-slate-600 border-b border-slate-200">
                   <tr>
                     <th className="px-4 py-3">Shift ID</th>
                     <th className="px-4 py-3">Cashier</th>
                     <th className="px-4 py-3">Started / Closed</th>
                     <th className="px-4 py-3 text-right">Opening Float</th>
+                    <th className="px-4 py-3 text-right">Total Sales</th>
                     <th className="px-4 py-3 text-right">Cash Sales</th>
-                    <th className="px-4 py-3 text-right">Expenses / Drops</th>
                     <th className="px-4 py-3 text-right">Counted Cash</th>
-                    <th className="px-4 py-3 text-center">Variance</th>
+                    <th className="px-4 py-3 text-right">Variance</th>
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredHistory.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="py-8 text-center text-slate-400">
-                        No shift records found matching query.
+                      <td colSpan={9} className="py-10 text-center text-slate-500">
+                        {historySearchQuery.trim()
+                          ? 'No shift records match your search query.'
+                          : 'Completed shifts and Z-reports will appear here after your first shift is closed.'}
                       </td>
                     </tr>
                   ) : (
                     filteredHistory.map((s) => {
-                      const totalExpenses = s.expenses.reduce((a, b) => a + b.amount, 0);
-                      const totalDrops = s.cashDrops.reduce((a, b) => a + b.amount, 0);
                       const variance = s.cashVariance !== undefined ? s.cashVariance : 0;
                       const isBalanced = Math.abs(variance) < 0.01;
+                      const totalSales =
+                        typeof s.totalSales === 'number'
+                          ? s.totalSales
+                          : Number(s.cashSales || 0) + Number(s.mpesaSales || 0) + Number(s.cardSales || 0);
 
                       return (
                         <tr key={s.id} className="hover:bg-slate-50/70 transition">
-                          <td className="px-4 py-3 font-bold text-slate-900 whitespace-nowrap">
-                            <div className="flex items-center gap-1.5">
+                          <td className="px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5 tabular-nums">
                               <span>{s.shiftNumber}</span>
-                              {s.status === 'open' && (
-                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Active Open" />
-                              )}
                               {s.status === 'interrupted' && (
-                                <span className="text-[9px] font-black bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded" title="Interrupted - Attribution Preserved">
-                                  Interrupted
+                                <span className="text-[11px] font-medium text-amber-700" title="Interrupted - Attribution Preserved">
+                                  · Interrupted
                                 </span>
                               )}
                             </div>
-                            <span className="text-[10px] text-slate-400 block">{s.terminalName}</span>
+                            <span className="text-[11px] font-normal text-slate-500 block">{s.terminalName}</span>
                           </td>
                           <td className="px-4 py-3 font-medium text-slate-800">
                             {s.cashierName}
                           </td>
-                          <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
-                            <div>{new Date(s.openedAt).toLocaleDateString()} {new Date(s.openedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                            <div className="text-[10px] text-slate-400">
+                          <td className="px-4 py-3 text-slate-600 whitespace-nowrap tabular-nums">
+                            <div>
+                              {new Date(s.openedAt).toLocaleDateString()}{' '}
+                              {new Date(s.openedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                            <div className="text-[11px] text-slate-400">
                               {s.closedAt ? new Date(s.closedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Still Open'}
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-right font-mono text-slate-700">
-                            {currency} {s.openingFloat.toLocaleString()}
+                          <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-700">
+                            {currency} {s.openingFloat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
-                          <td className="px-4 py-3 text-right font-mono font-bold text-emerald-700">
-                            +{currency} {s.cashSales.toLocaleString()}
+                          <td className="px-4 py-3 text-right font-mono tabular-nums font-semibold text-slate-900">
+                            {currency} {totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
-                          <td className="px-4 py-3 text-right font-mono text-slate-500 text-[11px]">
-                            {totalExpenses + totalDrops > 0 ? `-${currency} ${(totalExpenses + totalDrops).toLocaleString()}` : '0.00'}
+                          <td className="px-4 py-3 text-right font-mono tabular-nums font-semibold text-emerald-700">
+                            {currency} {s.cashSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
-                          <td className="px-4 py-3 text-right font-mono font-bold text-slate-900">
-                            {currency} {(s.closingCountedCash || 0).toLocaleString()}
+                          <td className="px-4 py-3 text-right font-mono tabular-nums font-semibold text-slate-900">
+                            {currency} {(s.closingCountedCash || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
-                          <td className="px-4 py-3 text-center">
-                            <span
-                              className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black font-mono ${
-                                isBalanced
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : variance < 0
-                                  ? 'bg-rose-100 text-rose-800'
-                                  : 'bg-blue-100 text-blue-800'
-                              }`}
-                            >
-                              {isBalanced ? 'Balanced' : `${variance > 0 ? '+' : ''}${variance.toFixed(2)}`}
-                            </span>
+                          <td className="px-4 py-3 text-right font-mono tabular-nums whitespace-nowrap">
+                            {isBalanced ? (
+                              <span className="inline-flex items-center gap-1 font-semibold text-emerald-700">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Balanced</span>
+                              </span>
+                            ) : (
+                              <span className={`font-semibold ${variance < 0 ? 'text-rose-700' : 'text-blue-700'}`}>
+                                {variance > 0 ? '+' : ''}
+                                {currency} {variance.toFixed(2)}
+                              </span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-right">
                             <button
+                              type="button"
                               onClick={() => {
                                 setSelectedSlipShift(s);
                                 setIsMidShiftAuditSlip(s.status === 'open');
                                 setIsSlipModalOpen(true);
                               }}
-                              className="px-2.5 py-1 text-xs font-bold text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                              className="px-2.5 py-1 text-xs font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition cursor-pointer whitespace-nowrap"
                             >
                               View Slip
                             </button>
@@ -928,7 +984,11 @@ export const ShiftManagementView: React.FC = () => {
                 <h3 className="text-sm font-black tracking-tight">Record Safe Cash Drop (Skim)</h3>
               </div>
               <button
-                onClick={() => setIsDropModalOpen(false)}
+                type="button"
+                onClick={() => {
+                  setDropWarningConfirmed(false);
+                  setIsDropModalOpen(false);
+                }}
                 className="p-1 text-white/80 hover:text-white rounded-lg hover:bg-amber-700 transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
@@ -954,7 +1014,10 @@ export const ShiftManagementView: React.FC = () => {
                     step="1"
                     required
                     value={dropAmount}
-                    onChange={(e) => setDropAmount(e.target.value)}
+                    onChange={(e) => {
+                      setDropAmount(e.target.value);
+                      setDropWarningConfirmed(false);
+                    }}
                     placeholder="10000"
                     className="w-full pl-12 pr-4 py-2.5 bg-white border border-slate-300 rounded-xl text-base font-black text-slate-900 focus:outline-hidden focus:border-amber-600"
                   />
@@ -998,10 +1061,24 @@ export const ShiftManagementView: React.FC = () => {
                 </div>
               </div>
 
+              {dropWarningConfirmed && liveStats && (
+                <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <span>
+                    Drop exceeds expected drawer cash ({currency}{' '}
+                    {liveStats.expectedCash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}). Click{' '}
+                    <strong>Confirm Drop &amp; Log Voucher</strong> again to proceed.
+                  </span>
+                </div>
+              )}
+
               <div className="pt-2 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsDropModalOpen(false)}
+                  onClick={() => {
+                    setDropWarningConfirmed(false);
+                    setIsDropModalOpen(false);
+                  }}
                   className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
                 >
                   Cancel

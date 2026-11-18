@@ -207,36 +207,108 @@ export async function updateAffiliateRateOrStatus(params: {
   }
 }
 
-export async function requestLoginOtp(email: string): Promise<{ success: boolean; sandboxOtp?: string; error?: string }> {
+export interface EmailOtpCapabilities {
+  emailProviderConfigured: boolean;
+  customTokenConfigured: boolean;
+  otpDigits: number;
+  ttlSeconds: number;
+  resendCooldownSeconds: number;
+}
+
+export type EmailOtpPurpose = 'passwordless_login' | 'step_up_2fa';
+
+export async function fetchEmailOtpCapabilities(): Promise<EmailOtpCapabilities | null> {
+  try {
+    const resp = await fetch('/api/auth/otp/capabilities', { method: 'GET' });
+    if (!resp.ok) return null;
+    const data = await resp.json().catch(() => null);
+    if (!data) return null;
+    return {
+      emailProviderConfigured: Boolean(data.emailProviderConfigured),
+      customTokenConfigured: Boolean(data.customTokenConfigured),
+      otpDigits: Number(data.otpDigits) || 6,
+      ttlSeconds: Number(data.ttlSeconds) || 600,
+      resendCooldownSeconds: Number(data.resendCooldownSeconds) || 60,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function requestLoginOtp(
+  email: string,
+  purpose: EmailOtpPurpose = 'passwordless_login'
+): Promise<{
+  success: boolean;
+  expiresInSeconds?: number;
+  resendCooldownSeconds?: number;
+  retryAfterSeconds?: number;
+  code?: string;
+  error?: string;
+}> {
   try {
     const resp = await fetch('/api/auth/otp/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, purpose }),
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
-      return { success: false, error: data?.error || 'Failed to send OTP.' };
+      return {
+        success: false,
+        code: data?.code,
+        retryAfterSeconds: typeof data?.retryAfterSeconds === 'number' ? data.retryAfterSeconds : undefined,
+        error: data?.error || 'Failed to send verification code.',
+      };
     }
-    return { success: true, sandboxOtp: data.sandboxOtp };
+    return {
+      success: true,
+      expiresInSeconds: typeof data?.expiresInSeconds === 'number' ? data.expiresInSeconds : 600,
+      resendCooldownSeconds: typeof data?.resendCooldownSeconds === 'number' ? data.resendCooldownSeconds : 60,
+    };
   } catch (err: any) {
-    return { success: false, error: err?.message || 'Network error sending OTP.' };
+    return { success: false, error: err?.message || 'Network error sending verification code.' };
   }
 }
 
-export async function verifyLoginOtp(email: string, otp: string): Promise<{ success: boolean; error?: string }> {
+export async function verifyLoginOtp(
+  email: string,
+  otp: string,
+  purpose: EmailOtpPurpose = 'passwordless_login'
+): Promise<{
+  success: boolean;
+  verified?: boolean;
+  customToken?: string;
+  uid?: string;
+  email?: string;
+  remainingAttempts?: number;
+  code?: string;
+  error?: string;
+}> {
   try {
     const resp = await fetch('/api/auth/otp/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, otp }),
+      body: JSON.stringify({ email, otp, purpose }),
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
-      return { success: false, error: data?.error || 'Invalid OTP.' };
+      return {
+        success: false,
+        code: data?.code,
+        remainingAttempts: typeof data?.remainingAttempts === 'number' ? data.remainingAttempts : undefined,
+        error: data?.error || 'Invalid verification code.',
+      };
     }
-    return { success: true };
+    return {
+      success: true,
+      verified: Boolean(data?.verified),
+      customToken: typeof data?.customToken === 'string' ? data.customToken : undefined,
+      uid: typeof data?.uid === 'string' ? data.uid : undefined,
+      email: typeof data?.email === 'string' ? data.email : undefined,
+    };
   } catch (err: any) {
-    return { success: false, error: err?.message || 'Network error verifying OTP.' };
+    return { success: false, error: err?.message || 'Network error verifying code.' };
   }
 }
+
