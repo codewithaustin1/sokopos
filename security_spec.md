@@ -8,7 +8,7 @@
 ---
 
 ## Core Security Invariant
-All tenant data access across core collections (`products`, `categories`, `locations`, `cashiers`, `transactions`, `customers`, `suppliers`, `stock_transfers`, `sync_logs`, `purged_sales_backups`, `analytics_daily_rollups`, `analytics_targets`, `analytics_saved_views`) must enforce verified tenant membership or ownership on **both** single-document reads (`get`), queries (`list`), creates, updates, and deletes:
+All tenant data access across core collections (`products`, `categories`, `locations`, `cashiers`, `transactions`, `customers`, `suppliers`, `stock_transfers`, `sync_logs`, `purged_sales_backups`) must enforce verified tenant membership or ownership on **both** single-document reads (`get`), queries (`list`), creates, updates, and deletes:
 
 ```javascript
 hasTenantAccess(resource.data.businessId) // isEmailVerified() && (isSuperAdmin() || tokenBusinessId() == bizId || isOwnerOf(bizId) || isMemberOf(bizId))

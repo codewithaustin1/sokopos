@@ -354,7 +354,6 @@ export interface CartItem {
   authorizingSupervisorRole?: string;
   performingOperatorId?: string;
   performingOperatorName?: string;
-  unitCost?: number; // Snapshot of product.buyingPrice at time of sale
   taxRate: number;
 }
 

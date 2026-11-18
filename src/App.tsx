@@ -734,13 +734,7 @@ function PosAppContent() {
             )}
             {currentTab === 'inventory' && <InventoryView />}
             {currentTab === 'suppliers' && <SupplierManagementView />}
-            {currentTab === 'analytics' && (
-              <AnalyticsView
-                onNavigateToReports={() => handleSetCurrentTab('reports')}
-                onNavigateToInventory={() => handleSetCurrentTab('inventory')}
-                onNavigateToRegister={() => handleSetCurrentTab('register')}
-              />
-            )}
+            {currentTab === 'analytics' && <AnalyticsView onNavigateToReports={() => handleSetCurrentTab('reports')} />}
             {currentTab === 'reports' && <ReportsView />}
             {currentTab === 'cloud-sync' && <CloudSyncView />}
             {currentTab === 'staff' && <StaffManagementView />}

@@ -87,7 +87,6 @@ import {
   googleProvider,
   signInWithPopup,
   signInWithEmailAndPassword,
-  signInWithCustomToken,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
   sendEmailVerification,
@@ -155,56 +154,7 @@ import {
   subscribeToBusinessDocument,
   subscribeToPaymentRecord,
   PaymentRecordSnapshot,
-  subscribeToAnalyticsRollups,
-  upsertAnalyticsDailyRollupsBatch,
-  subscribeToAnalyticsTargets,
-  saveAnalyticsTargetToFirestore,
-  subscribeToAnalyticsSavedViews,
-  saveAnalyticsSavedViewToFirestore,
-  deleteAnalyticsSavedViewFromFirestore,
-  flushOutboxMutationToFirestore,
-  isFirestoreQuotaCooldownActive,
 } from '../lib/firestoreService';
-import {
-  AnalyticsDailyRollup,
-  AnalyticsTarget,
-  AnalyticsSavedView,
-  BiChartMetric,
-  BiFocusTab,
-  TimeRangePreset,
-} from '../types/reporting';
-import {
-  OutboxMutationEntry,
-  OutboxCollectionName,
-  OutboxOperation,
-  OpfsSnapshotManifest,
-  StorageQuotaTelemetry,
-} from '../types/storage';
-import {
-  hydrateTerminalDatabase,
-  syncNormalizedStoreRecords,
-  saveCollectionRecords,
-  saveLargeKvAsset,
-  clearAllLargeBrandingKv,
-  putEntityAndEnqueueOutbox,
-  enqueueOutboxMutations,
-  removeOutboxEntries,
-  getAllOutboxEntries,
-  buildOutboxEntry,
-  estimateBrowserStorageQuota,
-} from '../lib/localTerminalDb';
-import {
-  flushSyncOutbox,
-  resetOutboxEntriesForImmediateRetry,
-} from '../lib/syncOutboxWorker';
-import {
-  createOpfsBinarySnapshot,
-  verifyOpfsSnapshot,
-  downloadOpfsSnapshotFile,
-  exportFullStoreArchive,
-  isOpfsSupported,
-} from '../lib/opfsArchive';
-import { buildDailyRollupsFromData, makeTargetDocId } from '../utils/biEngine';
 import {
   hashPinOnServer,
   verifyPinOnServer,
@@ -259,9 +209,6 @@ interface PosContextType {
     isSignUpMode?: boolean,
     customStoreName?: string
   ) => Promise<{ success: boolean; requiresVerification?: boolean; email?: string; error?: string }>;
-  loginWithFirebaseEmailOtp: (
-    customToken: string
-  ) => Promise<{ success: boolean; error?: string }>;
   sendPasswordResetEmailAction: (emailInput: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   resendVerificationEmail: () => Promise<{ success: boolean; message?: string; error?: string }>;
   checkEmailVerificationStatus: () => Promise<{ verified: boolean; error?: string }>;
@@ -551,34 +498,6 @@ interface PosContextType {
   loadHistoricalTransactions: (startIso: string, endIso: string) => Promise<number>;
   isLoadingOlderTransactions: boolean;
   olderTransactionsLoadedFrom: string | null;
-
-  // Business Intelligence Suite (Daily Rollups, Period Targets, Saved Views)
-  analyticsRollups: AnalyticsDailyRollup[];
-  analyticsTargets: AnalyticsTarget[];
-  analyticsSavedViews: AnalyticsSavedView[];
-  isBiSyncing: boolean;
-  biLastSyncedAt: string | null;
-  syncAnalyticsRollups: (silent?: boolean) => Promise<number>;
-  saveAnalyticsTarget: (params: {
-    locationId: string;
-    periodKey: string;
-    revenueTarget: number;
-    grossMarginTargetPct: number;
-    maxDiscountPct: number;
-  }) => Promise<AnalyticsTarget>;
-  saveAnalyticsSavedView: (params: {
-    id?: string;
-    name: string;
-    locationId: string;
-    preset: TimeRangePreset;
-    customStartIso?: string;
-    customEndIso?: string;
-    focusTab: BiFocusTab;
-    chartMetric: BiChartMetric;
-    isPinned?: boolean;
-  }) => Promise<AnalyticsSavedView>;
-  deleteAnalyticsSavedView: (viewId: string) => Promise<void>;
-
   activeReceipt: Transaction | null;
   setActiveReceipt: (tx: Transaction | null) => void;
   activeRefundReceipt: { refund: RefundRecord; originalTx: Transaction } | null;
@@ -665,7 +584,7 @@ interface PosContextType {
     afterValue?: unknown;
   }) => void;
 
-  // Cloud Sync, IndexedDB Outbox & OPFS Snapshots
+  // Cloud Sync
   isOnline: boolean;
   setIsOnline: (online: boolean) => void;
   syncStatus: 'synced' | 'syncing' | 'offline' | 'error';
@@ -673,24 +592,6 @@ interface PosContextType {
   syncLogs: SyncLogEvent[];
   pendingOfflineCount: number;
   triggerCloudSync: (isSilent?: boolean | unknown) => Promise<void>;
-  isStorageHydrated: boolean;
-  outboxItems: OutboxMutationEntry[];
-  pendingOutboxCount: number;
-  deadLetterCount: number;
-  storageTelemetry: StorageQuotaTelemetry;
-  opfsSnapshots: OpfsSnapshotManifest[];
-  retryOutboxItem: (entryId: string) => Promise<void>;
-  retryAllDeadLetterItems: () => Promise<void>;
-  discardOutboxItem: (entryId: string) => Promise<void>;
-  createManualOpfsSnapshot: () => Promise<OpfsSnapshotManifest | null>;
-  verifyOpfsSnapshotIntegrity: (fileName: string) => Promise<{
-    ok: boolean;
-    computedSha256: string;
-    expectedSha256: string;
-    byteSize: number;
-  }>;
-  downloadOpfsArchive: (fileName: string) => Promise<boolean>;
-  exportFullLocalStore: () => Promise<void>;
 
   // Firestore Row-Level Security Scoped Database
   isFirestoreConnected: boolean;
@@ -741,21 +642,43 @@ interface PosContextType {
 
 const PosContext = createContext<PosContextType | undefined>(undefined);
 
-// Lightweight synchronous boot/UI preference keys retained in localStorage.
-// Heavy operational POS entities, logs, branding assets, and the sync outbox reside in IndexedDB + OPFS.
 const STORAGE_KEYS = {
   CURRENT_USER: 'sokopos_auth_user_v2',
   IS_LOGGED_OUT: 'sokopos_is_logged_out_v2',
   ACTIVE_BIZ_ID: 'sokopos_active_biz_v2',
+  BUSINESSES: 'sokopos_businesses_v2',
+  PRODUCTS: 'sokopos_products_v2',
+  CATEGORIES: 'sokopos_categories_v2',
+  LOCATIONS: 'sokopos_locations_v2',
+  SYSTEM_USERS: 'sokopos_system_users_v2',
+  TRANSACTIONS: 'sokopos_transactions_v2',
+  SHIFTS: 'sokopos_shifts_v2',
+  SYNC_LOGS: 'sokopos_sync_logs_v2',
+  SUPER_ADMIN_AUDIT: 'sokopos_sa_audit_v2',
+  ADMIN_ACTIVITY_LOGS: 'sokopos_admin_activity_logs_v1',
+  SUPERVISOR_OVERRIDES: 'sokopos_supervisor_overrides_v1',
+  VOID_RECORDS: 'sokopos_void_records_v1',
   SESSION_CLEAN_EXIT: 'sokopos_session_clean_exit_v1',
   CURRENT_LOC: 'sokopos_curr_loc_v2',
   DARK_MODE: 'sokopos_dark_mode_v2',
   AUTO_PRINT_RECEIPT: 'sokopos_auto_print_receipt_v2',
   RECEIPT_FORMAT: 'sokopos_receipt_format_v2',
+  SALES_BACKUPS: 'sokopos_sales_backups_v2',
+  LOGIN_BG_GRAPHIC: 'sokopos_login_bg_graphic_v1',
+  LOGIN_BG_NAME: 'sokopos_login_bg_name_v1',
+  PLATFORM_LOGO: 'sokopos_platform_logo_v1',
+  PLATFORM_LOGO_NAME: 'sokopos_platform_logo_name_v1',
+  PLATFORM_FAVICON: 'sokopos_platform_favicon_v1',
+  PLATFORM_FAVICON_NAME: 'sokopos_platform_favicon_name_v1',
+  getIndustryImageKey: (id: IndustrySolutionId) => `sokopos_industry_img_${id}_v1`,
+  getIndustryImageNameKey: (id: IndustrySolutionId) => `sokopos_industry_img_name_${id}_v1`,
   PRINTER_TYPE: 'sokopos_printer_type_v1',
   BLUETOOTH_PRINTER_ID: 'sokopos_bt_printer_id_v1',
   BLUETOOTH_PRINTER_NAME: 'sokopos_bt_printer_name_v1',
   RETAIL_THEME: 'sokopos_retail_theme_v2',
+  CUSTOMERS: 'sokopos_customers_v1',
+  SUPPLIERS: 'sokopos_suppliers_v1',
+  PRICING_TIERS: 'sokopos_pricing_tiers_v3',
   APPOINTED_DEMO_CASHIER_ID: 'sokopos_appointed_demo_cashier_id_v1',
   IS_DEMO_SESSION: 'sokopos_is_demo_session_v1',
   getTenantAutoPrintKey: (bizId: string) => `sokopos_auto_print_receipt_${bizId || 'default'}_v2`,
@@ -764,6 +687,8 @@ const STORAGE_KEYS = {
   getTenantBluetoothPrinterIdKey: (bizId: string) => `sokopos_bt_printer_id_${bizId || 'default'}_v1`,
   getTenantBluetoothPrinterNameKey: (bizId: string) => `sokopos_bt_printer_name_${bizId || 'default'}_v1`,
   getTenantRetailThemeKey: (bizId: string) => `sokopos_retail_theme_${bizId || 'default'}_v2`,
+  getTenantCustomersKey: (bizId: string) => `sokopos_customers_${bizId || 'default'}_v1`,
+  getTenantSuppliersKey: (bizId: string) => `sokopos_suppliers_${bizId || 'default'}_v1`,
 };
 
 export function isRealGoogleAccount(email?: string | null): boolean {
@@ -826,134 +751,37 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return fallback || key;
   }, []);
 
-  // Guard prevents default INITIAL_* state from overwriting IndexedDB before boot hydration completes
-  const isIdbHydratedRef = useRef<boolean>(false);
-  const [isStorageHydrated, setIsStorageHydrated] = useState<boolean>(false);
-  const [outboxItems, setOutboxItems] = useState<OutboxMutationEntry[]>([]);
-  const [opfsSnapshots, setOpfsSnapshots] = useState<OpfsSnapshotManifest[]>([]);
-  const [storageTelemetry, setStorageTelemetry] = useState<StorageQuotaTelemetry>(() => {
-    const opfsSupported = isOpfsSupported();
-    return {
-      engine: opfsSupported ? 'IndexedDB + OPFS' : 'IndexedDB (OPFS Restricted)',
-      usageBytes: 0,
-      quotaBytes: 0,
-      usagePct: 0,
-      opfsSupported,
-      migratedFromLocalStorageAt: null,
-      migratedKeysCount: 0,
-      lastSnapshot: null,
-    };
-  });
-
-  // 1. Multi-Tenant Business Registry (persisted in IndexedDB)
-  const [businesses, setBusinesses] = useState<Business[]>(INITIAL_BUSINESSES);
-
-  useEffect(() => {
-    if (!isIdbHydratedRef.current) return;
-    saveCollectionRecords('businesses', businesses).catch((err) =>
-      console.warn('IndexedDB businesses persist notice:', err)
-    );
-  }, [businesses]);
-
-  const isOnlineRef = useRef<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
-
-  const refreshStorageQuotaTelemetry = useCallback(async (overrideLastSnap?: OpfsSnapshotManifest | null) => {
-    const quota = await estimateBrowserStorageQuota();
-    setStorageTelemetry((prev) => ({
-      ...prev,
-      usageBytes: quota.usageBytes,
-      quotaBytes: quota.quotaBytes,
-      usagePct: quota.usagePct,
-      lastSnapshot: overrideLastSnap !== undefined ? overrideLastSnap : prev.lastSnapshot,
-    }));
-  }, []);
-
-  const queueMutationToOutbox = useCallback(
-    async (params: {
-      businessId: string;
-      collectionName: OutboxCollectionName;
-      docId: string;
-      operation: OutboxOperation;
-      payload: Record<string, any>;
-      label?: string;
-      immediateDispatch?: boolean;
-    }) => {
-      if (!params.businessId || isDemoBusinessId(params.businessId)) return;
-      const entry = buildOutboxEntry(params);
-      setOutboxItems((prev) => [entry, ...prev.filter((o) => o.id !== entry.id)]);
-      await enqueueOutboxMutations([entry]);
-
-      if (
-        params.immediateDispatch !== false &&
-        isOnlineRef.current &&
-        auth.currentUser &&
-        !isFirestoreQuotaCooldownActive()
-      ) {
-        const res = await flushOutboxMutationToFirestore(entry);
-        if (res.status === 'acked') {
-          await removeOutboxEntries([entry.id]);
-          setOutboxItems((prev) => prev.filter((o) => o.id !== entry.id));
-          if (params.collectionName === 'transactions' && params.operation === 'upsert') {
-            setAllTransactions((prev) =>
-              prev.map((t) =>
-                t.id === params.docId
-                  ? { ...t, syncedToCloud: true, syncTimestamp: t.syncTimestamp || new Date().toISOString() }
-                  : t
-              )
-            );
-          } else if (params.collectionName === 'products' && params.operation === 'upsert') {
-            setAllProducts((prev) =>
-              prev.map((p) => (p.id === params.docId ? { ...p, isPendingCloudSync: false } : p))
-            );
-          } else if (params.collectionName === 'locations' && params.operation === 'upsert') {
-            setAllLocations((prev) =>
-              prev.map((l) => (l.id === params.docId ? { ...l, isPendingCloudSync: false } : l))
-            );
-          } else if (params.collectionName === 'cashiers' && params.operation === 'upsert') {
-            setAllSystemUsers((prev) =>
-              prev.map((u) => (u.id === params.docId ? { ...u, isPendingCloudSync: false } : u))
-            );
-          }
-        } else if (res.status === 'failed') {
-          const nextAttempts = 1;
-          const shouldDeadLetter = !res.retryable || nextAttempts >= entry.maxAttempts;
-          const failedEntry: OutboxMutationEntry = {
-            ...entry,
-            attempts: nextAttempts,
-            status: shouldDeadLetter ? 'dead_letter' : 'retry_scheduled',
-            nextRetryAt: Date.now() + 5000,
-            updatedAt: new Date().toISOString(),
-            lastError: res.error,
-            errorCode: res.errorCode,
-          };
-          await enqueueOutboxMutations([failedEntry]);
-          setOutboxItems((prev) => [failedEntry, ...prev.filter((o) => o.id !== failedEntry.id)]);
-          if (params.collectionName === 'transactions') {
-            setAllTransactions((prev) =>
-              prev.map((t) => (t.id === params.docId ? { ...t, syncedToCloud: false } : t))
-            );
-          }
-        } else if (res.status === 'skipped_offline_or_quota') {
-          const deferredEntry: OutboxMutationEntry = {
-            ...entry,
-            status: 'retry_scheduled',
-            nextRetryAt: Date.now() + 5 * 60 * 1000,
-            updatedAt: new Date().toISOString(),
-            lastError: res.reason,
-            errorCode: 'quota-cooldown',
-          };
-          await enqueueOutboxMutations([deferredEntry]);
-          setOutboxItems((prev) => [deferredEntry, ...prev.filter((o) => o.id !== deferredEntry.id)]);
-          if (params.collectionName === 'transactions') {
-            setAllTransactions((prev) =>
-              prev.map((t) => (t.id === params.docId ? { ...t, syncedToCloud: false } : t))
-            );
+  // 1. Multi-Tenant Business Registry
+  const [businesses, setBusinesses] = useState<Business[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.BUSINESSES);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Filter out accounts that lack a real Google account
+          const cleaned = parsed.filter(
+            (b: Business) =>
+              isRealGoogleAccount(b.ownerEmail) &&
+              b.id !== 'biz-soko' &&
+              b.id !== 'biz-quickmart'
+          );
+          if (cleaned.length > 0) {
+            const { uniqueBusinesses } = resolveBusinessUniquenessConflicts(cleaned);
+            if (uniqueBusinesses.length > 0) {
+              return uniqueBusinesses;
+            }
           }
         }
+      } catch {
+        // fallback
       }
-    },
-    []
-  );
+    }
+    return INITIAL_BUSINESSES;
+  });
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.BUSINESSES, JSON.stringify(businesses));
+  }, [businesses]);
 
   // 2. Authentication State
   const [isFirebaseAuthLoading, setIsFirebaseAuthLoading] = useState<boolean>(true);
@@ -1094,6 +922,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         (b) => !conflictIds.has(b.id) && b.ownerEmail.toLowerCase() !== normalizedEmail
       );
       const nextBizs = [...filtered, winner];
+      localStorage.setItem(STORAGE_KEYS.BUSINESSES, JSON.stringify(nextBizs));
       return nextBizs;
     });
 
@@ -1241,10 +1070,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return currentUser?.businessId || INITIAL_BUSINESSES[0].id;
   });
 
-  // Automatic System Cleanup: Purge all accounts and data lacking a real Google account once IndexedDB finishes hydrating
+  // Automatic System Cleanup: Purge all accounts and data lacking a real Google account on startup
   useEffect(() => {
-    if (!isStorageHydrated) return;
-
     const unverifiedIds = new Set<string>();
     businesses.forEach((b) => {
       if (b.id !== 'biz-demo' && (!isRealGoogleAccount(b.ownerEmail) || b.id === 'biz-soko' || b.id === 'biz-quickmart')) {
@@ -1260,19 +1087,53 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     if (businesses.length !== validBusinesses.length || unverifiedIds.has(activeBusinessIdState)) {
       setBusinesses(nextBizs);
+      localStorage.setItem(STORAGE_KEYS.BUSINESSES, JSON.stringify(nextBizs));
 
       if (unverifiedIds.has(activeBusinessIdState)) {
         setActiveBusinessIdState('biz-upfront');
         localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, 'biz-upfront');
       }
 
-      setAllSystemUsers((prev) => prev.filter((u) => !unverifiedIds.has(u.businessId)));
-      setAllLocations((prev) => prev.filter((l) => !unverifiedIds.has(l.businessId)));
-      setAllProducts((prev) => prev.filter((p) => !unverifiedIds.has(p.businessId)));
-      setAllCategories((prev) => prev.filter((c) => !unverifiedIds.has(c.businessId)));
-      setAllTransactions((prev) => prev.filter((t) => !unverifiedIds.has(t.businessId)));
-      setAllCustomers((prev) => prev.filter((c) => !unverifiedIds.has(c.businessId)));
-      setAllShifts((prev) => prev.filter((s) => !unverifiedIds.has(s.businessId)));
+      setAllSystemUsers((prev) => {
+        const next = prev.filter((u) => !unverifiedIds.has(u.businessId));
+        localStorage.setItem(STORAGE_KEYS.SYSTEM_USERS, JSON.stringify(next));
+        return next;
+      });
+
+      setAllLocations((prev) => {
+        const next = prev.filter((l) => !unverifiedIds.has(l.businessId));
+        localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(next));
+        return next;
+      });
+
+      setAllProducts((prev) => {
+        const next = prev.filter((p) => !unverifiedIds.has(p.businessId));
+        localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(next));
+        return next;
+      });
+
+      setAllCategories((prev) => {
+        const next = prev.filter((c) => !unverifiedIds.has(c.businessId));
+        localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(next));
+        return next;
+      });
+
+      setAllTransactions((prev) => {
+        const next = prev.filter((t) => !unverifiedIds.has(t.businessId));
+        localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(next));
+        return next;
+      });
+
+      setAllCustomers((prev) => {
+        const next = prev.filter((c) => !unverifiedIds.has(c.businessId));
+        return next;
+      });
+
+      setAllShifts((prev) => {
+        const next = prev.filter((s) => !unverifiedIds.has(s.businessId));
+        localStorage.setItem(STORAGE_KEYS.SHIFTS, JSON.stringify(next));
+        return next;
+      });
 
       if (auth.currentUser) {
         for (const bId of unverifiedIds) {
@@ -1281,7 +1142,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       }
     }
-  }, [isStorageHydrated]);
+  }, []);
 
   // Strict Data-Access Isolation Enforcement:
   // Non-super-admin users CANNOT view or query any business other than their assigned tenant.
@@ -1371,8 +1232,21 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const isDemoSession = Boolean(currentUser?.isDemoSession || activeBusinessId === 'biz-demo');
 
-  // 4c. Pricing Architecture & Subscription Entitlement Engine (persisted in IndexedDB)
-  const [pricingTiers, setPricingTiers] = useState<PricingTier[]>(DEFAULT_PRICING_TIERS);
+  // 4c. Pricing Architecture & Subscription Entitlement Engine
+  const [pricingTiers, setPricingTiers] = useState<PricingTier[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.PRICING_TIERS);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch {
+        // fallback
+      }
+    }
+    return DEFAULT_PRICING_TIERS;
+  });
   const [pricingSyncStatus, setPricingSyncStatus] = useState<'idle' | 'saving' | 'synced' | 'error'>('idle');
   const [pricingSyncError, setPricingSyncError] = useState<string | null>(null);
   const pricingTiersRef = useRef<PricingTier[]>(pricingTiers);
@@ -1381,10 +1255,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   useEffect(() => {
     pricingTiersRef.current = pricingTiers;
-    if (!isIdbHydratedRef.current) return;
-    saveCollectionRecords('pricing_tiers', pricingTiers).catch((err) =>
-      console.warn('IndexedDB pricing tiers persist notice:', err)
-    );
+    try {
+      localStorage.setItem(STORAGE_KEYS.PRICING_TIERS, JSON.stringify(pricingTiers));
+    } catch {
+      // ignore storage quota errors
+    }
   }, [pricingTiers]);
 
   // Live Firestore real-time subscription so Super Admin price edits propagate instantly to all devices
@@ -1397,6 +1272,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
         pricingTiersRef.current = tiers;
         setPricingTiers(tiers);
+        try {
+          localStorage.setItem(STORAGE_KEYS.PRICING_TIERS, JSON.stringify(tiers));
+        } catch {
+          // ignore storage quota errors
+        }
         if (updatedAt) {
           setPricingSyncStatus('synced');
           setPricingSyncError(null);
@@ -1478,6 +1358,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     pricingTiersRef.current = DEFAULT_PRICING_TIERS;
     setPricingTiers(DEFAULT_PRICING_TIERS);
+    try {
+      localStorage.setItem(STORAGE_KEYS.PRICING_TIERS, JSON.stringify(DEFAULT_PRICING_TIERS));
+    } catch {
+      // ignore storage errors
+    }
     void persistPricingTiersSnapshot(
       DEFAULT_PRICING_TIERS,
       'Pricing tiers reset to defaults and synced globally'
@@ -1542,16 +1427,21 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return true;
   };
 
-  // 5. Super-Admin Audit Log (persisted in IndexedDB)
-  const [superAdminAuditLogs, setSuperAdminAuditLogs] = useState<SuperAdminAuditEntry[]>(
-    INITIAL_SUPER_ADMIN_AUDIT_LOGS
-  );
+  // 5. Super-Admin Audit Log
+  const [superAdminAuditLogs, setSuperAdminAuditLogs] = useState<SuperAdminAuditEntry[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.SUPER_ADMIN_AUDIT);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // fallback
+      }
+    }
+    return INITIAL_SUPER_ADMIN_AUDIT_LOGS;
+  });
 
   useEffect(() => {
-    if (!isIdbHydratedRef.current) return;
-    saveCollectionRecords('super_admin_audit', superAdminAuditLogs.slice(0, 500)).catch((err) =>
-      console.warn('IndexedDB super admin audit persist notice:', err)
-    );
+    localStorage.setItem(STORAGE_KEYS.SUPER_ADMIN_AUDIT, JSON.stringify(superAdminAuditLogs));
   }, [superAdminAuditLogs]);
 
   const logSuperAdminAction = useCallback(
@@ -1583,14 +1473,23 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     [businesses, currentUser?.email, isSuperAdmin]
   );
 
-  // 5.5 Back-office & Administrative Activity Logging (Edge Case 5, persisted in IndexedDB)
-  const [adminActivityLogs, setAdminActivityLogs] = useState<AdminActivityEntry[]>([]);
+  // 5.5 Back-office & Administrative Activity Logging (Edge Case 5)
+  // Back-office or admin changes must be classified as administrative activity,
+  // attributed to the performing admin account, and excluded from shift activity entirely.
+  const [adminActivityLogs, setAdminActivityLogs] = useState<AdminActivityEntry[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.ADMIN_ACTIVITY_LOGS);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // fallback
+      }
+    }
+    return [];
+  });
 
   useEffect(() => {
-    if (!isIdbHydratedRef.current) return;
-    saveCollectionRecords('admin_activity_logs', adminActivityLogs.slice(0, 500)).catch((err) =>
-      console.warn('IndexedDB admin activity persist notice:', err)
-    );
+    localStorage.setItem(STORAGE_KEYS.ADMIN_ACTIVITY_LOGS, JSON.stringify(adminActivityLogs));
   }, [adminActivityLogs]);
 
   const logAdminActivity = useCallback(
@@ -1631,14 +1530,23 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     [activeBusinessId, businesses, currentUser, isSuperAdmin]
   );
 
-  // 5.6 Supervisor Overrides Logging (Edge Case 1, persisted in IndexedDB)
-  const [supervisorOverrideLogs, setSupervisorOverrideLogs] = useState<SupervisorOverrideAuditEntry[]>([]);
+  // 5.6 Supervisor Overrides Logging (Edge Case 1)
+  // Supervisor overrides (voids, refunds, discounts) must be attributed to the performing operator,
+  // with the authorizing supervisor captured as a distinct audit field.
+  const [supervisorOverrideLogs, setSupervisorOverrideLogs] = useState<SupervisorOverrideAuditEntry[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.SUPERVISOR_OVERRIDES);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // fallback
+      }
+    }
+    return [];
+  });
 
   useEffect(() => {
-    if (!isIdbHydratedRef.current) return;
-    saveCollectionRecords('supervisor_overrides', supervisorOverrideLogs.slice(0, 500)).catch((err) =>
-      console.warn('IndexedDB overrides persist notice:', err)
-    );
+    localStorage.setItem(STORAGE_KEYS.SUPERVISOR_OVERRIDES, JSON.stringify(supervisorOverrideLogs));
   }, [supervisorOverrideLogs]);
 
   const logSupervisorOverride = useCallback(
@@ -1654,14 +1562,21 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     [activeBusinessId]
   );
 
-  // 5.7 Voids Management & Attribution (Edge Case 1, persisted in IndexedDB)
-  const [voidRecords, setVoidRecords] = useState<VoidRecord[]>([]);
+  // 5.7 Voids Management & Attribution (Edge Case 1)
+  const [voidRecords, setVoidRecords] = useState<VoidRecord[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.VOID_RECORDS);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // fallback
+      }
+    }
+    return [];
+  });
 
   useEffect(() => {
-    if (!isIdbHydratedRef.current) return;
-    saveCollectionRecords('void_records', voidRecords.slice(0, 500)).catch((err) =>
-      console.warn('IndexedDB void records persist notice:', err)
-    );
+    localStorage.setItem(STORAGE_KEYS.VOID_RECORDS, JSON.stringify(voidRecords));
   }, [voidRecords]);
 
   // Record Void forward declaration - implemented after currentCashier is initialized
@@ -1687,19 +1602,44 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setPendingDestructiveAction(null);
   }, []);
 
-  // Platform & Super Admin Custom Branding (large Base64 assets stored in IndexedDB `kv_large`)
-  const [loginBgGraphic, setLoginBgGraphicState] = useState<string | null>(null);
-  const [loginBgGraphicName, setLoginBgGraphicName] = useState<string | null>(null);
+  // Platform & Super Admin Custom Branding (Login Screen Background Graphic, Logo, Favicon)
+  const [loginBgGraphic, setLoginBgGraphicState] = useState<string | null>(() => {
+    return localStorage.getItem(STORAGE_KEYS.LOGIN_BG_GRAPHIC) || null;
+  });
+  const [loginBgGraphicName, setLoginBgGraphicName] = useState<string | null>(() => {
+    return localStorage.getItem(STORAGE_KEYS.LOGIN_BG_NAME) || null;
+  });
 
-  const [platformLogo, setPlatformLogoState] = useState<string | null>(null);
-  const [platformLogoName, setPlatformLogoName] = useState<string | null>(null);
+  const [platformLogo, setPlatformLogoState] = useState<string | null>(() => {
+    return localStorage.getItem(STORAGE_KEYS.PLATFORM_LOGO) || null;
+  });
+  const [platformLogoName, setPlatformLogoName] = useState<string | null>(() => {
+    return localStorage.getItem(STORAGE_KEYS.PLATFORM_LOGO_NAME) || null;
+  });
 
-  const [platformFavicon, setPlatformFaviconState] = useState<string | null>(null);
-  const [platformFaviconName, setPlatformFaviconName] = useState<string | null>(null);
+  const [platformFavicon, setPlatformFaviconState] = useState<string | null>(() => {
+    return localStorage.getItem(STORAGE_KEYS.PLATFORM_FAVICON) || null;
+  });
+  const [platformFaviconName, setPlatformFaviconName] = useState<string | null>(() => {
+    return localStorage.getItem(STORAGE_KEYS.PLATFORM_FAVICON_NAME) || null;
+  });
 
   const [industryImages, setIndustryImagesState] = useState<
     Partial<Record<IndustrySolutionId, { url: string; name?: string }>>
-  >({});
+  >(() => {
+    const initial: Partial<Record<IndustrySolutionId, { url: string; name?: string }>> = {};
+    const ids: IndustrySolutionId[] = ['retail', 'bars', 'supermarkets', 'pharmacies'];
+    for (const id of ids) {
+      const url = localStorage.getItem(STORAGE_KEYS.getIndustryImageKey(id));
+      if (url) {
+        initial[id] = {
+          url,
+          name: localStorage.getItem(STORAGE_KEYS.getIndustryImageNameKey(id)) || undefined,
+        };
+      }
+    }
+    return initial;
+  });
 
   // Automatically update the document favicon in HTML head
   useEffect(() => {
@@ -1721,26 +1661,53 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const applyFetchedPlatformSettings = useCallback((settings: NonNullable<Awaited<ReturnType<typeof getPlatformSettingsFromFirestore>>>) => {
     if (settings.loginBgGraphic !== undefined) {
       setLoginBgGraphicState(settings.loginBgGraphic);
-      saveLargeKvAsset('login_bg_graphic', settings.loginBgGraphic || null, settings.loginBgGraphicName || null).catch(() => {});
+      if (settings.loginBgGraphic) {
+        localStorage.setItem(STORAGE_KEYS.LOGIN_BG_GRAPHIC, settings.loginBgGraphic);
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.LOGIN_BG_GRAPHIC);
+      }
     }
     if (settings.loginBgGraphicName !== undefined) {
       setLoginBgGraphicName(settings.loginBgGraphicName || null);
+      if (settings.loginBgGraphicName) {
+        localStorage.setItem(STORAGE_KEYS.LOGIN_BG_NAME, settings.loginBgGraphicName);
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.LOGIN_BG_NAME);
+      }
     }
 
     if (settings.platformLogo !== undefined) {
       setPlatformLogoState(settings.platformLogo);
-      saveLargeKvAsset('platform_logo', settings.platformLogo || null, settings.platformLogoName || null).catch(() => {});
+      if (settings.platformLogo) {
+        localStorage.setItem(STORAGE_KEYS.PLATFORM_LOGO, settings.platformLogo);
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.PLATFORM_LOGO);
+      }
     }
     if (settings.platformLogoName !== undefined) {
       setPlatformLogoName(settings.platformLogoName || null);
+      if (settings.platformLogoName) {
+        localStorage.setItem(STORAGE_KEYS.PLATFORM_LOGO_NAME, settings.platformLogoName);
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.PLATFORM_LOGO_NAME);
+      }
     }
 
     if (settings.platformFavicon !== undefined) {
       setPlatformFaviconState(settings.platformFavicon);
-      saveLargeKvAsset('platform_favicon', settings.platformFavicon || null, settings.platformFaviconName || null).catch(() => {});
+      if (settings.platformFavicon) {
+        localStorage.setItem(STORAGE_KEYS.PLATFORM_FAVICON, settings.platformFavicon);
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.PLATFORM_FAVICON);
+      }
     }
     if (settings.platformFaviconName !== undefined) {
       setPlatformFaviconName(settings.platformFaviconName || null);
+      if (settings.platformFaviconName) {
+        localStorage.setItem(STORAGE_KEYS.PLATFORM_FAVICON_NAME, settings.platformFaviconName);
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.PLATFORM_FAVICON_NAME);
+      }
     }
 
     if (settings.industryImages) {
@@ -1752,10 +1719,20 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (entry !== undefined) {
             if (entry.url) {
               next[id] = { url: entry.url, name: entry.name };
-              saveLargeKvAsset(`industry_img_${id}`, entry.url, entry.name || null).catch(() => {});
+              try {
+                localStorage.setItem(STORAGE_KEYS.getIndustryImageKey(id), entry.url);
+                if (entry.name) {
+                  localStorage.setItem(STORAGE_KEYS.getIndustryImageNameKey(id), entry.name);
+                } else {
+                  localStorage.removeItem(STORAGE_KEYS.getIndustryImageNameKey(id));
+                }
+              } catch {
+                // ignore quota error
+              }
             } else {
               delete next[id];
-              saveLargeKvAsset(`industry_img_${id}`, null).catch(() => {});
+              localStorage.removeItem(STORAGE_KEYS.getIndustryImageKey(id));
+              localStorage.removeItem(STORAGE_KEYS.getIndustryImageNameKey(id));
             }
           }
         }
@@ -1788,9 +1765,18 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const prev = loginBgGraphic;
       setLoginBgGraphicState(graphic);
       setLoginBgGraphicName(name || null);
-      await saveLargeKvAsset('login_bg_graphic', graphic, name || null).catch((err) =>
-        console.warn('IndexedDB hero image save notice:', err)
-      );
+
+      try {
+        if (graphic) {
+          localStorage.setItem(STORAGE_KEYS.LOGIN_BG_GRAPHIC, graphic);
+          if (name) localStorage.setItem(STORAGE_KEYS.LOGIN_BG_NAME, name);
+        } else {
+          localStorage.removeItem(STORAGE_KEYS.LOGIN_BG_GRAPHIC);
+          localStorage.removeItem(STORAGE_KEYS.LOGIN_BG_NAME);
+        }
+      } catch (storageErr) {
+        console.warn('Local cache quota notice for hero showcase image:', storageErr);
+      }
 
       const cloudResult = await saveBrandingSlotToFirestore({
         slotId: 'hero',
@@ -1846,9 +1832,18 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const prev = platformLogo;
       setPlatformLogoState(logo);
       setPlatformLogoName(name || null);
-      await saveLargeKvAsset('platform_logo', logo, name || null).catch((err) =>
-        console.warn('IndexedDB platform logo save notice:', err)
-      );
+
+      try {
+        if (logo) {
+          localStorage.setItem(STORAGE_KEYS.PLATFORM_LOGO, logo);
+          if (name) localStorage.setItem(STORAGE_KEYS.PLATFORM_LOGO_NAME, name);
+        } else {
+          localStorage.removeItem(STORAGE_KEYS.PLATFORM_LOGO);
+          localStorage.removeItem(STORAGE_KEYS.PLATFORM_LOGO_NAME);
+        }
+      } catch (storageErr) {
+        console.warn('Local cache quota notice for platform logo:', storageErr);
+      }
 
       const cloudResult = await saveBrandingSlotToFirestore({
         slotId: 'logo',
@@ -1904,9 +1899,18 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const prev = platformFavicon;
       setPlatformFaviconState(favicon);
       setPlatformFaviconName(name || null);
-      await saveLargeKvAsset('platform_favicon', favicon, name || null).catch((err) =>
-        console.warn('IndexedDB platform favicon save notice:', err)
-      );
+
+      try {
+        if (favicon) {
+          localStorage.setItem(STORAGE_KEYS.PLATFORM_FAVICON, favicon);
+          if (name) localStorage.setItem(STORAGE_KEYS.PLATFORM_FAVICON_NAME, name);
+        } else {
+          localStorage.removeItem(STORAGE_KEYS.PLATFORM_FAVICON);
+          localStorage.removeItem(STORAGE_KEYS.PLATFORM_FAVICON_NAME);
+        }
+      } catch (storageErr) {
+        console.warn('Local cache quota notice for platform favicon:', storageErr);
+      }
 
       const cloudResult = await saveBrandingSlotToFirestore({
         slotId: 'favicon',
@@ -1979,9 +1983,21 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return next;
       });
 
-      await saveLargeKvAsset(`industry_img_${industryId}`, url, name || null).catch((err) =>
-        console.warn(`IndexedDB industry image save (${industryId}) notice:`, err)
-      );
+      try {
+        if (url) {
+          localStorage.setItem(STORAGE_KEYS.getIndustryImageKey(industryId), url);
+          if (name) {
+            localStorage.setItem(STORAGE_KEYS.getIndustryImageNameKey(industryId), name);
+          } else {
+            localStorage.removeItem(STORAGE_KEYS.getIndustryImageNameKey(industryId));
+          }
+        } else {
+          localStorage.removeItem(STORAGE_KEYS.getIndustryImageKey(industryId));
+          localStorage.removeItem(STORAGE_KEYS.getIndustryImageNameKey(industryId));
+        }
+      } catch (storageErr) {
+        console.warn(`Local cache quota notice for industry image (${industryId}):`, storageErr);
+      }
 
       const cloudResult = await saveBrandingSlotToFirestore({
         slotId,
@@ -2060,7 +2076,21 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setPlatformFaviconName(null);
     setIndustryImagesState({});
 
-    await clearAllLargeBrandingKv().catch(() => {});
+    try {
+      localStorage.removeItem(STORAGE_KEYS.LOGIN_BG_GRAPHIC);
+      localStorage.removeItem(STORAGE_KEYS.LOGIN_BG_NAME);
+      localStorage.removeItem(STORAGE_KEYS.PLATFORM_LOGO);
+      localStorage.removeItem(STORAGE_KEYS.PLATFORM_LOGO_NAME);
+      localStorage.removeItem(STORAGE_KEYS.PLATFORM_FAVICON);
+      localStorage.removeItem(STORAGE_KEYS.PLATFORM_FAVICON_NAME);
+      const ids: IndustrySolutionId[] = ['retail', 'bars', 'supermarkets', 'pharmacies'];
+      for (const id of ids) {
+        localStorage.removeItem(STORAGE_KEYS.getIndustryImageKey(id));
+        localStorage.removeItem(STORAGE_KEYS.getIndustryImageNameKey(id));
+      }
+    } catch {
+      // ignore storage errors
+    }
 
     const cloudResult = await clearAllBrandingSlotsInFirestore(
       currentUser?.email || (isSuperAdmin ? SUPER_ADMIN_EMAIL : 'super_admin')
@@ -2098,14 +2128,21 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     showToast,
   ]);
 
-  // 7. Multi-Tenant Locations Store (persisted in IndexedDB)
-  const [allLocations, setAllLocations] = useState<Location[]>(INITIAL_LOCATIONS);
+  // 7. Multi-Tenant Locations Store
+  const [allLocations, setAllLocations] = useState<Location[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.LOCATIONS);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // fallback
+      }
+    }
+    return INITIAL_LOCATIONS;
+  });
 
   useEffect(() => {
-    if (!isIdbHydratedRef.current) return;
-    syncNormalizedStoreRecords('locations', allLocations).catch((err) =>
-      console.warn('IndexedDB locations persist notice:', err)
-    );
+    localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(allLocations));
   }, [allLocations]);
 
   // Scoped Locations for active tenant
@@ -2169,14 +2206,20 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       isPendingCloudSync: !isOnline,
     };
     setAllLocations((prev) => [...prev, newLoc]);
-    void queueMutationToOutbox({
-      businessId: activeBusinessId,
-      collectionName: 'locations',
-      docId: newLoc.id,
-      operation: 'upsert',
-      payload: newLoc,
-      label: `Branch ${newLoc.name}`,
-    });
+    if (isOnline) {
+      saveLocationToFirestore(newLoc)
+        .then(() => {
+          setAllLocations((prev) =>
+            prev.map((l) => (l.id === newLoc.id ? { ...l, isPendingCloudSync: false } : l))
+          );
+        })
+        .catch((err) => {
+          console.warn('Firestore location save:', err);
+          setAllLocations((prev) =>
+            prev.map((l) => (l.id === newLoc.id ? { ...l, isPendingCloudSync: true } : l))
+          );
+        });
+    }
     if (isSuperAdmin) {
       logSuperAdminAction(activeBusinessId, 'location', newLoc.id, 'create', `Created branch ${newLoc.name}`, null, newLoc);
     }
@@ -2204,14 +2247,20 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setAllLocations((prev) =>
       prev.map((l) => (l.id === id ? updatedLoc : l))
     );
-    void queueMutationToOutbox({
-      businessId: oldLoc.businessId || activeBusinessId,
-      collectionName: 'locations',
-      docId: id,
-      operation: 'upsert',
-      payload: updatedLoc,
-      label: `Branch ${updatedLoc.name}`,
-    });
+    if (isOnline) {
+      updateLocationInFirestore(id, updates)
+        .then(() => {
+          setAllLocations((prev) =>
+            prev.map((l) => (l.id === id ? { ...l, isPendingCloudSync: false } : l))
+          );
+        })
+        .catch((err) => {
+          console.warn('Firestore location update:', err);
+          setAllLocations((prev) =>
+            prev.map((l) => (l.id === id ? { ...l, isPendingCloudSync: true } : l))
+          );
+        });
+    }
     if (isSuperAdmin) {
       logSuperAdminAction(
         oldLoc.businessId,
@@ -2264,14 +2313,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
 
         setAllLocations((prev) => prev.filter((l) => l.id !== id));
-        void queueMutationToOutbox({
-          businessId: targetLoc.businessId || activeBusinessId,
-          collectionName: 'locations',
-          docId: id,
-          operation: 'delete',
-          payload: { id, businessId: targetLoc.businessId || activeBusinessId },
-          label: `Delete branch ${targetLoc.name}`,
-        });
+        if (isOnline) {
+          deleteLocationFromFirestore(id).catch((err) =>
+            console.warn('Firestore location delete:', err)
+          );
+        }
         if (isSuperAdmin) {
           logSuperAdminAction(
             targetLoc.businessId,
@@ -2297,14 +2343,25 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
   };
 
-  // 8. Multi-Tenant System Users Store (Staff, persisted in IndexedDB)
-  const [allSystemUsers, setAllSystemUsers] = useState<Cashier[]>(INITIAL_SYSTEM_USERS);
+  // 8. Multi-Tenant System Users Store (Staff)
+  const [allSystemUsers, setAllSystemUsers] = useState<Cashier[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.SYSTEM_USERS);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          // Cleanse any legacy pinHint fields from local storage
+          return parsed.map(({ pinHint, ...rest }: any) => rest);
+        }
+      } catch {
+        // fallback
+      }
+    }
+    return INITIAL_SYSTEM_USERS;
+  });
 
   useEffect(() => {
-    if (!isIdbHydratedRef.current) return;
-    syncNormalizedStoreRecords('system_users', allSystemUsers).catch((err) =>
-      console.warn('IndexedDB system users persist notice:', err)
-    );
+    localStorage.setItem(STORAGE_KEYS.SYSTEM_USERS, JSON.stringify(allSystemUsers));
   }, [allSystemUsers]);
 
   // Scoped System Users for active tenant
@@ -2621,14 +2678,20 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     setAllSystemUsers((prev) => [...prev, newUser]);
-    void queueMutationToOutbox({
-      businessId: activeBusinessId,
-      collectionName: 'cashiers',
-      docId: newUser.id,
-      operation: 'upsert',
-      payload: newUser,
-      label: `Staff ${newUser.name}`,
-    });
+    if (isOnline) {
+      saveCashierToFirestore(newUser)
+        .then(() => {
+          setAllSystemUsers((prev) =>
+            prev.map((u) => (u.id === newUser.id ? { ...u, isPendingCloudSync: false } : u))
+          );
+        })
+        .catch((err) => {
+          console.warn('Firestore cashier save:', err);
+          setAllSystemUsers((prev) =>
+            prev.map((u) => (u.id === newUser.id ? { ...u, isPendingCloudSync: true } : u))
+          );
+        });
+    }
 
     if (isSuperAdmin) {
       logSuperAdminAction(
@@ -2790,14 +2853,20 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setAllSystemUsers((prev) =>
       prev.map((u) => (u.id === id ? updatedUser : u))
     );
-    void queueMutationToOutbox({
-      businessId: oldUser.businessId || activeBusinessId,
-      collectionName: 'cashiers',
-      docId: id,
-      operation: 'upsert',
-      payload: updatedUser,
-      label: `Staff ${updatedUser.name}`,
-    });
+    if (isOnline) {
+      updateCashierInFirestore(id, finalUpdates)
+        .then(() => {
+          setAllSystemUsers((prev) =>
+            prev.map((u) => (u.id === id ? { ...u, isPendingCloudSync: false } : u))
+          );
+        })
+        .catch((err) => {
+          console.warn('Firestore cashier update:', err);
+          setAllSystemUsers((prev) =>
+            prev.map((u) => (u.id === id ? { ...u, isPendingCloudSync: true } : u))
+          );
+        });
+    }
 
     if (isSuperAdmin) {
       logSuperAdminAction(
@@ -2839,14 +2908,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       businessId: targetUser.businessId,
       onConfirm: () => {
         setAllSystemUsers((prev) => prev.filter((u) => u.id !== id));
-        void queueMutationToOutbox({
-          businessId: targetUser.businessId || activeBusinessId,
-          collectionName: 'cashiers',
-          docId: id,
-          operation: 'delete',
-          payload: { id, businessId: targetUser.businessId || activeBusinessId },
-          label: `Delete staff ${targetUser.name}`,
-        });
+        if (isOnline) {
+          deleteCashierFromFirestore(id).catch((err) => console.warn('Firestore cashier delete:', err));
+        }
         if (isSuperAdmin) {
           logSuperAdminAction(
             targetUser.businessId,
@@ -2914,21 +2978,45 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // 9. Multi-Tenant Products & Categories Stores (persisted in IndexedDB)
+  // 9. Multi-Tenant Products Store
   const [allProducts, setAllProducts] = useState<Product[]>(() => {
-    const seenIds = new Set<string>();
-    return INITIAL_PRODUCTS.filter((p) => {
-      if (seenIds.has(p.id)) return false;
-      seenIds.add(p.id);
-      return true;
-    });
+    const deduplicateProducts = (items: Product[]): Product[] => {
+      const seen = new Set<string>();
+      return items.map((p, idx) => {
+        if (!p || !p.id) return p;
+        if (seen.has(p.id)) {
+          const uniqueId = `${p.id}-dup${idx}-${Math.random().toString(36).substring(2, 6)}`;
+          seen.add(uniqueId);
+          return { ...p, id: uniqueId };
+        }
+        seen.add(p.id);
+        return p;
+      });
+    };
+
+    const saved = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const deduped = deduplicateProducts(parsed);
+          // Check if biz-upfront exists in parsed products, otherwise merge
+          const hasUpfront = deduped.some((p: Product) => p.businessId === 'biz-upfront');
+          if (!hasUpfront) {
+            const upfrontInitials = INITIAL_PRODUCTS.filter((p) => p.businessId === 'biz-upfront');
+            return deduplicateProducts([...deduped, ...upfrontInitials]);
+          }
+          return deduped;
+        }
+      } catch {
+        // fallback
+      }
+    }
+    return deduplicateProducts(INITIAL_PRODUCTS);
   });
 
   useEffect(() => {
-    if (!isIdbHydratedRef.current) return;
-    syncNormalizedStoreRecords('products', allProducts).catch((err) =>
-      console.warn('IndexedDB products persist notice:', err)
-    );
+    localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(allProducts));
   }, [allProducts]);
 
   // Strict Data-Access Layer Scoping:
@@ -2950,14 +3038,24 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }));
   }, [allProducts, activeBusinessId]);
 
-  // Multi-Tenant Categories Store (Scoped & Unique to Each Shop, persisted in IndexedDB)
-  const [allCategories, setAllCategories] = useState<Category[]>(INITIAL_CATEGORIES);
+  // Multi-Tenant Categories Store (Scoped & Unique to Each Shop)
+  const [allCategories, setAllCategories] = useState<Category[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.CATEGORIES);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch {
+        // fallback
+      }
+    }
+    return INITIAL_CATEGORIES;
+  });
 
   useEffect(() => {
-    if (!isIdbHydratedRef.current) return;
-    syncNormalizedStoreRecords('categories', allCategories).catch((err) =>
-      console.warn('IndexedDB categories persist notice:', err)
-    );
+    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(allCategories));
   }, [allCategories]);
 
   // Scoped Categories for Active Tenant with Guaranteed "All" Default
@@ -3019,14 +3117,18 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     setAllCategories((prev) => [newCat, ...prev]);
-    void queueMutationToOutbox({
-      businessId: activeBusinessId,
-      collectionName: 'categories',
-      docId: newCat.id,
-      operation: 'upsert',
-      payload: newCat,
-      label: `Category ${newCat.name}`,
-    });
+
+    if (isOnline) {
+      saveCategoryToFirestore(newCat)
+        .then(() => {
+          setAllCategories((prev) =>
+            prev.map((c) => (c.id === newCat.id ? { ...c, isPendingCloudSync: false } : c))
+          );
+        })
+        .catch((err) => {
+          console.warn('Firestore category save:', err);
+        });
+    }
 
     logAdminActivity({
       category: 'catalog',
@@ -3058,38 +3160,31 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // If category name was renamed, update all products in this business that had the old category
     if (oldCat.name !== trimmedName) {
-      const affectedProducts = allProducts
-        .filter((p) => p.businessId === activeBusinessId && p.category === oldCat.name)
-        .map((p) => ({ ...p, category: trimmedName, isPendingCloudSync: !isOnline }));
-
       setAllProducts((prev) =>
-        prev.map((p) =>
-          p.businessId === activeBusinessId && p.category === oldCat.name
-            ? { ...p, category: trimmedName, isPendingCloudSync: !isOnline }
-            : p
-        )
+        prev.map((p) => {
+          if (p.businessId === activeBusinessId && p.category === oldCat.name) {
+            const updatedProd = { ...p, category: trimmedName };
+            if (isOnline) {
+              updateProductInFirestore(p.id, { category: trimmedName }).catch(() => {});
+            }
+            return updatedProd;
+          }
+          return p;
+        })
       );
-
-      affectedProducts.forEach((updatedProd) => {
-        void queueMutationToOutbox({
-          businessId: activeBusinessId,
-          collectionName: 'products',
-          docId: updatedProd.id,
-          operation: 'upsert',
-          payload: updatedProd,
-          label: `Recategorize ${updatedProd.name}`,
-        });
-      });
     }
 
-    void queueMutationToOutbox({
-      businessId: oldCat.businessId || activeBusinessId,
-      collectionName: 'categories',
-      docId: id,
-      operation: 'upsert',
-      payload: updated,
-      label: `Category ${updated.name}`,
-    });
+    if (isOnline) {
+      updateCategoryInFirestore(id, updates)
+        .then(() => {
+          setAllCategories((prev) =>
+            prev.map((c) => (c.id === id ? { ...c, isPendingCloudSync: false } : c))
+          );
+        })
+        .catch((err) => {
+          console.warn('Firestore category update:', err);
+        });
+    }
 
     logAdminActivity({
       category: 'catalog',
@@ -3114,38 +3209,25 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setAllCategories((prev) => prev.filter((c) => c.id !== id));
 
-    // "Where product category is lacking, assign category to 'All'."
-    const affectedProducts = allProducts
-      .filter((p) => p.businessId === activeBusinessId && p.category === target.name)
-      .map((p) => ({ ...p, category: 'All', isPendingCloudSync: !isOnline }));
-
+    // "WHere product category is lacking, assign category to 'All'."
     setAllProducts((prev) =>
-      prev.map((p) =>
-        p.businessId === activeBusinessId && p.category === target.name
-          ? { ...p, category: 'All', isPendingCloudSync: !isOnline }
-          : p
-      )
+      prev.map((p) => {
+        if (p.businessId === activeBusinessId && p.category === target.name) {
+          const updatedProd = { ...p, category: 'All' };
+          if (isOnline) {
+            updateProductInFirestore(p.id, { category: 'All' }).catch(() => {});
+          }
+          return updatedProd;
+        }
+        return p;
+      })
     );
 
-    affectedProducts.forEach((updatedProd) => {
-      void queueMutationToOutbox({
-        businessId: activeBusinessId,
-        collectionName: 'products',
-        docId: updatedProd.id,
-        operation: 'upsert',
-        payload: updatedProd,
-        label: `Assign ${updatedProd.name} to All`,
+    if (isOnline) {
+      deleteCategoryFromFirestore(id).catch((err) => {
+        console.warn('Firestore category delete:', err);
       });
-    });
-
-    void queueMutationToOutbox({
-      businessId: target.businessId || activeBusinessId,
-      collectionName: 'categories',
-      docId: id,
-      operation: 'delete',
-      payload: { id, businessId: target.businessId || activeBusinessId },
-      label: `Delete category ${target.name}`,
-    });
+    }
 
     logAdminActivity({
       category: 'catalog',
@@ -3264,14 +3346,20 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     setAllProducts((prev) => [newProduct, ...prev.filter((p) => p.id !== newProduct.id)]);
-    void queueMutationToOutbox({
-      businessId: activeBusinessId,
-      collectionName: 'products',
-      docId: newProduct.id,
-      operation: 'upsert',
-      payload: newProduct,
-      label: `Product ${newProduct.name}`,
-    });
+    if (isOnline) {
+      saveProductToFirestore(newProduct)
+        .then(() => {
+          setAllProducts((prev) =>
+            prev.map((p) => (p.id === newProduct.id ? { ...p, isPendingCloudSync: false } : p))
+          );
+        })
+        .catch((err) => {
+          console.warn('Firestore product save:', err);
+          setAllProducts((prev) =>
+            prev.map((p) => (p.id === newProduct.id ? { ...p, isPendingCloudSync: true } : p))
+          );
+        });
+    }
 
     if (isSuperAdmin) {
       logSuperAdminAction(
@@ -3311,14 +3399,20 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       isPendingCloudSync: !isOnline,
     };
     setAllProducts((prev) => prev.map((p) => (p.id === id ? updated : p)));
-    void queueMutationToOutbox({
-      businessId: oldProduct.businessId || activeBusinessId,
-      collectionName: 'products',
-      docId: id,
-      operation: 'upsert',
-      payload: updated,
-      label: `Product ${updated.name}`,
-    });
+    if (isOnline) {
+      updateProductInFirestore(id, updates)
+        .then(() => {
+          setAllProducts((prev) =>
+            prev.map((p) => (p.id === id ? { ...p, isPendingCloudSync: false } : p))
+          );
+        })
+        .catch((err) => {
+          console.warn('Firestore product update:', err);
+          setAllProducts((prev) =>
+            prev.map((p) => (p.id === id ? { ...p, isPendingCloudSync: true } : p))
+          );
+        });
+    }
 
     if (isSuperAdmin) {
       logSuperAdminAction(
@@ -3356,14 +3450,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       businessId: target.businessId,
       onConfirm: () => {
         setAllProducts((prev) => prev.filter((p) => p.id !== id));
-        void queueMutationToOutbox({
-          businessId: target.businessId || activeBusinessId,
-          collectionName: 'products',
-          docId: id,
-          operation: 'delete',
-          payload: { id, businessId: target.businessId || activeBusinessId },
-          label: `Delete product ${target.name}`,
-        });
+        if (isOnline) {
+          deleteProductFromFirestore(id).catch((err) => console.warn('Firestore product delete:', err));
+        }
         if (isSuperAdmin) {
           logSuperAdminAction(
             target.businessId,
@@ -3433,25 +3522,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const createdIds = new Set(createdProducts.map((p) => p.id));
     setAllProducts((prev) => [...createdProducts, ...prev.filter((p) => !createdIds.has(p.id))]);
 
-    const enqueueBulkCreatedProducts = () => {
-      const entries = createdProducts.map((p) =>
-        buildOutboxEntry({
-          businessId: activeBusinessId,
-          collectionName: 'products',
-          docId: p.id,
-          operation: 'upsert',
-          payload: p,
-          label: `Import ${p.name}`,
-        })
-      );
-      setOutboxItems((prev) => {
-        const entryIds = new Set(entries.map((e) => e.id));
-        return [...entries, ...prev.filter((o) => !entryIds.has(o.id))];
-      });
-      void enqueueOutboxMutations(entries);
-    };
-
-    if (isOnline && auth.currentUser && !isFirestoreQuotaCooldownActive() && !isDemoBusinessId(activeBusinessId)) {
+    if (isOnline) {
       batchSaveProductsToFirestore(createdProducts)
         .then(() => {
           setAllProducts((prev) =>
@@ -3459,11 +3530,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           );
         })
         .catch((err) => {
-          console.warn('Firestore bulk product save failed, queuing in outbox:', err);
-          enqueueBulkCreatedProducts();
+          console.warn('Firestore bulk product save:', err);
         });
-    } else {
-      enqueueBulkCreatedProducts();
     }
 
     logAdminActivity({
@@ -3502,38 +3570,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       })
     );
 
-    const enqueueBulkUpdatedProducts = () => {
-      const updatedSnapshots = allProducts
-        .filter((p) => updateMap.has(p.id))
-        .map((p) => {
-          const up = updateMap.get(p.id)!;
-          const finalCategory =
-            up.category !== undefined
-              ? !up.category || !up.category.trim()
-                ? 'All'
-                : up.category.trim()
-              : p.category;
-          return { ...p, ...up, category: finalCategory, isPendingCloudSync: true };
-        });
-      if (updatedSnapshots.length === 0) return;
-      const entries = updatedSnapshots.map((p) =>
-        buildOutboxEntry({
-          businessId: p.businessId || activeBusinessId,
-          collectionName: 'products',
-          docId: p.id,
-          operation: 'upsert',
-          payload: p,
-          label: `Bulk edit ${p.name}`,
-        })
-      );
-      setOutboxItems((prev) => {
-        const entryIds = new Set(entries.map((e) => e.id));
-        return [...entries, ...prev.filter((o) => !entryIds.has(o.id))];
-      });
-      void enqueueOutboxMutations(entries);
-    };
-
-    if (isOnline && auth.currentUser && !isFirestoreQuotaCooldownActive() && !isDemoBusinessId(activeBusinessId)) {
+    if (isOnline) {
       batchUpdateProductsInFirestore(items)
         .then(() => {
           setAllProducts((prev) =>
@@ -3541,11 +3578,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           );
         })
         .catch((err) => {
-          console.warn('Firestore bulk product update failed, queuing in outbox:', err);
-          enqueueBulkUpdatedProducts();
+          console.warn('Firestore bulk product update:', err);
         });
-    } else {
-      enqueueBulkUpdatedProducts();
     }
 
     logAdminActivity({
@@ -3580,31 +3614,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       onConfirm: () => {
         const idSet = new Set(cleanIds);
         setAllProducts((prev) => prev.filter((p) => !idSet.has(p.id)));
-        const enqueueBulkDeletedProducts = () => {
-          const entries = targets.map((t) =>
-            buildOutboxEntry({
-              businessId: t.businessId || activeBusinessId,
-              collectionName: 'products',
-              docId: t.id,
-              operation: 'delete',
-              payload: { id: t.id, businessId: t.businessId || activeBusinessId },
-              label: `Delete ${t.name}`,
-            })
+        if (isOnline) {
+          batchDeleteProductsFromFirestore(cleanIds).catch((err) =>
+            console.warn('Firestore bulk product delete:', err)
           );
-          setOutboxItems((prev) => {
-            const entryIds = new Set(entries.map((e) => e.id));
-            return [...entries, ...prev.filter((o) => !entryIds.has(o.id))];
-          });
-          void enqueueOutboxMutations(entries);
-        };
-
-        if (isOnline && auth.currentUser && !isFirestoreQuotaCooldownActive() && !isDemoBusinessId(activeBusinessId)) {
-          batchDeleteProductsFromFirestore(cleanIds).catch((err) => {
-            console.warn('Firestore bulk product delete failed, queuing in outbox:', err);
-            enqueueBulkDeletedProducts();
-          });
-        } else {
-          enqueueBulkDeletedProducts();
         }
         logAdminActivity({
           category: 'catalog',
@@ -3629,22 +3642,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       [locationId]: Math.max(0, newStock),
     };
 
-    const updatedStockProd: Product = {
-      ...target,
-      stockByLocation: updatedStockMap,
-      isPendingCloudSync: !isOnline,
-    };
     setAllProducts((prev) =>
-      prev.map((p) => (p.id === productId ? updatedStockProd : p))
+      prev.map((p) => (p.id === productId ? { ...p, stockByLocation: updatedStockMap } : p))
     );
-    void queueMutationToOutbox({
-      businessId: target.businessId || activeBusinessId,
-      collectionName: 'products',
-      docId: productId,
-      operation: 'upsert',
-      payload: updatedStockProd,
-      label: `Stock adjust ${target.name}`,
-    });
+    if (isOnline) {
+      updateProductInFirestore(productId, { stockByLocation: updatedStockMap }).catch((err) =>
+        console.warn('Firestore stock update:', err)
+      );
+    }
 
     if (isSuperAdmin) {
       logSuperAdminAction(
@@ -3689,43 +3694,26 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       [toLocId]: toStock + quantity,
     };
 
-    const updatedTransferProd: Product = {
-      ...target,
-      stockByLocation: updatedMap,
-      isPendingCloudSync: !isOnline,
-    };
-    const transferRecord = {
-      id: `xfer-${Date.now()}`,
-      businessId: activeBusinessId,
-      timestamp: new Date().toISOString(),
-      productId,
-      productName: target.name,
-      fromLocationId: fromLocId,
-      toLocationId: toLocId,
-      quantity,
-      initiatedBy: currentUser?.name || 'Staff',
-      status: 'completed',
-    };
-
     setAllProducts((prev) =>
-      prev.map((p) => (p.id === productId ? updatedTransferProd : p))
+      prev.map((p) => (p.id === productId ? { ...p, stockByLocation: updatedMap } : p))
     );
-    void queueMutationToOutbox({
-      businessId: target.businessId || activeBusinessId,
-      collectionName: 'products',
-      docId: productId,
-      operation: 'upsert',
-      payload: updatedTransferProd,
-      label: `Stock transfer ${target.name}`,
-    });
-    void queueMutationToOutbox({
-      businessId: activeBusinessId,
-      collectionName: 'stock_transfers',
-      docId: transferRecord.id,
-      operation: 'upsert',
-      payload: transferRecord,
-      label: `Transfer ${quantity} × ${target.name}`,
-    });
+    if (isOnline) {
+      updateProductInFirestore(productId, { stockByLocation: updatedMap }).catch((err) =>
+        console.warn('Firestore transfer update:', err)
+      );
+      saveStockTransferToFirestore({
+        id: `xfer-${Date.now()}`,
+        businessId: activeBusinessId,
+        timestamp: new Date().toISOString(),
+        productId,
+        productName: target.name,
+        fromLocationId: fromLocId,
+        toLocationId: toLocId,
+        quantity,
+        initiatedBy: currentUser?.name || 'Staff',
+        status: 'completed',
+      }).catch((err) => console.warn('Firestore transfer log:', err));
+    }
 
     if (isSuperAdmin) {
       logSuperAdminAction(
@@ -3760,18 +3748,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     setAllProducts((prev) => prev.map((p) => (p.id === productId ? updatedProd : p)));
-    void queueMutationToOutbox({
-      businessId: targetProd.businessId || activeBusinessId,
-      collectionName: 'products',
-      docId: productId,
-      operation: 'upsert',
-      payload: {
-        ...updatedProd,
+
+    if (isOnline) {
+      updateProductInFirestore(productId, {
         supplierId: supplierId || null,
         supplierName: suppName || null,
-      },
-      label: `Link supplier ${targetProd.name}`,
-    });
+      } as any).catch((err) => console.warn('Firestore link product supplier error:', err));
+    }
 
     logAdminActivity({
       category: 'inventory',
@@ -3795,14 +3778,29 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return typeof navigator !== 'undefined' ? navigator.onLine : true;
   });
 
-  // 10. Multi-Tenant Customers & Store Credit Directory Store (persisted in IndexedDB)
-  const [allCustomers, setAllCustomers] = useState<Customer[]>(INITIAL_CUSTOMERS);
+  // 10. Multi-Tenant Customers & Store Credit Directory Store
+  const [allCustomers, setAllCustomers] = useState<Customer[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const hasUpfront = parsed.some((c: Customer) => c.businessId === 'biz-upfront');
+          if (!hasUpfront) {
+            const upfrontInitials = INITIAL_CUSTOMERS.filter((c) => c.businessId === 'biz-upfront');
+            return [...parsed, ...upfrontInitials];
+          }
+          return parsed;
+        }
+      } catch {
+        // fallback
+      }
+    }
+    return INITIAL_CUSTOMERS;
+  });
 
   useEffect(() => {
-    if (!isIdbHydratedRef.current) return;
-    syncNormalizedStoreRecords('customers', allCustomers).catch((err) =>
-      console.warn('IndexedDB customers persist notice:', err)
-    );
+    localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(allCustomers));
   }, [allCustomers]);
 
   // Scoped to active business tenant
@@ -3893,14 +3891,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     setAllCustomers((prev) => [newCust, ...prev]);
-    void queueMutationToOutbox({
-      businessId: activeBusinessId,
-      collectionName: 'customers',
-      docId: newCust.id,
-      operation: 'upsert',
-      payload: newCust,
-      label: `Customer ${newCust.name}`,
-    });
+
+    if (isOnline) {
+      saveCustomerToFirestore(newCust).catch((err) => console.warn('Firestore customer save:', err));
+    }
 
     logAdminActivity({
       category: 'customer',
@@ -3932,14 +3926,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setSelectedCustomer(updatedCust);
     }
 
-    void queueMutationToOutbox({
-      businessId: target.businessId || activeBusinessId,
-      collectionName: 'customers',
-      docId: id,
-      operation: 'upsert',
-      payload: updatedCust,
-      label: `Customer ${updatedCust.name}`,
-    });
+    if (isOnline) {
+      updateCustomerInFirestore(id, updates).catch((err) => console.warn('Firestore customer update:', err));
+    }
 
     logAdminActivity({
       category: 'customer',
@@ -3964,14 +3953,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setSelectedCustomer(null);
     }
 
-    void queueMutationToOutbox({
-      businessId: target.businessId || activeBusinessId,
-      collectionName: 'customers',
-      docId: id,
-      operation: 'delete',
-      payload: { id, businessId: target.businessId || activeBusinessId },
-      label: `Delete customer ${target.name}`,
-    });
+    if (isOnline) {
+      deleteCustomerFromFirestore(id).catch((err) => console.warn('Firestore customer delete:', err));
+    }
 
     logAdminActivity({
       category: 'customer',
@@ -4024,14 +4008,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setSelectedCustomer(updatedCust);
     }
 
-    void queueMutationToOutbox({
-      businessId: cust.businessId || activeBusinessId,
-      collectionName: 'customers',
-      docId: customerId,
-      operation: 'upsert',
-      payload: updatedCust,
-      label: `Credit adjust ${cust.name}`,
-    });
+    if (isOnline) {
+      updateCustomerInFirestore(customerId, {
+        storeCreditBalance: newBalance,
+        ledger: updatedCust.ledger,
+      }).catch((err) => console.warn('Firestore credit adjust:', err));
+    }
 
     logAdminActivity({
       category: 'customer',
@@ -4070,28 +4052,38 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setSelectedCustomer(updatedCust);
     }
 
-    void queueMutationToOutbox({
-      businessId: cust.businessId || activeBusinessId,
-      collectionName: 'customers',
-      docId: customerId,
-      operation: 'upsert',
-      payload: updatedCust,
-      label: `Loyalty redeem ${cust.name}`,
-    });
+    if (isOnline) {
+      updateCustomerInFirestore(customerId, { loyaltyPoints: updatedCust.loyaltyPoints }).catch(console.warn);
+    }
 
     soundFx.playSuccess();
     showToast(`Redeemed ${pointsToRedeem} points for ${cust.name} (${currentLocation.currency} ${cashValue} value)`, 'success');
     return true;
   };
 
-  // 10.5 Multi-Tenant Suppliers Management Store (persisted in IndexedDB)
-  const [allSuppliers, setAllSuppliers] = useState<Supplier[]>(INITIAL_SUPPLIERS);
+  // 10.5 Multi-Tenant Suppliers Management Store
+  const [allSuppliers, setAllSuppliers] = useState<Supplier[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.SUPPLIERS);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const hasUpfront = parsed.some((s: Supplier) => s.businessId === 'biz-upfront');
+          if (!hasUpfront) {
+            const upfrontInitials = INITIAL_SUPPLIERS.filter((s) => s.businessId === 'biz-upfront');
+            return [...parsed, ...upfrontInitials];
+          }
+          return parsed;
+        }
+      } catch {
+        // fallback
+      }
+    }
+    return INITIAL_SUPPLIERS;
+  });
 
   useEffect(() => {
-    if (!isIdbHydratedRef.current) return;
-    syncNormalizedStoreRecords('suppliers', allSuppliers).catch((err) =>
-      console.warn('IndexedDB suppliers persist notice:', err)
-    );
+    localStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(allSuppliers));
   }, [allSuppliers]);
 
   // Scoped to active business tenant
@@ -4167,14 +4159,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     setAllSuppliers((prev) => [newSupp, ...prev]);
-    void queueMutationToOutbox({
-      businessId: activeBusinessId,
-      collectionName: 'suppliers',
-      docId: newSupp.id,
-      operation: 'upsert',
-      payload: newSupp,
-      label: `Supplier ${newSupp.name}`,
-    });
+
+    if (isOnline) {
+      saveSupplierToFirestore(newSupp).catch((err) => console.warn('Firestore supplier save:', err));
+    }
 
     logAdminActivity({
       category: 'inventory',
@@ -4209,32 +4197,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // If name changed, synchronize supplierName on all linked products
     if (updates.name && updates.name !== target.name) {
       const newName = updates.name;
-      const renamedLinked = allProducts
-        .filter((p) => p.supplierId === id)
-        .map((p) => ({ ...p, supplierName: newName, isPendingCloudSync: !isOnline }));
       setAllProducts((prev) =>
-        prev.map((p) => (p.supplierId === id ? { ...p, supplierName: newName, isPendingCloudSync: !isOnline } : p))
+        prev.map((p) => (p.supplierId === id ? { ...p, supplierName: newName } : p))
       );
-      renamedLinked.forEach((p) => {
-        void queueMutationToOutbox({
-          businessId: p.businessId || activeBusinessId,
-          collectionName: 'products',
-          docId: p.id,
-          operation: 'upsert',
-          payload: p,
-          label: `Supplier rename ${p.name}`,
-        });
-      });
     }
 
-    void queueMutationToOutbox({
-      businessId: target.businessId || activeBusinessId,
-      collectionName: 'suppliers',
-      docId: id,
-      operation: 'upsert',
-      payload: updatedSupp,
-      label: `Supplier ${updatedSupp.name}`,
-    });
+    if (isOnline) {
+      updateSupplierInFirestore(id, updates).catch((err) => console.warn('Firestore supplier update:', err));
+    }
 
     logAdminActivity({
       category: 'inventory',
@@ -4264,32 +4234,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // Unlink products
     if (linkedCount > 0) {
-      const unlinkedProds = allProducts
-        .filter((p) => p.supplierId === id && p.businessId === activeBusinessId)
-        .map((p) => ({ ...p, supplierId: null as any, supplierName: null as any, isPendingCloudSync: !isOnline }));
       setAllProducts((prev) =>
         prev.map((p) => (p.supplierId === id ? { ...p, supplierId: undefined, supplierName: undefined } : p))
       );
-      unlinkedProds.forEach((p) => {
-        void queueMutationToOutbox({
-          businessId: p.businessId || activeBusinessId,
-          collectionName: 'products',
-          docId: p.id,
-          operation: 'upsert',
-          payload: p,
-          label: `Unlink supplier ${p.name}`,
-        });
-      });
     }
 
-    void queueMutationToOutbox({
-      businessId: target.businessId || activeBusinessId,
-      collectionName: 'suppliers',
-      docId: id,
-      operation: 'delete',
-      payload: { id, businessId: target.businessId || activeBusinessId },
-      label: `Delete supplier ${target.name}`,
-    });
+    if (isOnline) {
+      deleteSupplierFromFirestore(id).catch((err) => console.warn('Firestore supplier delete:', err));
+    }
 
     logAdminActivity({
       category: 'inventory',
@@ -4308,14 +4260,21 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return products.filter((p) => p.supplierId === supplierId);
   };
 
-  // 11. Multi-Tenant Transactions Store (persisted in IndexedDB)
-  const [allTransactions, setAllTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS);
+  // 11. Multi-Tenant Transactions Store
+  const [allTransactions, setAllTransactions] = useState<Transaction[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // fallback
+      }
+    }
+    return INITIAL_TRANSACTIONS;
+  });
 
   useEffect(() => {
-    if (!isIdbHydratedRef.current) return;
-    syncNormalizedStoreRecords('transactions', allTransactions).catch((err) =>
-      console.warn('IndexedDB transactions persist notice:', err)
-    );
+    localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(allTransactions));
   }, [allTransactions]);
 
   // Strict Data-Access Layer Scoping:
@@ -4324,336 +4283,48 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return allTransactions.filter((tx) => tx.businessId === activeBusinessId);
   }, [allTransactions, activeBusinessId]);
 
-  // 11. Multi-Tenant Sync Logs Store (persisted in IndexedDB)
-  const [allSyncLogs, setAllSyncLogs] = useState<SyncLogEvent[]>(INITIAL_SYNC_LOGS);
+  // 11. Multi-Tenant Sync Logs Store
+  const [allSyncLogs, setAllSyncLogs] = useState<SyncLogEvent[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.SYNC_LOGS);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // fallback
+      }
+    }
+    return INITIAL_SYNC_LOGS;
+  });
 
   useEffect(() => {
-    if (!isIdbHydratedRef.current) return;
-    saveCollectionRecords('sync_logs', allSyncLogs.slice(0, 400)).catch((err) =>
-      console.warn('IndexedDB sync logs persist notice:', err)
-    );
+    localStorage.setItem(STORAGE_KEYS.SYNC_LOGS, JSON.stringify(allSyncLogs));
   }, [allSyncLogs]);
 
   const syncLogs = useMemo(() => {
     return allSyncLogs.filter((l) => l.businessId === activeBusinessId);
   }, [allSyncLogs, activeBusinessId]);
 
-  // 11.5 Multi-Tenant Shift Sessions Store (persisted in IndexedDB)
-  const [allShifts, setAllShifts] = useState<ShiftSession[]>(INITIAL_SHIFTS);
+  // 11.5 Multi-Tenant Shift Sessions Store
+  const [allShifts, setAllShifts] = useState<ShiftSession[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.SHIFTS);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // fallback
+      }
+    }
+    return INITIAL_SHIFTS;
+  });
 
   useEffect(() => {
-    if (!isIdbHydratedRef.current) return;
-    syncNormalizedStoreRecords('shifts', allShifts).catch((err) =>
-      console.warn('IndexedDB shifts persist notice:', err)
-    );
+    localStorage.setItem(STORAGE_KEYS.SHIFTS, JSON.stringify(allShifts));
   }, [allShifts]);
 
   // Scoped strictly to current business tenant
   const shiftHistory = useMemo(() => {
     return allShifts.filter((s) => s.businessId === activeBusinessId);
   }, [allShifts, activeBusinessId]);
-
-  // 11.75 Executive Business Intelligence Suite (Daily Rollups, Period Targets, Saved Views - persisted in IndexedDB)
-  const [allAnalyticsRollups, setAllAnalyticsRollups] = useState<AnalyticsDailyRollup[]>([]);
-  const [allAnalyticsTargets, setAllAnalyticsTargets] = useState<AnalyticsTarget[]>([]);
-  const [allAnalyticsSavedViews, setAllAnalyticsSavedViews] = useState<AnalyticsSavedView[]>([]);
-  const [isBiSyncing, setIsBiSyncing] = useState(false);
-  const [biLastSyncedAt, setBiLastSyncedAt] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isIdbHydratedRef.current) return;
-    saveCollectionRecords('bi_rollups', allAnalyticsRollups.slice(0, 1000)).catch((err) =>
-      console.warn('IndexedDB BI rollups persist notice:', err)
-    );
-  }, [allAnalyticsRollups]);
-
-  useEffect(() => {
-    if (!isIdbHydratedRef.current) return;
-    saveCollectionRecords('bi_targets', allAnalyticsTargets).catch((err) =>
-      console.warn('IndexedDB BI targets persist notice:', err)
-    );
-  }, [allAnalyticsTargets]);
-
-  useEffect(() => {
-    if (!isIdbHydratedRef.current) return;
-    saveCollectionRecords('bi_saved_views', allAnalyticsSavedViews).catch((err) =>
-      console.warn('IndexedDB BI views persist notice:', err)
-    );
-  }, [allAnalyticsSavedViews]);
-
-  const analyticsRollups = useMemo(
-    () => allAnalyticsRollups.filter((r) => r.businessId === activeBusinessId),
-    [allAnalyticsRollups, activeBusinessId]
-  );
-  const analyticsTargets = useMemo(
-    () => allAnalyticsTargets.filter((t) => t.businessId === activeBusinessId),
-    [allAnalyticsTargets, activeBusinessId]
-  );
-  const analyticsSavedViews = useMemo(
-    () =>
-      allAnalyticsSavedViews
-        .filter((v) => v.businessId === activeBusinessId)
-        .sort((a, b) => Number(b.isPinned) - Number(a.isPinned) || (b.updatedAt || '').localeCompare(a.updatedAt || '')),
-    [allAnalyticsSavedViews, activeBusinessId]
-  );
-
-  const syncAnalyticsRollups = useCallback(
-    async (silent = false): Promise<number> => {
-      if (!activeBusinessId) return 0;
-      setIsBiSyncing(true);
-      try {
-        const computed = buildDailyRollupsFromData({
-          businessId: activeBusinessId,
-          transactions: allTransactions.filter((t) => t.businessId === activeBusinessId),
-          products: allProducts.filter((p) => p.businessId === activeBusinessId),
-          shifts: allShifts.filter((s) => s.businessId === activeBusinessId),
-          locations: allLocations.filter((l) => l.businessId === activeBusinessId),
-        });
-
-        setAllAnalyticsRollups((prev) => {
-          const otherTenants = prev.filter((r) => r.businessId !== activeBusinessId);
-          const map = new Map<string, AnalyticsDailyRollup>();
-          prev
-            .filter((r) => r.businessId === activeBusinessId)
-            .forEach((r) => map.set(r.id, r));
-          computed.forEach((r) => map.set(r.id, r));
-          return [...Array.from(map.values()), ...otherTenants];
-        });
-
-        const nowIso = new Date().toISOString();
-        setBiLastSyncedAt(nowIso);
-
-        const enqueueRollupOutbox = (rows: AnalyticsDailyRollup[]) => {
-          if (isDemoBusinessId(activeBusinessId) || rows.length === 0) return;
-          const entries = rows.map((r) =>
-            buildOutboxEntry({
-              businessId: activeBusinessId,
-              collectionName: 'analytics_daily_rollups',
-              docId: r.id,
-              operation: 'upsert',
-              payload: r,
-              label: `BI rollup ${r.dateKey}`,
-            })
-          );
-          setOutboxItems((prev) => {
-            const ids = new Set(entries.map((e) => e.id));
-            return [...entries, ...prev.filter((o) => !ids.has(o.id))];
-          });
-          void enqueueOutboxMutations(entries);
-        };
-
-        if (
-          isOnline &&
-          auth.currentUser &&
-          !isFirestoreQuotaCooldownActive() &&
-          !isDemoBusinessId(activeBusinessId) &&
-          computed.length > 0
-        ) {
-          try {
-            const committed = await upsertAnalyticsDailyRollupsBatch(computed);
-            if (!silent) {
-              showToast(
-                `Synced ${committed} daily BI rollup snapshot${committed === 1 ? '' : 's'} to Firestore.`,
-                'success'
-              );
-            }
-            return committed;
-          } catch (batchErr) {
-            enqueueRollupOutbox(computed);
-            throw batchErr;
-          }
-        }
-
-        enqueueRollupOutbox(computed);
-        if (!silent) {
-          showToast(
-            `Computed ${computed.length} daily BI snapshot${computed.length === 1 ? '' : 's'} locally & queued for cloud sync.`,
-            'info'
-          );
-        }
-        return computed.length;
-      } catch (err) {
-        console.warn('BI rollup synchronization notice:', err);
-        if (!silent) {
-          showToast('Queued daily BI rollups locally; will sync to Firestore when ready.', 'warning');
-        }
-        return 0;
-      } finally {
-        setIsBiSyncing(false);
-      }
-    },
-    [activeBusinessId, allTransactions, allProducts, allShifts, allLocations, isOnline, showToast]
-  );
-
-  const syncRollupForTransactions = useCallback(
-    (nextTxs: Transaction[], nextShifts?: ShiftSession[]) => {
-      if (!activeBusinessId) return;
-      const tenantTxs = nextTxs.filter((t) => t.businessId === activeBusinessId);
-      const tenantProds = allProducts.filter((p) => p.businessId === activeBusinessId);
-      const tenantShifts = (nextShifts || allShifts).filter((s) => s.businessId === activeBusinessId);
-      const tenantLocs = allLocations.filter((l) => l.businessId === activeBusinessId);
-
-      const computed = buildDailyRollupsFromData({
-        businessId: activeBusinessId,
-        transactions: tenantTxs,
-        products: tenantProds,
-        shifts: tenantShifts,
-        locations: tenantLocs,
-      });
-      if (computed.length === 0) return;
-
-      setAllAnalyticsRollups((prev) => {
-        const other = prev.filter((r) => r.businessId !== activeBusinessId);
-        const map = new Map<string, AnalyticsDailyRollup>();
-        prev
-          .filter((r) => r.businessId === activeBusinessId)
-          .forEach((r) => map.set(r.id, r));
-        computed.forEach((r) => map.set(r.id, r));
-        return [...Array.from(map.values()), ...other];
-      });
-      setBiLastSyncedAt(new Date().toISOString());
-
-      const latestSlice = computed.slice(0, 7);
-      if (isDemoBusinessId(activeBusinessId)) return;
-
-      const queueLatestRollups = () => {
-        const entries = latestSlice.map((r) =>
-          buildOutboxEntry({
-            businessId: activeBusinessId,
-            collectionName: 'analytics_daily_rollups',
-            docId: r.id,
-            operation: 'upsert',
-            payload: r,
-            label: `BI rollup ${r.dateKey}`,
-          })
-        );
-        setOutboxItems((prev) => {
-          const ids = new Set(entries.map((e) => e.id));
-          return [...entries, ...prev.filter((o) => !ids.has(o.id))];
-        });
-        void enqueueOutboxMutations(entries);
-      };
-
-      if (isOnline && auth.currentUser && !isFirestoreQuotaCooldownActive()) {
-        // Persist latest 7 active daily rollups silently in background
-        upsertAnalyticsDailyRollupsBatch(latestSlice).catch(() => {
-          queueLatestRollups();
-        });
-      } else {
-        queueLatestRollups();
-      }
-    },
-    [activeBusinessId, allProducts, allShifts, allLocations, isOnline]
-  );
-
-  const saveAnalyticsTarget = useCallback(
-    async (params: {
-      locationId: string;
-      periodKey: string;
-      revenueTarget: number;
-      grossMarginTargetPct: number;
-      maxDiscountPct: number;
-    }): Promise<AnalyticsTarget> => {
-      const nowIso = new Date().toISOString();
-      const target: AnalyticsTarget = {
-        id: makeTargetDocId(activeBusinessId, params.locationId, params.periodKey),
-        businessId: activeBusinessId,
-        locationId: params.locationId,
-        periodKey: params.periodKey,
-        revenueTarget: Math.max(0, Number(params.revenueTarget) || 0),
-        grossMarginTargetPct: Math.min(100, Math.max(0, Number(params.grossMarginTargetPct) || 0)),
-        maxDiscountPct: Math.min(100, Math.max(0, Number(params.maxDiscountPct) || 0)),
-        updatedAt: nowIso,
-        updatedByUid: auth.currentUser?.uid || currentUser?.id,
-        updatedByEmail: auth.currentUser?.email || currentUser?.email,
-      };
-
-      setAllAnalyticsTargets((prev) => {
-        const filtered = prev.filter((t) => t.id !== target.id);
-        return [target, ...filtered];
-      });
-
-      await queueMutationToOutbox({
-        businessId: activeBusinessId,
-        collectionName: 'analytics_targets',
-        docId: target.id,
-        operation: 'upsert',
-        payload: target,
-        label: `BI target ${params.periodKey}`,
-      });
-      showToast(`Saved ${params.periodKey} BI target.`, 'success');
-      return target;
-    },
-    [activeBusinessId, currentUser, queueMutationToOutbox, showToast]
-  );
-
-  const saveAnalyticsSavedView = useCallback(
-    async (params: {
-      id?: string;
-      name: string;
-      locationId: string;
-      preset: TimeRangePreset;
-      customStartIso?: string;
-      customEndIso?: string;
-      focusTab: BiFocusTab;
-      chartMetric: BiChartMetric;
-      isPinned?: boolean;
-    }): Promise<AnalyticsSavedView> => {
-      const nowIso = new Date().toISOString();
-      const existing = params.id
-        ? allAnalyticsSavedViews.find((v) => v.id === params.id)
-        : undefined;
-      const view: AnalyticsSavedView = {
-        id: existing?.id || `bi-view-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        businessId: activeBusinessId,
-        name: params.name.trim().slice(0, 80) || 'Untitled View',
-        locationId: params.locationId || 'all',
-        preset: params.preset,
-        customStartIso: params.customStartIso,
-        customEndIso: params.customEndIso,
-        focusTab: params.focusTab,
-        chartMetric: params.chartMetric,
-        createdByUid: existing?.createdByUid || auth.currentUser?.uid || currentUser?.id,
-        isPinned: params.isPinned ?? existing?.isPinned ?? true,
-        createdAt: existing?.createdAt || nowIso,
-        updatedAt: nowIso,
-      };
-
-      setAllAnalyticsSavedViews((prev) => {
-        const filtered = prev.filter((v) => v.id !== view.id);
-        return [view, ...filtered];
-      });
-
-      await queueMutationToOutbox({
-        businessId: activeBusinessId,
-        collectionName: 'analytics_saved_views',
-        docId: view.id,
-        operation: 'upsert',
-        payload: view,
-        label: `BI view ${view.name}`,
-      });
-      showToast(`Saved BI view "${view.name}".`, 'success');
-      return view;
-    },
-    [activeBusinessId, allAnalyticsSavedViews, currentUser, queueMutationToOutbox, showToast]
-  );
-
-  const deleteAnalyticsSavedView = useCallback(
-    async (viewId: string): Promise<void> => {
-      const targetView = allAnalyticsSavedViews.find((v) => v.id === viewId);
-      setAllAnalyticsSavedViews((prev) => prev.filter((v) => v.id !== viewId));
-      await queueMutationToOutbox({
-        businessId: targetView?.businessId || activeBusinessId,
-        collectionName: 'analytics_saved_views',
-        docId: viewId,
-        operation: 'delete',
-        payload: { id: viewId, businessId: targetView?.businessId || activeBusinessId },
-        label: `Delete BI view ${targetView?.name || viewId}`,
-      });
-      showToast('Removed saved BI view.', 'info');
-    },
-    [activeBusinessId, allAnalyticsSavedViews, queueMutationToOutbox, showToast]
-  );
 
   // Active open shift for current location (or fallback to open shift in tenant)
   const activeShift = useMemo(() => {
@@ -4762,14 +4433,21 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isReturnsModalOpen, setIsReturnsModalOpen] = useState(false);
   const [selectedReturnTx, setSelectedReturnTx] = useState<Transaction | null>(null);
 
-  // 12b. Pre-Purge Store Sales Backups & Clean Zero Reset (persisted in IndexedDB)
-  const [storeSalesBackups, setStoreSalesBackups] = useState<StoreSalesBackup[]>([]);
+  // 12b. Pre-Purge Store Sales Backups & Clean Zero Reset
+  const [storeSalesBackups, setStoreSalesBackups] = useState<StoreSalesBackup[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.SALES_BACKUPS);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // fallback
+      }
+    }
+    return [];
+  });
 
   useEffect(() => {
-    if (!isIdbHydratedRef.current) return;
-    saveCollectionRecords('sales_backups', storeSalesBackups).catch((err) =>
-      console.warn('IndexedDB sales backups persist notice:', err)
-    );
+    localStorage.setItem(STORAGE_KEYS.SALES_BACKUPS, JSON.stringify(storeSalesBackups));
   }, [storeSalesBackups]);
 
   // Authorization check for Store Sales Zero-Reset
@@ -5609,7 +5287,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       );
       return {
         ...item,
-        unitCost: typeof item.unitCost === 'number' ? item.unitCost : (prod?.buyingPrice ?? 0),
         taxRate: resolved.rate,
       };
     });
@@ -5693,29 +5370,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       })
     );
 
-    // Append to transactions & refresh daily BI rollup snapshot
-    const nextTxsAfterSale = [newTx, ...allTransactions];
+    // Append to transactions
     setAllTransactions((prev) => [newTx, ...prev]);
-    syncRollupForTransactions(nextTxsAfterSale);
-
-    // Atomic IndexedDB dual-write: persist receipt + enqueue Sync Outbox entry in one IDB transaction
-    const txOutboxEntry = !isDemoBusinessId(activeBusinessId)
-      ? buildOutboxEntry({
-          businessId: activeBusinessId,
-          collectionName: 'transactions',
-          docId: newTx.id,
-          operation: 'upsert',
-          payload: newTx,
-          label: `Sale ${newTx.receiptNumber}`,
-        })
-      : null;
-
-    if (txOutboxEntry) {
-      setOutboxItems((prev) => [txOutboxEntry, ...prev.filter((o) => o.id !== txOutboxEntry.id)]);
-      putEntityAndEnqueueOutbox('transactions', newTx, txOutboxEntry).catch((err) =>
-        console.warn('Atomic IndexedDB sale + outbox persist notice:', err)
-      );
-    }
 
     // Asynchronously transmit to Digitax KRA eTIMS (bypassed in sandbox mode)
     if (isOnline && !isSandboxEtims) {
@@ -5759,20 +5415,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 isPartnerVerified: true,
               };
 
-              const txWithEtims = { ...newTx, etimsData: updatedEtims };
               setAllTransactions((prev) =>
                 prev.map((t) => (t.id === newTx.id ? { ...t, etimsData: updatedEtims } : t))
               );
               setActiveReceipt((prev) => (prev?.id === newTx.id ? { ...prev, etimsData: updatedEtims } : prev));
               if (auth.currentUser) {
-                void queueMutationToOutbox({
-                  businessId: activeBusinessId,
-                  collectionName: 'transactions',
-                  docId: newTx.id,
-                  operation: 'upsert',
-                  payload: txWithEtims,
-                  label: `Sale eTIMS ${newTx.receiptNumber}`,
-                });
+                saveTransactionToFirestore({ ...newTx, etimsData: updatedEtims }).catch(() => {});
               }
             }
           }
@@ -5781,40 +5429,22 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       })();
     }
-
-    // Dispatch sale + inventory deductions through the transactional Sync Outbox
-    void queueMutationToOutbox({
-      businessId: activeBusinessId,
-      collectionName: 'transactions',
-      docId: newTx.id,
-      operation: 'upsert',
-      payload: newTx,
-      label: `Sale ${newTx.receiptNumber}`,
-    });
-
-    cart.forEach((ci) => {
-      const prod = allProducts.find((p) => p.id === ci.productId);
-      if (prod) {
-        const currentStock = prod.stockByLocation[currentLocation.id] || 0;
-        const updatedStock = Math.max(0, currentStock - ci.quantity);
-        const updatedProdPayload = {
-          ...prod,
-          stockByLocation: {
-            ...prod.stockByLocation,
-            [currentLocation.id]: updatedStock,
-          },
-          isPendingCloudSync: !isOnline,
-        };
-        void queueMutationToOutbox({
-          businessId: prod.businessId || activeBusinessId,
-          collectionName: 'products',
-          docId: prod.id,
-          operation: 'upsert',
-          payload: updatedProdPayload,
-          label: `Stock deduct ${prod.name}`,
-        });
-      }
-    });
+    if (isOnline) {
+      saveTransactionToFirestore(newTx).catch((err) => console.warn('Firestore transaction save:', err));
+      cart.forEach((ci) => {
+        const prod = allProducts.find((p) => p.id === ci.productId);
+        if (prod) {
+          const currentStock = prod.stockByLocation[currentLocation.id] || 0;
+          const updatedStock = Math.max(0, currentStock - ci.quantity);
+          updateProductInFirestore(prod.id, {
+            stockByLocation: {
+              ...prod.stockByLocation,
+              [currentLocation.id]: updatedStock,
+            },
+          }).catch((err) => console.warn('Firestore stock deduction:', err));
+        }
+      });
+    }
 
     // If super-admin, log this transaction write
     if (isSuperAdmin) {
@@ -5867,14 +5497,17 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
 
       setAllCustomers((prev) => prev.map((c) => (c.id === customer.id ? updatedCustomer : c)));
-      void queueMutationToOutbox({
-        businessId: updatedCustomer.businessId || activeBusinessId,
-        collectionName: 'customers',
-        docId: customer.id,
-        operation: 'upsert',
-        payload: updatedCustomer,
-        label: `Customer loyalty/credit ${customer.name}`,
-      });
+      if (isOnline) {
+        updateCustomerInFirestore(customer.id, {
+          totalSpent: updatedCustomer.totalSpent,
+          visitCount: updatedCustomer.visitCount,
+          lastVisitAt: updatedCustomer.lastVisitAt,
+          loyaltyPoints: updatedCustomer.loyaltyPoints,
+          storeCreditBalance: updatedCustomer.storeCreditBalance,
+          ledger: updatedCustomer.ledger,
+          updatedAt: updatedCustomer.updatedAt,
+        }).catch((err) => console.warn('Firestore customer sale sync:', err));
+      }
       setSelectedCustomer(null);
     }
 
@@ -6179,12 +5812,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         syncTimestamp: isOnline ? timestamp : undefined,
       };
 
-      // Update in local transactions state & refresh BI daily rollup
-      const nextTxsAfterRefund = allTransactions.map((t) => (t.id === targetTx.id ? updatedTx : t));
+      // Update in local transactions state
       setAllTransactions((prev) =>
         prev.map((t) => (t.id === targetTx.id ? updatedTx : t))
       );
-      syncRollupForTransactions(nextTxsAfterRefund);
 
       // Restock products to inventory if restockToInventory is enabled
       const restockedProducts: { name: string; qty: number }[] = [];
@@ -6207,31 +5838,27 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
       setAllProducts(updatedProductsState);
 
-      // Transactional Outbox + Cloud Firestore synchronization
-      void queueMutationToOutbox({
-        businessId: updatedTx.businessId || activeBusinessId,
-        collectionName: 'transactions',
-        docId: updatedTx.id,
-        operation: 'upsert',
-        payload: updatedTx,
-        label: `Refund ${refundRefNumber}`,
-      });
+      // Cloud Firestore synchronization
+      if (isOnline) {
+        saveTransactionToFirestore(updatedTx).catch((err) =>
+          console.warn('Firestore refund transaction update:', err)
+        );
 
-      refundItemsRecord.forEach((ri) => {
-        if (ri.restockToInventory) {
-          const prod = updatedProductsState.find((p) => p.id === ri.productId);
-          if (prod) {
-            void queueMutationToOutbox({
-              businessId: prod.businessId || activeBusinessId,
-              collectionName: 'products',
-              docId: prod.id,
-              operation: 'upsert',
-              payload: prod,
-              label: `Restock ${prod.name}`,
-            });
+        refundItemsRecord.forEach((ri) => {
+          if (ri.restockToInventory) {
+            const prod = updatedProductsState.find((p) => p.id === ri.productId);
+            if (prod) {
+              const targetLocId = ri.restockLocationId || currentLocation.id;
+              updateProductInFirestore(prod.id, {
+                stockByLocation: {
+                  ...prod.stockByLocation,
+                  [targetLocId]: prod.stockByLocation[targetLocId],
+                },
+              }).catch((err) => console.warn('Firestore restock update:', err));
+            }
           }
-        }
-      });
+        });
+      }
 
       // If refund was tendered as store credit, credit the customer profile ledger
       if (refundMethod === 'store_credit') {
@@ -6260,14 +5887,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (selectedCustomer?.id === matchingCust.id) {
             setSelectedCustomer(updatedCust);
           }
-          void queueMutationToOutbox({
-            businessId: matchingCust.businessId || activeBusinessId,
-            collectionName: 'customers',
-            docId: matchingCust.id,
-            operation: 'upsert',
-            payload: updatedCust,
-            label: `Refund store credit ${matchingCust.name}`,
-          });
+          if (isOnline) {
+            updateCustomerInFirestore(matchingCust.id, {
+              storeCreditBalance: newCreditBalance,
+              ledger: updatedCust.ledger,
+              updatedAt: timestamp,
+            }).catch((err) => console.warn('Firestore customer refund sync:', err));
+          }
         }
       }
 
@@ -6489,20 +6115,16 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         receiptRef: params.receiptRef?.trim() || undefined,
       };
 
-      const nextShiftsWithExpense = allShifts.map((s) =>
-        s.id === activeShift.id ? { ...s, expenses: [expense, ...s.expenses] } : s
-      );
       setAllShifts((prev) =>
         prev.map((s) => (s.id === activeShift.id ? { ...s, expenses: [expense, ...s.expenses] } : s))
       );
-      syncRollupForTransactions(allTransactions, nextShiftsWithExpense);
       soundFx.playBarcodeBeep();
       showToast(
         `Petty cash expense of ${currentLocation.currency} ${expense.amount.toLocaleString()} recorded`,
         'success'
       );
     },
-    [activeShift, activeBusinessId, currentLocation, currentCashier, showToast, allShifts, allTransactions, syncRollupForTransactions]
+    [activeShift, activeBusinessId, currentLocation, currentCashier, showToast]
   );
 
   const closeShift = useCallback(
@@ -6632,75 +6254,22 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         isPendingCloudSync: !isOnline,
       };
 
-      const updatedShiftsSnapshot = allShifts.map((s) =>
-        s.id === targetShift.id ? closedShift : s
+      setAllShifts((prev) =>
+        prev.map((s) => (s.id === targetShift.id ? closedShift : s))
       );
-      setAllShifts(updatedShiftsSnapshot);
 
       // Clear any pending register cart items and receipts on shift close
       setCart([]);
       setActiveReceipt(null);
 
-      // Automatic OPFS binary checkpoint on every Shift Close
-      void createOpfsBinarySnapshot({
-        businessId: activeBusinessId,
-        businessName: currentBusiness?.name || activeBusinessId,
-        trigger: 'shift_close',
-        data: {
-          businesses: businesses.filter((b) => b.id === activeBusinessId),
-          products: allProducts.filter((p) => p.businessId === activeBusinessId),
-          categories: allCategories.filter((c) => c.businessId === activeBusinessId),
-          locations: allLocations.filter((l) => l.businessId === activeBusinessId),
-          systemUsers: allSystemUsers.filter((u) => u.businessId === activeBusinessId),
-          customers: allCustomers.filter((c) => c.businessId === activeBusinessId),
-          suppliers: allSuppliers.filter((s) => s.businessId === activeBusinessId),
-          transactions: allTransactions.filter((t) => t.businessId === activeBusinessId),
-          shifts: updatedShiftsSnapshot.filter((s) => s.businessId === activeBusinessId),
-          biRollups: allAnalyticsRollups.filter((r) => r.businessId === activeBusinessId),
-          biTargets: allAnalyticsTargets.filter((t) => t.businessId === activeBusinessId),
-          biSavedViews: allAnalyticsSavedViews.filter((v) => v.businessId === activeBusinessId),
-          outbox: outboxItems.filter((o) => o.businessId === activeBusinessId),
-        },
-      }).then((manifest) => {
-        if (manifest) {
-          setOpfsSnapshots((prev) => [manifest, ...prev.filter((m) => m.fileName !== manifest.fileName)].slice(0, 12));
-          void refreshStorageQuotaTelemetry(manifest);
-        }
-      });
-
       soundFx.playPaymentSuccess();
       showToast(
-        `Shift #${targetShift.shiftNumber} closed & OPFS archive snapshot recorded. Variance: ${currentLocation.currency} ${variance.toFixed(2)}`,
+        `Shift #${targetShift.shiftNumber} closed. Variance: ${currentLocation.currency} ${variance.toFixed(2)}`,
         variance === 0 ? 'success' : 'info'
       );
       return closedShift;
     },
-    [
-      activeShift,
-      interruptedSession,
-      transactions,
-      systemUsers,
-      currentCashier,
-      currentLocation,
-      isOnline,
-      showToast,
-      activeBusinessId,
-      currentBusiness?.name,
-      businesses,
-      allProducts,
-      allCategories,
-      allLocations,
-      allSystemUsers,
-      allCustomers,
-      allSuppliers,
-      allTransactions,
-      allShifts,
-      allAnalyticsRollups,
-      allAnalyticsTargets,
-      allAnalyticsSavedViews,
-      outboxItems,
-      refreshStorageQuotaTelemetry,
-    ]
+    [activeShift, interruptedSession, transactions, systemUsers, currentCashier, currentLocation, isOnline, showToast]
   );
 
   // 12.6 Forced Logout & Interrupted Sessions (Edge Case 4)
@@ -6850,168 +6419,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   }, []);
 
-  // 13. Cloud Sync, Transactional IndexedDB Outbox & OPFS Snapshots
+  // 13. Cloud Sync Management
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline' | 'error'>('synced');
   const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toISOString());
 
-  useEffect(() => {
-    isOnlineRef.current = isOnline;
-  }, [isOnline]);
-
-  // Boot-time IndexedDB hydration + idempotent legacy localStorage migration
-  useEffect(() => {
-    let cancelled = false;
-    hydrateTerminalDatabase()
-      .then(async (hydrated) => {
-        if (cancelled) return;
-
-        if (hydrated.businesses && hydrated.businesses.length > 0) {
-          const cleaned = hydrated.businesses.filter(
-            (b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'
-          );
-          if (cleaned.length > 0) {
-            const { uniqueBusinesses } = resolveBusinessUniquenessConflicts(cleaned);
-            setBusinesses(uniqueBusinesses.length > 0 ? uniqueBusinesses : cleaned);
-          }
-        }
-        if (hydrated.products && hydrated.products.length > 0) {
-          const hasUpfront = hydrated.products.some((p) => p.businessId === 'biz-upfront');
-          const baseList = hasUpfront
-            ? hydrated.products
-            : [...hydrated.products, ...INITIAL_PRODUCTS.filter((p) => p.businessId === 'biz-upfront')];
-          const seen = new Set<string>();
-          setAllProducts(
-            baseList.filter((p) => {
-              if (!p?.id || seen.has(p.id)) return false;
-              seen.add(p.id);
-              return true;
-            })
-          );
-        }
-        if (hydrated.categories && hydrated.categories.length > 0) setAllCategories(hydrated.categories);
-        if (hydrated.locations && hydrated.locations.length > 0) setAllLocations(hydrated.locations);
-        if (hydrated.systemUsers && hydrated.systemUsers.length > 0) setAllSystemUsers(hydrated.systemUsers);
-        if (hydrated.customers && hydrated.customers.length > 0) setAllCustomers(hydrated.customers);
-        if (hydrated.suppliers && hydrated.suppliers.length > 0) setAllSuppliers(hydrated.suppliers);
-        if (hydrated.transactions && hydrated.transactions.length > 0) setAllTransactions(hydrated.transactions);
-        if (hydrated.shifts && hydrated.shifts.length > 0) setAllShifts(hydrated.shifts);
-        if (hydrated.syncLogs && hydrated.syncLogs.length > 0) setAllSyncLogs(hydrated.syncLogs);
-        if (hydrated.salesBackups) setStoreSalesBackups(hydrated.salesBackups);
-        if (hydrated.superAdminAuditLogs && hydrated.superAdminAuditLogs.length > 0) {
-          setSuperAdminAuditLogs(hydrated.superAdminAuditLogs);
-        }
-        if (hydrated.adminActivityLogs) setAdminActivityLogs(hydrated.adminActivityLogs);
-        if (hydrated.supervisorOverrideLogs) setSupervisorOverrideLogs(hydrated.supervisorOverrideLogs);
-        if (hydrated.voidRecords) setVoidRecords(hydrated.voidRecords);
-        if (hydrated.pricingTiers && hydrated.pricingTiers.length > 0) {
-          setPricingTiers(hydrated.pricingTiers);
-        }
-        if (hydrated.biRollups) setAllAnalyticsRollups(hydrated.biRollups);
-        if (hydrated.biTargets) setAllAnalyticsTargets(hydrated.biTargets);
-        if (hydrated.biSavedViews) setAllAnalyticsSavedViews(hydrated.biSavedViews);
-
-        if (hydrated.branding.loginBgGraphic) {
-          setLoginBgGraphicState(hydrated.branding.loginBgGraphic);
-          setLoginBgGraphicName(hydrated.branding.loginBgGraphicName || null);
-        }
-        if (hydrated.branding.platformLogo) {
-          setPlatformLogoState(hydrated.branding.platformLogo);
-          setPlatformLogoName(hydrated.branding.platformLogoName || null);
-        }
-        if (hydrated.branding.platformFavicon) {
-          setPlatformFaviconState(hydrated.branding.platformFavicon);
-          setPlatformFaviconName(hydrated.branding.platformFaviconName || null);
-        }
-        if (hydrated.branding.industryImages && Object.keys(hydrated.branding.industryImages).length > 0) {
-          setIndustryImagesState(hydrated.branding.industryImages);
-        }
-
-        setOutboxItems(hydrated.outbox || []);
-        setOpfsSnapshots(hydrated.opfsManifests || []);
-
-        const quota = await estimateBrowserStorageQuota();
-        if (cancelled) return;
-
-        isIdbHydratedRef.current = true;
-        setIsStorageHydrated(true);
-
-        const opfsSupported = isOpfsSupported();
-        setStorageTelemetry({
-          engine: opfsSupported ? 'IndexedDB + OPFS' : 'IndexedDB (OPFS Restricted)',
-          usageBytes: quota.usageBytes,
-          quotaBytes: quota.quotaBytes,
-          usagePct: quota.usagePct,
-          opfsSupported,
-          migratedFromLocalStorageAt: hydrated.migrationReceipt?.migratedAt || null,
-          migratedKeysCount: hydrated.migrationReceipt?.migratedKeys.length || 0,
-          lastSnapshot: hydrated.opfsManifests[0] || null,
-        });
-
-        // Create initial OPFS baseline snapshot after first-ever localStorage migration
-        if (
-          opfsSupported &&
-          hydrated.migrationReceipt &&
-          hydrated.migrationReceipt.migratedKeys.length > 0 &&
-          hydrated.opfsManifests.length === 0
-        ) {
-          const snap = await createOpfsBinarySnapshot({
-            businessId: activeBusinessIdState,
-            businessName:
-              (hydrated.businesses || INITIAL_BUSINESSES).find((b) => b.id === activeBusinessIdState)?.name ||
-              'SokoPoS Store',
-            trigger: 'migration',
-            data: {
-              businesses: hydrated.businesses || INITIAL_BUSINESSES,
-              products: hydrated.products || INITIAL_PRODUCTS,
-              categories: hydrated.categories || INITIAL_CATEGORIES,
-              locations: hydrated.locations || INITIAL_LOCATIONS,
-              systemUsers: hydrated.systemUsers || INITIAL_SYSTEM_USERS,
-              customers: hydrated.customers || INITIAL_CUSTOMERS,
-              suppliers: hydrated.suppliers || INITIAL_SUPPLIERS,
-              transactions: hydrated.transactions || INITIAL_TRANSACTIONS,
-              shifts: hydrated.shifts || INITIAL_SHIFTS,
-              biRollups: hydrated.biRollups || [],
-              biTargets: hydrated.biTargets || [],
-              biSavedViews: hydrated.biSavedViews || [],
-              outbox: hydrated.outbox || [],
-            },
-          });
-          if (snap && !cancelled) {
-            setOpfsSnapshots((prev) => [snap, ...prev]);
-            void refreshStorageQuotaTelemetry(snap);
-          }
-        }
-      })
-      .catch((err) => {
-        console.warn('[TerminalDB] Hydration notice, continuing with in-memory defaults:', err);
-        isIdbHydratedRef.current = true;
-        setIsStorageHydrated(true);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshStorageQuotaTelemetry]);
-
-  const tenantOutboxItems = useMemo(
-    () => outboxItems.filter((item) => item.businessId === activeBusinessId),
-    [outboxItems, activeBusinessId]
-  );
-
-  const pendingOutboxCount = useMemo(
-    () => tenantOutboxItems.filter((item) => item.status !== 'dead_letter').length,
-    [tenantOutboxItems]
-  );
-
-  const deadLetterCount = useMemo(
-    () => tenantOutboxItems.filter((item) => item.status === 'dead_letter').length,
-    [tenantOutboxItems]
-  );
-
-  const pendingOfflineCount = useMemo(() => {
-    const unsyncedTxCount = transactions.filter((t) => !t.syncedToCloud).length;
-    return Math.max(pendingOutboxCount, unsyncedTxCount);
-  }, [pendingOutboxCount, transactions]);
+  const pendingOfflineCount = transactions.filter((t) => !t.syncedToCloud).length;
 
   const triggerCloudSync = useCallback(
     async (isSilentArg?: boolean | unknown) => {
@@ -7022,6 +6434,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return;
       }
 
+      // Demo sandbox runs 100% locally with zero Firestore reads/writes
       if (isDemoBusinessId(activeBusinessId)) {
         setSyncStatus('synced');
         if (!isSilent) {
@@ -7030,389 +6443,153 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return;
       }
 
-      // Sweep any entity still flagged as pending into IndexedDB sync_outbox before flushing
-      const existingOutbox = await getAllOutboxEntries();
-      const existingIds = new Set(existingOutbox.map((e) => e.id));
-      const sweepAdditions: OutboxMutationEntry[] = [];
-
-      allTransactions
-        .filter((tx) => tx.businessId === activeBusinessId && !tx.syncedToCloud)
-        .forEach((t) => {
-          const id = `transactions:${t.id}`;
-          if (!existingIds.has(id)) {
-            sweepAdditions.push(
-              buildOutboxEntry({
-                businessId: activeBusinessId,
-                collectionName: 'transactions',
-                docId: t.id,
-                operation: 'upsert',
-                payload: t,
-                label: `Sale ${t.receiptNumber || t.id}`,
-              })
-            );
-          }
-        });
-
-      allProducts
-        .filter((p) => p.businessId === activeBusinessId && p.isPendingCloudSync)
-        .forEach((p) => {
-          const id = `products:${p.id}`;
-          if (!existingIds.has(id)) {
-            sweepAdditions.push(
-              buildOutboxEntry({
-                businessId: activeBusinessId,
-                collectionName: 'products',
-                docId: p.id,
-                operation: 'upsert',
-                payload: p,
-                label: `Product ${p.name}`,
-              })
-            );
-          }
-        });
-
-      allLocations
-        .filter((l) => l.businessId === activeBusinessId && l.isPendingCloudSync)
-        .forEach((l) => {
-          const id = `locations:${l.id}`;
-          if (!existingIds.has(id)) {
-            sweepAdditions.push(
-              buildOutboxEntry({
-                businessId: activeBusinessId,
-                collectionName: 'locations',
-                docId: l.id,
-                operation: 'upsert',
-                payload: l,
-                label: `Branch ${l.name}`,
-              })
-            );
-          }
-        });
-
-      allSystemUsers
-        .filter((u) => u.businessId === activeBusinessId && u.isPendingCloudSync)
-        .forEach((u) => {
-          const id = `cashiers:${u.id}`;
-          if (!existingIds.has(id)) {
-            sweepAdditions.push(
-              buildOutboxEntry({
-                businessId: activeBusinessId,
-                collectionName: 'cashiers',
-                docId: u.id,
-                operation: 'upsert',
-                payload: u,
-                label: `Staff ${u.name}`,
-              })
-            );
-          }
-        });
-
-      if (sweepAdditions.length > 0) {
-        await enqueueOutboxMutations(sweepAdditions);
-      }
-
-      const preQueue = await getAllOutboxEntries();
-      const now = Date.now();
-      const hasDueWork = preQueue.some(
-        (e) =>
-          e.businessId === activeBusinessId &&
-          (e.status === 'pending' ||
-            (e.status === 'retry_scheduled' && (isSilent ? e.nextRetryAt <= now : true)))
+      const pendingTxs = allTransactions.filter(
+        (tx) => tx.businessId === activeBusinessId && !tx.syncedToCloud
+      );
+      const pendingProds = allProducts.filter(
+        (prod) => prod.businessId === activeBusinessId && prod.isPendingCloudSync
+      );
+      const pendingLocs = allLocations.filter(
+        (loc) => loc.businessId === activeBusinessId && loc.isPendingCloudSync
+      );
+      const pendingCashiers = allSystemUsers.filter(
+        (u) => u.businessId === activeBusinessId && u.isPendingCloudSync
       );
 
-      if (!hasDueWork) {
-        setOutboxItems(preQueue);
+      const totalPending =
+        pendingTxs.length + pendingProds.length + pendingLocs.length + pendingCashiers.length;
+
+      // Idle short-circuit: avoid React state churn, localStorage writes, and Firestore ops when queue is empty
+      if (totalPending === 0) {
         if (!isSilent) {
           soundFx.playSuccess();
           setLastSyncTime(new Date().toISOString());
-          const hasDead = preQueue.some((e) => e.businessId === activeBusinessId && e.status === 'dead_letter');
-          setSyncStatus(hasDead ? 'error' : 'synced');
-          showToast(
-            hasDead
-              ? 'Pending queue clear, but Dead-Letter items need inspection in Cloud Sync Hub.'
-              : 'All IndexedDB outbox records are synchronized with Firestore.',
-            hasDead ? 'warning' : 'success'
-          );
+          setSyncStatus('synced');
+          showToast('All store records are already synchronized with Firestore.', 'success');
         }
         return;
       }
 
       setSyncStatus('syncing');
 
-      const report = await flushSyncOutbox({
-        businessId: activeBusinessId,
-        isOnline,
-        includeScheduledOrDeadLetter: !isSilent,
-      });
-
-      setOutboxItems(report.remainingQueue);
-      const stillPendingDocIds = new Set(
-        report.remainingQueue
-          .filter((e) => e.businessId === activeBusinessId)
-          .map((e) => `${e.collectionName}:${e.docId}`)
-      );
+      if (!isSilent) {
+        await new Promise((res) => setTimeout(res, 300));
+      }
 
       const nowIso = new Date().toISOString();
-      if (report.ackedCount > 0) {
+      if (isOnline && auth.currentUser) {
+        try {
+          await flushPendingDocsBatch([
+            ...pendingTxs.map((t) => ({
+              collectionName: 'transactions' as const,
+              id: t.id,
+              data: { ...t, syncedToCloud: true, syncTimestamp: t.syncTimestamp || nowIso },
+            })),
+            ...pendingProds.map((p) => ({
+              collectionName: 'products' as const,
+              id: p.id,
+              data: { ...p, isPendingCloudSync: false },
+            })),
+            ...pendingLocs.map((l) => ({
+              collectionName: 'locations' as const,
+              id: l.id,
+              data: { ...l, isPendingCloudSync: false },
+            })),
+            ...pendingCashiers.map((c) => ({
+              collectionName: 'cashiers' as const,
+              id: c.id,
+              data: { ...c, isPendingCloudSync: false },
+            })),
+          ]);
+        } catch (syncErr) {
+          console.warn('Firestore auto-sync batch reconciliation notice:', syncErr);
+        }
+      }
+
+      if (pendingTxs.length > 0) {
         setAllTransactions((prev) =>
           prev.map((t) =>
-            t.businessId === activeBusinessId && !t.syncedToCloud && !stillPendingDocIds.has(`transactions:${t.id}`)
+            t.businessId === activeBusinessId && !t.syncedToCloud
               ? { ...t, syncedToCloud: true, syncTimestamp: t.syncTimestamp || nowIso }
               : t
           )
         );
+      }
+
+      if (pendingProds.length > 0) {
         setAllProducts((prev) =>
           prev.map((p) =>
-            p.businessId === activeBusinessId && p.isPendingCloudSync && !stillPendingDocIds.has(`products:${p.id}`)
+            p.businessId === activeBusinessId && p.isPendingCloudSync
               ? { ...p, isPendingCloudSync: false }
               : p
           )
         );
+      }
+
+      if (pendingLocs.length > 0) {
         setAllLocations((prev) =>
           prev.map((l) =>
-            l.businessId === activeBusinessId && l.isPendingCloudSync && !stillPendingDocIds.has(`locations:${l.id}`)
+            l.businessId === activeBusinessId && l.isPendingCloudSync
               ? { ...l, isPendingCloudSync: false }
               : l
           )
         );
+      }
+
+      if (pendingCashiers.length > 0) {
         setAllSystemUsers((prev) =>
           prev.map((u) =>
-            u.businessId === activeBusinessId && u.isPendingCloudSync && !stillPendingDocIds.has(`cashiers:${u.id}`)
+            u.businessId === activeBusinessId && u.isPendingCloudSync
               ? { ...u, isPendingCloudSync: false }
               : u
           )
         );
       }
 
-      const tenantDeadCount = report.remainingQueue.filter(
-        (e) => e.businessId === activeBusinessId && e.status === 'dead_letter'
-      ).length;
-
       setLastSyncTime(nowIso);
-      setSyncStatus(tenantDeadCount > 0 ? 'error' : 'synced');
-      void refreshStorageQuotaTelemetry();
-
+      setSyncStatus('synced');
       if (!isSilent) {
-        if (report.deadLetteredCount > 0 || tenantDeadCount > 0) {
-          showToast(
-            `Flushed ${report.ackedCount} queued mutations. ${tenantDeadCount} moved to Dead-Letter Queue for review.`,
-            'warning'
-          );
-        } else if (report.skippedQuotaOrOffline) {
-          showToast('Firestore cooldown or offline guard active; outbox safely preserved in IndexedDB.', 'info');
-        } else {
-          soundFx.playSuccess();
-          showToast(
-            `Outbox flushed (${report.ackedCount} committed). All store records synchronized.`,
-            'success'
-          );
-        }
-      }
-    },
-    [
-      isOnline,
-      showToast,
-      allTransactions,
-      allProducts,
-      allLocations,
-      allSystemUsers,
-      activeBusinessId,
-      refreshStorageQuotaTelemetry,
-    ]
-  );
-
-  const retryOutboxItem = useCallback(
-    async (entryId: string) => {
-      const updated = await resetOutboxEntriesForImmediateRetry([entryId]);
-      setOutboxItems(updated);
-      await triggerCloudSync(false);
-    },
-    [triggerCloudSync]
-  );
-
-  const retryAllDeadLetterItems = useCallback(async () => {
-    const deadIds = outboxItems
-      .filter((e) => e.businessId === activeBusinessId && e.status === 'dead_letter')
-      .map((e) => e.id);
-    if (deadIds.length === 0) {
-      showToast('No Dead-Letter entries to retry.', 'info');
-      return;
-    }
-    const updated = await resetOutboxEntriesForImmediateRetry(deadIds);
-    setOutboxItems(updated);
-    await triggerCloudSync(false);
-  }, [outboxItems, activeBusinessId, showToast, triggerCloudSync]);
-
-  const discardOutboxItem = useCallback(
-    async (entryId: string) => {
-      await removeOutboxEntries([entryId]);
-      setOutboxItems((prev) => prev.filter((e) => e.id !== entryId));
-      void refreshStorageQuotaTelemetry();
-      showToast('Removed mutation entry from local Sync Outbox.', 'info');
-    },
-    [refreshStorageQuotaTelemetry, showToast]
-  );
-
-  const createManualOpfsSnapshot = useCallback(async (): Promise<OpfsSnapshotManifest | null> => {
-    const manifest = await createOpfsBinarySnapshot({
-      businessId: activeBusinessId,
-      businessName: currentBusiness?.name || activeBusinessId,
-      trigger: 'manual',
-      data: {
-        businesses: businesses.filter((b) => b.id === activeBusinessId),
-        products: allProducts.filter((p) => p.businessId === activeBusinessId),
-        categories: allCategories.filter((c) => c.businessId === activeBusinessId),
-        locations: allLocations.filter((l) => l.businessId === activeBusinessId),
-        systemUsers: allSystemUsers.filter((u) => u.businessId === activeBusinessId),
-        customers: allCustomers.filter((c) => c.businessId === activeBusinessId),
-        suppliers: allSuppliers.filter((s) => s.businessId === activeBusinessId),
-        transactions: allTransactions.filter((t) => t.businessId === activeBusinessId),
-        shifts: allShifts.filter((s) => s.businessId === activeBusinessId),
-        biRollups: allAnalyticsRollups.filter((r) => r.businessId === activeBusinessId),
-        biTargets: allAnalyticsTargets.filter((t) => t.businessId === activeBusinessId),
-        biSavedViews: allAnalyticsSavedViews.filter((v) => v.businessId === activeBusinessId),
-        outbox: outboxItems.filter((o) => o.businessId === activeBusinessId),
-      },
-    });
-    if (manifest) {
-      setOpfsSnapshots((prev) => [manifest, ...prev.filter((m) => m.fileName !== manifest.fileName)].slice(0, 12));
-      await refreshStorageQuotaTelemetry(manifest);
-      soundFx.playSuccess();
-      showToast(
-        `OPFS binary snapshot archived (${(manifest.byteSize / 1024).toFixed(1)} KB, SHA-256 verified).`,
-        'success'
-      );
-      return manifest;
-    }
-    showToast('OPFS binary snapshots are unavailable in this browser window; use JSON Store Export instead.', 'warning');
-    return null;
-  }, [
-    activeBusinessId,
-    currentBusiness?.name,
-    businesses,
-    allProducts,
-    allCategories,
-    allLocations,
-    allSystemUsers,
-    allCustomers,
-    allSuppliers,
-    allTransactions,
-    allShifts,
-    allAnalyticsRollups,
-    allAnalyticsTargets,
-    allAnalyticsSavedViews,
-    outboxItems,
-    refreshStorageQuotaTelemetry,
-    showToast,
-  ]);
-
-  const verifyOpfsSnapshotIntegrity = useCallback(
-    async (fileName: string) => {
-      const result = await verifyOpfsSnapshot(fileName);
-      if (result.ok) {
         soundFx.playSuccess();
-        showToast(`SHA-256 integrity verified for ${fileName}`, 'success');
-      } else {
-        showToast(`Checksum mismatch or missing archive file for ${fileName}`, 'error');
+        showToast('Cloud synchronization complete: All store records reconciled with Firestore.', 'success');
       }
-      return result;
     },
-    [showToast]
+    [isOnline, showToast, allTransactions, allProducts, allLocations, allSystemUsers, activeBusinessId]
   );
-
-  const downloadOpfsArchive = useCallback(
-    async (fileName: string): Promise<boolean> => {
-      const ok = await downloadOpfsSnapshotFile(fileName);
-      if (ok) {
-        showToast(`Downloaded OPFS archive: ${fileName}`, 'success');
-      } else {
-        showToast('Could not read OPFS snapshot file from browser storage.', 'error');
-      }
-      return ok;
-    },
-    [showToast]
-  );
-
-  const exportFullLocalStore = useCallback(async () => {
-    const res = await exportFullStoreArchive({
-      businessId: activeBusinessId,
-      businessName: currentBusiness?.name || activeBusinessId,
-      fallbackSnapshot: {
-        businesses,
-        products: allProducts,
-        categories: allCategories,
-        locations: allLocations,
-        systemUsers: allSystemUsers,
-        customers: allCustomers,
-        suppliers: allSuppliers,
-        transactions: allTransactions,
-        shifts: allShifts,
-        biRollups: allAnalyticsRollups,
-        biTargets: allAnalyticsTargets,
-        biSavedViews: allAnalyticsSavedViews,
-        outbox: outboxItems,
-      },
-    });
-    soundFx.playSuccess();
-    showToast(
-      `Exported ${res.recordTotal.toLocaleString()} store records to ${res.fileName}`,
-      'success'
-    );
-  }, [
-    activeBusinessId,
-    currentBusiness?.name,
-    businesses,
-    allProducts,
-    allCategories,
-    allLocations,
-    allSystemUsers,
-    allCustomers,
-    allSuppliers,
-    allTransactions,
-    allShifts,
-    allAnalyticsRollups,
-    allAnalyticsTargets,
-    allAnalyticsSavedViews,
-    outboxItems,
-    showToast,
-  ]);
 
   const setIsOnline = (online: boolean) => {
     setIsOnlineState(online);
-    isOnlineRef.current = online;
     if (!online) {
       setSyncStatus('offline');
-      showToast('Offline Mode active. Transactions queue atomically in IndexedDB Sync Outbox.', 'info');
+      showToast('Offline Mode active. Transactions will queue locally in browser storage.', 'info');
     } else {
       setSyncStatus('syncing');
-      showToast('Network restored. Flushing IndexedDB Sync Outbox with Cloud...', 'info');
+      showToast('Network restored. Synchronizing offline queue with Cloud...', 'info');
       setTimeout(() => {
         triggerCloudSync(false);
       }, 500);
     }
   };
 
-  // Automated outbox retry loop: checks every 10 seconds for pending or due exponential-backoff mutations
+  // Automated background sync interval: flushes pending offline writes every 30 seconds (no-op when queue is empty)
   useEffect(() => {
     const hasActiveSession = Boolean(currentUser && auth.currentUser && !isDemoBusinessId(activeBusinessId));
-    if (!isOnline || !hasActiveSession || !activeBusinessId || !isStorageHydrated) return;
+    if (!isOnline || !hasActiveSession || !activeBusinessId) return;
 
     const intervalId = setInterval(() => {
       triggerCloudSync(true).catch((err) =>
-        console.warn('Background outbox flush tick:', err)
+        console.warn('Background auto-sync tick:', err)
       );
-    }, 10000);
+    }, 30000);
 
     return () => clearInterval(intervalId);
-  }, [isOnline, currentUser, activeBusinessId, isStorageHydrated, triggerCloudSync]);
+  }, [isOnline, currentUser, activeBusinessId, triggerCloudSync]);
 
   // Automated sync on network reconnect (online/offline) and tab focus/visibility
   useEffect(() => {
     const handleOnline = () => {
       setIsOnlineState(true);
-      isOnlineRef.current = true;
       setSyncStatus('syncing');
-      showToast('Network connection detected. Flushing IndexedDB Sync Outbox...', 'info');
+      showToast('Network connection detected. Auto-syncing pending store data with Cloud...', 'info');
       triggerCloudSync(true).catch((err) =>
         console.warn('Auto-sync on network reconnect error:', err)
       );
@@ -7420,9 +6597,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const handleOffline = () => {
       setIsOnlineState(false);
-      isOnlineRef.current = false;
       setSyncStatus('offline');
-      showToast('Offline Mode active. Transactions queue atomically in IndexedDB Sync Outbox.', 'info');
+      showToast('Offline Mode active. Transactions will queue locally in browser storage.', 'info');
     };
 
     const handleVisibilityOrFocus = () => {
@@ -7694,9 +6870,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     let unsubProducts: (() => void) | undefined;
     let unsubLocations: (() => void) | undefined;
     let unsubTransactions: (() => void) | undefined;
-    let unsubBiRollups: (() => void) | undefined;
-    let unsubBiTargets: (() => void) | undefined;
-    let unsubBiViews: (() => void) | undefined;
 
     // Session-cached 1x fetches for static metadata (categories & staff)
     refreshTenantCategories(false).catch(() => {});
@@ -7808,38 +6981,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         },
         { windowDays: 30, maxDocs: 500 }
       );
-
-      unsubBiRollups = subscribeToAnalyticsRollups(activeBusinessId, (remoteRollups) => {
-        setAllAnalyticsRollups((prev) => {
-          const other = prev.filter((r) => r.businessId !== activeBusinessId);
-          const map = new Map<string, AnalyticsDailyRollup>();
-          prev
-            .filter((r) => r.businessId === activeBusinessId)
-            .forEach((r) => map.set(r.id, r));
-          remoteRollups.forEach((r) => map.set(r.id, r));
-          return [...Array.from(map.values()), ...other];
-        });
-        setBiLastSyncedAt(new Date().toISOString());
-      });
-
-      unsubBiTargets = subscribeToAnalyticsTargets(activeBusinessId, (remoteTargets) => {
-        setAllAnalyticsTargets((prev) => {
-          const other = prev.filter((t) => t.businessId !== activeBusinessId);
-          const map = new Map<string, AnalyticsTarget>();
-          prev
-            .filter((t) => t.businessId === activeBusinessId)
-            .forEach((t) => map.set(t.id, t));
-          remoteTargets.forEach((t) => map.set(t.id, t));
-          return [...Array.from(map.values()), ...other];
-        });
-      });
-
-      unsubBiViews = subscribeToAnalyticsSavedViews(activeBusinessId, (remoteViews) => {
-        setAllAnalyticsSavedViews((prev) => {
-          const other = prev.filter((v) => v.businessId !== activeBusinessId);
-          return [...remoteViews, ...other];
-        });
-      });
     } catch (subErr) {
       console.warn('Firestore subscription notice:', subErr);
     }
@@ -7848,9 +6989,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (unsubProducts) unsubProducts();
       if (unsubLocations) unsubLocations();
       if (unsubTransactions) unsubTransactions();
-      if (unsubBiRollups) unsubBiRollups();
-      if (unsubBiTargets) unsubBiTargets();
-      if (unsubBiViews) unsubBiViews();
     };
   }, [
     activeBusinessId,
@@ -8209,115 +7347,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const loginWithFirebaseEmailOtp = async (
-    customToken: string
-  ): Promise<{ success: boolean; error?: string }> => {
-    localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
-    const cleanToken = String(customToken || '').trim();
-    if (!cleanToken) {
-      return { success: false, error: 'Missing Firebase custom session token.' };
-    }
-
-    try {
-      setIsFirebaseAuthLoading(true);
-      const userCredential = await signInWithCustomToken(auth, cleanToken);
-      const firebaseUser = userCredential.user;
-      if (!firebaseUser || !firebaseUser.email) {
-        throw new Error('No email profile returned from Firebase Custom Token session.');
-      }
-
-      const normalizedEmail = firebaseUser.email.toLowerCase().trim();
-      const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
-
-      setPendingVerificationEmail(null);
-      if (sessionStorage.getItem('sokopos_pending_store_name')) {
-        sessionStorage.removeItem('sokopos_pending_store_name');
-      }
-
-      const { winner: matchedBiz, isExistingAccount } = await prioritizeAccountAndPurgeConflicts(
-        normalizedEmail,
-        firebaseUser.displayName || undefined
-      );
-
-      const targetBizId = isSuperAdminEmail ? 'biz-upfront' : matchedBiz.id;
-      const role: UserRole = isSuperAdminEmail
-        ? 'super_admin'
-        : matchedBiz
-        ? 'business_owner'
-        : 'manager';
-
-      const idToken = await firebaseUser.getIdToken().catch(() => '');
-      const tokenResult = await firebaseUser.getIdTokenResult().catch(() => null);
-      const expirationTime = tokenResult?.expirationTime
-        ? new Date(tokenResult.expirationTime).getTime()
-        : Date.now() + 3600 * 1000;
-
-      const authUser: AuthUser = {
-        id: firebaseUser.uid,
-        firebaseUid: firebaseUser.uid,
-        email: firebaseUser.email,
-        name:
-          firebaseUser.displayName ||
-          (isSuperAdminEmail ? 'Platform Administrator' : firebaseUser.email.split('@')[0]),
-        initials: (
-          firebaseUser.displayName || (isSuperAdminEmail ? 'PA' : firebaseUser.email.substring(0, 2))
-        )
-          .substring(0, 2)
-          .toUpperCase(),
-        avatarUrl: firebaseUser.photoURL || undefined,
-        authProvider: 'firebase',
-        role,
-        businessId: targetBizId,
-        businessName: matchedBiz?.name || (isSuperAdminEmail ? 'Upfront Retail Solutions' : 'Business Account'),
-        createdAt: firebaseUser.metadata.creationTime || new Date().toISOString(),
-        idToken,
-        tokenExpiresAt: expirationTime,
-        sessionStatus: 'verified',
-      };
-
-      await saveUserProfileToFirestore({
-        uid: firebaseUser.uid,
-        email: firebaseUser.email,
-        role,
-        businessId: targetBizId,
-        displayName: firebaseUser.displayName || '',
-      });
-
-      setCurrentUser(authUser);
-      setActiveBusinessIdState(targetBizId);
-      localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
-      setIsFirebaseAuthLoading(false);
-
-      soundFx.playSuccess();
-      if (isExistingAccount) {
-        showToast(`Welcome back! Logged into ${matchedBiz.name}`, 'success');
-      } else {
-        if (!isSuperAdminEmail) {
-          trackPlatformEvent('signup_complete', {
-            businessId: matchedBiz.id,
-            businessName: matchedBiz.name,
-            planId: matchedBiz.plan,
-            dedupeKey: `signup-${matchedBiz.id}`,
-            dedupeTtlMs: 3600_000,
-          });
-        }
-        showToast(`Welcome to SokoPoS! Shop "${matchedBiz.name}" is ready.`, 'success');
-      }
-
-      return { success: true };
-    } catch (err: any) {
-      setIsFirebaseAuthLoading(false);
-      console.warn('Passwordless Email OTP session error:', err);
-      let errorMessage = 'Failed to establish Firebase session from verified OTP.';
-      if (err?.code === 'auth/invalid-custom-token' || err?.code === 'auth/custom-token-mismatch') {
-        errorMessage = 'Session token mismatch or invalid signature. Please verify service account configuration.';
-      } else if (err?.message) {
-        errorMessage = err.message;
-      }
-      return { success: false, error: errorMessage };
-    }
-  };
-
   const sendPasswordResetEmailAction = async (
     emailInput: string
   ): Promise<{ success: boolean; message?: string; error?: string }> => {
@@ -8620,6 +7649,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         (b) => !conflictIds.has(b.id) && b.ownerEmail.toLowerCase() !== normalizedEmail
       );
       const nextBizs = [...filtered, matchedBiz];
+      localStorage.setItem(STORAGE_KEYS.BUSINESSES, JSON.stringify(nextBizs));
       return nextBizs;
     });
 
@@ -9126,19 +8156,53 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const nextBizs = validBusinesses.length > 0 ? validBusinesses : INITIAL_BUSINESSES;
 
     setBusinesses(nextBizs);
+    localStorage.setItem(STORAGE_KEYS.BUSINESSES, JSON.stringify(nextBizs));
 
     if (unverifiedIds.has(activeBusinessIdState)) {
       setActiveBusinessIdState('biz-upfront');
       localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, 'biz-upfront');
     }
 
-    setAllSystemUsers((prev) => prev.filter((u) => !unverifiedIds.has(u.businessId)));
-    setAllLocations((prev) => prev.filter((l) => !unverifiedIds.has(l.businessId)));
-    setAllProducts((prev) => prev.filter((p) => !unverifiedIds.has(p.businessId)));
-    setAllCategories((prev) => prev.filter((c) => !unverifiedIds.has(c.businessId)));
-    setAllTransactions((prev) => prev.filter((t) => !unverifiedIds.has(t.businessId)));
-    setAllCustomers((prev) => prev.filter((c) => !unverifiedIds.has(c.businessId)));
-    setAllShifts((prev) => prev.filter((s) => !unverifiedIds.has(s.businessId)));
+    setAllSystemUsers((prev) => {
+      const next = prev.filter((u) => !unverifiedIds.has(u.businessId));
+      localStorage.setItem(STORAGE_KEYS.SYSTEM_USERS, JSON.stringify(next));
+      return next;
+    });
+
+    setAllLocations((prev) => {
+      const next = prev.filter((l) => !unverifiedIds.has(l.businessId));
+      localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(next));
+      return next;
+    });
+
+    setAllProducts((prev) => {
+      const next = prev.filter((p) => !unverifiedIds.has(p.businessId));
+      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(next));
+      return next;
+    });
+
+    setAllCategories((prev) => {
+      const next = prev.filter((c) => !unverifiedIds.has(c.businessId));
+      localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(next));
+      return next;
+    });
+
+    setAllTransactions((prev) => {
+      const next = prev.filter((t) => !unverifiedIds.has(t.businessId));
+      localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(next));
+      return next;
+    });
+
+    setAllCustomers((prev) => {
+      const next = prev.filter((c) => !unverifiedIds.has(c.businessId));
+      return next;
+    });
+
+    setAllShifts((prev) => {
+      const next = prev.filter((s) => !unverifiedIds.has(s.businessId));
+      localStorage.setItem(STORAGE_KEYS.SHIFTS, JSON.stringify(next));
+      return next;
+    });
 
     if (auth.currentUser) {
       for (const bId of unverifiedIds) {
@@ -10340,7 +9404,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         pendingVerificationEmail,
         loginWithFirebaseGoogle,
         loginWithFirebaseEmailPassword,
-        loginWithFirebaseEmailOtp,
         sendPasswordResetEmailAction,
         resendVerificationEmail,
         checkEmailVerificationStatus,
@@ -10554,15 +9617,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         loadHistoricalTransactions,
         isLoadingOlderTransactions,
         olderTransactionsLoadedFrom,
-        analyticsRollups,
-        analyticsTargets,
-        analyticsSavedViews,
-        isBiSyncing,
-        biLastSyncedAt,
-        syncAnalyticsRollups,
-        saveAnalyticsTarget,
-        saveAnalyticsSavedView,
-        deleteAnalyticsSavedView,
         storeSalesBackups,
         resetStoreSalesToZero,
         downloadSalesBackup,
@@ -10606,19 +9660,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         syncLogs,
         pendingOfflineCount,
         triggerCloudSync,
-        isStorageHydrated,
-        outboxItems: tenantOutboxItems,
-        pendingOutboxCount,
-        deadLetterCount,
-        storageTelemetry,
-        opfsSnapshots,
-        retryOutboxItem,
-        retryAllDeadLetterItems,
-        discardOutboxItem,
-        createManualOpfsSnapshot,
-        verifyOpfsSnapshotIntegrity,
-        downloadOpfsArchive,
-        exportFullLocalStore,
 
         isFirestoreConnected,
         firestoreDbId,
