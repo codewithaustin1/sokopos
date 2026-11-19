@@ -152,7 +152,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
                   type="button"
                   id={`sidebar-nav-${item.id}`}
                   onClick={() => setCurrentTab(item.tab)}
-                  className={`w-full min-h-[40px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
+                  className={`w-full min-h-[44px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
                     isActive
                       ? 'bg-blue-600 text-white'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -177,12 +177,12 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
                   )}
                   {!isCollapsed && item.badge && (
                     <span
-                      className={`text-[11px] font-mono tabular-nums font-bold px-1.5 py-0.5 rounded-md leading-none shrink-0 ${
+                      className={`text-[11px] font-mono tabular-nums font-bold leading-none shrink-0 ${
                         isActive
-                          ? 'bg-white/20 text-white'
+                          ? 'text-blue-100'
                           : item.badgeTone === 'warning'
-                          ? 'bg-amber-100 text-amber-800'
-                          : 'bg-slate-100 text-slate-700'
+                          ? 'text-amber-700'
+                          : 'text-slate-500'
                       }`}
                     >
                       {item.badge}
@@ -197,7 +197,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
               type="button"
               id="sidebar-nav-returns"
               onClick={() => openReturnsModal(null)}
-              className={`w-full min-h-[40px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer text-slate-600 hover:text-slate-900 hover:bg-slate-100 group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
+              className={`w-full min-h-[44px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer text-slate-600 hover:text-slate-900 hover:bg-slate-100 group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
                 isCollapsed ? 'justify-center px-2' : ''
               }`}
               title="Returns & Refunds"
@@ -229,7 +229,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
                 type="button"
                 id="sidebar-nav-staff"
                 onClick={() => setCurrentTab('staff')}
-                className={`w-full min-h-[40px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
+                className={`w-full min-h-[44px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
                   currentTab === 'staff'
                     ? 'bg-blue-600 text-white'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -251,7 +251,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
                 type="button"
                 id="sidebar-nav-settings"
                 onClick={() => setCurrentTab('settings')}
-                className={`w-full min-h-[40px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
+                className={`w-full min-h-[44px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
                   currentTab === 'settings'
                     ? 'bg-blue-600 text-white'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -273,7 +273,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
                 type="button"
                 id="sidebar-nav-affiliates"
                 onClick={() => setIsAffiliateModalOpen(true)}
-                className={`w-full min-h-[40px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group text-slate-600 hover:text-slate-900 hover:bg-slate-100 whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
+                className={`w-full min-h-[44px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group text-slate-600 hover:text-slate-900 hover:bg-slate-100 whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
                   isCollapsed ? 'justify-center px-2' : ''
                 }`}
                 title="Refer & Earn (20% Recurring)"
@@ -290,7 +290,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
                   type="button"
                   id="sidebar-nav-superadmin"
                   onClick={() => setCurrentTab('super-admin')}
-                  className={`w-full min-h-[40px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
+                  className={`w-full min-h-[44px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
                     currentTab === 'super-admin'
                       ? 'bg-blue-600 text-white'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -319,7 +319,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
           type="button"
           id="sidebar-collapse-toggle-btn"
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="w-full min-h-[36px] flex items-center justify-center gap-1.5 py-1.5 px-2 text-slate-500 hover:text-slate-800 text-xs font-medium transition-colors duration-150 rounded-lg hover:bg-slate-100 cursor-pointer whitespace-nowrap"
+          className="w-full min-h-[44px] flex items-center justify-center gap-1.5 py-1.5 px-2 text-slate-500 hover:text-slate-800 text-xs font-medium transition-colors duration-150 rounded-lg hover:bg-slate-100 cursor-pointer whitespace-nowrap"
           title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {isCollapsed ? (

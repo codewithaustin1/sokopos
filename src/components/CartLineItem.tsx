@@ -144,7 +144,7 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
           className="flex-1 min-w-0 pr-1 cursor-pointer group/item select-none"
           title="Tap to apply item discount"
         >
-          <h4 className="text-xs sm:text-sm font-bold text-slate-800 truncate group-hover/item:text-blue-600 transition-colors">
+          <h4 className="text-xs sm:text-sm font-semibold text-slate-900 truncate group-hover/item:text-blue-600 transition-colors">
             {item.productName}
           </h4>
           <div className="flex items-center flex-wrap gap-1.5 mt-0.5">
@@ -158,10 +158,10 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
                   e.stopPropagation();
                   onOpenDiscountModal(item);
                 }}
-                className="inline-flex items-center gap-1 text-[11px] text-emerald-700 hover:bg-emerald-50 font-semibold px-1.5 py-0.5 rounded-md transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1 text-[11px] text-emerald-700 hover:bg-emerald-50 font-semibold px-2 min-h-[32px] sm:min-h-[28px] rounded-md transition-colors cursor-pointer whitespace-nowrap"
                 title="Click to edit or remove discount"
               >
-                <Tag className="w-3 h-3" />
+                <Tag className="w-3 h-3 shrink-0" />
                 <span>{discountBadge}</span>
               </button>
             ) : (
@@ -171,10 +171,10 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
                   e.stopPropagation();
                   onOpenDiscountModal(item);
                 }}
-                className="text-[11px] text-slate-500 hover:text-blue-600 hover:bg-slate-100 font-medium px-1.5 py-0.5 rounded-md transition-colors flex items-center gap-0.5 cursor-pointer"
+                className="text-[11px] text-slate-500 hover:text-blue-600 hover:bg-slate-100 font-medium px-2 min-h-[32px] sm:min-h-[28px] rounded-md transition-colors inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
                 title="Quick tap to apply discount"
               >
-                <Tag className="w-3 h-3" />
+                <Tag className="w-3 h-3 shrink-0" />
                 <span>Discount</span>
               </button>
             )}
@@ -187,14 +187,14 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
         </div>
 
         {/* Right: Generous 48×48px Touch Steppers + Total + Delete Button */}
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          {/* Quantity Stepper with Generous Touch Target (min 48×48px on touch screens) */}
-          <div className="flex items-center border border-slate-200 rounded-xl sm:rounded-lg bg-slate-50 overflow-hidden shadow-2xs">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+          {/* Quantity Stepper with Generous Touch Target (48×48px on touch screens, 40×40px on desktop) */}
+          <div className="flex items-center border border-slate-200 rounded-xl sm:rounded-lg bg-slate-50 overflow-hidden">
             {/* Minus Button: 48×48px mobile touch zone */}
             <button
               type="button"
               onClick={handleMinusClick}
-              className="w-12 h-12 sm:w-8 sm:h-8 flex items-center justify-center text-slate-700 hover:bg-slate-200 active:bg-blue-100 active:scale-95 font-black transition-all cursor-pointer touch-manipulation select-none"
+              className="w-12 h-12 sm:w-9 sm:h-9 flex items-center justify-center text-slate-700 hover:bg-slate-200 active:bg-blue-100 active:scale-95 font-bold transition-all duration-150 cursor-pointer touch-manipulation select-none"
               title="Decrease quantity"
               aria-label={`Decrease quantity of ${item.productName}`}
             >
@@ -210,7 +210,7 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
             <button
               type="button"
               onClick={handlePlusClick}
-              className="w-12 h-12 sm:w-8 sm:h-8 flex items-center justify-center text-slate-700 hover:bg-slate-200 active:bg-blue-100 active:scale-95 font-black transition-all cursor-pointer touch-manipulation select-none"
+              className="w-12 h-12 sm:w-9 sm:h-9 flex items-center justify-center text-slate-700 hover:bg-slate-200 active:bg-blue-100 active:scale-95 font-bold transition-all duration-150 cursor-pointer touch-manipulation select-none"
               title="Increase quantity"
               aria-label={`Increase quantity of ${item.productName}`}
             >
@@ -219,7 +219,7 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
           </div>
 
           {/* Line Subtotal */}
-          <div className="text-right min-w-[65px] sm:min-w-[75px]">
+          <div className="text-right min-w-[68px] sm:min-w-[78px]">
             <div className="text-xs sm:text-sm font-bold text-slate-900 font-mono tabular-nums">
               {currency} {lineTotal.toFixed(2)}
             </div>
@@ -230,11 +230,11 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
             )}
           </div>
 
-          {/* Desktop Trash Button (Mobile users can swipe or tap) */}
+          {/* Desktop / Tap Trash Button */}
           <button
             type="button"
             onClick={handleVoidClick}
-            className="text-slate-300 hover:text-red-600 transition p-2 sm:p-1.5 cursor-pointer touch-manipulation rounded-lg hover:bg-red-50"
+            className="text-slate-400 hover:text-red-600 transition-colors min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center cursor-pointer touch-manipulation rounded-lg hover:bg-red-50"
             title="Void line item with supervisor audit"
           >
             <Trash2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />

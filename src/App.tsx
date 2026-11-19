@@ -686,27 +686,27 @@ function PosAppContent() {
               <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-500 flex items-center justify-center mx-auto mb-4">
                 <Lock className="w-8 h-8" />
               </div>
-              <span className="bg-rose-500/20 text-rose-300 text-[10px] font-mono font-bold px-2.5 py-1 rounded-full uppercase tracking-wider border border-rose-500/30">
-                POS Access Suspended
-              </span>
-              <h2 className="text-xl font-black text-white mt-3">
+              <div className="text-[11px] font-mono font-semibold text-rose-400 tracking-wide">
+                POS Access Suspended · Account Hold
+              </div>
+              <h2 className="text-xl font-bold text-white mt-2 font-display">
                 Subscription Payment Required
               </h2>
               <p className="text-xs text-slate-300 mt-2 leading-relaxed">
-                Terminal and trading access for <strong className="text-white font-bold">{currentBusiness.name}</strong> ({currentBusiness.code}) has been temporarily deactivated due to a missed subscription payment or administrative hold.
+                Terminal and trading access for <strong className="text-white font-semibold">{currentBusiness.name}</strong> ({currentBusiness.code}) has been temporarily deactivated due to a missed subscription payment or administrative hold.
               </p>
 
-              <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3.5 mt-5 text-left text-xs space-y-2 font-mono">
+              <div className="border-t border-b border-slate-800 py-3.5 mt-5 text-left text-xs space-y-2 font-mono tabular-nums">
                 <div className="flex justify-between">
-                  <span className="text-slate-500 font-sans">Business:</span>
-                  <span className="text-slate-200 font-bold">{currentBusiness.name}</span>
+                  <span className="text-slate-400 font-sans">Business:</span>
+                  <span className="text-slate-200 font-semibold">{currentBusiness.name}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500 font-sans">Plan Tier:</span>
-                  <span className="text-amber-400 font-bold uppercase">{currentBusiness.plan}</span>
+                  <span className="text-slate-400 font-sans">Plan Tier:</span>
+                  <span className="text-amber-400 font-semibold capitalize">{currentBusiness.plan}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500 font-sans">Google Account:</span>
+                  <span className="text-slate-400 font-sans">Account Email:</span>
                   <span className="text-slate-300 truncate max-w-[180px]">{currentBusiness.ownerEmail}</span>
                 </div>
               </div>
@@ -717,7 +717,7 @@ function PosAppContent() {
                 </p>
                 <button
                   onClick={() => setIsSignOutModalOpen(true)}
-                  className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs py-2.5 rounded-xl transition cursor-pointer"
+                  className="w-full min-h-[44px] bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs py-2.5 rounded-xl transition cursor-pointer"
                 >
                   Sign Out / Switch Account
                 </button>

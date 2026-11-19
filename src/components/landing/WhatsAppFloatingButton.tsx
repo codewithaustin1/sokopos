@@ -45,9 +45,9 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
     {
       id: 'welcome-1',
       sender: 'bot',
-      text: 'Jambo! 👋 I am Saras, your SokoPoS Kenya Specialist. How can I help you set up or optimize your retail store today?',
+      text: 'Jambo! Need help setting up your till, M-Pesa matching, or KRA eTIMS receipts? Ask a question here or chat with our Nairobi team on WhatsApp.',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      whatsappPrompt: 'Hello SokoPoS team! I need assistance setting up my store in Kenya.',
+      whatsappPrompt: 'Hello SokoPoS team! I need assistance setting up my shop in Kenya.',
     },
   ]);
   const [inputText, setInputText] = useState('');
@@ -81,31 +81,31 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
 
   const quickChips = [
     {
-      label: '🚀 Free Setup Advisory',
-      query: 'I would like a free 5-minute setup consultation for my retail business in Kenya.',
+      label: '5-Min Setup Help',
+      query: 'Can you help me set up my shop items and counter in 5 minutes?',
     },
     {
-      label: '💳 M-Pesa & eTIMS Tax',
-      query: 'How does SokoPoS integrate Safaricom M-Pesa Buy Goods Tills and KRA eTIMS invoices?',
+      label: 'M-Pesa & eTIMS',
+      query: 'How does SokoPoS match M-Pesa Till payments and print KRA eTIMS receipts?',
     },
     {
-      label: '🖨️ Printer & Scanner Setup',
-      query: 'Will my existing thermal receipt printer and USB/Bluetooth barcode scanner work?',
+      label: 'Printers & Scanners',
+      query: 'Will my existing thermal receipt printer and barcode scanner work?',
     },
     {
-      label: '👥 Staff & PIN Security',
-      query: 'How do I add cashiers and set manager PIN overrides for discounts?',
+      label: 'Stop Till Shortages',
+      query: 'How do cashier PINs and shift counts prevent cash shortages?',
     },
     {
-      label: '💰 Software Pricing',
-      query: 'What are the subscription plans and onboarding fees for SokoPoS?',
+      label: 'Costs & Free Plan',
+      query: 'What does SokoPoS cost per month, and what do I get for free?',
     },
   ];
 
   const handleOpenWhatsApp = (customMessage?: string) => {
     const message =
       customMessage ||
-      'Hello SokoPoS team! I am interested in testing SokoPoS for my retail/hospitality business in Kenya.';
+      'Hello SokoPoS team! I want to see how SokoPoS works for my shop in Kenya.';
     const encoded = encodeURIComponent(message);
     const url = `https://wa.me/${cleanPhone}?text=${encoded}`;
     window.open(url, '_blank', 'noopener,noreferrer');
@@ -117,39 +117,39 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
     if (lower.includes('m-pesa') || lower.includes('till') || lower.includes('etims') || lower.includes('tax') || lower.includes('kra')) {
       return {
         responseText:
-          'SokoPoS provides full 1-click integration with Safaricom M-Pesa Buy Goods & Paybill, plus certified KRA eTIMS tax invoicing with QR receipt printing and automatic 16% VAT tax calculation.',
-        waPrompt: 'Hi SokoPoS team, please assist me with M-Pesa Till & KRA eTIMS integration.',
+          'You can confirm Safaricom M-Pesa Buy Goods or Paybill payments right at checkout so you never have to match SMS messages at closing time. KRA eTIMS QR receipts and 16% VAT breakdowns are handled automatically through Digitax.',
+        waPrompt: 'Hi SokoPoS team, please show me how M-Pesa Till matching & KRA eTIMS receipts work.',
       };
     }
 
     if (lower.includes('printer') || lower.includes('scanner') || lower.includes('hardware') || lower.includes('barcode')) {
       return {
         responseText:
-          'SokoPoS works out-of-the-box with all ESC/POS thermal receipt printers (58mm & 80mm via USB/Bluetooth) and standard barcode scanners in high-speed keyboard wedge mode.',
-        waPrompt: 'Hello SokoPoS, can you verify hardware compatibility for my store printer and scanner?',
+          'Yes—plug in your current 58mm or 80mm USB/Bluetooth receipt printer and standard barcode scanner, and open your till on the phone, tablet, or laptop you already own.',
+        waPrompt: 'Hello SokoPoS, can you check if my shop printer and barcode scanner will work?',
       };
     }
 
     if (lower.includes('price') || lower.includes('fee') || lower.includes('plan') || lower.includes('cost') || lower.includes('free')) {
       return {
         responseText:
-          'SokoPoS Core Cloud POS is Ksh 0/month forever with zero subscription fees. For full 1-on-1 store setup, catalog import, and hardware pairing, our Nairobi advisory fee is a single Ksh 1,999 payment.',
-        waPrompt: 'Hello SokoPoS! I want to confirm pricing and book the Ksh 1,999 onboarding advisory.',
+          'You can run a core counter free (Ksh 0/month) with zero subscription fees. If you want our Nairobi team to import your stock sheet and pair your printer 1-on-1, onboarding help is a single Ksh 1,999 fee.',
+        waPrompt: 'Hello SokoPoS! I want to confirm pricing and book the Ksh 1,999 shop setup.',
       };
     }
 
-    if (lower.includes('staff') || lower.includes('cashier') || lower.includes('pin') || lower.includes('role') || lower.includes('shift')) {
+    if (lower.includes('staff') || lower.includes('cashier') || lower.includes('pin') || lower.includes('role') || lower.includes('shift') || lower.includes('shortage')) {
       return {
         responseText:
-          'You can add unlimited staff members with 4-digit PIN authentication and granular role permissions (Cashier, Supervisor, Manager, Inventory Clerk) to audit discounts and shift cash reconciliations.',
-        waPrompt: 'Hi SokoPoS team, I need help setting up cashier roles and shift reconciliation.',
+          'Every cashier gets their own 4-digit PIN and can only apply discounts if a manager approves with a PIN. At closing time, blind shift counts show expected cash and M-Pesa vs. what is actually in the drawer.',
+        waPrompt: 'Hi SokoPoS team, I want to set up cashier PINs and shift cash counts for my shop.',
       };
     }
 
     return {
       responseText:
-        'Thank you for your inquiry! SokoPoS is engineered specifically for Kenyan retail supermarkets, hardware stores, chemists, and restaurants. For detailed assistance, our Nairobi team is ready on WhatsApp!',
-      waPrompt: `Hello SokoPoS team! I have a question: "${userQuery}"`,
+        'Glad to help! Tell us what kind of shop you run (duka, supermarket, bar, hardware, or chemist) and our Nairobi team can walk you through setup right on WhatsApp.',
+      waPrompt: `Hello SokoPoS team! I have a question about my shop: "${userQuery}"`,
     };
   };
 
@@ -216,23 +216,22 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
           <div className="px-4 py-3 bg-gradient-to-r from-emerald-50/80 via-white to-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="relative">
-                <div className="w-9 h-9 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center overflow-hidden text-emerald-600 shadow-xs">
+                <div className="w-9 h-9 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center overflow-hidden text-emerald-600 shadow-xs">
                   <img
                     src="/assets/aistudio/IMG_20261104_091006_253_1f889bfe.jpg"
                     alt="Support Specialist"
                     className="w-full h-full object-cover"
                   />
                 </div>
-                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white animate-pulse" />
               </div>
 
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <h3 className="text-xs font-black text-slate-900 truncate">SokoPoS Kenya Support</h3>
+                  <h3 className="text-xs font-black text-slate-900 truncate">SokoPoS Shop Support</h3>
                 </div>
                 <p className="text-[10px] text-slate-500 flex items-center gap-1">
                   <ShieldCheck className="w-3 h-3 text-emerald-600 shrink-0" />
-                  <span className="truncate">Support</span>
+                  <span className="truncate">Nairobi Setup Team</span>
                 </p>
               </div>
             </div>
@@ -357,14 +356,14 @@ export const WhatsAppFloatingButton: React.FC<WhatsAppFloatingButtonProps> = ({
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Quick Chip Suggestions */}
+              {/* Quick Prompt Suggestions */}
               <div className="px-3 py-2 bg-white border-t border-slate-200 overflow-x-auto flex items-center gap-1.5 modal-scrollbar shrink-0">
                 {quickChips.map((chip, idx) => (
                   <button
                     key={idx}
                     type="button"
                     onClick={() => handleSendMessage(chip.query)}
-                    className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 text-[10px] font-bold text-slate-700 hover:text-emerald-700 transition whitespace-nowrap cursor-pointer shrink-0"
+                    className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 text-[11px] font-semibold text-slate-700 hover:text-emerald-700 transition whitespace-nowrap cursor-pointer shrink-0"
                   >
                     {chip.label}
                   </button>

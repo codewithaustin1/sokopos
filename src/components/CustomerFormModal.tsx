@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   User,
@@ -11,6 +11,7 @@ import {
   CheckCircle,
   AlertCircle,
   Sparkles,
+  BookOpen,
 } from 'lucide-react';
 import { Customer } from '../types';
 import { usePos } from '../context/PosContext';
@@ -46,6 +47,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
   const [storeCreditBalance, setStoreCreditBalance] = useState('0');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (initialCustomer) {
@@ -73,6 +75,95 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
   }, [initialCustomer, isOpen]);
 
   if (!isOpen) return null;
+
+  const handleNativeContactImport = async () => {
+    setErrorMessage('');
+    if ('contacts' in navigator && 'select' in (navigator as any).contacts) {
+      try {
+        const props = ['name', 'tel', 'email', 'address'];
+        const opts = { multiple: false };
+        const contacts = await (navigator as any).contacts.select(props, opts);
+        if (contacts && contacts.length > 0) {
+          const contact = contacts[0];
+          if (contact.name && contact.name[0]) {
+            setName(contact.name[0]);
+          }
+          if (contact.tel && contact.tel[0]) {
+            setPhone(contact.tel[0]);
+          }
+          if (contact.email && contact.email[0]) {
+            setEmail(contact.email[0]);
+          }
+          if (contact.address && contact.address[0]) {
+            const addr = contact.address[0];
+            const fullAddr = [addr.addressLine, addr.city, addr.region].filter(Boolean).join(', ');
+            if (fullAddr) setAddress(fullAddr);
+          }
+          showToast('Contact imported successfully!', 'success');
+          return;
+        }
+      } catch (err: any) {
+        if (err?.name !== 'AbortError') {
+          console.warn('Native contact picker notice:', err);
+        }
+      }
+    }
+
+    // Fallback to file input for vCard / contact file upload
+    fileInputRef.current?.click();
+  };
+
+  const handleVCardFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = String(event.target?.result || '');
+        let parsedName = '';
+        let parsedPhone = '';
+        let parsedEmail = '';
+        let parsedAddress = '';
+
+        const lines = text.split(/\r?\n/);
+        for (const line of lines) {
+          const upper = line.toUpperCase();
+          if (upper.startsWith('FN:') || upper.startsWith('FN;')) {
+            parsedName = line.substring(line.indexOf(':') + 1).trim();
+          } else if (!parsedName && (upper.startsWith('N:') || upper.startsWith('N;'))) {
+            const parts = line.substring(line.indexOf(':') + 1).split(';');
+            parsedName = parts.reverse().filter(Boolean).join(' ').trim();
+          } else if (upper.startsWith('TEL') || upper.startsWith('TEL;')) {
+            if (!parsedPhone) {
+              parsedPhone = line.substring(line.indexOf(':') + 1).trim();
+            }
+          } else if (upper.startsWith('EMAIL') || upper.startsWith('EMAIL;')) {
+            if (!parsedEmail) {
+              parsedEmail = line.substring(line.indexOf(':') + 1).trim();
+            }
+          } else if (upper.startsWith('ADR') || upper.startsWith('ADR;')) {
+            if (!parsedAddress) {
+              const parts = line.substring(line.indexOf(':') + 1).split(';');
+              parsedAddress = parts.filter(Boolean).join(', ').trim();
+            }
+          }
+        }
+
+        if (parsedName) setName(parsedName);
+        if (parsedPhone) setPhone(parsedPhone);
+        if (parsedEmail) setEmail(parsedEmail);
+        if (parsedAddress) setAddress(parsedAddress);
+
+        showToast('Contact card imported successfully! Missing fields remain empty.', 'success');
+      } catch (err: any) {
+        setErrorMessage('Failed to parse contact file. Please check vCard format.');
+      }
+      // Reset input
+      if (e.target) e.target.value = '';
+    };
+    reader.readAsText(file);
+  };
 
   const toggleTag = (tag: string) => {
     if (tags.includes(tag)) {
@@ -194,6 +285,33 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Phonebook Contact Import Banner */}
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                <BookOpen className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-xs font-extrabold text-emerald-900">Import from Phonebook</div>
+                <div className="text-[11px] text-emerald-700">Quickly fill client details from your device contacts or vCard (.vcf) file. Missing fields remain empty.</div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleNativeContactImport}
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-2xs transition shrink-0 cursor-pointer flex items-center gap-1.5"
+            >
+              <span>Import Contact</span>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".vcf,.vcard,text/vcard"
+              className="hidden"
+              onChange={handleVCardFileChange}
+            />
+          </div>
+
           {errorMessage && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-xs font-bold text-red-700">
               <AlertCircle className="w-4 h-4 shrink-0" />

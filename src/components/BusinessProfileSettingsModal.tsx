@@ -334,6 +334,12 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
   const [isConfirmingTotp, setIsConfirmingTotp] = useState(false);
   const [hasCopiedSecret, setHasCopiedSecret] = useState(false);
 
+  // Receipt Customization State
+  const [receiptHeaderNote, setReceiptHeaderNote] = useState('');
+  const [receiptFooterNote, setReceiptFooterNote] = useState('');
+  const [receiptTaxPin, setReceiptTaxPin] = useState('');
+  const [enhancedReceiptPreview, setEnhancedReceiptPreview] = useState(false);
+
   // Sync profile form when currentBusiness changes
   React.useEffect(() => {
     if (currentBusiness) {
@@ -341,8 +347,23 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
       setProfileCode(currentBusiness.code);
       setProfileTaxNumber(currentBusiness.taxNumber || '');
       setProfileCurrency(currentBusiness.currency || 'KES');
+      setReceiptHeaderNote(currentBusiness.hardwareSettings?.printerHeaderNote || '');
+      setReceiptFooterNote(currentBusiness.hardwareSettings?.printerFooterNote || '');
+      setReceiptTaxPin(currentBusiness.taxNumber || '');
     }
   }, [currentBusiness]);
+
+  const handleSaveReceiptBranding = () => {
+    updateBusinessProfile({
+      taxNumber: receiptTaxPin.trim(),
+      hardwareSettings: {
+        ...(currentBusiness?.hardwareSettings || {}),
+        printerHeaderNote: receiptHeaderNote.trim(),
+        printerFooterNote: receiptFooterNote.trim(),
+      },
+    });
+    showToast('Receipt branding and tax settings saved successfully!', 'success');
+  };
 
   // Handle Profile Update
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -3140,6 +3161,187 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                       <span className="mt-3 text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
                         Page Invoice · PDF Export
                       </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Receipt Customization & Live Interactive Thermal Preview */}
+                <div className="pt-6 border-t border-slate-200 dark:border-slate-800 space-y-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                      <Receipt className="w-4 h-4 text-emerald-600" />
+                      <span>Receipt Branding, Header/Footer & Live Preview</span>
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Customize store header notes, tax PIN, and return policies with real-time thermal receipt preview.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                    {/* Inputs Form */}
+                    <div className="space-y-4 bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          KRA eTIMS Tax PIN
+                        </label>
+                        <input
+                          type="text"
+                          value={receiptTaxPin}
+                          onChange={(e) => setReceiptTaxPin(e.target.value)}
+                          placeholder="e.g. P051234567X"
+                          className="w-full px-3 py-2 text-xs font-mono font-medium rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          Custom Header Note / Greeting
+                        </label>
+                        <input
+                          type="text"
+                          value={receiptHeaderNote}
+                          onChange={(e) => setReceiptHeaderNote(e.target.value)}
+                          placeholder="e.g. Karibu Tena! Fresh Quality Guaranteed"
+                          className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          Custom Footer Note / Return Policy
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={receiptFooterNote}
+                          onChange={(e) => setReceiptFooterNote(e.target.value)}
+                          placeholder="e.g. Goods once sold cannot be returned after 7 days. Asante!"
+                          className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleSaveReceiptBranding}
+                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>Save Receipt Branding & Tax PIN</span>
+                      </button>
+                    </div>
+
+                    {/* Live Thermal Receipt Preview */}
+                    <div className="bg-slate-100 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col items-center">
+                      <div className="flex items-center justify-between w-full max-w-[280px] mb-3">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                          Live Thermal Preview ({receiptFormat || '80mm'})
+                        </span>
+                        <label className="flex items-center gap-1.5 cursor-pointer text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 select-none bg-emerald-50 dark:bg-emerald-950/60 px-2 py-1 rounded-md border border-emerald-200 dark:border-emerald-800/80 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition">
+                          <input
+                            type="checkbox"
+                            checked={enhancedReceiptPreview}
+                            onChange={(e) => setEnhancedReceiptPreview(e.target.checked)}
+                            className="w-3 h-3 text-emerald-600 rounded focus:ring-emerald-500"
+                          />
+                          <span>Enhanced Grid</span>
+                        </label>
+                      </div>
+
+                      <div className="relative bg-white text-slate-800 w-full max-w-[280px] rounded-lg shadow-lg border border-slate-300 p-4 font-mono text-[11px] space-y-2 select-none overflow-hidden">
+                        {/* Translucent Grid Overlay for Logo & Text Alignment */}
+                        {enhancedReceiptPreview && (
+                          <div className="absolute inset-0 pointer-events-none z-25 flex flex-col justify-between p-1 bg-emerald-500/5 backdrop-blur-[0.2px]">
+                            {/* Vertical column alignment grid lines (32 cols for 58mm / 48 cols for 80mm representation) */}
+                            <div className="absolute inset-0 grid grid-cols-6 divide-x divide-emerald-500/30 border border-emerald-500/40">
+                              <div className="h-full"></div>
+                              <div className="h-full"></div>
+                              <div className="h-full"></div>
+                              <div className="h-full"></div>
+                              <div className="h-full"></div>
+                              <div className="h-full"></div>
+                            </div>
+                            {/* Center alignment crosshair axis */}
+                            <div className="absolute inset-y-0 left-1/2 w-px bg-rose-500/70 border-r border-dashed border-rose-500/70"></div>
+                            {/* Horizontal guide lines */}
+                            <div className="absolute inset-x-0 top-14 border-b border-dashed border-emerald-500/40"></div>
+                            <div className="absolute inset-x-0 top-36 border-b border-dashed border-emerald-500/40"></div>
+                            <div className="absolute inset-x-0 bottom-16 border-b border-dashed border-emerald-500/40"></div>
+                            
+                            {/* Grid Header Info Banner */}
+                            <div className="absolute top-1 inset-x-2 bg-emerald-900/90 text-emerald-100 text-[9px] font-bold px-2 py-0.5 rounded text-center shadow-xs flex items-center justify-between">
+                              <span>{receiptFormat === '58mm' ? '32-Col Grid (58mm)' : '48-Col Grid (80mm)'}</span>
+                              <span className="text-emerald-300">Center Axis</span>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="text-center space-y-1 pb-2 border-b border-dashed border-slate-300">
+                          {currentBusiness?.brandingSettings?.logoBase64 && (
+                            <div className="flex justify-center pb-1">
+                              <img
+                                src={currentBusiness.brandingSettings.logoBase64}
+                                alt="Logo"
+                                className="h-7 max-w-[120px] object-contain"
+                              />
+                            </div>
+                          )}
+                          <div className="text-xs font-black uppercase text-slate-900">
+                            {currentBusiness?.name || 'SokoPoS Retail'}
+                          </div>
+                          <div className="text-[9px] text-slate-500">
+                            {currentLocation.name} · {currentLocation.phone || '+254 700 000000'}
+                          </div>
+                          <div className="text-[9px] text-slate-500">
+                            KRA PIN: {receiptTaxPin.trim() || 'P051234567X'}
+                          </div>
+                          {receiptHeaderNote.trim() && (
+                            <div className="text-[10px] font-bold text-slate-700 pt-1">
+                              {receiptHeaderNote.trim()}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="text-[10px] space-y-0.5 py-1.5 border-b border-dashed border-slate-300">
+                          <div className="flex justify-between text-slate-500">
+                            <span>Receipt No:</span>
+                            <span className="font-bold text-slate-900">SOKO-2026-9941</span>
+                          </div>
+                          <div className="flex justify-between text-slate-500">
+                            <span>Date:</span>
+                            <span>{new Date().toLocaleDateString()}</span>
+                          </div>
+                        </div>
+
+                        <div className="py-1 space-y-1 text-[10px] border-b border-dashed border-slate-300">
+                          <div className="flex justify-between font-bold text-slate-900">
+                            <span>1x Premium Maize Flour 2kg</span>
+                            <span>KES 220</span>
+                          </div>
+                          <div className="flex justify-between font-bold text-slate-900">
+                            <span>2x Fresh Brookside Milk 500ml</span>
+                            <span>KES 140</span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-0.5 pt-1 text-[10px]">
+                          <div className="flex justify-between font-bold text-slate-900">
+                            <span>TOTAL:</span>
+                            <span>KES 360</span>
+                          </div>
+                          <div className="flex justify-between text-slate-500 text-[9px]">
+                            <span>M-Pesa (QG789XYZ):</span>
+                            <span>KES 360</span>
+                          </div>
+                        </div>
+
+                        <div className="text-center pt-3 border-t border-dashed border-slate-300 space-y-1 text-[9px] text-slate-600">
+                          {receiptFooterNote.trim() ? (
+                            <p className="font-bold text-slate-800">{receiptFooterNote.trim()}</p>
+                          ) : (
+                            <p>Goods once sold cannot be returned after 7 days.</p>
+                          )}
+                          <p className="text-slate-400">Powered by SokoPoS & Digitax eTIMS</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

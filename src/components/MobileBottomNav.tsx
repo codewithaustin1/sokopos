@@ -106,9 +106,11 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
       <button
         type="button"
         onClick={() => handleNavClick('cloud-sync')}
-        className={`flex-1 min-h-[44px] flex flex-col items-center justify-center py-1 px-1 rounded-lg transition-colors duration-150 cursor-pointer relative ${
+        className={`flex-1 min-h-[44px] flex flex-col items-center justify-center py-1 px-1 rounded-lg transition-colors duration-150 cursor-pointer relative whitespace-nowrap ${
           currentTab === 'cloud-sync'
             ? 'text-blue-600 font-bold'
+            : !isOnline
+            ? 'text-amber-700 font-semibold'
             : 'text-slate-500 hover:text-slate-800 font-medium'
         }`}
       >
@@ -119,25 +121,21 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             }`}
           />
           {pendingOfflineCount > 0 && (
-            <span className="absolute -top-1.5 -right-2 bg-amber-500 text-white text-[9px] font-mono font-bold tabular-nums rounded-full h-3.5 min-w-[14px] px-0.5 flex items-center justify-center">
+            <span className="absolute -top-1.5 -right-2.5 bg-amber-600 text-white text-[10px] font-mono font-bold tabular-nums rounded-md h-4 min-w-[16px] px-1 flex items-center justify-center">
               {pendingOfflineCount}
             </span>
           )}
-          {!isOnline && (
-            <span
-              className="absolute -bottom-0.5 -right-1 w-2 h-2 rounded-full bg-red-500 border border-white"
-              aria-label="Offline"
-            />
-          )}
         </div>
-        <span className="text-[10px] tracking-tight mt-0.5">{t('action_sync', 'Sync')}</span>
+        <span className="text-[10px] tracking-tight mt-0.5 tabular-nums">
+          {!isOnline ? t('action_offline', 'Offline') : t('action_sync', 'Sync')}
+        </span>
       </button>
 
       {/* More Menu Drawer Trigger */}
       <button
         type="button"
         onClick={toggleMobileMenu}
-        className={`flex-1 min-h-[44px] flex flex-col items-center justify-center py-1 px-1 rounded-lg transition-colors duration-150 cursor-pointer ${
+        className={`flex-1 min-h-[44px] flex flex-col items-center justify-center py-1 px-1 rounded-lg transition-colors duration-150 cursor-pointer whitespace-nowrap ${
           isMobileMenuOpen
             ? 'text-blue-600 font-bold'
             : 'text-slate-500 hover:text-slate-800 font-medium'

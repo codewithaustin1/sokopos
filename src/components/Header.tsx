@@ -123,7 +123,7 @@ export const Header: React.FC<HeaderProps> = ({
             type="button"
             onClick={() => setIsLocationMenuOpen(!isLocationMenuOpen)}
             aria-expanded={isLocationMenuOpen}
-            className="flex items-center gap-2 bg-slate-50 hover:bg-slate-100 px-3 min-h-[40px] rounded-lg border border-slate-200 transition-colors duration-150 text-xs font-semibold text-slate-800 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-blue-600"
+            className="flex items-center gap-2 bg-slate-50 hover:bg-slate-100 px-3 min-h-[44px] rounded-lg border border-slate-200 transition-colors duration-150 text-xs font-semibold text-slate-800 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-blue-600"
             title={`Active Branch: ${currentLocation.name}`}
           >
             <Building2 className="w-4 h-4 text-slate-500 shrink-0" />
@@ -211,7 +211,7 @@ export const Header: React.FC<HeaderProps> = ({
           id="header-shift-management-btn"
           type="button"
           onClick={openShiftManagement}
-          className={`hidden md:inline-flex items-center gap-1.5 px-3 min-h-[40px] rounded-lg text-xs font-semibold border transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-blue-600 ${
+          className={`hidden md:inline-flex items-center gap-1.5 px-3 min-h-[44px] rounded-lg text-xs font-semibold border transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-blue-600 ${
             activeShift
               ? 'bg-emerald-50/70 border-emerald-200 text-emerald-800 hover:bg-emerald-100/70'
               : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
@@ -232,7 +232,7 @@ export const Header: React.FC<HeaderProps> = ({
           type="button"
           onClick={handleSyncClick}
           disabled={syncStatus === 'syncing'}
-          className={`hidden sm:inline-flex items-center gap-1.5 px-3 min-h-[40px] rounded-lg text-xs font-semibold border transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-blue-600 ${
+          className={`hidden sm:inline-flex items-center gap-1.5 px-3 min-h-[44px] rounded-lg text-xs font-semibold border transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-blue-600 ${
             isOnline
               ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
               : 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100/70'
@@ -266,7 +266,7 @@ export const Header: React.FC<HeaderProps> = ({
             type="button"
             onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
             aria-expanded={isUserMenuOpen}
-            className="flex items-center gap-2 min-h-[40px] px-1.5 py-1 rounded-lg hover:bg-slate-50 transition-colors duration-150 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600"
+            className="flex items-center gap-2 min-h-[44px] px-2 py-1 rounded-lg hover:bg-slate-50 transition-colors duration-150 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600"
             title="Account & Terminal Utilities"
           >
             <div className="hidden md:block text-right min-w-0">
@@ -280,7 +280,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div
               className={`w-8 h-8 ${
                 isSuperAdmin ? 'bg-slate-900 text-white' : 'bg-blue-600 text-white'
-              } rounded-full flex items-center justify-center text-xs font-bold shrink-0`}
+              } rounded-lg flex items-center justify-center text-xs font-bold shrink-0`}
             >
               {currentUser?.initials || 'U'}
             </div>

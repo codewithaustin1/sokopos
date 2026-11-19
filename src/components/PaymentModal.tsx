@@ -898,30 +898,30 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
     <div id="payment-checkout-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4">
       <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[96vh] sm:max-h-[92vh]">
         {/* Header */}
-        <div className="bg-white border-b border-slate-200 h-14 sm:h-16 px-4 sm:px-6 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2.5 sm:gap-3">
+        <div className="bg-white border-b border-slate-200 h-16 px-4 sm:px-6 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={onClose}
-              className="bg-slate-100 p-2 rounded-lg text-slate-600 hover:bg-slate-200 transition cursor-pointer"
+              className="bg-slate-100 min-w-[44px] min-h-[44px] rounded-lg text-slate-600 hover:bg-slate-200 transition-colors flex items-center justify-center cursor-pointer shrink-0"
               title="Return to Cart"
             >
               <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
-            <div>
-              <h2 className="text-sm sm:text-base font-bold text-slate-800">Checkout & Payment</h2>
-              <p className="text-[10px] text-slate-400">Terminal: {currentLocation.terminalName}</p>
+            <div className="min-w-0">
+              <h2 className="font-display text-sm sm:text-base font-bold text-slate-900 truncate">Checkout &amp; Payment</h2>
+              <p className="text-[11px] text-slate-500 truncate">Terminal: {currentLocation.terminalName}</p>
             </div>
           </div>
-          <div className="text-right">
-            <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+          <div className="text-right shrink-0">
+            <span className="text-[11px] text-slate-500 font-medium block">
               {currentGuardrail.isCash ? 'Cash Payable (Half-Up)' : 'Total Amount (Exact)'}
             </span>
             <div className="flex items-baseline justify-end gap-1.5">
-              <span className="text-base sm:text-lg font-black text-blue-600">
+              <span className="text-base sm:text-lg font-bold font-mono tabular-nums text-blue-600">
                 {currentLocation.currency} {currentGuardrail.payableAmount.toFixed(2)}
               </span>
               {currentGuardrail.isCash && currentGuardrail.roundingDifference !== 0 && (
-                <span className="text-[10px] font-mono text-slate-400 line-through">
+                <span className="text-[11px] font-mono tabular-nums text-slate-400 line-through">
                   {currentLocation.currency} {cartTotal.toFixed(2)}
                 </span>
               )}
@@ -930,14 +930,14 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
         </div>
 
         {/* Content */}
-        <div className="flex-1 flex flex-col md:flex-row p-3.5 sm:p-6 gap-3.5 sm:gap-6 overflow-y-auto">
+        <div className="flex-1 flex flex-col md:flex-row p-4 sm:p-6 gap-4 sm:gap-6 overflow-y-auto">
           {/* Payment Method Selector & Inputs (60%) */}
           <div className="flex-1 md:w-[60%] flex flex-col gap-4">
             {(!activeShift || activeShift.status !== 'open') && (
-              <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-4 flex items-start gap-3">
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
                 <div className="text-xs text-red-900">
-                  <div className="font-bold mb-0.5">Tendering Prohibited: No Active Shift</div>
+                  <div className="font-bold mb-0.5">Tendering Prohibited · No Active Shift</div>
                   <p className="text-[11px] leading-relaxed text-red-800">
                     Transactions cannot be settled or tendered without an active till shift. Please open a shift session with an opening float declaration to trade.
                   </p>
@@ -946,14 +946,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
             )}
 
             {isDemoMode && (
-              <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-3.5 flex items-start gap-3 shadow-2xs">
+              <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3.5 flex items-start gap-3">
                 <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <div className="text-xs text-amber-950">
-                  <div className="font-bold flex items-center gap-1.5 mb-0.5">
-                    <span>DEMO SANDBOX SIMULATOR</span>
-                    <span className="bg-amber-200 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
-                      Isolated
-                    </span>
+                  <div className="font-semibold text-amber-900 mb-0.5">
+                    Demo Sandbox Simulator <span className="text-amber-700 font-normal">· Isolated Mode</span>
                   </div>
                   <p className="text-[11px] leading-relaxed text-amber-800">
                     Operating strictly in sandbox mode for both M-Pesa payments and KRA eTIMS. Transactions simulate instant approval without billing live accounts or altering production inventory.
@@ -962,11 +959,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
               </div>
             )}
 
-            {/* Customer Assignment Banner */}
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between gap-3">
+            {/* Customer Assignment Strip */}
+            <div className="py-2.5 px-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div
-                  className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs shrink-0 ${
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
                     selectedCustomer ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'
                   }`}
                 >
@@ -978,25 +975,25 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-black text-slate-800 truncate">
+                    <span className="text-xs font-bold text-slate-900 truncate">
                       {selectedCustomer ? selectedCustomer.name : 'Walk-in Customer'}
                     </span>
                     {selectedCustomer?.phone && (
-                      <span className="text-[10px] font-mono text-slate-400">
-                        ({selectedCustomer.phone})
+                      <span className="text-[11px] font-mono tabular-nums text-slate-500">
+                        · {selectedCustomer.phone}
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5">
+                  <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5 tabular-nums">
                     {selectedCustomer ? (
                       <>
-                        <span className="text-amber-700 font-bold flex items-center gap-0.5">
-                          <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500" />
+                        <span className="text-amber-700 font-semibold flex items-center gap-1">
+                          <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
                           {selectedCustomer.loyaltyPoints || 0} pts
                         </span>
-                        <span>•</span>
+                        <span aria-hidden="true">·</span>
                         <span
-                          className={`font-mono font-bold ${
+                          className={`font-mono font-semibold ${
                             (selectedCustomer.storeCreditBalance || 0) < 0
                               ? 'text-red-600'
                               : 'text-emerald-700'
@@ -1018,7 +1015,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                 <button
                   type="button"
                   onClick={() => setIsCustomerSelectOpen(true)}
-                  className="px-2.5 py-1 text-xs font-bold text-blue-600 bg-white hover:bg-blue-50 border border-blue-200 rounded-lg transition cursor-pointer"
+                  className="min-h-[44px] px-3 py-1.5 text-xs font-semibold text-blue-600 bg-white hover:bg-blue-50 border border-blue-200 rounded-lg transition cursor-pointer whitespace-nowrap"
                 >
                   {selectedCustomer ? 'Change' : '+ Assign'}
                 </button>
@@ -1026,46 +1023,43 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                   <button
                     type="button"
                     onClick={() => setSelectedCustomer(null)}
-                    className="p-1 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition cursor-pointer"
+                    className="min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition cursor-pointer"
                     title="Remove customer assignment"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <X className="w-4 h-4" />
                   </button>
                 )}
               </div>
             </div>
 
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            <h3 className="text-xs font-semibold text-slate-500">
               Select Payment Method
             </h3>
 
-            {/* Method Tabs */}
+            {/* Method Tabs (Clean Bordered Tiles, Zero Decorative Status Dots) */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
               {/* M-PESA (F2) */}
               <button
                 type="button"
                 onClick={() => handleSelectMethod('mpesa')}
                 title="Select M-Pesa (Shortcut: F2)"
-                className={`p-3 rounded-xl border-2 flex flex-col items-center justify-center gap-1.5 transition text-left cursor-pointer relative ${
+                className={`p-3 min-h-[88px] rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all duration-150 active:scale-[0.98] text-center cursor-pointer relative touch-manipulation ${
                   selectedMethod === 'mpesa'
-                    ? 'border-emerald-500 bg-emerald-50/60 text-emerald-900 shadow-xs'
+                    ? 'border-emerald-600 bg-emerald-50/70 text-emerald-950'
                     : 'border-slate-200 hover:border-slate-300 text-slate-700 bg-white'
                 }`}
               >
-                <div className="absolute top-2 right-2 flex items-center gap-1">
-                  {selectedMethod === 'mpesa' && (
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  )}
-                  <kbd className="text-[9px] font-mono px-1 py-0.2 rounded bg-slate-100 border border-slate-300 text-slate-500 font-bold">
+                <div className="absolute top-2 right-2">
+                  <kbd className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-100 border border-slate-200 text-slate-500 font-semibold">
                     F2
                   </kbd>
                 </div>
-                <div className="w-8 h-8 rounded-full bg-emerald-500 text-white font-black flex items-center justify-center text-xs">
+                <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white font-bold flex items-center justify-center text-xs">
                   M
                 </div>
-                <span className="font-bold text-xs">M-PESA</span>
-                <span className="text-[9px] text-emerald-700 font-bold flex items-center gap-0.5">
-                  <QrCode className="w-2.5 h-2.5" /> Dynamic QR
+                <span className="font-bold text-xs whitespace-nowrap">M-PESA</span>
+                <span className="text-[10px] text-emerald-700 font-medium flex items-center gap-0.5 whitespace-nowrap">
+                  <QrCode className="w-3 h-3 shrink-0" /> Dynamic QR
                 </span>
               </button>
 
@@ -1074,25 +1068,22 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                 type="button"
                 onClick={() => handleSelectMethod('cash')}
                 title="Select Cash (Shortcut: F1)"
-                className={`p-3 rounded-xl border-2 flex flex-col items-center justify-center gap-1.5 transition text-left cursor-pointer relative ${
+                className={`p-3 min-h-[88px] rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all duration-150 active:scale-[0.98] text-center cursor-pointer relative touch-manipulation ${
                   selectedMethod === 'cash'
-                    ? 'border-blue-500 bg-blue-50/60 text-blue-900 shadow-xs'
+                    ? 'border-blue-600 bg-blue-50/70 text-blue-950'
                     : 'border-slate-200 hover:border-slate-300 text-slate-700 bg-white'
                 }`}
               >
-                <div className="absolute top-2 right-2 flex items-center gap-1">
-                  {selectedMethod === 'cash' && (
-                    <span className="w-2 h-2 rounded-full bg-blue-500" />
-                  )}
-                  <kbd className="text-[9px] font-mono px-1 py-0.2 rounded bg-slate-100 border border-slate-300 text-slate-500 font-bold">
+                <div className="absolute top-2 right-2">
+                  <kbd className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-100 border border-slate-200 text-slate-500 font-semibold">
                     F1
                   </kbd>
                 </div>
-                <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-700 font-black flex items-center justify-center text-xs">
-                  <Banknote className="w-4 h-4 text-slate-600" />
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs ${selectedMethod === 'cash' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                  <Banknote className="w-4 h-4" />
                 </div>
-                <span className="font-bold text-xs">Cash</span>
-                <span className="text-[9px] text-slate-400">
+                <span className="font-bold text-xs whitespace-nowrap">Cash</span>
+                <span className="text-[10px] text-slate-500 whitespace-nowrap">
                   {currentGuardrail.hasCents ? 'Half-Up Rounded' : 'Drawer Tender'}
                 </span>
               </button>
@@ -1102,25 +1093,22 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                 type="button"
                 onClick={() => handleSelectMethod('card')}
                 title="Select Card (Shortcut: F3)"
-                className={`p-3 rounded-xl border-2 flex flex-col items-center justify-center gap-1.5 transition text-left cursor-pointer relative ${
+                className={`p-3 min-h-[88px] rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all duration-150 active:scale-[0.98] text-center cursor-pointer relative touch-manipulation ${
                   selectedMethod === 'card'
-                    ? 'border-purple-500 bg-purple-50/60 text-purple-900 shadow-xs'
+                    ? 'border-purple-600 bg-purple-50/70 text-purple-950'
                     : 'border-slate-200 hover:border-slate-300 text-slate-700 bg-white'
                 }`}
               >
-                <div className="absolute top-2 right-2 flex items-center gap-1">
-                  {selectedMethod === 'card' && (
-                    <span className="w-2 h-2 rounded-full bg-purple-500" />
-                  )}
-                  <kbd className="text-[9px] font-mono px-1 py-0.2 rounded bg-slate-100 border border-slate-300 text-slate-500 font-bold">
+                <div className="absolute top-2 right-2">
+                  <kbd className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-100 border border-slate-200 text-slate-500 font-semibold">
                     F3
                   </kbd>
                 </div>
-                <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-700 font-black flex items-center justify-center text-xs">
-                  <CreditCard className="w-4 h-4 text-slate-600" />
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs ${selectedMethod === 'card' ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                  <CreditCard className="w-4 h-4" />
                 </div>
-                <span className="font-bold text-xs">Card</span>
-                <span className="text-[9px] text-slate-400">Exact Charge</span>
+                <span className="font-bold text-xs whitespace-nowrap">Card</span>
+                <span className="text-[10px] text-slate-500 whitespace-nowrap">Exact Charge</span>
               </button>
 
               {/* Split Tender (F5) */}
@@ -1128,25 +1116,22 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                 type="button"
                 onClick={() => handleSelectMethod('split')}
                 title="Select Split Payment (Shortcut: F5)"
-                className={`p-3 rounded-xl border-2 flex flex-col items-center justify-center gap-1.5 transition text-left cursor-pointer relative ${
+                className={`p-3 min-h-[88px] rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all duration-150 active:scale-[0.98] text-center cursor-pointer relative touch-manipulation ${
                   selectedMethod === 'split'
-                    ? 'border-amber-500 bg-amber-50/70 text-amber-900 shadow-xs'
+                    ? 'border-amber-600 bg-amber-50/70 text-amber-950'
                     : 'border-slate-200 hover:border-slate-300 text-slate-700 bg-white'
                 }`}
               >
-                <div className="absolute top-2 right-2 flex items-center gap-1">
-                  {selectedMethod === 'split' && (
-                    <span className="w-2 h-2 rounded-full bg-amber-500" />
-                  )}
-                  <kbd className="text-[9px] font-mono px-1 py-0.2 rounded bg-slate-100 border border-slate-300 text-slate-500 font-bold">
+                <div className="absolute top-2 right-2">
+                  <kbd className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-100 border border-slate-200 text-slate-500 font-semibold">
                     F5
                   </kbd>
                 </div>
-                <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 font-black flex items-center justify-center text-xs">
-                  <GitFork className="w-4 h-4 text-amber-600 rotate-90" />
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs ${selectedMethod === 'split' ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-700'}`}>
+                  <GitFork className="w-4 h-4 rotate-90" />
                 </div>
-                <span className="font-bold text-xs truncate">Split Tender</span>
-                <span className="text-[9px] text-amber-700 font-bold truncate">
+                <span className="font-bold text-xs whitespace-nowrap">Split Tender</span>
+                <span className="text-[10px] text-amber-700 font-medium whitespace-nowrap">
                   Multi-Method
                 </span>
               </button>
@@ -1156,26 +1141,23 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                 type="button"
                 onClick={() => handleSelectMethod('store_credit')}
                 title="Select Store Credit / Daftari Tab (Shortcut: F4)"
-                className={`p-3 rounded-xl border-2 flex flex-col items-center justify-center gap-1.5 transition text-left cursor-pointer relative col-span-2 sm:col-span-1 ${
+                className={`p-3 min-h-[88px] rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all duration-150 active:scale-[0.98] text-center cursor-pointer relative col-span-2 sm:col-span-1 touch-manipulation ${
                   selectedMethod === 'store_credit'
-                    ? 'border-indigo-500 bg-indigo-50/60 text-indigo-900 shadow-xs'
+                    ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950'
                     : 'border-slate-200 hover:border-slate-300 text-slate-700 bg-white'
                 }`}
               >
                 <div className="absolute top-2 right-2 flex items-center gap-1">
                   {!canUseStoreCredit && <Lock className="w-3 h-3 text-slate-400" />}
-                  {selectedMethod === 'store_credit' && (
-                    <span className="w-2 h-2 rounded-full bg-indigo-500" />
-                  )}
-                  <kbd className="text-[9px] font-mono px-1 py-0.2 rounded bg-slate-100 border border-slate-300 text-slate-500 font-bold">
+                  <kbd className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-100 border border-slate-200 text-slate-500 font-semibold">
                     F4
                   </kbd>
                 </div>
-                <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-black flex items-center justify-center text-xs">
-                  <Wallet className="w-4 h-4 text-indigo-600" />
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs ${selectedMethod === 'store_credit' ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-700'}`}>
+                  <Wallet className="w-4 h-4" />
                 </div>
-                <span className="font-bold text-xs truncate">Store Credit</span>
-                <span className="text-[9px] text-slate-400 truncate">
+                <span className="font-bold text-xs whitespace-nowrap">Store Credit</span>
+                <span className="text-[10px] text-slate-500 whitespace-nowrap">
                   {selectedCustomer ? 'Daftari Tab' : 'Assign Client'}
                 </span>
               </button>
@@ -1188,29 +1170,29 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                 <div className="space-y-3.5">
                   {/* Sub-mode Switcher & Customer Display Button */}
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
-                    <div className="flex bg-slate-200/80 p-0.5 rounded-lg">
+                    <div className="flex bg-slate-200/80 p-1 rounded-lg">
                       <button
                         type="button"
                         onClick={() => setMpesaSubMode('qr')}
-                        className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                        className={`min-h-[40px] px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
                           mpesaSubMode === 'qr'
-                            ? 'bg-emerald-600 text-white shadow-xs'
+                            ? 'bg-emerald-600 text-white'
                             : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
-                        <QrCode className="w-3.5 h-3.5" />
+                        <QrCode className="w-3.5 h-3.5 shrink-0" />
                         <span>Dynamic QR Scan</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => setMpesaSubMode('stk')}
-                        className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                        className={`min-h-[40px] px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
                           mpesaSubMode === 'stk'
-                            ? 'bg-emerald-600 text-white shadow-xs'
+                            ? 'bg-emerald-600 text-white'
                             : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
-                        <Smartphone className="w-3.5 h-3.5" />
+                        <Smartphone className="w-3.5 h-3.5 shrink-0" />
                         <span>STK Express Push</span>
                       </button>
                     </div>
@@ -1218,10 +1200,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                     <button
                       type="button"
                       onClick={() => setIsCustomerQrModalOpen(true)}
-                      className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                      className="min-h-[40px] px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
                       title="Open dedicated customer-facing display"
                     >
-                      <Maximize2 className="w-3.5 h-3.5 text-emerald-700" />
+                      <Maximize2 className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
                       <span>Customer Screen</span>
                     </button>
                   </div>
@@ -1230,12 +1212,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                   {mpesaSubMode === 'qr' ? (
                     <div className="space-y-3">
                       {/* Buy Goods vs Paybill Switcher & Credentials */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs bg-white p-2 rounded-xl border border-slate-200">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs pb-2 border-b border-slate-200">
                         <div className="flex gap-1">
                           <button
                             type="button"
                             onClick={() => setMpesaQrType('buy_goods')}
-                            className={`px-2.5 py-1 rounded-md font-bold text-[11px] transition cursor-pointer ${
+                            className={`min-h-[36px] px-3 py-1.5 rounded-md font-bold text-xs transition cursor-pointer whitespace-nowrap ${
                               mpesaQrType === 'buy_goods'
                                 ? 'bg-emerald-100 text-emerald-800'
                                 : 'text-slate-500 hover:text-slate-800'
@@ -1246,7 +1228,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                           <button
                             type="button"
                             onClick={() => setMpesaQrType('paybill')}
-                            className={`px-2.5 py-1 rounded-md font-bold text-[11px] transition cursor-pointer ${
+                            className={`min-h-[36px] px-3 py-1.5 rounded-md font-bold text-xs transition cursor-pointer whitespace-nowrap ${
                               mpesaQrType === 'paybill'
                                 ? 'bg-emerald-100 text-emerald-800'
                                 : 'text-slate-500 hover:text-slate-800'
@@ -1259,32 +1241,32 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                         {/* Credentials inputs */}
                         <div className="flex items-center gap-2">
                           {mpesaQrType === 'buy_goods' ? (
-                            <div className="flex items-center gap-1 text-[11px]">
-                              <span className="text-slate-400 font-bold uppercase">Till:</span>
+                            <div className="flex items-center gap-1.5 text-xs">
+                              <span className="text-slate-500 font-semibold uppercase tracking-wide whitespace-nowrap">Till</span>
                               <input
                                 type="text"
                                 value={tillNumber}
                                 onChange={(e) => setTillNumber(e.target.value)}
-                                className="w-20 bg-slate-50 border border-slate-300 rounded px-1.5 py-0.5 font-mono font-bold text-slate-800 text-xs focus:outline-hidden focus:border-emerald-500"
+                                className="w-24 min-h-[36px] bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 font-mono tabular-nums font-bold text-slate-800 text-xs focus:outline-hidden focus:border-emerald-500"
                                 placeholder="882910"
                               />
                             </div>
                           ) : (
-                            <div className="flex items-center gap-1.5 text-[11px]">
-                              <span className="text-slate-400 font-bold uppercase">PB:</span>
+                            <div className="flex items-center gap-1.5 text-xs">
+                              <span className="text-slate-500 font-semibold uppercase tracking-wide whitespace-nowrap">PB</span>
                               <input
                                 type="text"
                                 value={paybillNumber}
                                 onChange={(e) => setPaybillNumber(e.target.value)}
-                                className="w-16 bg-slate-50 border border-slate-300 rounded px-1.5 py-0.5 font-mono font-bold text-slate-800 text-xs focus:outline-hidden"
+                                className="w-20 min-h-[36px] bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 font-mono tabular-nums font-bold text-slate-800 text-xs focus:outline-hidden"
                                 placeholder="522522"
                               />
-                              <span className="text-slate-400 font-bold uppercase">Acc:</span>
+                              <span className="text-slate-500 font-semibold uppercase tracking-wide whitespace-nowrap">Acc</span>
                               <input
                                 type="text"
                                 value={accountNumber}
                                 onChange={(e) => setAccountNumber(e.target.value)}
-                                className="w-20 bg-slate-50 border border-slate-300 rounded px-1.5 py-0.5 font-mono font-bold text-slate-800 text-xs focus:outline-hidden"
+                                className="w-24 min-h-[36px] bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 font-mono tabular-nums font-bold text-slate-800 text-xs focus:outline-hidden"
                                 placeholder="ACC"
                               />
                             </div>
@@ -1312,16 +1294,16 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
 
                         {/* QR Details and Scan Prompt */}
                         <div className="flex-1 text-left space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
+                          <div className="flex items-center justify-between text-[11px] text-slate-500">
+                            <span className="font-semibold text-emerald-700">
                               Amount Pre-Filled
                             </span>
-                            <span className="text-xs font-mono font-bold text-slate-500">
-                              {mpesaQrType === 'buy_goods' ? `Till: ${tillNumber}` : `PB: ${paybillNumber}`}
+                            <span className="font-mono font-semibold tabular-nums text-slate-600">
+                              {mpesaQrType === 'buy_goods' ? `Till ${tillNumber}` : `PB ${paybillNumber}`}
                             </span>
                           </div>
 
-                          <div className="text-xl font-black text-emerald-700 tracking-tight">
+                          <div className="text-xl font-bold font-mono tabular-nums text-emerald-700 tracking-tight">
                             {currentLocation.currency} {cartTotal.toFixed(2)}
                           </div>
 
@@ -1333,10 +1315,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                             <button
                               type="button"
                               onClick={() => setIsCustomerQrModalOpen(true)}
-                              className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-md transition flex items-center gap-1 cursor-pointer"
+                              className="min-h-[40px] text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
                             >
-                              <Maximize2 className="w-3 h-3" />
-                              <span>Expand Full Screen for Customer</span>
+                              <Maximize2 className="w-3.5 h-3.5 shrink-0" />
+                              <span>Expand Customer Display</span>
                             </button>
                             <button
                               type="button"
@@ -1348,17 +1330,17 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                                 setIsCopiedQrPayload(true);
                                 setTimeout(() => setIsCopiedQrPayload(false), 2000);
                               }}
-                              className="text-[11px] font-medium text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded-md transition flex items-center gap-1 cursor-pointer"
+                              className="min-h-[40px] text-xs font-medium text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
                               title="Copy raw QR payload text"
                             >
                               {isCopiedQrPayload ? (
                                 <>
-                                  <Check className="w-3 h-3 text-emerald-600" />
-                                  <span className="text-emerald-700 font-bold">Copied</span>
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span className="text-emerald-700 font-semibold">Copied</span>
                                 </>
                               ) : (
                                 <>
-                                  <Copy className="w-3 h-3 text-slate-500" />
+                                  <Copy className="w-3.5 h-3.5 text-slate-500" />
                                   <span>Copy</span>
                                 </>
                               )}
@@ -1374,18 +1356,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                         <div className="flex items-center gap-2">
                           <Smartphone className="w-4 h-4 text-emerald-600" />
                           <h4 className="font-bold text-xs text-slate-800">
-                            M-Pesa Express / STK Push
+                            M-Pesa Express · STK Push
                           </h4>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          {isDemoMode && (
-                            <span className="text-[10px] bg-amber-100 text-amber-900 border border-amber-300 font-bold px-2 py-0.5 rounded">
-                              SANDBOX SIMULATOR
-                            </span>
-                          )}
-                          <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded">
-                            Till: {tillNumber}
-                          </span>
+                        <div className="text-[11px] font-mono tabular-nums text-slate-500">
+                          {isDemoMode ? 'Sandbox · ' : ''}Till {tillNumber}
                         </div>
                       </div>
 
@@ -1579,7 +1554,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                   </div>
 
                   <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                    <span className="text-[11px] font-semibold text-slate-500 block mb-1.5">
                       Quick Cash Presets
                     </span>
                     <div className="flex flex-wrap gap-2">
@@ -1588,7 +1563,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                           key={amt}
                           type="button"
                           onClick={() => setCashTendered(amt.toString())}
-                          className={`px-3 py-1.5 rounded-lg font-mono font-bold text-xs transition border ${
+                          className={`min-h-[44px] px-3.5 py-2 rounded-lg font-mono tabular-nums font-bold text-xs transition-all duration-150 active:scale-[0.98] border cursor-pointer whitespace-nowrap ${
                             tenderedAmount === amt
                               ? 'bg-blue-600 text-white border-blue-600'
                               : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
@@ -1603,7 +1578,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                   {/* Change Output */}
                   <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg flex justify-between items-center">
                     <span className="text-xs font-bold text-blue-900">Change Due Customer:</span>
-                    <span className="text-base font-mono font-black text-blue-700">
+                    <span className="text-base font-mono tabular-nums font-bold text-blue-700">
                       {currentLocation.currency} {cashChange.toFixed(2)}
                     </span>
                   </div>
@@ -1615,8 +1590,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <h4 className="font-bold text-xs text-slate-800">Payment Card Terminal (POS)</h4>
-                    <span className="text-[10px] bg-purple-100 text-purple-800 font-bold px-2 py-0.5 rounded">
-                      Contactless / EMV
+                    <span className="text-[11px] text-purple-700 font-medium">
+                      Contactless · EMV
                     </span>
                   </div>
 
@@ -1791,8 +1766,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
               {selectedMethod === 'store_credit' && (
                 <div className="space-y-3.5">
                   <div className="flex justify-between items-center">
-                    <h4 className="font-bold text-xs text-slate-800">Store Credit / "Daftari" Tab</h4>
-                    <span className="text-[10px] bg-indigo-100 text-indigo-800 font-bold px-2 py-0.5 rounded">
+                    <h4 className="font-bold text-xs text-slate-800">Store Credit · Daftari Tab</h4>
+                    <span className="text-[11px] text-indigo-700 font-medium">
                       Customer Ledger Account
                     </span>
                   </div>
@@ -1807,7 +1782,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                       <button
                         type="button"
                         onClick={() => setIsCustomerSelectOpen(true)}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
+                        className="min-h-[44px] px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl transition cursor-pointer"
                       >
                         + Assign Customer Profile
                       </button>
@@ -1824,21 +1799,21 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      <div className="grid grid-cols-2 gap-2 bg-white border border-slate-200 rounded-xl p-3 text-xs">
+                      <div className="grid grid-cols-2 gap-3 py-2.5 border-y border-slate-200 text-xs">
                         <div>
-                          <span className="text-[10px] text-slate-400 block font-bold uppercase">
+                          <span className="text-[11px] text-slate-500 block font-medium">
                             Approved Credit Limit
                           </span>
-                          <span className="font-black text-slate-800 font-mono">
+                          <span className="font-bold text-slate-900 font-mono tabular-nums">
                             {currentLocation.currency} {(selectedCustomer.creditLimit || 0).toFixed(2)}
                           </span>
                         </div>
                         <div>
-                          <span className="text-[10px] text-slate-400 block font-bold uppercase">
+                          <span className="text-[11px] text-slate-500 block font-medium">
                             Current Tab Balance
                           </span>
                           <span
-                            className={`font-black font-mono ${
+                            className={`font-bold font-mono tabular-nums ${
                               (selectedCustomer.storeCreditBalance || 0) < 0
                                 ? 'text-red-600'
                                 : 'text-emerald-700'
@@ -1851,17 +1826,17 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                         </div>
                       </div>
 
-                      <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-3 space-y-1.5 text-xs">
-                        <div className="flex justify-between font-bold text-slate-700">
+                      <div className="bg-indigo-50/60 border border-indigo-200 rounded-xl p-3 space-y-1.5 text-xs">
+                        <div className="flex justify-between font-semibold text-slate-700">
                           <span>Sale Charge to Tab:</span>
-                          <span className="font-mono text-indigo-700 font-black">
+                          <span className="font-mono tabular-nums text-indigo-700 font-bold">
                             {currentLocation.currency} {currentGuardrail.payableAmount.toFixed(2)}
                           </span>
                         </div>
                         <div className="flex justify-between text-[11px] text-slate-600 pt-1.5 border-t border-indigo-100">
                           <span>Projected Balance After Sale:</span>
                           <span
-                            className={`font-mono font-black ${
+                            className={`font-mono tabular-nums font-bold ${
                               (selectedCustomer.storeCreditBalance || 0) - currentGuardrail.payableAmount < 0
                                 ? 'text-red-600'
                                 : 'text-emerald-700'
@@ -1892,38 +1867,38 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
               {selectedMethod === 'split' && (
                 <div className="space-y-3.5">
                   {/* Allocation Status & Progress Header */}
-                  <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-2xs space-y-2">
+                  <div className="pb-3 border-b border-slate-200 space-y-2.5">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
                           <GitFork className="w-4 h-4 rotate-90" />
                         </div>
                         <div>
-                          <h4 className="font-bold text-xs text-slate-800">Split Payment Allocation</h4>
-                          <p className="text-[10px] text-slate-500">
+                          <h4 className="font-bold text-xs text-slate-900">Split Payment Allocation</h4>
+                          <p className="text-[11px] text-slate-500">
                             Total Due:{' '}
-                            <strong className="text-slate-700 font-mono">
+                            <strong className="text-slate-800 font-mono tabular-nums">
                               {currentLocation.currency} {cartTotal.toFixed(2)}
                             </strong>
                           </p>
                         </div>
                       </div>
 
-                      {/* Live Balance Status Badge */}
+                      {/* Live Balance Status Text (Unboxed, Zero-Pill) */}
                       <div>
                         {isSplitBalanced ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
-                            <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>100% Balanced ({currentLocation.currency} {splitAllocatedTotal.toFixed(2)})</span>
+                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 font-mono tabular-nums">
+                            <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span>Balanced · {currentLocation.currency} {splitAllocatedTotal.toFixed(2)}</span>
                           </span>
                         ) : splitRemaining > 0 ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-amber-100 text-amber-900 border border-amber-300">
-                            <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-800 font-mono tabular-nums">
+                            <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                             <span>Remaining: {currentLocation.currency} {splitRemaining.toFixed(2)}</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-red-100 text-red-900 border border-red-300">
-                            <AlertCircle className="w-3.5 h-3.5 text-red-600" />
+                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-700 font-mono tabular-nums">
+                            <AlertCircle className="w-3.5 h-3.5 text-red-600 shrink-0" />
                             <span>Over by {currentLocation.currency} {Math.abs(splitRemaining).toFixed(2)}</span>
                           </span>
                         )}
@@ -1956,9 +1931,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                     </div>
 
                     {/* Quick Split Presets Bar */}
-                    <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1.5 border-t border-slate-100 text-[11px]">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Presets:</span>
-                      <div className="flex flex-wrap items-center gap-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
+                      <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap">Presets</span>
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => {
@@ -1969,7 +1944,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                               { id: 'split-2', method: 'mpesa', amount: rest.toString(), mpesaCode: `QX${Math.floor(1000 + Math.random() * 9000)}K` },
                             ]);
                           }}
-                          className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] transition cursor-pointer"
+                          className="min-h-[36px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[11px] transition cursor-pointer whitespace-nowrap"
                         >
                           50/50 Cash &amp; M-Pesa
                         </button>
@@ -1983,7 +1958,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                               { id: 'split-2', method: 'card', amount: rest.toString(), cardLast4: '4192', cardNetwork: 'Visa' },
                             ]);
                           }}
-                          className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] transition cursor-pointer"
+                          className="min-h-[36px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[11px] transition cursor-pointer whitespace-nowrap"
                         >
                           50/50 Cash &amp; Card
                         </button>
@@ -2004,7 +1979,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                               })
                             );
                           }}
-                          className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] transition cursor-pointer"
+                          className="min-h-[36px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[11px] transition cursor-pointer whitespace-nowrap"
                         >
                           Equal Split
                         </button>
@@ -2019,7 +1994,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                               }))
                             );
                           }}
-                          className="px-2 py-0.5 rounded bg-slate-100 hover:bg-red-50 text-slate-500 hover:text-red-700 font-medium text-[10px] transition cursor-pointer"
+                          className="min-h-[36px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-red-50 text-slate-500 hover:text-red-700 font-semibold text-[11px] transition cursor-pointer whitespace-nowrap"
                         >
                           Clear
                         </button>
@@ -2047,7 +2022,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                           {/* Row Header: Method selector and delete */}
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
-                              <span className="text-[10px] font-black text-slate-400 font-mono w-4">
+                              <span className="text-xs font-bold text-slate-400 font-mono tabular-nums w-5">
                                 #{index + 1}
                               </span>
                               <select
@@ -2075,7 +2050,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                                     )
                                   );
                                 }}
-                                className="bg-slate-50 border border-slate-300 font-bold text-slate-800 rounded-lg px-2 py-1 text-xs focus:outline-hidden"
+                                className="min-h-[38px] bg-slate-50 border border-slate-300 font-bold text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden"
                               >
                                 <option value="cash">Cash Register</option>
                                 <option value="mpesa">M-Pesa STK / Till</option>
@@ -2106,7 +2081,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                                       )
                                     );
                                   }}
-                                  className="text-[10px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded px-2 py-0.5 transition cursor-pointer"
+                                  className="min-h-[36px] text-[11px] font-bold font-mono tabular-nums text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg px-2.5 py-1 transition cursor-pointer whitespace-nowrap"
                                   title="Fill remaining unallocated balance into this tender"
                                 >
                                   + Remainder ({currentLocation.currency} {splitRemaining.toFixed(2)})
@@ -2119,10 +2094,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                                   onClick={() => {
                                     setSplitRows((prev) => prev.filter((r) => r.id !== row.id));
                                   }}
-                                  className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 transition cursor-pointer"
+                                  className="min-w-[36px] min-h-[36px] inline-flex items-center justify-center text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition cursor-pointer shrink-0"
                                   title="Remove tender line"
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <Trash2 className="w-4 h-4" />
                                 </button>
                               )}
                             </div>
@@ -2158,7 +2133,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                                     );
                                   }}
                                   placeholder="0.00"
-                                  className="w-full bg-slate-50 border border-slate-300 font-mono font-black text-slate-900 rounded-lg pl-12 pr-3 py-1.5 text-sm focus:outline-hidden focus:bg-white focus:border-amber-500"
+                                  className="w-full min-h-[40px] bg-slate-50 border border-slate-300 font-mono tabular-nums font-bold text-slate-900 rounded-lg pl-12 pr-3 py-2 text-sm focus:outline-hidden focus:bg-white focus:border-amber-500"
                                 />
                               </div>
                             </div>
@@ -2172,8 +2147,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                                       Cash Given (Tendered)
                                     </label>
                                     {parseFloat(row.cashTendered || row.amount) > rowAmount && (
-                                      <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded font-mono">
-                                        Change: {currentLocation.currency}{' '}
+                                      <span className="text-[10px] font-bold text-blue-700 font-mono tabular-nums">
+                                        Change {currentLocation.currency}{' '}
                                         {(parseFloat(row.cashTendered || '0') - rowAmount).toFixed(2)}
                                       </span>
                                     )}
@@ -2190,7 +2165,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                                       );
                                     }}
                                     placeholder={row.amount || '0'}
-                                    className="w-full bg-slate-50 border border-slate-300 font-mono font-bold text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:bg-white"
+                                    className="w-full min-h-[40px] bg-slate-50 border border-slate-300 font-mono tabular-nums font-bold text-slate-800 rounded-lg px-2.5 py-2 text-xs focus:outline-hidden focus:bg-white"
                                   />
                                 </div>
                               )}
@@ -2211,7 +2186,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                                         );
                                       }}
                                       placeholder="e.g. QX9102K8"
-                                      className="flex-1 bg-slate-50 border border-slate-300 font-mono font-bold text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:bg-white"
+                                      className="flex-1 min-h-[40px] bg-slate-50 border border-slate-300 font-mono tabular-nums font-bold text-slate-800 rounded-lg px-2.5 py-2 text-xs focus:outline-hidden focus:bg-white"
                                     />
                                     <button
                                       type="button"
@@ -2223,7 +2198,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                                           prev.map((r) => (r.id === row.id ? { ...r, mpesaCode: code } : r))
                                         );
                                       }}
-                                      className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-[10px] font-bold transition cursor-pointer"
+                                      className="min-h-[40px] px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-[11px] font-bold transition cursor-pointer whitespace-nowrap shrink-0"
                                       title="Generate reference code"
                                     >
                                       Auto-Gen
@@ -2246,7 +2221,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                                           prev.map((r) => (r.id === row.id ? { ...r, cardNetwork: val } : r))
                                         );
                                       }}
-                                      className="w-full bg-slate-50 border border-slate-300 font-semibold text-slate-800 rounded-lg px-2 py-1.5 text-xs focus:outline-hidden"
+                                      className="w-full min-h-[40px] bg-slate-50 border border-slate-300 font-semibold text-slate-800 rounded-lg px-2 py-2 text-xs focus:outline-hidden"
                                     >
                                       <option value="Visa">Visa</option>
                                       <option value="Mastercard">Mastercard</option>
@@ -2268,7 +2243,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                                         );
                                       }}
                                       placeholder="4192"
-                                      className="w-full bg-slate-50 border border-slate-300 font-mono font-bold text-slate-800 rounded-lg px-2 py-1.5 text-xs focus:outline-hidden"
+                                      className="w-full min-h-[40px] bg-slate-50 border border-slate-300 font-mono tabular-nums font-bold text-slate-800 rounded-lg px-2 py-2 text-xs focus:outline-hidden"
                                     />
                                   </div>
                                 </div>
@@ -2343,50 +2318,50 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
           {/* Order Summary Breakdown (40%) */}
           <div className="md:w-[40%] bg-slate-50 rounded-xl border border-slate-200 p-5 flex flex-col justify-between">
             <div>
-              <h3 className="font-bold text-slate-800 border-b border-slate-200 pb-2.5 text-xs uppercase tracking-wider">
+              <h3 className="font-display font-bold text-slate-900 border-b border-slate-200 pb-2.5 text-sm">
                 Order Summary
               </h3>
 
-              <div className="py-3 space-y-2 text-xs">
+              <div className="py-3 space-y-2.5 text-xs">
                 <div className="flex justify-between text-slate-500">
                   <span>Items count</span>
-                  <span className="font-semibold text-slate-800">
+                  <span className="font-semibold font-mono tabular-nums text-slate-800">
                     {cart.reduce((a, b) => a + b.quantity, 0)} items ({cart.length} distinct)
                   </span>
                 </div>
                 <div className="flex justify-between text-slate-500">
                   <span>Subtotal (Net)</span>
-                  <span className="font-semibold text-slate-800">
+                  <span className="font-semibold font-mono tabular-nums text-slate-800">
                     {currentLocation.currency} {cartSubtotal.toFixed(2)}
                   </span>
                 </div>
 
-                <div className="space-y-1.5 py-1.5 bg-slate-100/70 p-2.5 rounded-xl border border-slate-200">
+                {/* Hairline Tax Section (No Nested Card Borders) */}
+                <div className="space-y-1.5 py-2.5 border-y border-slate-200">
                   <div className="flex justify-between items-center text-slate-700">
-                    <span className="flex items-center gap-1.5 font-bold">
-                      <span>{currentBusiness?.taxSettings?.taxLabel || 'VAT'}</span>
-                      <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.2 rounded bg-white text-slate-700 border border-slate-200">
-                        {currentBusiness?.taxSettings?.pricingType === 'exclusive' ? 'Exclusive' : 'Inclusive'}
+                    <span className="font-semibold">
+                      {currentBusiness?.taxSettings?.taxLabel || 'VAT'}{' '}
+                      <span className="text-[11px] font-normal text-slate-500">
+                        · {currentBusiness?.taxSettings?.pricingType === 'exclusive' ? 'Exclusive' : 'Inclusive'}
                       </span>
                     </span>
-                    <span className="font-bold text-slate-900 font-mono">
+                    <span className="font-bold text-slate-900 font-mono tabular-nums">
                       {currentLocation.currency} {cartTax.toFixed(2)}
                     </span>
                   </div>
 
                   {/* Dynamic Category & Regional Tax Breakdown */}
                   {cartTaxBreakdown && cartTaxBreakdown.length > 0 && (
-                    <div className="space-y-1 pt-1 border-t border-dashed border-slate-200">
+                    <div className="space-y-1 pt-1">
                       {cartTaxBreakdown.map((tb) => (
                         <div key={`${tb.code}-${tb.rate}`} className="flex justify-between items-center text-[11px]">
-                          <span className="text-slate-600 flex items-center gap-1">
-                            <span className="font-mono font-bold text-slate-700 bg-white px-1 py-0.2 rounded text-[9px] border border-slate-200">
-                              {tb.code}
-                            </span>
+                          <span className="text-slate-600 flex items-center gap-1 min-w-0">
+                            <span className="font-mono font-semibold text-slate-700">{tb.code}</span>
+                            <span aria-hidden="true">·</span>
                             <span className="truncate max-w-[130px]">{tb.name}</span>
-                            <span className="text-[10px] text-slate-400">({tb.ratePercent}%)</span>
+                            <span className="text-slate-400 tabular-nums">({tb.ratePercent}%)</span>
                           </span>
-                          <span className="font-mono text-slate-700 font-semibold">
+                          <span className="font-mono tabular-nums text-slate-700 font-semibold shrink-0">
                             {currentLocation.currency} {tb.taxAmount.toFixed(2)}
                           </span>
                         </div>
@@ -2394,65 +2369,63 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                     </div>
                   )}
 
-                  <div className="text-[10px] text-slate-400 flex justify-between items-center pt-0.5">
-                    <span>Tax PIN: <strong className="text-slate-600 font-mono">{currentBusiness?.taxSettings?.taxNumber || currentBusiness?.taxNumber || currentLocation.taxId}</strong></span>
-                    <span className="text-emerald-700 font-bold text-[9px] bg-emerald-100/70 px-1.5 py-0.5 rounded border border-emerald-200">
-                      Dynamic Engine
-                    </span>
+                  <div className="text-[11px] text-slate-400 flex justify-between items-center pt-0.5">
+                    <span>Tax PIN: <strong className="text-slate-600 font-mono tabular-nums">{currentBusiness?.taxSettings?.taxNumber || currentBusiness?.taxNumber || currentLocation.taxId}</strong></span>
+                    <span className="text-emerald-700 font-medium">eTIMS Ready</span>
                   </div>
                 </div>
 
                 {cartDiscount > 0 && (
                   <div className="flex justify-between text-slate-500">
                     <span>Discounts</span>
-                    <span className="font-semibold text-emerald-600">
+                    <span className="font-semibold font-mono tabular-nums text-emerald-600">
                       - {currentLocation.currency} {cartDiscount.toFixed(2)}
                     </span>
                   </div>
                 )}
 
-                <div className="pt-3 border-t border-slate-200 space-y-1.5">
+                <div className="pt-1 space-y-1.5">
                   <div className="flex justify-between items-baseline">
                     <span className="text-xs text-slate-500 font-semibold">Exact Total</span>
-                    <span className="text-xs font-mono font-bold text-slate-700">
+                    <span className="text-xs font-mono tabular-nums font-bold text-slate-700">
                       {currentLocation.currency} {cartTotal.toFixed(2)}
                     </span>
                   </div>
 
                   {currentGuardrail.isCash && currentGuardrail.roundingDifference !== 0 && (
-                    <div className="flex justify-between items-baseline text-xs text-blue-700 bg-blue-50/80 px-2 py-1 rounded">
+                    <div className="flex justify-between items-baseline text-xs text-blue-700">
                       <span className="font-semibold">Cash Rounding (Half-up):</span>
-                      <span className="font-mono font-bold">
+                      <span className="font-mono tabular-nums font-bold">
                         {currentGuardrail.roundingDifference >= 0 ? '+' : ''}
                         {currentLocation.currency} {currentGuardrail.roundingDifference.toFixed(2)}
                       </span>
                     </div>
                   )}
 
-                  <div className="flex justify-between items-baseline pt-1">
-                    <span className="text-xs font-bold text-slate-800">
+                  <div className="flex justify-between items-baseline pt-2 border-t border-slate-200">
+                    <span className="font-display text-sm font-bold text-slate-900">
                       {currentGuardrail.isCash ? 'Cash Payable' : 'Amount Due (Exact)'}
                     </span>
-                    <span className="text-xl font-black text-blue-600">
+                    <span className="text-xl font-bold font-mono tabular-nums text-blue-600">
                       {currentLocation.currency} {currentGuardrail.payableAmount.toFixed(2)}
                     </span>
                   </div>
 
                   {currentGuardrail.hasCents && (
-                    <p className="text-[10px] text-slate-500 text-right italic">
+                    <p className="text-[11px] text-slate-500 text-right">
                       {currentGuardrail.isCash
-                        ? 'Standard half-up rounding (0.50+ rounds up, <0.50 rounds down)'
-                        : 'Exact electronic payment (no rounding applied)'}
+                        ? 'Standard half-up rounding applied'
+                        : 'Exact electronic charge (no rounding)'}
                     </p>
                   )}
 
                   {selectedCustomer && (
-                    <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-[11px] text-amber-800 bg-amber-50/70 p-2 rounded-lg border border-amber-200/80">
-                      <span className="flex items-center gap-1 font-bold">
-                        <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
-                        <span>Loyalty Points to Earn:</span>
+                    <div className="pt-2.5 mt-1 border-t border-slate-200 flex items-center justify-between text-xs text-amber-800">
+                      <span className="flex items-center gap-1 font-semibold">
+                        <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                        <span>Loyalty Points to Earn</span>
                       </span>
-                      <span className="font-black font-mono">
+                      <span className="font-bold font-mono tabular-nums">
                         +{Math.floor(currentGuardrail.payableAmount / 100)} pts
                       </span>
                     </div>
@@ -2460,13 +2433,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
 
                   {/* Split Allocation breakdown in Order Summary */}
                   {selectedMethod === 'split' && (
-                    <div className="pt-2 border-t border-slate-200 space-y-1.5 bg-amber-50/60 p-2.5 rounded-xl border border-amber-200/70">
-                      <div className="flex justify-between items-center text-[10px] font-bold text-amber-900 border-b border-amber-200/80 pb-1">
-                        <span className="flex items-center gap-1">
-                          <GitFork className="w-3 h-3 text-amber-700 rotate-90" />
+                    <div className="pt-2.5 mt-1 border-t border-slate-200 space-y-1.5">
+                      <div className="flex justify-between items-center text-xs font-semibold text-amber-900 pb-1">
+                        <span className="flex items-center gap-1.5">
+                          <GitFork className="w-3.5 h-3.5 text-amber-700 rotate-90" />
                           <span>Split Breakdown</span>
                         </span>
-                        <span className={isSplitBalanced ? 'text-emerald-700 font-bold' : 'text-amber-800 font-bold'}>
+                        <span className={`font-mono tabular-nums ${isSplitBalanced ? 'text-emerald-700 font-bold' : 'text-amber-800 font-bold'}`}>
                           {isSplitBalanced ? 'Balanced' : `${splitAllocatedTotal.toFixed(2)} / ${cartTotal.toFixed(2)}`}
                         </span>
                       </div>
@@ -2474,11 +2447,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                         {splitRows.map((r) => {
                           const amt = parseFloat(r.amount) || 0;
                           return (
-                            <div key={r.id} className="flex justify-between text-[11px] text-slate-700">
+                            <div key={r.id} className="flex justify-between text-xs text-slate-700">
                               <span className="capitalize font-medium text-slate-600">
                                 {r.method === 'mpesa' ? 'M-Pesa' : r.method === 'store_credit' ? 'Store Credit' : r.method}:
                               </span>
-                              <span className="font-mono font-bold">
+                              <span className="font-mono tabular-nums font-bold">
                                 {currentLocation.currency} {amt.toFixed(2)}
                               </span>
                             </div>
@@ -2486,9 +2459,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                         })}
                       </div>
                       {splitCashChange > 0 && (
-                        <div className="flex justify-between text-[11px] text-blue-700 font-bold pt-1 border-t border-amber-200/80">
+                        <div className="flex justify-between text-xs text-blue-700 font-bold pt-1 border-t border-slate-200">
                           <span>Cash Change:</span>
-                          <span className="font-mono">{currentLocation.currency} {splitCashChange.toFixed(2)}</span>
+                          <span className="font-mono tabular-nums">{currentLocation.currency} {splitCashChange.toFixed(2)}</span>
                         </div>
                       )}
                     </div>
@@ -2562,7 +2535,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                       Math.max(0, -((selectedCustomer.storeCreditBalance || 0) - currentGuardrail.payableAmount)) >
                         (selectedCustomer.creditLimit || 0)))
                 }
-                className={`w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-black py-3.5 px-4 rounded-xl shadow-md transition text-xs flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed ${
+                className={`w-full min-h-[48px] bg-emerald-600 hover:bg-emerald-700 active:scale-[0.985] disabled:bg-slate-300 text-white font-bold py-3.5 px-4 rounded-xl transition-all duration-150 text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed whitespace-nowrap ${
                   !isProcessing && !hasZeroStock && activeShift?.status === 'open' && (selectedMethod !== 'cash' || tenderedAmount >= currentGuardrail.payableAmount) && (selectedMethod !== 'split' || isSplitValid)
                     ? 'primary-cta-shimmer-emerald'
                     : ''

@@ -321,6 +321,11 @@ export const ReceiptModal: React.FC = () => {
             <p className="text-[10px] text-slate-500">
               KRA PIN: {currentBusiness?.taxNumber || currentLocation.taxId} • Tel: {currentLocation.phone}
             </p>
+            {currentBusiness?.hardwareSettings?.printerHeaderNote && (
+              <p className="text-[10px] font-bold text-slate-700 pt-0.5">
+                {currentBusiness.hardwareSettings.printerHeaderNote}
+              </p>
+            )}
           </div>
 
           {/* Meta Details */}
@@ -687,6 +692,11 @@ export const ReceiptModal: React.FC = () => {
               </a>
             )}
 
+            {currentBusiness?.hardwareSettings?.printerFooterNote && (
+              <p className="text-[10px] font-bold text-slate-800 pt-1">
+                {currentBusiness.hardwareSettings.printerFooterNote}
+              </p>
+            )}
             <p className="text-[10px] text-slate-400 mt-2">Powered by SokoPoS in partnership with Digitax</p>
             <p className="text-[10px] text-slate-600 font-sans font-bold">
               Asante kwa kununua na sisi!

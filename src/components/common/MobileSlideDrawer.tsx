@@ -414,7 +414,7 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
                 className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#059669] transition-all cursor-pointer group text-sm w-full text-left"
               >
                 <Layers className="w-5 h-5 text-slate-400 group-hover:text-[#059669] transition-colors shrink-0" />
-                <span className="truncate flex-1">Solutions</span>
+                <span className="truncate flex-1">Your Shop</span>
               </button>
 
               <button
@@ -423,7 +423,7 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
                 className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#059669] transition-all cursor-pointer group text-sm w-full text-left"
               >
                 <Smartphone className="w-5 h-5 text-slate-400 group-hover:text-[#059669] transition-colors shrink-0" />
-                <span className="truncate flex-1">M-Pesa & eTIMS</span>
+                <span className="truncate flex-1">M-Pesa &amp; eTIMS</span>
               </button>
 
               <button
@@ -432,7 +432,7 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
                 className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#059669] transition-all cursor-pointer group text-sm w-full text-left"
               >
                 <Cpu className="w-5 h-5 text-slate-400 group-hover:text-[#059669] transition-colors shrink-0" />
-                <span className="truncate flex-1">Hardware Freedom</span>
+                <span className="truncate flex-1">Use Your Hardware</span>
               </button>
 
               <button
@@ -441,7 +441,7 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
                 className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#059669] transition-all cursor-pointer group text-sm w-full text-left"
               >
                 <Award className="w-5 h-5 text-slate-400 group-hover:text-[#059669] transition-colors shrink-0" />
-                <span className="truncate flex-1">Why SokoPoS</span>
+                <span className="truncate flex-1">Why Switch</span>
               </button>
 
               <button
@@ -470,18 +470,18 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
           <button
             type="button"
             onClick={handleFooterCta}
-            className="drawer-item flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl text-sm font-semibold text-white bg-[#059669] hover:bg-[#047857] shadow-sm shadow-emerald-600/25 transition-all hover:shadow-md cursor-pointer"
+            className="drawer-item flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl text-sm font-semibold text-white bg-[#059669] hover:bg-[#047857] shadow-sm shadow-emerald-600/25 transition-all hover:shadow-md cursor-pointer whitespace-nowrap"
           >
             {isPosOperational ? (
               <>
-                <Monitor className="w-4 h-4" />
-                <span>Enter POS Terminal</span>
-                <ArrowRight className="w-3.5 h-3.5" />
+                <Monitor className="w-4 h-4 shrink-0" />
+                <span>Open Till</span>
+                <ArrowRight className="w-3.5 h-3.5 shrink-0" />
               </>
             ) : (
               <>
-                <span>Get Started Now</span>
-                <ArrowRight className="w-4 h-4" />
+                <span>Sign in or set up shop</span>
+                <ArrowRight className="w-4 h-4 shrink-0" />
               </>
             )}
           </button>

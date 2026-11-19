@@ -40,9 +40,9 @@ export const RETAIL_INDUSTRIES: RetailIndustryItem[] = [
     id: 'retail',
     name: 'Retail',
     sectorLabel: 'Dukas, Boutiques & Agrovets',
-    headline: 'Fast counters for everyday stock',
+    headline: 'Stop losing sales to stockouts and unrecorded credit tabs',
     summary:
-      'Scan barcodes, track fractional weights, and record M-Pesa Till or customer credit tabs in seconds.',
+      'Ring up items in seconds, break bulk sacks into single kilos, and keep every M-Pesa Till or customer credit tab recorded.',
     image: industryRetailShop,
     imageAlt:
       'Kenyan retail shop cashier scanning packaged goods at a digital POS counter in Nairobi',
@@ -50,12 +50,12 @@ export const RETAIL_INDUSTRIES: RetailIndustryItem[] = [
     metricValue: '< 2s / item',
     icon: Store,
     overview:
-      'Built for busy neighborhood shops, agrovets, hardware stores, and boutiques across Kenya. Keep shelves stocked with automated reorder alerts, break down bulk sacks into single-kilo units, and collect Lipa na M-Pesa payments without manual till reconciliation.',
+      'Built for busy neighborhood dukas, agrovets, hardware stores, and boutiques across Kenya. Know before fast-moving staples run out, replace torn paper credit notebooks with digital balances, and match every Lipa na M-Pesa payment to its sale automatically.',
     capabilities: [
-      'Instant low-stock alerts before fast-moving staples run out',
+      'Low-stock alerts before best-selling items run out mid-week',
       'Digital customer credit book (Duka Tab) with SMS/WhatsApp reminders',
-      'Central price updates synchronized across every counter instantly',
-      'Native M-Pesa STK Push and KRA eTIMS receipts via Digitax',
+      'Update prices once and push them to every counter right away',
+      'M-Pesa STK Push and KRA eTIMS receipts printed through Digitax',
     ],
     hardwareSetup: 'Android tablet or browser terminal, USB barcode scanner, and 58mm thermal printer',
     sampleItems: [
@@ -68,9 +68,9 @@ export const RETAIL_INDUSTRIES: RetailIndustryItem[] = [
     id: 'bars',
     name: 'Bars',
     sectorLabel: 'Bars, Lounges & Bistros',
-    headline: 'Tabs, tables and pours under control',
+    headline: 'Catch missing tots and settle busy table tabs fast',
     summary:
-      'Open and split table tabs, route Kitchen Order Tickets, and track spirits by the bottle or tot.',
+      'Split table bills across M-Pesa and cash, send food tickets straight to the kitchen, and track every bottle down to the tot.',
     image: industryBarRestaurant,
     imageAlt:
       'Contemporary Kenyan bar and lounge counter with touch POS terminal tracking open table tabs',
@@ -78,11 +78,11 @@ export const RETAIL_INDUSTRIES: RetailIndustryItem[] = [
     metricValue: 'Instant STK',
     icon: Wine,
     overview:
-      'Keep evening rush orders flowing across terraces, VIP lounges, and sports bars. Waitstaff open tabs by table, dispatch drinks to the bar and grills to the kitchen, and deduct 25ml or 50ml tot pours accurately against full 750ml bottle stock.',
+      'Keep evening rush orders organized across terraces, lounges, and sports bars. Waiters open tabs by table, send drink slips to the bar and food orders to the kitchen, and deduct 25ml or 50ml tot pours against full 750ml bottles so nothing walks out unaccounted.',
     capabilities: [
-      'Open, merge, and split bills across M-Pesa and cash per guest',
+      'Open, merge, and split group bills across M-Pesa and cash',
       'Separate Kitchen Order Tickets (KOT) and counter bar drink slips',
-      'Automated tot-to-bottle inventory tracking to prevent shrinkage',
+      'Tot-to-bottle stock tracking that spots unexplained pours early',
       'Scheduled Happy Hour pricing without manual cashier overrides',
     ],
     hardwareSetup: 'Touchscreen POS register, kitchen/bar thermal printers, and waiter mobile access',
@@ -96,9 +96,9 @@ export const RETAIL_INDUSTRIES: RetailIndustryItem[] = [
     id: 'supermarkets',
     name: 'Supermarkets',
     sectorLabel: 'Mini-Marts & Multi-Lane Stores',
-    headline: 'High-volume tills with live branch control',
+    headline: 'Keep queues moving—and check every branch from your phone',
     summary:
-      'Ring up long grocery baskets quickly, verify cashier shift drops, and compare branches remotely.',
+      'Scan full grocery baskets fast even offline, catch cashier till shortages early, and compare branch totals anywhere.',
     image: industrySupermarket,
     imageAlt:
       'Kenyan supermarket express checkout lane with cashier scanning groceries into a digital POS',
@@ -106,12 +106,12 @@ export const RETAIL_INDUSTRIES: RetailIndustryItem[] = [
     metricValue: '45+ tx / hr',
     icon: ShoppingCart,
     overview:
-      'Engineered for peak weekend queues and multi-aisle Kenyan supermarkets. Process multi-item baskets cleanly with keyboard shortcuts and high-speed scanners, hold cashiers accountable with blind shift cash declarations, and keep selling even if fiber drops.',
+      'Made for peak weekend queues and multi-aisle Kenyan supermarkets. Cashiers scan 50+ item baskets quickly with keyboard shortcuts, declare blind cash totals at shift close so shortages surface immediately, and keep ringing up sales even when fiber drops.',
     capabilities: [
-      'Sub-second hardware barcode capture for 50+ item grocery baskets',
-      'Blind shift closing reports with float, petty cash, and till variances',
-      '100% offline register continuity with automatic cloud sync on reconnect',
-      'Consolidated head-office analytics across Nairobi and upcountry branches',
+      'Fast barcode scanning for 50+ item grocery baskets',
+      'Blind shift cash counts that reveal till variances before staff leave',
+      'Keeps ringing up sales 100% offline and syncs when internet returns',
+      'Check live cash, M-Pesa, and stock across Nairobi and upcountry branches',
     ],
     hardwareSetup: 'Desktop/All-in-One terminal, dual-display counter, hands-free scanner, 80mm cutter printer',
     sampleItems: [
@@ -124,9 +124,9 @@ export const RETAIL_INDUSTRIES: RetailIndustryItem[] = [
     id: 'pharmacies',
     name: 'Pharmacies',
     sectorLabel: 'Chemists & Healthcare Dispensaries',
-    headline: 'Trusted dispensing, batch by batch',
+    headline: 'Spot expiring packs early and dispense down to single strips',
     summary:
-      'Monitor batch numbers, flag approaching expiry dates, and dispense blisters or full packs accurately.',
+      'Track medicine batch numbers, catch 30/60/90-day expiries before stock goes bad, and sell full boxes or blister strips accurately.',
     image: industryPharmacy,
     imageAlt:
       'Clean Kenyan community pharmacy dispensary counter with POS terminal and organized medicine shelves',
@@ -134,12 +134,12 @@ export const RETAIL_INDUSTRIES: RetailIndustryItem[] = [
     metricValue: '100% audit',
     icon: Pill,
     overview:
-      'Protect patient safety and regulatory compliance across community chemists and cosmetic outlets. Track lot numbers from distributor delivery to point of sale, get 30/60/90-day expiry warnings before stock expires, and break boxes down into strips seamlessly.',
+      'Avoid throwing away expired stock and keep patient dispensing clean across community chemists. Track batch numbers from supplier delivery to the counter, get early 30/60/90-day expiry warnings, and break boxes into single blister strips without messing up inventory.',
     capabilities: [
-      'Batch number and expiry-date alerts prior to dispensing stock',
-      'Fractional dispensing from boxes down to blister strips or single doses',
+      'Batch number and expiry alerts before a medicine sits past date',
+      'Sell full boxes, single blister strips, or individual doses accurately',
       'Optional prescriber reference and patient notes printed on receipts',
-      'Zero-rated and VAT-exempt tax classification ready for KRA eTIMS',
+      'Zero-rated and VAT-exempt items set up cleanly for KRA eTIMS',
     ],
     hardwareSetup: 'Compact counter laptop or tablet, 2D barcode reader, and high-clarity thermal printer',
     sampleItems: [
@@ -435,7 +435,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
 
                     <div className="pt-2">
                       <h4 className="text-xs font-bold text-[#090d16] mb-3">
-                        What SokoPoS handles at the till
+                        How this helps your counter run smoothly
                       </h4>
                       <ul className="space-y-2.5">
                         {activeIndustry.capabilities.map((cap) => (
@@ -463,7 +463,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
                           className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[42px] rounded-xl bg-[#059669] hover:bg-[#047857] text-white text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0"
                         >
                           <Zap className="w-3.5 h-3.5 fill-white" />
-                          <span>Try Live Sandbox</span>
+                          <span>Test the live till</span>
                         </button>
                       )}
                       {onCreateAccount && (
@@ -475,7 +475,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
                           }}
                           className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[42px] rounded-xl bg-white hover:bg-[#f8fafc] text-[#090d16] border border-[#e2e8f0] hover:border-slate-300 text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0"
                         >
-                          <span>Create Shop Account</span>
+                          <span>Set up your shop</span>
                           <ArrowRight className="w-3.5 h-3.5" />
                         </button>
                       )}

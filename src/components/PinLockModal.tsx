@@ -60,11 +60,11 @@ export const PinLockModal: React.FC = () => {
     try {
       const ok = await verifyPin(pin);
       if (!ok) {
-        setErrorMsg('Invalid PIN. Please re-enter.');
+        setErrorMsg('That PIN did not match. Try your 4 digits again.');
         setPinInput('');
       }
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Verification error. Please retry.');
+      setErrorMsg(err?.message || 'Could not check your PIN. Please try again.');
       setPinInput('');
     } finally {
       setIsVerifying(false);
@@ -106,34 +106,33 @@ export const PinLockModal: React.FC = () => {
         {/* Top Branding */}
         <div className="flex justify-between items-center mb-4 sm:mb-6 shrink-0">
           <AppLogo theme="light" size="md" />
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 bg-white px-3 py-1 rounded-full border border-slate-200 shadow-2xs">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="truncate max-w-[150px]">{currentLocation.name.split(' ')[0]}</span>
-          </div>
+          <span className="text-xs font-semibold text-slate-600 truncate max-w-[160px]">
+            {currentLocation.name}
+          </span>
         </div>
 
         {/* PIN Auth Card with Dedicated Scrolling Protection */}
         <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-md border border-slate-200 flex flex-col items-center shrink-0">
           {/* Cashier Avatar */}
           <div
-            className={`w-14 h-14 sm:w-16 sm:h-16 ${currentCashier.avatarColor} text-white rounded-full flex items-center justify-center font-black text-xl sm:text-2xl mb-1.5 border-2 border-white shadow-md shrink-0`}
+            className={`w-14 h-14 sm:w-16 sm:h-16 ${currentCashier.avatarColor} text-white rounded-xl flex items-center justify-center font-black text-xl sm:text-2xl mb-1.5 border-2 border-white shadow-md shrink-0`}
           >
             {currentCashier.initials}
           </div>
 
           <h2 className="text-sm sm:text-base font-bold text-slate-800">{currentCashier.name}</h2>
-          <p className="text-xs text-slate-400 mb-1">
-            Cashier ID: {currentCashier.code} • {currentCashier.role}
+          <p className="text-xs text-slate-500 font-mono tabular-nums mb-2">
+            {currentCashier.code} · {currentCashier.role}
           </p>
 
-          {/* Non-repudiable Operator Attribution & Prohibition of Shared Logins */}
-          <div className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 sm:p-2.5 mb-2.5 text-center">
-            <div className="flex items-center justify-center gap-1 text-[11px] font-bold text-slate-700">
+          {/* Shift attribution notice */}
+          <div className="w-full border-y border-slate-200 py-2.5 mb-2.5 text-center">
+            <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-slate-700">
               <Shield className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-              <span>Locked to Authenticated Account</span>
+              <span>Till locked for this shift</span>
             </div>
-            <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
-              Shared logins prohibited. Enter individual operator PIN to unlock register.
+            <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+              Enter your 4-digit PIN to resume selling so every sale stays under your name.
             </p>
           </div>
 
@@ -196,7 +195,7 @@ export const PinLockModal: React.FC = () => {
             </button>
           </div>
 
-          {/* Switch Account Action - Preserves Session Attribution */}
+          {/* Switch Account Action */}
           <button
             type="button"
             onClick={() => {
@@ -206,17 +205,17 @@ export const PinLockModal: React.FC = () => {
                 logout();
               }
             }}
-            className="mt-3 sm:mt-4 text-[11px] font-bold text-slate-500 hover:text-red-600 transition flex items-center gap-1.5 cursor-pointer py-1.5 px-3 rounded-lg hover:bg-slate-100"
+            className="mt-3 sm:mt-4 min-h-[40px] text-xs font-semibold text-slate-500 hover:text-red-600 transition flex items-center gap-1.5 cursor-pointer py-2 px-3 rounded-lg hover:bg-slate-100 whitespace-nowrap"
           >
-            <LogOut className="w-3.5 h-3.5" />
-            <span>Different Operator? Sign Out & Switch Account</span>
+            <LogOut className="w-3.5 h-3.5 shrink-0" />
+            <span>Not {currentCashier.name.split(' ')[0]}? Switch cashier</span>
           </button>
         </div>
 
         {/* Footer */}
-        <div className="flex justify-between items-center text-[11px] sm:text-xs text-slate-400 border-t border-slate-200 pt-3 sm:pt-4 mt-4 sm:mt-5 shrink-0">
-          <span>SokoPoS v3.2.0 • Online</span>
-          <span>Support: +254 740 463 021</span>
+        <div className="flex justify-between items-center text-[11px] sm:text-xs text-slate-500 border-t border-slate-200 pt-3 sm:pt-4 mt-4 sm:mt-5 shrink-0">
+          <span>Ready to resume shift</span>
+          <span className="font-mono tabular-nums">Help: +254 740 463 021</span>
         </div>
       </div>
     </div>

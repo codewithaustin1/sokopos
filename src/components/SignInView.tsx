@@ -327,7 +327,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       }
 
       if (!res.customToken) {
-        setLoginOtpError('Code verified, but no Firebase authentication session token was issued.');
+        setLoginOtpError('Your code checked out, but we could not finish opening your shop. Please request a fresh code.');
         soundFx.playError();
         return;
       }
@@ -341,11 +341,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         setIsAuthModalOpen(false);
         onLoginSuccess?.();
       } else {
-        setLoginOtpError(sessionRes.error || 'Could not establish Firebase session.');
+        setLoginOtpError(sessionRes.error || 'Could not start your shop session. Please try again.');
         soundFx.playError();
       }
     } catch (err: any) {
-      setLoginOtpError(err?.message || 'Verification failed.');
+      setLoginOtpError(err?.message || 'Verification failed. Please check the code and try again.');
       soundFx.playError();
     } finally {
       setIsVerifyingLoginOtp(false);
@@ -368,10 +368,10 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         if (typeof res.retryAfterSeconds === 'number' && res.retryAfterSeconds > 0) {
           setOtpResendCooldownSec(res.retryAfterSeconds);
         }
-        setLoginOtpError(res.error || 'Failed to resend verification code.');
+        setLoginOtpError(res.error || 'Could not resend your login code. Please try again.');
       }
     } catch (err: any) {
-      setLoginOtpError(err?.message || 'Failed to resend verification code.');
+      setLoginOtpError(err?.message || 'Could not resend your login code.');
     } finally {
       setIsSendingLoginOtp(false);
     }
@@ -454,7 +454,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
         onLoginSuccess?.();
       } else {
-        setVerificationError(res.error || 'Email is not verified yet. Please check your inbox.');
+        setVerificationError(res.error || 'We have not seen that link clicked yet. Check your inbox or spam folder and try again.');
         soundFx.playError();
       }
     } finally {
@@ -849,7 +849,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       setEnteredPin((prev) => prev.slice(0, -1));
     } else if (enteredPin.length < 4) {
       if (!isDemoModeActive && !staffCredentialInput.trim()) {
-        setPinError('Please enter your Staff ID or username first');
+        setPinError('Enter your Staff ID or username first so we know whose till to open');
         staffInputRef.current?.focus();
         return;
       }
@@ -879,13 +879,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     if (isSubmittingTerminal) return;
     const credential = staffCredentialInput.trim();
     if (!credential) {
-      setPinError('Please enter your Staff ID or username');
+      setPinError('Enter your Staff ID or username first');
       soundFx.playError();
       staffInputRef.current?.focus();
       return;
     }
     if (!pin || pin.length < 4) {
-      setPinError('Please enter your 4-digit PIN');
+      setPinError('Enter all 4 digits of your PIN');
       soundFx.playError();
       pinInputRef.current?.focus();
       return;
@@ -908,12 +908,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         setIsAuthModalOpen(false);
         onLoginSuccess?.();
       } else {
-        setPinError('Incorrect 4-digit PIN. Try again.');
+        setPinError('That 4-digit PIN did not match. Please try again.');
         setEnteredPin('');
         soundFx.playError();
       }
     } catch (err: any) {
-      setPinError(err?.message || 'Authentication failed. Please verify credentials.');
+      setPinError(err?.message || 'Could not sign you in. Check your Staff ID and PIN.');
       setEnteredPin('');
       soundFx.playError();
     } finally {
@@ -979,13 +979,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         onLoginSuccess?.();
       } else if (res.requiresVerification) {
         setVerificationError(null);
-        setVerificationFeedback(`A verification link was sent to ${res.email || email}. Please verify your inbox to continue.`);
+        setVerificationFeedback(`We sent a confirmation link to ${res.email || email}. Open your inbox and click it to unlock your dashboard.`);
       } else {
-        setEmailAuthError(res.error || 'Authentication failed. Please check credentials.');
+        setEmailAuthError(res.error || 'That email or password did not match. Please check and try again.');
         soundFx.playError();
       }
     } catch (err: any) {
-      setEmailAuthError(err?.message || 'Authentication failed.');
+      setEmailAuthError(err?.message || 'Could not sign you in. Please try again.');
       soundFx.playError();
     } finally {
       setIsAuthenticatingEmail(false);
@@ -1000,19 +1000,19 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     setEmailAuthError(null);
 
     if (!storeName) {
-      setEmailAuthError('Please enter your shop or business name.');
+      setEmailAuthError('Enter your shop or business name to continue.');
       return;
     }
     if (!ownerEmail) {
-      setEmailAuthError('Please enter your owner email address.');
+      setEmailAuthError('Enter your email address so you can sign back in later.');
       return;
     }
     if (!password) {
-      setEmailAuthError('Please enter a password for your account.');
+      setEmailAuthError('Choose a password for your shop account.');
       return;
     }
     if (password.length < 6) {
-      setEmailAuthError('Password must be at least 6 characters long.');
+      setEmailAuthError('Use at least 6 characters for your password.');
       return;
     }
 
@@ -1032,13 +1032,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         onLoginSuccess?.();
       } else if (res.requiresVerification) {
         setVerificationError(null);
-        setVerificationFeedback(`We sent a verification link to ${res.email || ownerEmail}. Verify your email to activate your shop.`);
+        setVerificationFeedback(`We sent a confirmation link to ${res.email || ownerEmail}. Click it in your inbox to open your new shop.`);
       } else {
-        setEmailAuthError(res.error || 'Failed to create shop account. Please check inputs.');
+        setEmailAuthError(res.error || 'Could not create your shop yet. Please check your details and try again.');
         soundFx.playError();
       }
     } catch (err: any) {
-      setEmailAuthError(err?.message || 'Failed to create shop account.');
+      setEmailAuthError(err?.message || 'Could not create your shop account.');
       soundFx.playError();
     } finally {
       setIsAuthenticatingEmail(false);
@@ -1888,9 +1888,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               e.preventDefault();
               scrollToSection('solutions');
             }}
-            className="hover:text-[#059669] transition cursor-pointer"
+            className="hover:text-[#059669] transition cursor-pointer whitespace-nowrap shrink-0"
           >
-            Solutions
+            Your Shop
           </a>
           <a
             href="#payments"
@@ -1898,7 +1898,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               e.preventDefault();
               scrollToSection('payments');
             }}
-            className="hover:text-[#059669] transition cursor-pointer"
+            className="hover:text-[#059669] transition cursor-pointer whitespace-nowrap shrink-0"
           >
             M-Pesa &amp; eTIMS
           </a>
@@ -1908,9 +1908,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               e.preventDefault();
               scrollToSection('hardware');
             }}
-            className="hover:text-[#059669] transition cursor-pointer"
+            className="hover:text-[#059669] transition cursor-pointer whitespace-nowrap shrink-0"
           >
-            Hardware Freedom
+            Use Your Hardware
           </a>
           <a
             href="#compare"
@@ -1918,14 +1918,14 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               e.preventDefault();
               scrollToSection('compare');
             }}
-            className="hover:text-[#059669] transition cursor-pointer"
+            className="hover:text-[#059669] transition cursor-pointer whitespace-nowrap shrink-0"
           >
-            Why SokoPoS
+            Why Switch
           </a>
         </nav>
 
         {/* Action Buttons & Mobile Hamburger Menu */}
-        <div className="flex items-center gap-2 sm:gap-2.5">
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
           <PWAInstallButton variant="compact" />
 
           {currentUser ? (
@@ -1933,12 +1933,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               type="button"
               id="top-nav-pos-terminal-btn"
               onClick={onLoginSuccess}
-              className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition cursor-pointer"
+              className="px-3.5 py-2 min-h-[40px] rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition cursor-pointer whitespace-nowrap shrink-0"
             >
-              <Monitor className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Enter POS Terminal</span>
-              <span className="sm:hidden">Terminal</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              <Monitor className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">Open Till</span>
+              <span className="sm:hidden">Till</span>
+              <ArrowRight className="w-3.5 h-3.5 shrink-0" />
             </button>
           ) : (
             /* Desktop View: Text Login Button in header (opens modal) */
@@ -1946,9 +1946,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               type="button"
               id="top-nav-login-btn"
               onClick={() => openAuthModal('owner')}
-              className="hidden sm:inline-flex items-center px-4 py-1.5 rounded-xl bg-[#059669] hover:bg-[#047857] text-white font-bold text-xs shadow-md shadow-emerald-500/20 transition cursor-pointer"
+              className="hidden sm:inline-flex items-center px-4 py-2 min-h-[40px] rounded-xl bg-[#059669] hover:bg-[#047857] text-white font-bold text-xs shadow-md shadow-emerald-500/20 transition cursor-pointer whitespace-nowrap shrink-0"
             >
-              Login
+              Sign In
             </button>
           )}
 
@@ -1978,47 +1978,47 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             <div className="sp-hero-grid">
               {/* Left Column: Value Proposition & Stats */}
               <div className="sp-hero-left flex flex-col items-center lg:items-start text-center lg:text-left">
-                <h1 className="sp-h1">The ultimate POS built for retail, bars and supermarkets.</h1>
+                <h1 className="sp-h1 text-balance">Close your till in minutes—with M-Pesa, cash, and eTIMS already matched.</h1>
                 <p className="sp-lead">
-                  Selling is easier than ever. Cut operational layers, automate receipt production, payment collection, stock reconciliation, and sales reporting!
+                  Stop spending your evenings checking M-Pesa texts against paper books or worrying about missing till cash. Ring up customers in seconds on the phone or laptop you already own—even when the internet drops.
                 </p>
                 <div className="sp-cta">
                   <button
                     type="button"
-                    className="sp-btn sp-btn-blue"
+                    className="sp-btn sp-btn-blue min-h-[44px] whitespace-nowrap shrink-0"
                     id="demo"
                     onClick={handleLaunchDemoSandbox}
                   >
-                    <Zap className="w-4 h-4 fill-white" />
-                    <span>Try the demo account</span>
+                    <Zap className="w-4 h-4 fill-white shrink-0" />
+                    <span>Test the live till</span>
                   </button>
                   <button
                     type="button"
-                    className="sp-btn sp-btn-ghost"
+                    className="sp-btn sp-btn-ghost min-h-[44px] whitespace-nowrap shrink-0"
                     onClick={() => openAuthModal('owner')}
                   >
-                    <span>Create Free Account</span>
-                    <ArrowRight className="w-4 h-4" />
+                    <span>Create free shop account</span>
+                    <ArrowRight className="w-4 h-4 shrink-0" />
                   </button>
                 </div>
-                <p className="sp-fine">Live sandbox in 5 seconds · No credit card · Pre-loaded inventory</p>
+                <p className="sp-fine">Opens in 5 seconds · Sample stock loaded · No card needed</p>
 
                 <div className="sp-stats">
                   <div>
-                    <b>KES <AnimatedMetricCounter target={25} />M+</b>
-                    <span>Processed monthly</span>
+                    <b className="font-mono tabular-nums">KES <AnimatedMetricCounter target={25} />M+</b>
+                    <span>Rung up monthly</span>
                   </div>
                   <div>
-                    <b>100%</b>
-                    <span>Works offline</span>
+                    <b className="font-mono tabular-nums">100%</b>
+                    <span>Keeps selling offline</span>
                   </div>
                   <div>
-                    <b>&lt; 18s</b>
-                    <span>Average checkout</span>
+                    <b className="font-mono tabular-nums">&lt; 18s</b>
+                    <span>Per customer checkout</span>
                   </div>
                   <div>
                     <b>eTIMS</b>
-                    <span>Digitax partner</span>
+                    <span>Receipt-ready via Digitax</span>
                   </div>
                 </div>
               </div>
@@ -2028,33 +2028,29 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 <div className="relative rounded-2xl md:rounded-3xl border border-[#e2e8f0] bg-white shadow-xl shadow-slate-950/5 overflow-hidden transition-all duration-300 hover:shadow-2xl hover:shadow-emerald-950/10">
                   {/* Top Header Strip */}
                   <div className="px-4 py-2.5 bg-[#f8fafc] border-b border-[#e2e8f0] flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2 font-semibold text-[#090d16]">
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
-                      <span>SokoPoS Terminal</span>
-                      <span className="text-[11px] font-mono text-slate-400">v2.4</span>
-                    </div>
+                    <span className="font-semibold text-[#090d16]">
+                      Counter Checkout Preview
+                    </span>
+                    <span className="text-[11px] text-[#475569]">
+                      Phone, Tablet &amp; PC
+                    </span>
                   </div>
 
                   {/* High-Resolution Hero Visual with Admin Override Support */}
                   <div className="relative aspect-[16/10] sm:aspect-[4/3] lg:aspect-[16/11] bg-slate-900 overflow-hidden group">
                     <img
                       src={loginBgGraphic || heroKenyanPos}
-                      alt="Modern Kenyan retail checkout counter with POS terminal and M-Pesa payment"
+                      alt="Shop cashier completing an M-Pesa and barcode sale on a tablet POS counter"
                       referrerPolicy="no-referrer"
                       className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                     />
                   </div>
 
-                  {/* Bottom Trust & Feature Badges */}
-                  <div className="p-3 bg-white border-t border-[#e2e8f0] flex flex-wrap items-center justify-between gap-2 text-xs text-[#475569]">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      <span className="font-semibold text-[#090d16]">M-Pesa STK Instant Sync</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      <span className="font-semibold text-[#090d16]">KRA eTIMS Auto-Filing</span>
-                    </div>
+                  {/* Bottom Trust Metadata Strip */}
+                  <div className="px-4 py-3 bg-white border-t border-[#e2e8f0] flex flex-wrap items-center justify-between gap-2 text-xs text-[#475569]">
+                    <span className="font-semibold text-[#090d16]">M-Pesa matched to every sale</span>
+                    <span aria-hidden="true" className="hidden sm:inline text-slate-300">·</span>
+                    <span className="font-semibold text-[#090d16]">KRA eTIMS receipts built in</span>
                   </div>
                 </div>
               </div>
@@ -2065,25 +2061,25 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         {/* SECTION 1: PAYMENTS & eTIMS (#payments) */}
         <section className="sp-s sp-reveal" id="payments">
           <div className="sp-wrap">
-            <h2 className="sp-t">Built around how Kenya pays and files.</h2>
+            <h2 className="sp-t text-balance">No more M-Pesa guesswork or KRA eTIMS headaches.</h2>
             <p className="sp-sub">
-              Take the payments your customers already use and stay compliant without extra paperwork.
+              Every shilling your customer sends or hands over is tied to its exact receipt—and stays safe in your records even if your internet cuts out.
             </p>
             <div className="sp-grid3">
               <div className="sp-card">
                 <span className="sp-tag">M-Pesa</span>
-                <h3>Test M-Pesa checkout</h3>
-                <p>Accept mobile money at the till and match each payment to its sale.</p>
+                <h3>Match M-Pesa to the sale</h3>
+                <p>Stop scrolling through confirmation SMS messages at closing time. Confirm Till or STK payments right at the counter.</p>
               </div>
               <div className="sp-card">
                 <span className="sp-tag">eTIMS</span>
-                <h3>Tax receipts, handled</h3>
-                <p>Issue eTIMS-ready receipts through our Digitax partnership.</p>
+                <h3>Print tax-ready receipts</h3>
+                <p>Send eTIMS-ready receipts with KRA verification QR codes through Digitax without re-typing sales at night.</p>
               </div>
               <div className="sp-card">
                 <span className="sp-tag">Offline</span>
-                <h3>Keeps selling without internet</h3>
-                <p>Sales are saved on the device and sync when you reconnect.</p>
+                <h3>Never stall a busy queue</h3>
+                <p>When Wi-Fi or fiber drops, your cashier keeps scanning items and printing receipts. Every sale syncs when signal returns.</p>
               </div>
             </div>
           </div>
@@ -2092,9 +2088,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         {/* SECTION 2: INDUSTRY SOLUTIONS GALLERY (#solutions) */}
         <section className="sp-s sp-reveal" id="solutions">
           <div className="sp-wrap">
-            <h2 className="sp-t">One POS, set up for your kind of shop.</h2>
+            <h2 className="sp-t text-balance">Fix what slows down your kind of shop.</h2>
             <p className="sp-sub">
-              Explore tailored counter workflows across Kenya&apos;s key retail sectors. Select any business type to inspect full till capabilities.
+              Dukas, bars, supermarkets, and chemists lose cash in different ways. Pick your counter type below to see how you stay in control.
             </p>
 
             <SolutionsGallery
@@ -2107,26 +2103,26 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         {/* SECTION 3: HARDWARE FREEDOM (#hardware) */}
         <section className="sp-s sp-reveal" id="hardware">
           <div className="sp-wrap">
-            <h2 className="sp-t">Use the hardware you already own.</h2>
+            <h2 className="sp-t text-balance">Skip the Ksh 80,000 POS hardware bundle.</h2>
             <p className="sp-sub">
-              No locked-in terminals. Start on a phone or tablet and add peripherals as you grow.
+              Start on the phone, tablet, or laptop already on your counter. Add a scanner or thermal printer only when your shop needs one.
             </p>
             <div className="sp-hw">
               <div className="sp-card">
-                <h3>Barcode scanners</h3>
-                <p>USB and Bluetooth scanners work as a keyboard.</p>
+                <h3>Plug in any scanner</h3>
+                <p>Standard USB and Bluetooth barcode scanners ring up items right out of the box.</p>
               </div>
               <div className="sp-card">
-                <h3>Receipt printers</h3>
-                <p>Thermal printers for 58mm and 80mm paper.</p>
+                <h3>Standard receipt printers</h3>
+                <p>Prints cleanly on everyday 58mm and 80mm thermal paper—no proprietary rolls.</p>
               </div>
               <div className="sp-card">
-                <h3>Phones &amp; tablets</h3>
-                <p>Run the terminal in any modern browser.</p>
+                <h3>Phones &amp; tablets you own</h3>
+                <p>Open your till in any modern browser without buying locked-in terminals.</p>
               </div>
               <div className="sp-card">
-                <h3>Laptops &amp; desktops</h3>
-                <p>Full keyboard shortcuts for busy counters.</p>
+                <h3>Fast laptop shortcuts</h3>
+                <p>Check out long baskets with keyboard keys when queues build up at peak hours.</p>
               </div>
             </div>
           </div>
@@ -2135,41 +2131,41 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         {/* SECTION 4: COMPARISON TABLE (#compare) */}
         <section className="sp-s sp-reveal" id="compare">
           <div className="sp-wrap">
-            <h2 className="sp-t">Discover Why Businesses are Switching</h2>
+            <h2 className="sp-t text-balance">What changes when you leave paper books and legacy tills behind</h2>
             <div className="sp-scroll">
               <table className="sp-table">
                 <thead>
                   <tr>
-                    <th>Feature</th>
-                    <th>SokoPoS</th>
+                    <th>Everyday shop need</th>
+                    <th>With SokoPoS</th>
                     <th>Legacy desktop POS</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td>Runs on phone or tablet</td>
+                    <td>Runs on the phone or tablet you already own</td>
                     <td className="y">Yes</td>
-                    <td className="n">Rarely</td>
+                    <td className="n">Costly hardware bundle</td>
                   </tr>
                   <tr>
-                    <td>M-Pesa checkout</td>
+                    <td>Matches M-Pesa payments to each receipt</td>
                     <td className="y">Built in</td>
-                    <td className="n">Add-on</td>
+                    <td className="n">Manual SMS check</td>
                   </tr>
                   <tr>
-                    <td>eTIMS receipts</td>
+                    <td>Prints KRA eTIMS verification receipts</td>
                     <td className="y">Built in</td>
-                    <td className="n">Varies</td>
+                    <td className="n">Extra fees or manual</td>
                   </tr>
                   <tr>
-                    <td>Offline selling</td>
+                    <td>Keeps checking out customers offline</td>
                     <td className="y">Yes</td>
-                    <td className="n">Local only</td>
+                    <td className="n">Local machine only</td>
                   </tr>
                   <tr>
-                    <td>Live analytics from anywhere</td>
-                    <td className="y">Yes</td>
-                    <td className="n">At the shop</td>
+                    <td>See live cash &amp; stock away from the shop</td>
+                    <td className="y">From anywhere</td>
+                    <td className="n">Only at the counter</td>
                   </tr>
                 </tbody>
               </table>
@@ -2180,9 +2176,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         {/* SECTION: CUSTOMER SUCCESS STORIES & TRUST BADGES */}
         <section className="sp-s sp-reveal" id="success-stories">
           <div className="sp-wrap">
-            <h2 className="sp-t">Trusted by thousands of retailers across Kenya.</h2>
+            <h2 className="sp-t text-balance">What happens when you stop guessing at closing time.</h2>
             <p className="sp-sub">
-              See how shop owners in Nairobi, Mombasa, and Nakuru run faster tills and eliminate stock shrinkage with SokoPoS.
+              How shop owners in Nairobi, Mombasa, and Nakuru fixed till shortages, survived fiber outages, and got their evenings back.
             </p>
 
             <div className="sp-grid3 mb-10">
@@ -2195,12 +2191,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     &ldquo;Cut our stock reconciliation time from 3 hours to 5 minutes with real-time M-Pesa push syncing. Zero discrepancies at end-of-day!&rdquo;
                   </p>
                 </div>
-                <div className="border-t border-[#d9e1e6] pt-3 flex items-center justify-between text-xs">
+                <div className="border-t border-[#d9e1e6] pt-3 flex items-center justify-between text-xs gap-2">
                   <div>
                     <strong className="block text-[#0e1a2b] font-bold">Grace Wanjiku</strong>
                     <span className="text-[#4c5a6b]">Ngara Mini-Supermarket, Nairobi</span>
                   </div>
-                  <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold">Verified</span>
+                  <span className="text-emerald-700 font-semibold whitespace-nowrap shrink-0">Shop Owner</span>
                 </div>
               </div>
 
@@ -2213,12 +2209,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     &ldquo;Offline mode saved our business during fiber outages. We processed over 150 sales without internet and everything synced instantly when connection returned.&rdquo;
                   </p>
                 </div>
-                <div className="border-t border-[#d9e1e6] pt-3 flex items-center justify-between text-xs">
+                <div className="border-t border-[#d9e1e6] pt-3 flex items-center justify-between text-xs gap-2">
                   <div>
                     <strong className="block text-[#0e1a2b] font-bold">Hassan Omar</strong>
                     <span className="text-[#4c5a6b]">Mombasa Coast Hardware, Mombasa</span>
                   </div>
-                  <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold">Verified</span>
+                  <span className="text-emerald-700 font-semibold whitespace-nowrap shrink-0">Shop Owner</span>
                 </div>
               </div>
 
@@ -2231,12 +2227,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     &ldquo;Cashier PINs and shift reports give me total peace of mind even when I am away traveling. Sales jumped 35% in our first month!&rdquo;
                   </p>
                 </div>
-                <div className="border-t border-[#d9e1e6] pt-3 flex items-center justify-between text-xs">
+                <div className="border-t border-[#d9e1e6] pt-3 flex items-center justify-between text-xs gap-2">
                   <div>
                     <strong className="block text-[#0e1a2b] font-bold">Mercy Chebet</strong>
                     <span className="text-[#4c5a6b]">Rift Valley Agrovet, Nakuru</span>
                   </div>
-                  <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold">Verified</span>
+                  <span className="text-emerald-700 font-semibold whitespace-nowrap shrink-0">Shop Owner</span>
                 </div>
               </div>
             </div>
@@ -2246,31 +2242,31 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         {/* SECTION 5: FINAL CTA BANNER (Optimized for maximum conversion) */}
         <section className="sp-s sp-reveal sp-final bg-gradient-to-b from-transparent to-blue-50/40">
           <div className="sp-wrap max-w-3xl mx-auto">
-            <h2>Ready to transform your retail business?</h2>
+            <h2 className="text-balance">See how fast your till moves before you change a thing.</h2>
             <p className="text-base text-[#4c5a6b] mb-8 leading-relaxed">
-              Join thousands of Kenyan merchants saving 10+ hours weekly with automated receipting, instant M-Pesa collections, and bulletproof stock control.
+              Open a sample shop in 5 seconds, ring up a test M-Pesa payment, and see how a shift closes cleanly—without entering a card or installing software.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-4">
               <button
                 type="button"
-                className="sp-btn sp-btn-blue px-6 py-3.5 text-base shadow-lg shadow-blue-500/25"
+                className="sp-btn sp-btn-blue px-6 py-3.5 min-h-[48px] text-base shadow-lg shadow-blue-500/25 whitespace-nowrap shrink-0"
                 id="demo2"
                 onClick={handleLaunchDemoSandbox}
               >
-                <Zap className="w-5 h-5 fill-white" />
-                <span>Launch Live POS Demo</span>
+                <Zap className="w-5 h-5 fill-white shrink-0" />
+                <span>Test the live till</span>
               </button>
               <button
                 type="button"
-                className="sp-btn sp-btn-ghost px-6 py-3.5 text-base bg-white"
+                className="sp-btn sp-btn-ghost px-6 py-3.5 min-h-[48px] text-base bg-white whitespace-nowrap shrink-0"
                 onClick={() => openAuthModal('owner')}
               >
-                <span>Create Free Account</span>
-                <ArrowRight className="w-4 h-4" />
+                <span>Create free shop account</span>
+                <ArrowRight className="w-4 h-4 shrink-0" />
               </button>
             </div>
             <p className="text-xs text-[#556375] mt-4 font-medium">
-              No credit card required &middot; Setup takes 2 minutes &middot; Free trial available
+              Free to start &middot; Set up your shop in 2 minutes &middot; Works on your existing phone or PC
             </p>
           </div>
         </section>
@@ -2462,15 +2458,15 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       <div className="flex items-start gap-2.5">
                         <Zap className="w-4 h-4 text-[#059669] shrink-0 mt-0.5" />
                         <div className="text-xs leading-snug">
-                          <span className="font-bold text-[#090d16] block">M-Pesa Instant Activation</span>
-                          <span className="text-[#475569]">STK Push &amp; card unlock your shop immediately.</span>
+                          <span className="font-bold text-[#090d16] block">Ready right after M-Pesa</span>
+                          <span className="text-[#475569]">Your shop features unlock the moment STK Push or card payment completes.</span>
                         </div>
                       </div>
                       <div className="flex items-start gap-2.5">
                         <ShieldCheck className="w-4 h-4 text-[#090d16] shrink-0 mt-0.5" />
                         <div className="text-xs leading-snug">
-                          <span className="font-bold text-[#090d16] block">99.9% Uptime SLA &amp; Offline Sync</span>
-                          <span className="text-[#475569]">Sell without interruption even if Wi-Fi drops.</span>
+                          <span className="font-bold text-[#090d16] block">Keeps selling when Wi-Fi drops</span>
+                          <span className="text-[#475569]">No lost sales during blackouts—everything syncs once internet returns.</span>
                         </div>
                       </div>
                     </div>
@@ -2497,16 +2493,16 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 </div>
                 <div>
                   <h2 id="auth-modal-title" className="text-xl sm:text-[22px] font-extrabold text-[#090d16] tracking-tight mb-1">
-                    Check your email
+                    Check your inbox
                   </h2>
                   <p className="text-xs sm:text-[13px] text-[#475569] leading-relaxed">
-                    Enter the 6-digit sign-in code sent to{' '}
+                    Type the 6-digit login code we sent to{' '}
                     <span className="font-bold text-[#090d16]">{pendingOtpEmail}</span>.
                   </p>
                   <p className="text-[11px] font-medium text-[#64748b] mt-1 font-mono tabular-nums">
                     {otpExpirySeconds > 0
                       ? `Expires in ${formatCountdownClock(otpExpirySeconds)}`
-                      : 'Code expired · Request a new code below'}
+                      : 'Code expired · Request a fresh code below'}
                   </p>
                 </div>
 
@@ -2517,7 +2513,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       <span>{loginOtpError}</span>
                       {typeof otpRemainingAttempts === 'number' && otpRemainingAttempts > 0 && (
                         <span className="block text-[11px] text-red-700 font-semibold mt-0.5 tabular-nums">
-                          Attempts remaining before reset: {otpRemainingAttempts}
+                          Tries left before reset: {otpRemainingAttempts}
                         </span>
                       )}
                     </div>
@@ -2528,9 +2524,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   <div>
                     <label
                       htmlFor="email-otp-code-input"
-                      className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5"
+                      className="block text-xs font-bold text-[#0e1a2b] mb-1.5"
                     >
-                      6-Digit Verification Code
+                      6-Digit Login Code
                     </label>
                     <input
                       id="email-otp-code-input"
@@ -2552,19 +2548,19 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   <button
                     type="submit"
                     disabled={isVerifyingLoginOtp || loginOtpCode.length !== 6 || otpExpirySeconds <= 0}
-                    className="w-full h-11 bg-[#059669] hover:bg-[#047857] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2"
+                    className="w-full h-11 bg-[#059669] hover:bg-[#047857] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap"
                   >
                     {isVerifyingLoginOtp ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Verifying & Signing In...</span>
+                        <span>Opening your shop...</span>
                       </>
                     ) : (
                       <>
                         <span>
                           {isCheckoutContextActive
-                            ? 'Verify & Continue to Checkout'
-                            : 'Verify & Sign In'}
+                            ? 'Confirm & continue to payment'
+                            : 'Open my shop'}
                         </span>
                         {isCheckoutContextActive && <ArrowRight className="w-4 h-4" />}
                       </>
@@ -2582,7 +2578,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         ? 'Sending code...'
                         : otpResendCooldownSec > 0
                         ? `Resend code in ${formatCountdownClock(otpResendCooldownSec)}`
-                        : 'Resend 6-digit code'}
+                        : 'Send a new code'}
                     </button>
                     <button
                       type="button"
@@ -2594,7 +2590,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       }}
                       className="text-xs font-bold text-slate-500 hover:text-slate-900 cursor-pointer"
                     >
-                      Change email
+                      Use another email
                     </button>
                   </div>
                 </form>
@@ -2610,13 +2606,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-1 text-left"
                   >
                     {verificationContext === 'partner'
-                      ? 'Verify your partner email address'
-                      : 'Verify your email address'}
+                      ? 'Confirm your partner email'
+                      : 'Confirm your email address'}
                   </h2>
                   <p className="text-xs sm:text-[13px] text-[#556375] leading-relaxed text-left">
                     {verificationContext === 'partner'
-                      ? 'To prevent system abuse and ensure you receive your M-Pesa commission payouts safely, please click the verification link sent to '
-                      : 'To protect your business and ensure this account belongs to a real owner, please click the verification link sent to '}
+                      ? 'We want to make sure your M-Pesa commission payouts go only to you. Open your inbox and click the link we sent to '
+                      : 'So only you can access your shop cash totals and stock reports, click the confirmation link we sent to '}
                     <span className="font-bold text-[#0e1a2b]">{pendingVerificationEmail}</span>.
                   </p>
                 </div>
@@ -2625,7 +2621,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   <div className="p-3 rounded-xl bg-[#ecfdf5] border border-[#a7f3d0] text-[#047857] text-xs font-semibold flex items-start gap-2">
                     <Zap className="w-4 h-4 shrink-0 mt-0.5 text-[#059669]" />
                     <span>
-                      Your <strong>{pendingCheckoutIntent.planName} Plan ({pendingCheckoutIntent.billingCycle === 'annual' ? 'Annual' : 'Monthly'})</strong> checkout is saved and will open automatically once verified.
+                      Your <strong>{pendingCheckoutIntent.planName} Plan ({pendingCheckoutIntent.billingCycle === 'annual' ? 'Annual' : 'Monthly'})</strong> choice is saved—payment opens as soon as you confirm.
                     </span>
                   </div>
                 )}
@@ -2649,15 +2645,15 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     type="button"
                     onClick={handleCheckVerification}
                     disabled={isCheckingVerification}
-                    className="w-full h-11 bg-[#059669] hover:bg-[#047857] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2"
+                    className="w-full h-11 bg-[#059669] hover:bg-[#047857] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap"
                   >
                     {isCheckingVerification ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Checking verification...</span>
+                        <span>Checking...</span>
                       </>
                     ) : (
-                      <span>I&apos;ve Verified My Email — Continue</span>
+                      <span>I&apos;ve clicked the link — Continue</span>
                     )}
                   </button>
 
@@ -2665,15 +2661,15 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     type="button"
                     onClick={handleResendVerification}
                     disabled={isResendingVerification}
-                    className="w-full h-10 bg-[#f4f7f6] hover:bg-[#e9eff2] disabled:opacity-60 text-[#0e1a2b] font-bold text-xs rounded-xl border border-[#d9e1e6] transition-all cursor-pointer flex items-center justify-center gap-2"
+                    className="w-full h-10 bg-[#f4f7f6] hover:bg-[#e9eff2] disabled:opacity-60 text-[#0e1a2b] font-bold text-xs rounded-xl border border-[#d9e1e6] transition-all cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap"
                   >
                     {isResendingVerification ? (
                       <>
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Sending link...</span>
+                        <span>Sending link again...</span>
                       </>
                     ) : (
-                      <span>Resend Verification Email</span>
+                      <span>Send confirmation email again</span>
                     )}
                   </button>
 
@@ -2683,7 +2679,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       onClick={handleCancelVerification}
                       className="text-xs font-bold text-[#556375] hover:text-[#0e1a2b] hover:underline cursor-pointer"
                     >
-                      Use a different email account
+                      Use a different email
                     </button>
                   </div>
                 </div>
@@ -2723,15 +2719,15 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     setEmailAuthError(null);
                     setPartnerAuthError(null);
                   }}
-                  className={`py-2 px-2 sm:px-3 rounded-lg font-bold text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                  className={`py-2 px-2 sm:px-3 rounded-lg font-bold text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1 whitespace-nowrap ${
                     activeTab === 'partner'
                       ? 'bg-white text-emerald-700 shadow-xs'
                       : 'bg-transparent text-[#4c5a6b] hover:text-emerald-700'
                   }`}
                 >
                   <span>Partner</span>
-                  <span className="text-[10px] font-extrabold px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800">
-                    20%
+                  <span className="text-[11px] font-bold font-mono tabular-nums text-emerald-700">
+                    · 20%
                   </span>
                 </button>
                 <button
@@ -2765,16 +2761,16 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       id="auth-modal-title"
                       className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-1 text-left"
                     >
-                      Reset your password
+                      Forgot your password?
                     </h2>
                     <p className="text-xs text-[#556375] mb-4 text-left">
-                      Enter your account email address and we'll send password reset instructions.
+                      Enter your shop email and we&apos;ll send a link to set a new password right away.
                     </p>
 
                     <form onSubmit={handlePasswordResetSubmit} className="space-y-3 mb-4">
                       <div>
                         <label htmlFor="reset-email-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
-                          Email address
+                          Your shop email
                         </label>
                         <div className="relative flex items-center">
                           <input
@@ -2816,15 +2812,15 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       <button
                         type="submit"
                         disabled={isSendingResetEmail}
-                        className="w-full h-11 bg-[#059669] hover:bg-[#047857] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-2"
+                        className="w-full h-11 bg-[#059669] hover:bg-[#047857] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-2 whitespace-nowrap"
                       >
                         {isSendingResetEmail ? (
                           <>
                             <Loader2 className="w-4 h-4 animate-spin" />
-                            <span>Sending instructions...</span>
+                            <span>Sending link...</span>
                           </>
                         ) : (
-                          <span>Send Password Reset Email</span>
+                          <span>Send reset link</span>
                         )}
                       </button>
 
@@ -2838,7 +2834,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           }}
                           className="text-xs font-bold text-[#059669] hover:underline cursor-pointer"
                         >
-                          ← Back to Sign In
+                          ← Back to sign in
                         </button>
                       </div>
                     </form>
@@ -2849,14 +2845,14 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       id="auth-modal-title"
                       className="text-xl sm:text-[22px] font-extrabold text-[#090d16] tracking-tight mb-1 text-left"
                     >
-                      {isCheckoutContextActive ? 'Sign in to continue' : 'Welcome back!'}
+                      {isCheckoutContextActive ? 'Sign in to finish activating your shop' : 'Open your shop dashboard'}
                     </h2>
                     <p className="text-xs text-[#475569] mb-3.5 text-left">
                       {isCheckoutContextActive && pendingCheckoutIntent
-                        ? `Sign in to activate ${pendingCheckoutIntent.planName} (${pendingCheckoutIntent.billingCycle === 'annual' ? 'Annual' : 'Monthly'}) via M-Pesa or card.`
+                        ? `Sign in first, then complete your ${pendingCheckoutIntent.planName} (${pendingCheckoutIntent.billingCycle === 'annual' ? 'Annual' : 'Monthly'}) payment by M-Pesa or card.`
                         : ownerLoginMethod === 'otp'
-                        ? 'Receive a one-time 6-digit verification code via email — no password required.'
-                        : 'Sign in with your email and password to manage your shop.'}
+                        ? 'Get a 6-digit login code sent to your inbox—no password to remember.'
+                        : 'Check today’s sales, M-Pesa totals, and stock levels from anywhere.'}
                     </p>
 
                     {/* Owner Auth Method Switcher: Password vs Email Code (OTP) */}
@@ -2880,7 +2876,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         }`}
                       >
                         <Lock className="w-3.5 h-3.5 shrink-0" />
-                        <span>Email & Password</span>
+                        <span>Password</span>
                       </button>
                       <button
                         type="button"
@@ -2897,7 +2893,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         }`}
                       >
                         <Mail className="w-3.5 h-3.5 shrink-0" />
-                        <span>Email Code (OTP)</span>
+                        <span>Email Code</span>
                       </button>
                     </div>
 
@@ -2981,19 +2977,19 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         <button
                           type="submit"
                           disabled={isAuthenticatingEmail}
-                          className="w-full h-11 bg-[#059669] hover:bg-[#047857] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1"
+                          className="w-full h-11 bg-[#059669] hover:bg-[#047857] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1 whitespace-nowrap"
                         >
                           {isAuthenticatingEmail ? (
                             <>
                               <Loader2 className="w-4 h-4 animate-spin" />
-                              <span>Signing in...</span>
+                              <span>Opening your shop...</span>
                             </>
                           ) : (
                             <>
                               <span>
                                 {isCheckoutContextActive
-                                  ? 'Sign in & Continue to Checkout'
-                                  : 'Sign in with Email & Password'}
+                                  ? 'Sign in & pay for plan'
+                                  : 'Open my shop'}
                               </span>
                               {isCheckoutContextActive && <ArrowRight className="w-4 h-4" />}
                             </>
@@ -3006,11 +3002,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           (!otpCapabilities.emailProviderConfigured || !otpCapabilities.customTokenConfigured) && (
                             <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-xs leading-relaxed">
                               <span className="font-bold text-[#090d16] block mb-0.5">
-                                Server secrets required for live Email OTP
+                                Email code login needs server keys configured
                               </span>
                               {!otpCapabilities.customTokenConfigured
-                                ? 'Requires FIREBASE_SERVICE_ACCOUNT_JSON (user-owned Firebase IAM key) and RESEND_API_KEY in AI Studio Secrets.'
-                                : 'Requires RESEND_API_KEY in AI Studio Secrets to dispatch emails.'}
+                                ? 'Requires FIREBASE_SERVICE_ACCOUNT_JSON and RESEND_API_KEY in AI Studio Secrets.'
+                                : 'Requires RESEND_API_KEY in AI Studio Secrets to send login codes.'}
                             </div>
                           )}
 
@@ -3048,16 +3044,16 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         <button
                           type="submit"
                           disabled={isSendingLoginOtp}
-                          className="w-full h-11 bg-[#059669] hover:bg-[#047857] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1"
+                          className="w-full h-11 bg-[#059669] hover:bg-[#047857] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1 whitespace-nowrap"
                         >
                           {isSendingLoginOtp ? (
                             <>
                               <Loader2 className="w-4 h-4 animate-spin" />
-                              <span>Sending 6-digit code...</span>
+                              <span>Sending code...</span>
                             </>
                           ) : (
                             <>
-                              <span>Send 6-Digit Code</span>
+                              <span>Email me a 6-digit code</span>
                               <ArrowRight className="w-4 h-4" />
                             </>
                           )}
@@ -3072,22 +3068,21 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             {/* TAB 2: PARTNER PORTAL LOGIN / JOIN */}
             {activeTab === 'partner' && (
               <div id="p-partner">
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center justify-between gap-2 mb-1">
                   <h2
                     id="auth-modal-title"
                     className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight text-left"
                   >
-                    {partnerMode === 'register' ? 'Join as Partner' : 'Partner Sign In'}
+                    {partnerMode === 'register' ? 'Join as a Partner' : 'Partner Sign In'}
                   </h2>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                    <Gift className="w-3 h-3 text-emerald-600" />
-                    <span>20% Recurring</span>
+                  <span className="text-xs font-bold text-emerald-700 font-mono tabular-nums whitespace-nowrap shrink-0">
+                    20% recurring
                   </span>
                 </div>
                 <p className="text-xs text-[#556375] mb-4 text-left">
                   {partnerMode === 'register'
-                    ? 'Earn 20% recurring monthly commission on every store you refer to SokoPoS.'
-                    : 'Sign in to access your referral link, commission ledger, and M-Pesa payouts.'}
+                    ? 'Earn 20% every month via M-Pesa for every shop you help get started.'
+                    : 'Check your referral link, active shops, and M-Pesa payouts.'}
                 </p>
 
                 {/* Sub-toggle: Sign In vs Become Partner */}
@@ -3287,7 +3282,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               </div>
             )}
 
-            {/* TAB 2: STAFF SHIFT / PIN LOGIN (Matches attached card design image_78146b8a.png with credentials input and business ID scoping) */}
+            {/* TAB 2: STAFF SHIFT / PIN LOGIN */}
             {activeTab === 'staff' && (
               <div id="p-staff" className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -3295,7 +3290,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     id="auth-modal-title"
                     className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight text-left"
                   >
-                    Start your shift
+                    Clock in to your till
                   </h2>
                 </div>
 
@@ -3307,7 +3302,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div
-                        className="w-10 h-10 rounded-full bg-[#059669] text-white font-extrabold text-sm flex items-center justify-center shrink-0 shadow-2xs"
+                        className="w-10 h-10 rounded-xl bg-[#059669] text-white font-extrabold text-sm flex items-center justify-center shrink-0 shadow-2xs"
                         aria-hidden="true"
                       >
                         {matchedStaff?.initials ||
@@ -3324,7 +3319,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         <div className="text-base font-extrabold text-[#0e1a2b] truncate leading-tight">
                           {matchedStaff?.name || 'Cashier A'}
                         </div>
-                        <div className="text-xs text-[#556375] font-semibold truncate flex items-center gap-1.5 mt-0.5">
+                        <div className="text-xs text-[#556375] font-semibold font-mono tabular-nums truncate flex items-center gap-1.5 mt-0.5">
                           <span>{matchedStaff?.code || staffCredentialInput || '#7000'}</span>
                         </div>
                       </div>
@@ -3333,15 +3328,15 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     <button
                       type="button"
                       onClick={() => setIsEditingStaffId(true)}
-                      className="text-xs text-[#059669] hover:text-[#047857] font-bold px-2 py-1 rounded-lg hover:bg-emerald-50 transition cursor-pointer shrink-0"
+                      className="text-xs text-[#059669] hover:text-[#047857] font-bold px-2.5 py-1.5 rounded-lg hover:bg-emerald-50 transition cursor-pointer shrink-0 whitespace-nowrap"
                     >
-                      Change ID
+                      Switch cashier
                     </button>
                   </div>
                 ) : (
                   <div className="border border-[#d9e1e6] bg-[#f8fafc] rounded-2xl p-3 space-y-1.5 shadow-2xs">
                     <label htmlFor="staff-credential-input" className="block text-xs font-bold text-[#0e1a2b]">
-                      Staff ID or Username
+                      Your Staff ID or username
                     </label>
                     <div className="flex items-center gap-2">
                       <input
@@ -3364,7 +3359,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                             pinInputRef.current?.focus();
                           }
                         }}
-                        placeholder="Enter Staff ID or username (e.g. #1001, cashier.a)"
+                        placeholder="e.g. #1001 or cashier.a"
                         className="flex-1 h-10 px-3.5 rounded-xl border border-[#d9e1e6] bg-white text-[#0e1a2b] font-bold text-sm focus:border-[#059669] focus:outline-none transition-colors"
                       />
                       {isDemoModeActive && (
@@ -3412,7 +3407,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     />
                   </div>
 
-                  {/* 4 PIN Dots (Visual feedback matching image_78146b8a.png) */}
+                  {/* 4 PIN Dots */}
                   <div className="flex justify-center gap-3.5 my-2" id="dots">
                     {[0, 1, 2, 3].map((idx) => {
                       const isFilled = idx < enteredPin.length;
@@ -3435,19 +3430,19 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   </div>
                 </div>
 
-                {/* Numeric Keypad (Exact 3x4 layout matching image_78146b8a.png) */}
+                {/* Numeric Keypad */}
                 <div className="grid grid-cols-3 gap-2.5 my-1" id="pad">
                   {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'Clear', '0', '⌫'].map((k) => (
                     <button
                       key={k}
                       type="button"
-                      className="h-13 sm:h-14 rounded-2xl border border-[#d9e1e6] bg-[#f8fafc] hover:bg-[#edf2f7] active:bg-[#059669] active:text-white text-[#0e1a2b] font-bold text-lg sm:text-xl transition-all cursor-pointer shadow-2xs flex items-center justify-center select-none"
+                      className="h-13 sm:h-14 rounded-2xl border border-[#d9e1e6] bg-[#f8fafc] hover:bg-[#edf2f7] active:bg-[#059669] active:text-white text-[#0e1a2b] font-bold text-lg sm:text-xl transition-all cursor-pointer shadow-2xs flex items-center justify-center select-none font-mono tabular-nums"
                       onClick={() => handleKeypadPress(k)}
                     >
                       {k === '⌫' ? (
                         <Delete className="w-5 h-5 text-[#0e1a2b]" />
                       ) : k === 'Clear' ? (
-                        <span className="text-xs sm:text-sm font-bold text-[#4c5a6b]">{k}</span>
+                        <span className="text-xs sm:text-sm font-sans font-bold text-[#4c5a6b]">{k}</span>
                       ) : (
                         <span>{k}</span>
                       )}
@@ -3460,17 +3455,17 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   {isDemoModeActive ? (
                     <button
                       type="button"
-                      className="text-[#059669] hover:underline font-bold cursor-pointer"
+                      className="text-[#059669] hover:underline font-bold cursor-pointer font-mono tabular-nums"
                       id="fillPin"
                       onClick={handleFillDemoPin}
                     >
-                      Demo PIN: 1234
+                      Tap for sample PIN (1234)
                     </button>
                   ) : (
-                    <span className="text-xs text-[#556375] font-semibold">Secure terminal login</span>
+                    <span className="text-xs text-[#556375] font-semibold">Individual cashier PIN</span>
                   )}
                   <span className="text-[11px] text-[#718096]">
-                    {isSubmittingTerminal ? 'Authenticating shift...' : 'Auto-submits on 4 digits'}
+                    {isSubmittingTerminal ? 'Opening your till...' : 'Opens on 4th digit'}
                   </span>
                 </div>
               </div>
@@ -3483,17 +3478,17 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   id="auth-modal-title"
                   className="text-xl sm:text-[22px] font-extrabold text-[#090d16] tracking-tight mb-1 text-left"
                 >
-                  {isCheckoutContextActive ? 'Create your shop' : 'Add a new shop'}
+                  {isCheckoutContextActive ? 'Set up your shop' : 'Set up your shop'}
                 </h2>
-                {isCheckoutContextActive && pendingCheckoutIntent && (
-                  <p className="text-xs text-[#475569] mb-3 text-left">
-                    Set up your shop first, then complete payment for {pendingCheckoutIntent.planName} ({pendingCheckoutIntent.billingCycle === 'annual' ? 'Annual' : 'Monthly'}).
-                  </p>
-                )}
-                <form id="regForm" onSubmit={handleRegisterFormSubmit} className={`space-y-3 mb-4 ${!isCheckoutContextActive ? 'mt-2' : ''}`}>
+                <p className="text-xs text-[#475569] mb-3 text-left">
+                  {isCheckoutContextActive && pendingCheckoutIntent
+                    ? `Name your shop first—then pay for ${pendingCheckoutIntent.planName} (${pendingCheckoutIntent.billingCycle === 'annual' ? 'Annual' : 'Monthly'}) via M-Pesa or card.`
+                    : 'Takes under 2 minutes. Track every shilling, M-Pesa sale, and stock item from day one.'}
+                </p>
+                <form id="regForm" onSubmit={handleRegisterFormSubmit} className="space-y-3 mb-4">
                   <div>
                     <label className="block text-xs font-bold text-[#0e1a2b] mb-1" htmlFor="shop">
-                      Shop or business name
+                      Your shop or business name
                     </label>
                     <input
                       ref={shopNameInputRef}
@@ -3511,7 +3506,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-[#0e1a2b] mb-1" htmlFor="own">
-                      Owner email address
+                      Your email address
                     </label>
                     <div className="relative flex items-center">
                       <input
@@ -3531,7 +3526,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-[#0e1a2b] mb-1" htmlFor="shop-pass">
-                      Create password
+                      Choose a password
                     </label>
                     <div className="relative flex items-center">
                       <input
@@ -3569,19 +3564,19 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   <button
                     type="submit"
                     disabled={isAuthenticatingEmail}
-                    className="w-full h-12 bg-[#059669] hover:bg-[#047857] active:scale-[0.99] disabled:opacity-60 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs mt-1"
+                    className="w-full h-12 bg-[#059669] hover:bg-[#047857] active:scale-[0.99] disabled:opacity-60 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs mt-1 whitespace-nowrap"
                   >
                     {isAuthenticatingEmail ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Creating account...</span>
+                        <span>Setting up your shop...</span>
                       </>
                     ) : (
                       <>
                         <span>
                           {isCheckoutContextActive
-                            ? 'Create shop & Continue to Checkout'
-                            : 'Create shop with Email & Password'}
+                            ? 'Create shop & go to payment'
+                            : 'Create my free shop'}
                         </span>
                         {isCheckoutContextActive && <ArrowRight className="w-4 h-4" />}
                       </>
@@ -3595,12 +3590,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             <div className="border-t border-dashed border-[#d9e1e6] pt-4 text-center" id="below">
               <p className="text-xs sm:text-[13px] text-[#4c5a6b] font-medium mb-2.5" id="belowText">
                 {activeTab === 'register'
-                  ? 'Already have a registered shop or partner account?'
+                  ? 'Already have a shop or partner account?'
                   : activeTab === 'partner'
-                  ? 'Want to open and manage a physical retail store?'
+                  ? 'Looking to set up your own retail shop?'
                   : isCheckoutContextActive
-                  ? 'New to SokoPoS? Register your shop first:'
-                  : 'Need to register a new location?'}
+                  ? 'First time here? Set up your shop in 2 minutes:'
+                  : 'Opening a new shop or branch?'}
               </p>
               <button
                 type="button"
@@ -3617,7 +3612,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   setEmailAuthError(null);
                   setPartnerAuthError(null);
                 }}
-                className={`w-full h-11 rounded-xl font-bold text-sm sm:text-[15px] flex items-center justify-center transition-all cursor-pointer ${
+                className={`w-full h-11 rounded-xl font-bold text-sm sm:text-[15px] flex items-center justify-center transition-all cursor-pointer whitespace-nowrap ${
                   activeTab === 'register'
                     ? 'bg-transparent text-[#090d16] border border-[#d9e1e6] hover:bg-slate-50'
                     : isCheckoutContextActive
@@ -3626,8 +3621,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 }`}
               >
                 {activeTab === 'register'
-                  ? 'Return to login'
-                  : 'Add new shop'}
+                  ? 'Sign in instead'
+                  : 'Set up a new shop'}
               </button>
             </div>
               </>
