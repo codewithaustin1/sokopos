@@ -28,7 +28,7 @@ export const ScannerStatusBadge: React.FC<ScannerStatusBadgeProps> = ({
   onOpenChange,
   hideTrigger = false,
 }) => {
-  const { handleBarcodeScanned, showToast } = usePos();
+  const { handleBarcodeScanned, openUnknownBarcodeModal, showToast } = usePos();
   const [internalOpen, setInternalOpen] = useState(false);
   const isOpen = controlledOpen !== undefined ? controlledOpen : internalOpen;
   const setIsOpen = (next: boolean) => {
@@ -42,11 +42,14 @@ export const ScannerStatusBadge: React.FC<ScannerStatusBadgeProps> = ({
   const [isSimulating, setIsSimulating] = useState(false);
 
   const { lastScan, totalScans, simulateBurst } = useBackgroundScanner({
-    onBarcodeScanned: (barcode) => {
+    onBarcodeScanned: (barcode, meta) => {
       if (onScan) {
         onScan(barcode);
       } else {
-        handleBarcodeScanned(barcode);
+        const res = handleBarcodeScanned(barcode);
+        if (!res.success && res.reason === 'not_found') {
+          openUnknownBarcodeModal(barcode, { metadata: meta, source: 'hardware' });
+        }
       }
     },
     enabled: !!onScan,

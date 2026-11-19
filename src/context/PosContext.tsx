@@ -53,6 +53,7 @@ import {
 } from '../types';
 import { digitaxService } from '../services/digitaxService';
 import { bluetoothPrinterService } from '../services/bluetoothPrinterService';
+import type { ScannerBurstMetadata } from '../utils/backgroundScanner';
 import {
   resolveDynamicTaxRate,
   calculateCartTaxBreakdown,
@@ -470,7 +471,7 @@ interface PosContextType {
   updateCategory: (id: string, updates: Partial<Category>) => Promise<void>;
   deleteCategory: (id: string) => Promise<boolean>;
   refreshTenantCategories: (force?: boolean) => Promise<void>;
-  addProduct: (product: Omit<Product, 'id' | 'businessId'> & { id?: string }) => void;
+  addProduct: (product: Omit<Product, 'id' | 'businessId'> & { id?: string }) => Product | null;
   updateProduct: (id: string, updates: Partial<Product>) => void;
   deleteProduct: (id: string) => void;
   bulkAddProducts: (items: Array<Omit<Product, 'id' | 'businessId'> & { id?: string }>) => number;
@@ -543,8 +544,28 @@ interface PosContextType {
   refreshTenantCustomers: (force?: boolean) => Promise<void>;
   isCustomersLoading: boolean;
 
-  // Barcode Scanning
-  handleBarcodeScanned: (barcode: string) => { success: boolean; message: string; product?: Product };
+  // Barcode Scanning & Unified Unknown-Barcode Workflow
+  handleBarcodeScanned: (barcode: string) => {
+    success: boolean;
+    message: string;
+    product?: Product;
+    reason?: 'found' | 'not_found' | 'out_of_stock' | 'max_stock' | 'no_shift' | 'empty';
+  };
+  unknownBarcodePrompt: {
+    isOpen: boolean;
+    barcode: string | null;
+    metadata: ScannerBurstMetadata | null;
+    source: 'hardware' | 'camera' | 'search' | 'manual' | null;
+  };
+  openUnknownBarcodeModal: (
+    barcode: string,
+    options?: {
+      metadata?: ScannerBurstMetadata | null;
+      source?: 'hardware' | 'camera' | 'search' | 'manual';
+      silent?: boolean;
+    }
+  ) => void;
+  closeUnknownBarcodeModal: () => void;
 
   // Transactions & Checkout (Scoped to Current Business)
   transactions: Transaction[];
@@ -3233,7 +3254,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Manual server inventory refresh only (live onSnapshot stream handles initial & automatic updates)
 
-  const addProduct = (product: Omit<Product, 'id' | 'businessId'> & { id?: string }) => {
+  const addProduct = (product: Omit<Product, 'id' | 'businessId'> & { id?: string }): Product | null => {
+    if (!isSuperAdmin && !can('manageInventory')) {
+      soundFx.playError();
+      showToast('Permission denied: Inventory management access is required to add products.', 'error');
+      return null;
+    }
+
     if (!isSuperAdmin && isQuotaAtOrAboveLimit(products.length, entitlements.limits.maxProducts)) {
       soundFx.playError();
       const nextRequiredTier = getRequiredTierForProductCount(products.length + 1);
@@ -3248,7 +3275,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           limit: entitlements.limits.maxProducts,
         },
       });
-      return;
+      return null;
     }
 
     const finalCategory = (!product.category || !product.category.trim()) ? 'All' : product.category.trim();
@@ -3294,6 +3321,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       afterValue: newProduct,
     });
     showToast(`Product "${newProduct.name}" added`, 'success');
+    return newProduct;
   };
 
   const updateProduct = (id: string, updates: Partial<Product>) => {
@@ -5408,8 +5436,72 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: false, error: 'Invalid Manager or Supervisor PIN' };
   };
 
+  // Unified Unknown-Barcode Quick-Add / Restricted Notice State
+  const [unknownBarcodePrompt, setUnknownBarcodePrompt] = useState<{
+    isOpen: boolean;
+    barcode: string | null;
+    metadata: ScannerBurstMetadata | null;
+    source: 'hardware' | 'camera' | 'search' | 'manual' | null;
+  }>({
+    isOpen: false,
+    barcode: null,
+    metadata: null,
+    source: null,
+  });
+
+  const openUnknownBarcodeModal = useCallback(
+    (
+      rawBarcode: string,
+      options?: {
+        metadata?: ScannerBurstMetadata | null;
+        source?: 'hardware' | 'camera' | 'search' | 'manual';
+        silent?: boolean;
+      }
+    ) => {
+      const clean = rawBarcode.trim().replace(/^['"]+|['"]+$/g, '');
+      if (!clean) return;
+      const canManage = isSuperAdmin || can('manageInventory');
+      if (!options?.silent) {
+        if (canManage) {
+          soundFx.playBeep(340, 0.14);
+          showToast(
+            `Barcode "${clean}" is not in ${currentBusiness?.name || 'store'} catalog. Quick-Add opened.`,
+            'info'
+          );
+        } else {
+          soundFx.playError();
+          showToast(
+            `Barcode "${clean}" is not in catalog. Ask a manager or inventory clerk to add it.`,
+            'error'
+          );
+        }
+      }
+      setUnknownBarcodePrompt({
+        isOpen: true,
+        barcode: clean,
+        metadata: options?.metadata || null,
+        source: options?.source || 'manual',
+      });
+    },
+    [can, currentBusiness?.name, isSuperAdmin, showToast]
+  );
+
+  const closeUnknownBarcodeModal = useCallback(() => {
+    setUnknownBarcodePrompt({
+      isOpen: false,
+      barcode: null,
+      metadata: null,
+      source: null,
+    });
+  }, []);
+
   // Barcode Handler
-  const handleBarcodeScanned = (barcode: string) => {
+  const handleBarcodeScanned = (barcode: string): {
+    success: boolean;
+    message: string;
+    product?: Product;
+    reason?: 'found' | 'not_found' | 'out_of_stock' | 'max_stock' | 'no_shift' | 'empty';
+  } => {
     // Strict Guardrail: Barcode scanning & item entry require an open shift session
     if (!activeShift || activeShift.status !== 'open') {
       soundFx.playError();
@@ -5418,12 +5510,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         'error'
       );
       setIsShiftModalOpen(true);
-      return { success: false, message: 'No active shift session open' };
+      return { success: false, message: 'No active shift session open', reason: 'no_shift' };
     }
 
     const trimmed = barcode.trim().replace(/^['"]+|['"]+$/g, '');
     if (!trimmed) {
-      return { success: false, message: 'Empty barcode entered' };
+      return { success: false, message: 'Empty barcode entered', reason: 'empty' };
     }
 
     const cleanCode = trimmed.replace(/\s+/g, '');
@@ -5461,6 +5553,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return {
           success: false,
           message: `Out of stock: "${match.name}" has 0 stock and cannot be sold.`,
+          product: match,
+          reason: 'out_of_stock',
         };
       }
 
@@ -5474,6 +5568,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return {
           success: false,
           message: `Max stock reached for "${match.name}".`,
+          product: match,
+          reason: 'max_stock',
         };
       }
 
@@ -5481,12 +5577,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       Haptics.scanSuccess();
       addToCart(match, 1);
       showToast(`+1 ${match.name} added to cart (${currentLocation.currency} ${match.sellingPrice})`, 'success');
-      return { success: true, message: `Scanned: ${match.name}`, product: match };
+      return { success: true, message: `Scanned: ${match.name}`, product: match, reason: 'found' };
     }
 
-    soundFx.playError();
-    showToast(`Barcode "${trimmed}" not found in ${currentBusiness.name} catalog`, 'error');
-    return { success: false, message: `Barcode "${trimmed}" not found in ${currentBusiness.name} catalog` };
+    return {
+      success: false,
+      message: `Barcode "${trimmed}" not found in ${currentBusiness.name} catalog`,
+      reason: 'not_found',
+    };
   };
 
   // Process Payment
@@ -10549,6 +10647,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         isCustomersLoading,
 
         handleBarcodeScanned,
+        unknownBarcodePrompt,
+        openUnknownBarcodeModal,
+        closeUnknownBarcodeModal,
 
         transactions,
         loadHistoricalTransactions,

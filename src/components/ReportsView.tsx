@@ -117,6 +117,7 @@ export const ReportsView: React.FC = () => {
           <GlobalTimeRangeSelector
             currentRange={dateRange}
             onChange={(newRange) => setDateRange(newRange)}
+            align="right"
           />
         </div>
       </div>

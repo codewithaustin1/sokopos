@@ -2,26 +2,22 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Search,
   Scan,
-  Plus,
-  Minus,
-  Trash2,
   ArrowRight,
   ShoppingBag,
-  Sparkles,
   AlertTriangle,
   RotateCcw,
   Banknote,
   Tag,
-  Percent,
-  Lock,
   Clock,
-  ShieldAlert,
   User,
-  UserCheck,
   Star,
   X,
   ShoppingCart,
   ChevronRight,
+  ChevronDown,
+  PackagePlus,
+  MoreHorizontal,
+  Keyboard,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { CartItem } from '../types';
@@ -32,11 +28,6 @@ import { CartLineItem } from './CartLineItem';
 import { ShiftSessionClosedCard } from './shift/ShiftSessionClosedCard';
 import { ShiftInitializationCard } from './shift/ShiftInitializationCard';
 import { Haptics } from '../utils/haptics';
-import {
-  getItemDiscountedUnitPrice,
-  getItemLineTotal,
-  formatDiscountBadge,
-} from '../utils/discountUtils';
 import { roundCashHalfUp, hasCents } from '../utils/cashRounding';
 
 interface RegisterViewProps {
@@ -65,6 +56,8 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
     cartTotal,
     currentBusiness,
     handleBarcodeScanned,
+    openUnknownBarcodeModal,
+    can,
     openReturnsModal,
     settleExactCash,
     activeShift,
@@ -74,6 +67,8 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
     t,
   } = usePos();
 
+  const canManageInventory = can('manageInventory');
+
   const [selectedCategory, setSelectedCategory] = useState<string>('All Items');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [mobileActiveView, setMobileActiveView] = useState<'catalog' | 'cart'>('catalog');
@@ -82,6 +77,8 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
   const [isCustomerSelectOpen, setIsCustomerSelectOpen] = useState<boolean>(false);
 
   const [isInitializingShift, setIsInitializingShift] = useState<boolean>(false);
+  const [isQuickActionsOpen, setIsQuickActionsOpen] = useState<boolean>(false);
+  const [isBreakdownOpen, setIsBreakdownOpen] = useState<boolean>(false);
 
   // Void Management Modal State (Edge Case 1)
   const [voidModalState, setVoidModalState] = useState<{
@@ -98,6 +95,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
+  const quickActionsRef = useRef<HTMLDivElement>(null);
 
   const RECENT_SEARCHES_STORAGE_KEY = 'sokopos_recent_searches';
   const MAX_RECENT_SEARCHES = 8;
@@ -166,7 +164,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
     searchInputRef.current?.focus();
   };
 
-  // Close recent searches popover on outside click
+  // Close popovers on outside click
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent | TouchEvent) => {
       if (
@@ -174,6 +172,12 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         !searchContainerRef.current.contains(event.target as Node)
       ) {
         setIsSearchFocused(false);
+      }
+      if (
+        quickActionsRef.current &&
+        !quickActionsRef.current.contains(event.target as Node)
+      ) {
+        setIsQuickActionsOpen(false);
       }
     };
 
@@ -279,6 +283,11 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         if (filteredProducts.length === 1) {
           addToCart(filteredProducts[0], 1);
           setSearchQuery('');
+          return;
+        }
+        // 3. Unrecognized barcode/SKU with zero catalog matches -> open unified Quick-Add / Restricted notice
+        if (res.reason === 'not_found' && filteredProducts.length === 0) {
+          openUnknownBarcodeModal(term, { source: 'search' });
         }
       } else if (cart.length > 0) {
         // Quick Settle on empty Enter
@@ -370,51 +379,10 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
           mobileActiveView === 'catalog' ? 'flex' : 'hidden md:flex'
         }`}
       >
-        {/* Top-Level Quick Action Strip (Single-Elevation Utility Controls, No Competing Pay CTA) */}
-        <div className="pb-2.5 border-b border-slate-200 flex items-center justify-between gap-2 shrink-0 overflow-x-auto scrollbar-none touch-pan-x">
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={openBarcodeScanner}
-              className="min-h-[44px] px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all duration-150 active:scale-[0.98] cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <Scan className="w-4 h-4 shrink-0" />
-              <span>Scan Barcode</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsCustomerSelectOpen(true)}
-              className="min-h-[44px] px-3.5 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all duration-150 active:scale-[0.98] cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <User className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-              <span className="max-w-[140px] truncate">{selectedCustomer ? selectedCustomer.name : 'Select Customer'}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => openReturnsModal()}
-              className="min-h-[44px] px-3.5 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all duration-150 active:scale-[0.98] cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-              <span>Returns</span>
-            </button>
-            <button
-              type="button"
-              onClick={openShiftManagement}
-              className="min-h-[44px] px-3.5 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all duration-150 active:scale-[0.98] cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-              <span>Shift Till</span>
-            </button>
-          </div>
-          <div className="text-xs text-slate-500 whitespace-nowrap hidden xl:block pl-2">
-            Branch: <span className="font-semibold text-slate-800">{currentLocation.name}</span>
-          </div>
-        </div>
-
-        {/* Search & Branch Context */}
-        <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between shrink-0">
+        {/* Unified Single-Row Command Bar (Search + Scan + Progressive More Menu) */}
+        <div className="flex items-center gap-2 shrink-0">
           {/* Quick Search with Barcode Enter support & Ctrl+F shortcut */}
-          <div ref={searchContainerRef} className="relative flex-1">
+          <div ref={searchContainerRef} className="relative flex-1 min-w-0">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               id="register-search-input"
@@ -425,9 +393,9 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               onFocus={() => setIsSearchFocused(true)}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={handleSearchKeyDown}
-              className="w-full min-h-[44px] bg-white border border-slate-300 rounded-lg py-2 pl-9 pr-36 text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition"
+              className="w-full min-h-[44px] bg-white border border-slate-300 rounded-lg py-2 pl-9 pr-32 text-base sm:text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition"
             />
-            <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+            <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
               {searchQuery && (
                 <button
                   type="button"
@@ -441,19 +409,14 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                   <X className="w-3.5 h-3.5" />
                 </button>
               )}
-              <span
-                className="hidden sm:inline-flex items-center text-[10px] font-mono text-slate-400 pointer-events-none px-1"
-                title="Keyboard shortcut: Ctrl+F"
-              >
-                Ctrl+F
-              </span>
               <button
                 type="button"
                 onClick={openBarcodeScanner}
-                className="min-h-[36px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
+                className="min-h-[34px] px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
+                title="Open Camera Scanner (F2)"
               >
                 <Scan className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                <span>{t('action_scan', 'Scan')} (F2)</span>
+                <span>{t('action_scan', 'Scan')}</span>
               </button>
             </div>
 
@@ -461,7 +424,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             {isSearchFocused && (
               <div className="absolute top-full left-0 right-0 mt-1.5 z-40 bg-white rounded-xl shadow-lg border border-slate-200 py-1.5 overflow-hidden">
                 <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-100 text-[11px]">
-                  <div className="flex items-center gap-1.5 font-semibold text-slate-500 uppercase tracking-wider">
+                  <div className="flex items-center gap-1.5 font-semibold text-slate-500">
                     <Clock className="w-3.5 h-3.5 text-slate-400" />
                     <span>Recent Searches</span>
                   </div>
@@ -525,8 +488,78 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             )}
           </div>
 
-          <div className="text-xs text-slate-500 whitespace-nowrap hidden lg:block">
-            Branch: <span className="font-semibold text-slate-800">{currentLocation.name}</span>
+          {/* Progressive Register Quick Actions Popover */}
+          <div ref={quickActionsRef} className="relative shrink-0">
+            <button
+              id="register-quick-actions-btn"
+              type="button"
+              aria-expanded={isQuickActionsOpen}
+              onClick={() => setIsQuickActionsOpen((prev) => !prev)}
+              className="min-h-[44px] px-3 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap"
+              title="More Register Actions"
+            >
+              <MoreHorizontal className="w-4 h-4 text-slate-500 shrink-0" />
+              <span className="hidden sm:inline">More</span>
+            </button>
+
+            {isQuickActionsOpen && (
+              <div className="absolute right-0 top-full mt-1.5 w-64 bg-white rounded-xl shadow-lg border border-slate-200 p-1.5 z-40 text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsQuickActionsOpen(false);
+                    setIsCustomerSelectOpen(true);
+                  }}
+                  className="w-full min-h-[40px] flex items-center gap-2.5 px-3 py-2 rounded-lg text-left font-medium text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                >
+                  <User className="w-4 h-4 text-slate-500 shrink-0" />
+                  <span className="truncate">
+                    {selectedCustomer ? `Customer: ${selectedCustomer.name}` : 'Assign Customer'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsQuickActionsOpen(false);
+                    openReturnsModal(null);
+                  }}
+                  className="w-full min-h-[40px] flex items-center gap-2.5 px-3 py-2 rounded-lg text-left font-medium text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                >
+                  <RotateCcw className="w-4 h-4 text-slate-500 shrink-0" />
+                  <span>{t('nav_returns', 'Returns & Refunds')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsQuickActionsOpen(false);
+                    openShiftManagement();
+                  }}
+                  className="w-full min-h-[40px] flex items-center gap-2.5 px-3 py-2 rounded-lg text-left font-medium text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                >
+                  <Clock className="w-4 h-4 text-slate-500 shrink-0" />
+                  <span>Shift &amp; Till Drawer</span>
+                </button>
+
+                <div className="mt-1 pt-1.5 px-3 pb-1 border-t border-slate-100 text-[11px] text-slate-500 space-y-1">
+                  <div className="flex items-center gap-1.5 font-semibold text-slate-600">
+                    <Keyboard className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Shortcuts</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Search catalog</span>
+                    <kbd className="font-mono text-slate-600">Ctrl+F</kbd>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Exact Cash</span>
+                    <kbd className="font-mono text-slate-600">F1</kbd>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Pay / Checkout</span>
+                    <kbd className="font-mono text-slate-600">Enter / Space</kbd>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -551,10 +584,44 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         {/* Product Cards Grid */}
         <div className="flex-1 overflow-y-auto pr-0.5 sm:pr-1 pb-20 md:pb-0">
           {filteredProducts.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center p-8 text-slate-400">
+            <div className="h-full flex flex-col items-center justify-center p-8 text-slate-400 text-center">
               <ShoppingBag className="w-12 h-12 mb-3 stroke-1 text-slate-300" />
-              <p className="text-sm font-semibold text-slate-600">No items match your criteria</p>
-              <p className="text-xs text-slate-400 mt-1">Try another category or clear the search query</p>
+              <p className="text-sm font-semibold text-slate-700">
+                {searchQuery.trim()
+                  ? `No items match "${searchQuery.trim()}"`
+                  : 'No items match your criteria'}
+              </p>
+              <p className="text-xs text-slate-500 mt-1 max-w-sm">
+                {searchQuery.trim()
+                  ? canManageInventory
+                    ? 'You can add this barcode or SKU directly to your catalog, or clear the search.'
+                    : 'Try another category, clear the search query, or ask a manager to add missing stock.'
+                  : 'Try another category or clear the search query.'}
+              </p>
+              {searchQuery.trim() && (
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                  {canManageInventory && (
+                    <button
+                      type="button"
+                      onClick={() => openUnknownBarcodeModal(searchQuery.trim(), { source: 'search' })}
+                      className="min-h-[44px] px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+                    >
+                      <PackagePlus className="w-4 h-4" />
+                      <span>Add &quot;{searchQuery.trim()}&quot; to Inventory</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('');
+                      searchInputRef.current?.focus();
+                    }}
+                    className="min-h-[44px] px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition cursor-pointer whitespace-nowrap"
+                  >
+                    Clear Search
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-3 gap-2.5 sm:gap-3">
@@ -576,7 +643,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                       addToCart(prod);
                     }}
                     title={isOutOfStock ? `Cannot sell ${prod.name}: 0 stock available` : `Add ${prod.name} to cart`}
-                    className={`border rounded-xl p-3.5 min-h-[112px] flex flex-col justify-between text-left transition-all duration-150 select-none relative touch-manipulation ${
+                    className={`border rounded-xl p-3.5 min-h-[96px] flex flex-col justify-between text-left transition-all duration-150 select-none relative touch-manipulation ${
                       isOutOfStock
                         ? 'bg-slate-50/90 border-red-200/80 opacity-60 cursor-not-allowed'
                         : inCart
@@ -590,20 +657,13 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                       </div>
                     )}
 
-                    <div className="w-full">
-                      <div className="flex items-start justify-between gap-1 pr-7">
-                        <h4 className={`text-xs sm:text-[13px] font-semibold leading-snug line-clamp-2 ${isOutOfStock ? 'text-slate-500' : 'text-slate-900 group-hover:text-blue-600 transition-colors'}`}>
-                          {prod.name}
-                        </h4>
-                      </div>
-                      <div className="flex items-center gap-1 mt-1 text-[11px] text-slate-400">
-                        <span className="font-mono tabular-nums">{prod.sku}</span>
-                        <span aria-hidden="true">·</span>
-                        <span className="truncate">{prod.category}</span>
-                      </div>
+                    <div className="w-full pr-7">
+                      <h4 className={`text-xs sm:text-[13px] font-semibold leading-snug line-clamp-2 ${isOutOfStock ? 'text-slate-500' : 'text-slate-900 group-hover:text-blue-600 transition-colors'}`}>
+                        {prod.name}
+                      </h4>
                     </div>
 
-                    <div className="mt-3 pt-2 border-t border-slate-100 flex items-baseline justify-between gap-2 w-full">
+                    <div className="mt-3 flex items-baseline justify-between gap-2 w-full">
                       <div className="min-w-0">
                         {isOutOfStock ? (
                           <span className="text-[11px] text-red-600 font-semibold inline-flex items-center gap-1">
@@ -612,11 +672,11 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                           </span>
                         ) : isLowStock ? (
                           <span className="text-[11px] text-amber-700 font-semibold tabular-nums">
-                            Qty: {stock} (Low)
+                            {stock} left (Low)
                           </span>
                         ) : (
-                          <span className="text-[11px] text-slate-500 font-medium tabular-nums">
-                            Qty: {stock}
+                          <span className="text-[11px] text-slate-400 font-medium tabular-nums">
+                            {stock} in stock
                           </span>
                         )}
                       </div>
@@ -642,34 +702,32 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         }`}
       >
         {/* Cart Header */}
-        <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 border-b border-slate-200 flex justify-between items-center bg-slate-50/80 shrink-0 gap-2">
+        <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 border-b border-slate-200 flex justify-between items-center bg-white shrink-0 gap-2">
           <div className="min-w-0">
             <h2 className="font-display font-bold text-slate-900 text-sm sm:text-base truncate">
               {t('reg_cart_title', 'Active Order')}
-              <span className="text-slate-400 font-normal"> · </span>
+              <span className="text-slate-300 font-normal"> · </span>
               <span className="text-blue-600 font-mono font-semibold tabular-nums">
                 {totalCartCount} {totalCartCount === 1 ? t('reg_item', 'item') : t('reg_items', 'items')}
               </span>
             </h2>
-            <p className="text-[11px] text-slate-500 mt-0.5 truncate">
-              {currentLocation.terminalName}
-              <span className="text-blue-600 font-medium md:hidden ml-1">· Swipe left to void</span>
-            </p>
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            <button
-              type="button"
-              onClick={() => openReturnsModal(null)}
-              className="min-h-[44px] px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 rounded-lg transition-colors duration-150 flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-              title="Open Returns & Refunds Desk"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-              <span>{t('nav_returns', 'Returns')}</span>
-            </button>
+            {!selectedCustomer && (
+              <button
+                type="button"
+                onClick={() => setIsCustomerSelectOpen(true)}
+                className="min-h-[40px] px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150 flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                title="Assign customer for loyalty or store credit"
+              >
+                <User className="w-3.5 h-3.5 shrink-0" />
+                <span>+ Customer</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setMobileActiveView('catalog')}
-              className="md:hidden min-h-[44px] px-2.5 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer whitespace-nowrap"
+              className="md:hidden min-h-[40px] px-2.5 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer whitespace-nowrap"
             >
               + Add
             </button>
@@ -677,34 +735,19 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               <button
                 type="button"
                 onClick={handleOpenCartVoid}
-                className="min-h-[44px] px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-150 cursor-pointer whitespace-nowrap"
+                className="min-h-[40px] px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-150 cursor-pointer whitespace-nowrap"
                 title="Cancel sale and record audited cart void"
               >
-                {t('reg_clear_cart', 'Clear (Void)')}
+                {t('reg_clear_cart', 'Clear')}
               </button>
             )}
           </div>
         </div>
 
-        {/* Customer Assignment Quick Strip (Single-Elevation Hairline Band) */}
-        <div className="px-3.5 sm:px-4 py-1.5 bg-slate-50/50 border-b border-slate-200 shrink-0">
-          {!selectedCustomer ? (
-            <button
-              type="button"
-              onClick={() => setIsCustomerSelectOpen(true)}
-              className="w-full min-h-[44px] flex items-center justify-between px-2 py-1.5 hover:bg-slate-100/80 rounded-lg text-xs font-medium text-slate-700 transition-colors duration-150 cursor-pointer group"
-              title="Assign sale to customer account for loyalty & store credit"
-            >
-              <span className="flex items-center gap-2 truncate">
-                <User className="w-4 h-4 text-slate-400 group-hover:text-blue-600 shrink-0" />
-                <span className="truncate">{t('reg_walk_in', 'Walk-in Customer (Unassigned)')}</span>
-              </span>
-              <span className="text-xs text-blue-600 font-semibold shrink-0 ml-2 whitespace-nowrap">
-                Assign Customer
-              </span>
-            </button>
-          ) : (
-            <div className="min-h-[44px] py-1 flex items-center justify-between gap-2">
+        {/* Assigned Customer Strip (Only shown once a customer is attached) */}
+        {selectedCustomer && (
+          <div className="px-3.5 sm:px-4 py-1.5 bg-slate-50/70 border-b border-slate-200 shrink-0">
+            <div className="min-h-[44px] py-0.5 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="w-8 h-8 rounded-lg bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
                   {selectedCustomer.name.slice(0, 2).toUpperCase()}
@@ -747,7 +790,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsCustomerSelectOpen(true)}
-                  className="min-h-[44px] px-2.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer whitespace-nowrap"
+                  className="min-h-[40px] px-2.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer whitespace-nowrap"
                   title="Change customer"
                 >
                   Change
@@ -755,15 +798,15 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedCustomer(null)}
-                  className="min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition cursor-pointer"
+                  className="min-w-[40px] min-h-[40px] flex items-center justify-center text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition cursor-pointer"
                   title="Remove customer assignment (Walk-in)"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Cart Item List - Bounded scrolling container */}
         <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 divide-y divide-slate-100 overscroll-contain">
@@ -800,7 +843,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         </div>
 
         {/* Totals & Checkout Box - Permanently Sticky at Bottom */}
-        <div className="shrink-0 sticky bottom-0 z-20 bg-white border-t border-slate-200 p-3 sm:p-4 space-y-1.5 sm:space-y-2">
+        <div className="shrink-0 sticky bottom-0 z-20 bg-white border-t border-slate-200 p-3 sm:p-4 space-y-2">
           {cartDiscount > 0 && (
             <div className="flex justify-between text-xs text-emerald-700 font-semibold">
               <span className="flex items-center gap-1">
@@ -812,44 +855,70 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               </span>
             </div>
           )}
-          <div className="flex justify-between text-xs text-slate-500">
-            <span>{t('reg_subtotal', 'Subtotal (Net)')}</span>
-            <span className="font-mono font-medium tabular-nums text-slate-700">
-              {currentLocation.currency} {cartSubtotal.toFixed(2)}
-            </span>
-          </div>
-          <div className="flex justify-between items-center text-xs text-slate-500">
-            <span>
-              {currentBusiness?.taxSettings?.taxLabel || 'VAT'}
-              <span className="text-slate-400">
-                {' '}· {currentBusiness?.taxSettings?.pricingType === 'exclusive' ? 'Exclusive' : 'Inclusive'}
-                {cartTaxBreakdown && cartTaxBreakdown.length > 1 ? ` · ${cartTaxBreakdown.length} Rates` : ''}
+
+          {/* Progressive Tax & Rounding Breakdown */}
+          {isBreakdownOpen && (
+            <div className="space-y-1.5 pb-2 border-b border-slate-100 text-xs text-slate-500">
+              <div className="flex justify-between">
+                <span>{t('reg_subtotal', 'Subtotal (Net)')}</span>
+                <span className="font-mono font-medium tabular-nums text-slate-700">
+                  {currentLocation.currency} {cartSubtotal.toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span>
+                  {currentBusiness?.taxSettings?.taxLabel || 'VAT'}
+                  <span className="text-slate-400">
+                    {' '}· {currentBusiness?.taxSettings?.pricingType === 'exclusive' ? 'Exclusive' : 'Inclusive'}
+                    {cartTaxBreakdown && cartTaxBreakdown.length > 1 ? ` · ${cartTaxBreakdown.length} Rates` : ''}
+                  </span>
+                </span>
+                <span className="font-mono font-medium tabular-nums text-slate-700">
+                  {currentLocation.currency} {cartTax.toFixed(2)}
+                </span>
+              </div>
+              {hasCents(cartTotal) && (
+                <div className="text-[11px] text-slate-500 flex justify-between items-center pt-0.5 tabular-nums">
+                  <span>
+                    Cash: <strong className="font-mono text-slate-700">{currentLocation.currency} {roundCashHalfUp(cartTotal).toFixed(2)}</strong>
+                  </span>
+                  <span>
+                    Electronic: <strong className="font-mono text-slate-700">{currentLocation.currency} {cartTotal.toFixed(2)}</strong>
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex justify-between items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="font-display text-sm sm:text-base font-bold text-slate-900">
+                {t('reg_total', 'Total')}
               </span>
-            </span>
-            <span className="font-mono font-medium tabular-nums text-slate-700">
-              {currentLocation.currency} {cartTax.toFixed(2)}
-            </span>
-          </div>
-          <div className="flex justify-between items-baseline text-sm sm:text-base font-bold text-slate-900 pt-2 border-t border-slate-200">
-            <span className="font-display">{t('reg_total', 'Total Payable')}</span>
-            <span className="text-blue-600 font-mono font-bold tabular-nums text-base sm:text-lg">
+              {cart.length > 0 && (
+                <button
+                  id="register-breakdown-toggle-btn"
+                  type="button"
+                  aria-expanded={isBreakdownOpen}
+                  onClick={() => setIsBreakdownOpen((prev) => !prev)}
+                  className="text-[11px] font-medium text-slate-500 hover:text-slate-800 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded hover:bg-slate-100 transition cursor-pointer whitespace-nowrap"
+                >
+                  <span>{isBreakdownOpen ? 'Hide' : 'Breakdown'}</span>
+                  <ChevronDown
+                    className={`w-3 h-3 transition-transform duration-150 ${
+                      isBreakdownOpen ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+              )}
+            </div>
+            <span className="text-blue-600 font-mono font-bold tabular-nums text-lg sm:text-xl">
               {currentLocation.currency} {cartTotal.toFixed(2)}
             </span>
           </div>
 
-          {hasCents(cartTotal) && (
-            <div className="text-[11px] text-slate-500 flex justify-between items-center pt-0.5 tabular-nums">
-              <span>
-                Cash: <strong className="font-mono text-slate-700">{currentLocation.currency} {roundCashHalfUp(cartTotal).toFixed(2)}</strong>
-              </span>
-              <span>
-                Electronic: <strong className="font-mono text-slate-700">{currentLocation.currency} {cartTotal.toFixed(2)}</strong>
-              </span>
-            </div>
-          )}
-
           {/* Checkout Buttons: Secondary Exact Cash + Sole Primary Pay CTA */}
-          <div className="flex items-center gap-2 pt-1">
+          <div className="flex items-center gap-2 pt-0.5">
             <button
               id="register-exact-cash-btn"
               type="button"
@@ -861,9 +930,6 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               <Banknote className="w-4 h-4 text-slate-500 shrink-0" />
               <span className="hidden sm:inline">{t('pay_exact_amount', 'Exact Cash')}</span>
               <span className="sm:hidden">{t('pay_cash', 'Cash')}</span>
-              <kbd className="hidden xl:inline-block text-[10px] text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
-                F1
-              </kbd>
             </button>
 
             <button
@@ -879,11 +945,6 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               </span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform duration-150 shrink-0" />
             </button>
-          </div>
-
-          {/* Single-Line Keyboard Shortcut Hint */}
-          <div className="hidden lg:block text-center pt-1 text-[11px] text-slate-400">
-            Space / Enter: Pay · F1: Exact Cash · F2: M-Pesa · F10: All shortcuts
           </div>
         </div>
       </div>

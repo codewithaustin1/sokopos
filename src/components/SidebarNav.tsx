@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShoppingCart,
   Package,
@@ -6,6 +6,7 @@ import {
   Users,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   RotateCcw,
   Clock,
   FileText,
@@ -25,6 +26,9 @@ interface SidebarNavProps {
   openSuperAdminModal?: (tab?: 'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding') => void;
 }
 
+const BACK_OFFICE_STORAGE_KEY = 'sokopos_sidebar_backoffice_expanded';
+const BACK_OFFICE_TABS = new Set(['suppliers', 'reports', 'cloud-sync', 'staff', 'settings', 'super-admin']);
+
 export const SidebarNav: React.FC<SidebarNavProps> = ({
   currentTab,
   setCurrentTab,
@@ -42,19 +46,43 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
   } = usePos();
 
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isBackOfficeExpanded, setIsBackOfficeExpanded] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(BACK_OFFICE_STORAGE_KEY);
+      if (saved === 'true') return true;
+      if (saved === 'false') return false;
+    } catch {}
+    return false;
+  });
+
+  useEffect(() => {
+    if (BACK_OFFICE_TABS.has(currentTab) && !isBackOfficeExpanded) {
+      setIsBackOfficeExpanded(true);
+    }
+  }, [currentTab, isBackOfficeExpanded]);
+
+  const toggleBackOffice = () => {
+    setIsBackOfficeExpanded((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(BACK_OFFICE_STORAGE_KEY, String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   const cartItemCount = cart.reduce((acc, item) => acc + item.quantity, 0);
   const isOwnerOrAdmin = currentUser?.role === 'business_owner' || isSuperAdmin;
 
-  const rawNavItems = [
+  const primaryNavItems = [
     {
       id: 'register',
       tab: 'register' as const,
       label: t('nav_sell', 'Sell'),
       icon: ShoppingCart,
       badge: cartItemCount > 0 ? `${cartItemCount}` : null,
-      badgeTone: 'neutral' as const,
       allowed: can('sell'),
+      tierLocked: false,
     },
     {
       id: 'customers',
@@ -62,8 +90,8 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       label: t('nav_customers', 'Customers'),
       icon: Users,
       badge: null,
-      badgeTone: 'neutral' as const,
       allowed: can('viewCustomers') || can('manageCustomers'),
+      tierLocked: false,
     },
     {
       id: 'inventory',
@@ -71,9 +99,30 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       label: t('nav_inventory', 'Inventory'),
       icon: Package,
       badge: null,
-      badgeTone: 'neutral' as const,
       allowed: can('viewInventory'),
+      tierLocked: false,
     },
+    {
+      id: 'shifts',
+      tab: 'shifts' as const,
+      label: t('nav_shifts', 'Shifts & Till'),
+      icon: Clock,
+      badge: null,
+      allowed: can('openShift') || can('viewShiftTotals'),
+      tierLocked: false,
+    },
+    {
+      id: 'analytics',
+      tab: 'analytics' as const,
+      label: t('nav_analytics', 'Analytics'),
+      icon: AnalyticsIcon,
+      badge: null,
+      allowed: can('viewAnalytics'),
+      tierLocked: !isSuperAdmin && !entitlements.capabilities.analytics,
+    },
+  ].filter((it) => it.allowed);
+
+  const backOfficeTabItems = [
     {
       id: 'suppliers',
       tab: 'suppliers' as const,
@@ -85,25 +134,6 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       tierLocked: !isSuperAdmin && !entitlements.capabilities.suppliers,
     },
     {
-      id: 'shifts',
-      tab: 'shifts' as const,
-      label: t('nav_shifts', 'Shifts & Till'),
-      icon: Clock,
-      badge: null,
-      badgeTone: 'neutral' as const,
-      allowed: can('openShift') || can('viewShiftTotals'),
-    },
-    {
-      id: 'analytics',
-      tab: 'analytics' as const,
-      label: t('nav_analytics', 'Analytics'),
-      icon: AnalyticsIcon,
-      badge: null,
-      badgeTone: 'neutral' as const,
-      allowed: can('viewAnalytics'),
-      tierLocked: !isSuperAdmin && !entitlements.capabilities.analytics,
-    },
-    {
       id: 'reports',
       tab: 'reports' as const,
       label: t('nav_reports', 'Reports'),
@@ -111,6 +141,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       badge: null,
       badgeTone: 'neutral' as const,
       allowed: can('viewReports'),
+      tierLocked: false,
     },
     {
       id: 'cloud-sync',
@@ -120,10 +151,41 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       badge: pendingOfflineCount > 0 ? `${pendingOfflineCount}` : null,
       badgeTone: 'warning' as const,
       allowed: true,
+      tierLocked: false,
     },
-  ];
+    {
+      id: 'staff',
+      tab: 'staff' as const,
+      label: t('auth_staff_tab', 'Staff Users'),
+      icon: Users,
+      badge: null,
+      badgeTone: 'neutral' as const,
+      allowed: isOwnerOrAdmin,
+      tierLocked: false,
+    },
+    {
+      id: 'settings',
+      tab: 'settings' as const,
+      label: t('nav_settings', 'Store Settings'),
+      icon: Settings,
+      badge: null,
+      badgeTone: 'neutral' as const,
+      allowed: isOwnerOrAdmin,
+      tierLocked: false,
+    },
+    {
+      id: 'superadmin',
+      tab: 'super-admin' as const,
+      label: t('nav_super_admin', 'Super-Admin'),
+      icon: ShieldAlert,
+      badge: null,
+      badgeTone: 'neutral' as const,
+      allowed: isSuperAdmin,
+      tierLocked: false,
+    },
+  ].filter((it) => it.allowed);
 
-  const mainNavItems = rawNavItems.filter((it) => it.allowed);
+  const hasBackOfficeActive = BACK_OFFICE_TABS.has(currentTab);
 
   return (
     <aside
@@ -134,182 +196,176 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       aria-label="Vertical Navigation"
     >
       {/* Navigation Items Area */}
-      <div className="flex-1 py-3.5 px-2.5 space-y-5 overflow-y-auto">
-        {/* Main Operations Section */}
-        <div>
-          {!isCollapsed && (
-            <div className="px-3 pb-1.5 text-[11px] font-semibold text-slate-400">
-              Operations
-            </div>
-          )}
-          <nav className="space-y-1">
-            {mainNavItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = currentTab === item.tab;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  id={`sidebar-nav-${item.id}`}
-                  onClick={() => setCurrentTab(item.tab)}
-                  className={`w-full min-h-[44px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
-                    isActive
-                      ? 'bg-blue-600 text-white'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                  } ${isCollapsed ? 'justify-center px-2' : ''}`}
-                  title={item.label}
-                >
-                  <Icon
-                    className={`w-4 h-4 shrink-0 transition-colors duration-150 ${
-                      isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-700'
+      <div className="flex-1 py-3.5 px-2.5 space-y-4 overflow-y-auto">
+        {/* Core Daily Operations */}
+        <nav className="space-y-1">
+          {primaryNavItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = currentTab === item.tab;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                id={`sidebar-nav-${item.id}`}
+                onClick={() => setCurrentTab(item.tab)}
+                className={`w-full min-h-[44px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
+                  isActive
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                } ${isCollapsed ? 'justify-center px-2' : ''}`}
+                title={item.label}
+              >
+                <Icon
+                  className={`w-4 h-4 shrink-0 transition-colors duration-150 ${
+                    isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-700'
+                  }`}
+                />
+                {!isCollapsed && (
+                  <span className="flex-1 text-left truncate">{item.label}</span>
+                )}
+                {!isCollapsed && item.tierLocked && (
+                  <Lock
+                    className={`w-3.5 h-3.5 shrink-0 ${
+                      isActive ? 'text-white/80' : 'text-slate-400'
                     }`}
+                    aria-label="Requires plan upgrade"
                   />
-                  {!isCollapsed && (
-                    <span className="flex-1 text-left truncate">{item.label}</span>
-                  )}
-                  {!isCollapsed && item.tierLocked && (
-                    <Lock
-                      className={`w-3.5 h-3.5 shrink-0 ${
-                        isActive ? 'text-white/80' : 'text-slate-400'
-                      }`}
-                      aria-label="Requires plan upgrade"
-                    />
-                  )}
-                  {!isCollapsed && item.badge && (
-                    <span
-                      className={`text-[11px] font-mono tabular-nums font-bold leading-none shrink-0 ${
-                        isActive
-                          ? 'text-blue-100'
-                          : item.badgeTone === 'warning'
-                          ? 'text-amber-700'
-                          : 'text-slate-500'
-                      }`}
-                    >
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+                )}
+                {!isCollapsed && item.badge && (
+                  <span
+                    className={`text-[11px] font-mono tabular-nums font-bold leading-none shrink-0 ${
+                      isActive ? 'text-blue-100' : 'text-slate-500'
+                    }`}
+                  >
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
 
-            {/* Returns & Refunds Operation Action */}
+        {/* Progressive Back Office & Tools Group */}
+        <div className="pt-3 border-t border-slate-100">
+          {!isCollapsed && (
             <button
+              id="sidebar-backoffice-toggle-btn"
               type="button"
-              id="sidebar-nav-returns"
-              onClick={() => openReturnsModal(null)}
-              className={`w-full min-h-[44px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer text-slate-600 hover:text-slate-900 hover:bg-slate-100 group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
-                isCollapsed ? 'justify-center px-2' : ''
+              aria-expanded={isBackOfficeExpanded}
+              onClick={toggleBackOffice}
+              className={`w-full min-h-[36px] flex items-center justify-between px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-colors duration-150 cursor-pointer ${
+                hasBackOfficeActive && !isBackOfficeExpanded
+                  ? 'text-blue-700 bg-blue-50/70'
+                  : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'
               }`}
-              title="Returns & Refunds"
             >
-              <RotateCcw className="w-4 h-4 shrink-0 text-slate-400 group-hover:text-slate-700 transition-colors duration-150" />
-              {!isCollapsed && (
-                <span className="flex-1 text-left truncate">
-                  {t('nav_returns', 'Returns & Refunds')}
-                </span>
-              )}
-              {!isCollapsed && !isSuperAdmin && !entitlements.capabilities.returnsAndRefunds && (
-                <Lock className="w-3.5 h-3.5 shrink-0 text-slate-400" aria-label="Requires plan upgrade" />
-              )}
+              <span className="flex items-center gap-1.5 truncate">
+                <span>Back Office</span>
+                {!isBackOfficeExpanded && pendingOfflineCount > 0 && (
+                  <span className="font-mono tabular-nums text-[10px] font-bold text-amber-700">
+                    · {pendingOfflineCount} pending
+                  </span>
+                )}
+              </span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${
+                  isBackOfficeExpanded ? 'rotate-180' : ''
+                }`}
+              />
             </button>
-          </nav>
-        </div>
+          )}
 
-        {/* Administration Section (Owner / Super-Admin) */}
-        {isOwnerOrAdmin && (
-          <div className="pt-3 border-t border-slate-100">
-            {!isCollapsed && (
-              <div className="px-3 pb-1.5 text-[11px] font-semibold text-slate-400">
-                Administration
-              </div>
-            )}
-            <nav className="space-y-1">
-              {/* Staff Users Tab */}
+          {(isBackOfficeExpanded || isCollapsed) && (
+            <nav className="space-y-1 mt-1">
+              {/* Returns & Refunds Modal Action */}
               <button
                 type="button"
-                id="sidebar-nav-staff"
-                onClick={() => setCurrentTab('staff')}
-                className={`w-full min-h-[44px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
-                  currentTab === 'staff'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                } ${isCollapsed ? 'justify-center px-2' : ''}`}
-                title="Staff Users"
-              >
-                <Users
-                  className={`w-4 h-4 shrink-0 transition-colors duration-150 ${
-                    currentTab === 'staff' ? 'text-white' : 'text-slate-400 group-hover:text-slate-700'
-                  }`}
-                />
-                {!isCollapsed && (
-                  <span className="flex-1 text-left truncate">{t('auth_staff_tab', 'Staff Users')}</span>
-                )}
-              </button>
-
-              {/* Store Settings Tab */}
-              <button
-                type="button"
-                id="sidebar-nav-settings"
-                onClick={() => setCurrentTab('settings')}
-                className={`w-full min-h-[44px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
-                  currentTab === 'settings'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                } ${isCollapsed ? 'justify-center px-2' : ''}`}
-                title="Store Settings"
-              >
-                <Settings
-                  className={`w-4 h-4 shrink-0 transition-colors duration-150 ${
-                    currentTab === 'settings' ? 'text-white' : 'text-slate-400 group-hover:text-slate-700'
-                  }`}
-                />
-                {!isCollapsed && (
-                  <span className="flex-1 text-left truncate">{t('nav_settings', 'Store Settings')}</span>
-                )}
-              </button>
-
-              {/* Refer & Earn (Affiliate Partner Portal) */}
-              <button
-                type="button"
-                id="sidebar-nav-affiliates"
-                onClick={() => setIsAffiliateModalOpen(true)}
-                className={`w-full min-h-[44px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group text-slate-600 hover:text-slate-900 hover:bg-slate-100 whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
+                id="sidebar-nav-returns"
+                onClick={() => openReturnsModal(null)}
+                className={`w-full min-h-[40px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors duration-150 cursor-pointer text-slate-600 hover:text-slate-900 hover:bg-slate-100 group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
                   isCollapsed ? 'justify-center px-2' : ''
                 }`}
-                title="Refer & Earn (20% Recurring)"
+                title="Returns & Refunds"
               >
-                <Share2 className="w-4 h-4 shrink-0 text-slate-400 group-hover:text-slate-700 transition-colors duration-150" />
+                <RotateCcw className="w-4 h-4 shrink-0 text-slate-400 group-hover:text-slate-700 transition-colors duration-150" />
                 {!isCollapsed && (
-                  <span className="flex-1 text-left truncate">Refer & Earn</span>
+                  <span className="flex-1 text-left truncate">
+                    {t('nav_returns', 'Returns & Refunds')}
+                  </span>
+                )}
+                {!isCollapsed && !isSuperAdmin && !entitlements.capabilities.returnsAndRefunds && (
+                  <Lock className="w-3.5 h-3.5 shrink-0 text-slate-400" aria-label="Requires plan upgrade" />
                 )}
               </button>
 
-              {/* Super-Admin Console Tab (Super Admin Only) */}
-              {isSuperAdmin && (
+              {backOfficeTabItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = currentTab === item.tab;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    id={`sidebar-nav-${item.id}`}
+                    onClick={() => setCurrentTab(item.tab)}
+                    className={`w-full min-h-[40px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors duration-150 cursor-pointer group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
+                      isActive
+                        ? 'bg-blue-600 text-white font-semibold'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    } ${isCollapsed ? 'justify-center px-2' : ''}`}
+                    title={item.label}
+                  >
+                    <Icon
+                      className={`w-4 h-4 shrink-0 transition-colors duration-150 ${
+                        isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-700'
+                      }`}
+                    />
+                    {!isCollapsed && (
+                      <span className="flex-1 text-left truncate">{item.label}</span>
+                    )}
+                    {!isCollapsed && item.tierLocked && (
+                      <Lock
+                        className={`w-3.5 h-3.5 shrink-0 ${
+                          isActive ? 'text-white/80' : 'text-slate-400'
+                        }`}
+                        aria-label="Requires plan upgrade"
+                      />
+                    )}
+                    {!isCollapsed && item.badge && (
+                      <span
+                        className={`text-[11px] font-mono tabular-nums font-bold leading-none shrink-0 ${
+                          isActive
+                            ? 'text-blue-100'
+                            : item.badgeTone === 'warning'
+                            ? 'text-amber-700'
+                            : 'text-slate-500'
+                        }`}
+                      >
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+
+              {isOwnerOrAdmin && (
                 <button
                   type="button"
-                  id="sidebar-nav-superadmin"
-                  onClick={() => setCurrentTab('super-admin')}
-                  className={`w-full min-h-[44px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer group whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
-                    currentTab === 'super-admin'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                  } ${isCollapsed ? 'justify-center px-2' : ''}`}
-                  title="Super-Admin Console"
+                  id="sidebar-nav-affiliates"
+                  onClick={() => setIsAffiliateModalOpen(true)}
+                  className={`w-full min-h-[40px] flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors duration-150 cursor-pointer group text-slate-600 hover:text-slate-900 hover:bg-slate-100 whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-1 ${
+                    isCollapsed ? 'justify-center px-2' : ''
+                  }`}
+                  title="Refer & Earn (20% Recurring)"
                 >
-                  <ShieldAlert
-                    className={`w-4 h-4 shrink-0 transition-colors duration-150 ${
-                      currentTab === 'super-admin' ? 'text-white' : 'text-slate-400 group-hover:text-slate-700'
-                    }`}
-                  />
+                  <Share2 className="w-4 h-4 shrink-0 text-slate-400 group-hover:text-slate-700 transition-colors duration-150" />
                   {!isCollapsed && (
-                    <span className="flex-1 text-left truncate">{t('nav_super_admin', 'Super-Admin')}</span>
+                    <span className="flex-1 text-left truncate">Refer &amp; Earn</span>
                   )}
                 </button>
               )}
             </nav>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Sidebar Footer Controls */}

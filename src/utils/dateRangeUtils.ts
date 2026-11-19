@@ -1,6 +1,28 @@
 import { DateRange, TimeRangePreset } from '../types/reporting';
 
 /**
+ * Parses a Date or YYYY-MM-DD / ISO string cleanly in local time.
+ * Plain YYYY-MM-DD strings are parsed as local calendar dates to prevent UTC off-by-one day shifts.
+ */
+export function parseDateInput(value?: Date | string): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : new Date(value.getTime());
+  }
+  const trimmed = value.trim();
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (dateOnlyMatch) {
+    const year = Number(dateOnlyMatch[1]);
+    const month = Number(dateOnlyMatch[2]) - 1;
+    const day = Number(dateOnlyMatch[3]);
+    const localDate = new Date(year, month, day);
+    return Number.isNaN(localDate.getTime()) ? null : localDate;
+  }
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/**
  * Calculates start and end timestamps according to the requested preset.
  * All ranges except 'last_24h' are strictly calendar-based.
  */
@@ -121,12 +143,29 @@ export function calculateDateRange(
     }
 
     case 'custom': {
-      const start = customStart ? startOfDay(new Date(customStart)) : startOfDay(now);
-      const end = customEnd ? endOfDay(new Date(customEnd)) : endOfDay(now);
+      const parsedStart = parseDateInput(customStart);
+      const parsedEnd = parseDateInput(customEnd);
+      let start = parsedStart ? startOfDay(parsedStart) : startOfDay(now);
+      let end = parsedEnd ? endOfDay(parsedEnd) : endOfDay(now);
+      if (start.getTime() > end.getTime()) {
+        const swappedStart = startOfDay(end);
+        const swappedEnd = endOfDay(start);
+        start = swappedStart;
+        end = swappedEnd;
+      }
+      const sameDay = toInputDateFormat(start) === toInputDateFormat(end);
+      const fmtOpts: Intl.DateTimeFormatOptions = {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      };
+      const label = sameDay
+        ? start.toLocaleDateString(undefined, fmtOpts)
+        : `${start.toLocaleDateString(undefined, fmtOpts)} – ${end.toLocaleDateString(undefined, fmtOpts)}`;
       return {
         start,
         end,
-        label: `Custom (${start.toLocaleDateString()} - ${end.toLocaleDateString()})`,
+        label,
         preset,
         isRolling: false,
       };
@@ -181,6 +220,45 @@ export function toInputDateFormat(d: Date): string {
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+/**
+ * Returns the inclusive calendar day count spanned by a DateRange.
+ */
+export function getInclusiveDayCount(range: DateRange): number {
+  const startDay = new Date(range.start.getFullYear(), range.start.getMonth(), range.start.getDate());
+  const endDay = new Date(range.end.getFullYear(), range.end.getMonth(), range.end.getDate());
+  const diffDays = Math.round((endDay.getTime() - startDay.getTime()) / (24 * 60 * 60 * 1000));
+  return Math.max(1, diffDays + 1);
+}
+
+/**
+ * Formats a compact calendar span for headers and filter chips.
+ */
+export function formatShortDateRange(range: DateRange): string {
+  if (range.preset === 'all') return 'Since Jan 2020';
+  const sameYear = range.start.getFullYear() === range.end.getFullYear();
+  const sameDay = toInputDateFormat(range.start) === toInputDateFormat(range.end);
+
+  if (sameDay) {
+    return range.start.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }
+
+  const startStr = range.start.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
+  const endStr = range.end.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  return `${startStr} – ${endStr}`;
 }
 
 /**

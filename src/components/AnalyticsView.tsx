@@ -29,7 +29,11 @@ import {
   BiInspectorTarget,
   DateRange,
 } from '../types/reporting';
-import { calculateDateRange, isTimestampInRange } from '../utils/dateRangeUtils';
+import {
+  calculateDateRange,
+  formatShortDateRange,
+  isTimestampInRange,
+} from '../utils/dateRangeUtils';
 import {
   buildExecutiveTrendSeries,
   calculateBranchBenchmarks,
@@ -688,48 +692,108 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
           Main Scrollable Canvas
          ==================================================================== */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 pb-24 lg:pb-8">
-        {viewMode === 'reports' ? (
-          <>
-            <div className="bg-white rounded-xl border border-slate-200 p-3 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <div className="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5">
-                  <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                  <select
-                    value={selectedLocationId}
-                    onChange={(e) => setSelectedLocationId(e.target.value)}
-                    className="text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
-                  >
-                    <option value="all">All Locations ({locations.length})</option>
-                    {locations.map((loc) => (
-                      <option key={loc.id} value={loc.id}>
-                        {loc.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <GlobalTimeRangeSelector
-                  currentRange={dateRange}
-                  onChange={(r) => setDateRange(r)}
-                />
-              </div>
-              <span className="text-xs text-slate-500 font-mono tabular-nums">
-                {filteredTxs.length} receipts in scope
-              </span>
+        {/* Shared Top Scope & Date Range Filter Bar (Overview Charts/KPIs + Reports Suite) */}
+        <div className="bg-white rounded-xl border border-slate-200 p-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Branch Selector */}
+            <div className="min-h-[40px] inline-flex items-center gap-1.5 bg-white border border-slate-200 hover:border-slate-300 rounded-lg px-2.5 py-1.5 transition">
+              <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <select
+                aria-label="Filter by branch"
+                value={selectedLocationId}
+                onChange={(e) => {
+                  setSelectedLocationId(e.target.value);
+                  setActiveSavedViewId(null);
+                }}
+                className="text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+              >
+                <option value="all">All Locations ({locations.length})</option>
+                {locations.map((loc) => (
+                  <option key={loc.id} value={loc.id}>
+                    {loc.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            <ReportViewContainer
-              transactions={transactions}
-              products={products}
-              locations={locations}
-              cashiers={systemUsers}
-              currentBusiness={currentBusiness}
-              currentLocation={currentLocation}
-              currentUserEmail={currentUser?.email || 'admin@sokopos.co.ke'}
-              auditLogs={superAdminAuditLogs}
-              dateRange={dateRange}
-              selectedLocationId={selectedLocationId}
+            {/* 1-Tap Quick Timeframe Strip */}
+            <div
+              role="group"
+              aria-label="Quick timeframe presets"
+              className="hidden md:inline-flex items-center p-0.5 rounded-lg border border-slate-200 bg-slate-50"
+            >
+              {(
+                [
+                  { preset: 'today', label: 'Today' },
+                  { preset: 'last_7d', label: '7D' },
+                  { preset: 'last_30d', label: '30D' },
+                  { preset: 'last_90d', label: '90D' },
+                  { preset: 'all', label: 'All' },
+                ] as const
+              ).map((item) => {
+                const active = dateRange.preset === item.preset;
+                return (
+                  <button
+                    key={item.preset}
+                    type="button"
+                    onClick={() => {
+                      setDateRange(calculateDateRange(item.preset));
+                      setActiveSavedViewId(null);
+                    }}
+                    className={`min-h-[34px] px-2.5 py-1 text-xs font-medium rounded-md transition cursor-pointer whitespace-nowrap shrink-0 ${
+                      active
+                        ? 'bg-white text-slate-900 border border-slate-200 font-semibold'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Full Date Range Dropdown & Custom Start/End Picker */}
+            <GlobalTimeRangeSelector
+              currentRange={dateRange}
+              onChange={(r) => {
+                setDateRange(r);
+                setActiveSavedViewId(null);
+              }}
             />
-          </>
+
+            {isFiltered && (
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="min-h-[40px] px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition cursor-pointer whitespace-nowrap shrink-0"
+              >
+                Reset
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 text-xs text-slate-500 font-mono tabular-nums">
+            <span className="hidden sm:inline">{formatShortDateRange(dateRange)}</span>
+            <span className="hidden sm:inline text-slate-300" aria-hidden="true">
+              ·
+            </span>
+            <span>{filteredTxs.length} receipts in scope</span>
+          </div>
+        </div>
+
+        {viewMode === 'reports' ? (
+          <ReportViewContainer
+            transactions={transactions}
+            products={products}
+            locations={locations}
+            cashiers={systemUsers}
+            currentBusiness={currentBusiness}
+            currentLocation={currentLocation}
+            currentUserEmail={currentUser?.email || 'admin@sokopos.co.ke'}
+            auditLogs={superAdminAuditLogs}
+            dateRange={dateRange}
+            selectedLocationId={selectedLocationId}
+          />
         ) : (
           <>
             {/* ----------------------------------------------------------------
@@ -957,7 +1021,11 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   currency={currency}
                   canViewCost={canViewCost}
                   usedRollupHistory={summary.usedRollupHistory}
-                  dateLabel={dateRange.label}
+                  dateLabel={
+                    dateRange.preset === 'custom' || dateRange.preset === 'all'
+                      ? dateRange.label
+                      : `${dateRange.label} · ${formatShortDateRange(dateRange)}`
+                  }
                   isLoading={isLoadingOlderTransactions}
                 />
               </div>
@@ -1084,9 +1152,9 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   })}
                 </div>
 
-                {/* Search + Branch + Time Range + Export */}
+                {/* Search Input */}
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="relative flex-1 min-w-[200px] sm:w-56">
+                  <div className="relative flex-1 min-w-[220px] sm:w-64">
                     <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       ref={searchInputRef}
@@ -1094,56 +1162,19 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder="Filter SKU, category, receipt ( / )"
-                      className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full min-h-[40px] pl-8 pr-8 py-1.5 text-base sm:text-xs bg-white border border-slate-300 rounded-lg text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     {searchQuery && (
                       <button
                         type="button"
                         onClick={() => setSearchQuery('')}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
                         aria-label="Clear filter"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>
-
-                  <div className="inline-flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5">
-                    <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <select
-                      value={selectedLocationId}
-                      onChange={(e) => {
-                        setSelectedLocationId(e.target.value);
-                        setActiveSavedViewId(null);
-                      }}
-                      className="text-xs font-medium text-slate-800 bg-transparent focus:outline-none cursor-pointer"
-                    >
-                      <option value="all">All Branches ({locations.length})</option>
-                      {locations.map((loc) => (
-                        <option key={loc.id} value={loc.id}>
-                          {loc.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <GlobalTimeRangeSelector
-                    currentRange={dateRange}
-                    onChange={(r) => {
-                      setDateRange(r);
-                      setActiveSavedViewId(null);
-                    }}
-                  />
-
-                  {isFiltered && (
-                    <button
-                      type="button"
-                      onClick={handleResetFilters}
-                      className="px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition cursor-pointer whitespace-nowrap"
-                    >
-                      Reset
-                    </button>
-                  )}
                 </div>
               </div>
 

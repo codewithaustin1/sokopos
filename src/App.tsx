@@ -61,6 +61,9 @@ function PosAppContent() {
     currentBusiness,
     updateBusinessStatus,
     handleBarcodeScanned,
+    unknownBarcodePrompt,
+    openUnknownBarcodeModal,
+    closeUnknownBarcodeModal,
     isDarkMode,
     loginBgGraphic,
     products,
@@ -451,7 +454,7 @@ function PosAppContent() {
     quickCheckMetadata,
     closeQuickCheck,
   } = useBackgroundScanner({
-    onBarcodeScanned: (barcode) => {
+    onBarcodeScanned: (barcode, meta) => {
       // Strict Guardrail: No barcode transaction may be initiated without an active session
       if (!activeShift || activeShift.status !== 'open') {
         soundFx.playErrorTone();
@@ -466,18 +469,17 @@ function PosAppContent() {
       if (currentTab !== 'register') {
         setCurrentTab('register');
       }
-      handleBarcodeScanned(barcode);
+      const res = handleBarcodeScanned(barcode);
+      if (!res.success && res.reason === 'not_found') {
+        openUnknownBarcodeModal(barcode, { metadata: meta, source: 'hardware' });
+      }
     },
     // Only enable background scanner listener when logged into POS terminal (not on public landing/auth page)
     enabled: Boolean(currentUser) && !isAtLandingPage,
     enableQuickCheckHUD: true,
     products,
-    onUnrecognizedBarcode: (barcode) => {
-      soundFx.playBeep(320, 0.15);
-      showToast(
-        `Barcode "${barcode}" is not in catalog. Inventory Quick-Check opened.`,
-        'info'
-      );
+    onUnrecognizedBarcode: (barcode, meta) => {
+      openUnknownBarcodeModal(barcode, { metadata: meta, source: 'hardware' });
     },
     maxInterKeyLatencyMs: 55,
     enableInputRestoration: true,
@@ -811,12 +813,16 @@ function PosAppContent() {
       {/* Destructive Action Confirmation Safeguard Modal */}
       <DestructiveConfirmModal />
 
-      {/* Inventory Quick-Check HUD for Instant Unrecognized Barcode Onboarding */}
+      {/* Inventory Quick-Check / Quick-Add Modal for Unified Unrecognized Barcode Onboarding */}
       <InventoryQuickCheckHUD
-        isOpen={isQuickCheckOpen}
-        barcode={quickCheckBarcode}
-        metadata={quickCheckMetadata}
-        onClose={closeQuickCheck}
+        isOpen={unknownBarcodePrompt.isOpen || isQuickCheckOpen}
+        barcode={unknownBarcodePrompt.barcode || quickCheckBarcode}
+        metadata={unknownBarcodePrompt.metadata || quickCheckMetadata}
+        source={unknownBarcodePrompt.source || 'hardware'}
+        onClose={() => {
+          closeQuickCheck();
+          closeUnknownBarcodeModal();
+        }}
       />
 
       {/* Persistent Background Hardware Scanner Interception Telemetry HUD */}

@@ -138,11 +138,11 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
         }}
         className="relative z-10 bg-white py-3 sm:py-3.5 px-1 sm:px-1.5 flex items-center justify-between gap-2.5 transition-colors group-hover:bg-slate-50/50"
       >
-        {/* Left: Product Name, Price, and Discounts */}
+        {/* Left: Product Name, Price, and Active Discount */}
         <div
           onClick={() => onOpenDiscountModal(item)}
           className="flex-1 min-w-0 pr-1 cursor-pointer group/item select-none"
-          title="Tap to apply item discount"
+          title="Tap to add or edit discount"
         >
           <h4 className="text-xs sm:text-sm font-semibold text-slate-900 truncate group-hover/item:text-blue-600 transition-colors">
             {item.productName}
@@ -158,25 +158,17 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
                   e.stopPropagation();
                   onOpenDiscountModal(item);
                 }}
-                className="inline-flex items-center gap-1 text-[11px] text-emerald-700 hover:bg-emerald-50 font-semibold px-2 min-h-[32px] sm:min-h-[28px] rounded-md transition-colors cursor-pointer whitespace-nowrap"
+                className="inline-flex items-center gap-1 text-[11px] text-emerald-700 hover:text-emerald-800 font-semibold transition-colors cursor-pointer whitespace-nowrap"
                 title="Click to edit or remove discount"
               >
+                <span aria-hidden="true">·</span>
                 <Tag className="w-3 h-3 shrink-0" />
                 <span>{discountBadge}</span>
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenDiscountModal(item);
-                }}
-                className="text-[11px] text-slate-500 hover:text-blue-600 hover:bg-slate-100 font-medium px-2 min-h-[32px] sm:min-h-[28px] rounded-md transition-colors inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
-                title="Quick tap to apply discount"
-              >
-                <Tag className="w-3 h-3 shrink-0" />
-                <span>Discount</span>
-              </button>
+              <span className="text-[11px] text-slate-400 opacity-0 group-hover/item:opacity-100 transition-opacity duration-150 hidden sm:inline">
+                · Tap to discount
+              </span>
             )}
             {item.discountReason && (
               <span className="text-[11px] text-slate-400 truncate max-w-[120px]">

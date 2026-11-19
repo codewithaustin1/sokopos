@@ -57,7 +57,7 @@ interface ScanHistoryItem {
 }
 
 export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen, onClose }) => {
-  const { products, handleBarcodeScanned, currentLocation, cart } = usePos();
+  const { products, handleBarcodeScanned, openUnknownBarcodeModal, currentLocation, cart } = usePos();
 
   const [manualCode, setManualCode] = useState('');
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -298,28 +298,28 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
     lastScannedCodeRef.current = trimmed;
     lastScannedTimeRef.current = now;
 
-    // Mobile haptic vibration
-    if (typeof navigator !== 'undefined' && navigator.vibrate) {
-      try {
-        navigator.vibrate(40);
-      } catch {
-        // ignore
-      }
-    }
-
-    // Trigger visual green reticle flash
-    setScanSuccessFeedback(true);
-    if (feedbackTimeoutRef.current) {
-      clearTimeout(feedbackTimeoutRef.current);
-    }
-    feedbackTimeoutRef.current = setTimeout(() => {
-      setScanSuccessFeedback(false);
-    }, 600);
-
-    // Call POS barcode engine
+    // Call POS barcode engine first before triggering green reticle flash
     const res = handleBarcodeScanned(trimmed);
 
     if (res.success && res.product) {
+      // Mobile haptic vibration
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try {
+          navigator.vibrate(40);
+        } catch {
+          // ignore
+        }
+      }
+
+      // Trigger visual green reticle flash
+      setScanSuccessFeedback(true);
+      if (feedbackTimeoutRef.current) {
+        clearTimeout(feedbackTimeoutRef.current);
+      }
+      feedbackTimeoutRef.current = setTimeout(() => {
+        setScanSuccessFeedback(false);
+      }, 600);
+
       const product = res.product;
       const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
@@ -365,6 +365,10 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
           ];
         }
       });
+    } else if (res.reason === 'not_found') {
+      stopCamera();
+      onClose();
+      openUnknownBarcodeModal(trimmed, { source: 'camera' });
     }
   };
 

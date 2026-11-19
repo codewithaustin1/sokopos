@@ -122,7 +122,8 @@ export function useBackgroundScanner(
     if (checkBarcodeExistsRef.current) {
       return checkBarcodeExistsRef.current(rawBarcode);
     }
-    if (productsRef.current && productsRef.current.length > 0) {
+    if (Array.isArray(productsRef.current)) {
+      if (productsRef.current.length === 0) return false;
       const clean = rawBarcode.trim().replace(/^['"]+|['"]+$/g, '').replace(/\s+/g, '');
       const lower = clean.toLowerCase();
       return productsRef.current.some((p) => {
