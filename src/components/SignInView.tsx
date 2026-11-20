@@ -1258,7 +1258,31 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           --red: #c8231b;
           --green: #059669;
           --soft: #ecfdf5;
+          --tone-money: #047857;
+          --tone-speed: #1e40af;
+          --tone-savings: #b45309;
+          --tone-legacy: #475569;
+          --tone-calm: #0f766e;
+          --tone-action: #1d4ed8;
           color-scheme: light;
+        }
+        .sp-hl-money {
+          color: var(--tone-money);
+        }
+        .sp-hl-speed {
+          color: var(--tone-speed);
+        }
+        .sp-hl-savings {
+          color: var(--tone-savings);
+        }
+        .sp-hl-legacy {
+          color: var(--tone-legacy);
+        }
+        .sp-hl-calm {
+          color: var(--tone-calm);
+        }
+        .sp-hl-action {
+          color: var(--tone-action);
         }
         .sp-wrap {
           max-width: 1160px;
@@ -1733,14 +1757,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           line-height: 1.5;
         }
         .sp-tag {
-          display: inline-block;
+          display: block;
           font-size: 0.78rem;
           font-weight: 700;
-          padding: 3px 10px;
-          border-radius: 99px;
-          background: var(--soft);
-          color: var(--blue);
-          margin-bottom: 12px;
+          letter-spacing: -0.01em;
+          color: var(--tone-money);
+          margin-bottom: 8px;
         }
         .sp-tabs {
           display: flex;
@@ -1978,7 +2000,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             <div className="sp-hero-grid">
               {/* Left Column: Value Proposition & Stats */}
               <div className="sp-hero-left flex flex-col items-center lg:items-start text-center lg:text-left">
-                <h1 className="sp-h1 text-balance">Close your till in minutes—with M-Pesa, cash, and eTIMS already matched.</h1>
+                <h1 className="sp-h1 text-balance">
+                  Close your till in minutes—<span className="sp-hl-money">with M-Pesa, cash, and eTIMS already matched.</span>
+                </h1>
                 <p className="sp-lead">
                   Stop spending your evenings checking M-Pesa texts against paper books or worrying about missing till cash. Ring up customers in seconds on the phone or laptop you already own—even when the internet drops.
                 </p>
@@ -2061,23 +2085,25 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         {/* SECTION 1: PAYMENTS & eTIMS (#payments) */}
         <section className="sp-s sp-reveal" id="payments">
           <div className="sp-wrap">
-            <h2 className="sp-t text-balance">No more M-Pesa guesswork or KRA eTIMS headaches.</h2>
+            <h2 className="sp-t text-balance">
+              No more <span className="sp-hl-money">M-Pesa guesswork or KRA eTIMS</span> headaches.
+            </h2>
             <p className="sp-sub">
               Every shilling your customer sends or hands over is tied to its exact receipt—and stays safe in your records even if your internet cuts out.
             </p>
             <div className="sp-grid3">
               <div className="sp-card">
-                <span className="sp-tag">M-Pesa</span>
+                <span className="sp-tag sp-hl-money">M-Pesa</span>
                 <h3>Match M-Pesa to the sale</h3>
                 <p>Stop scrolling through confirmation SMS messages at closing time. Confirm Till or STK payments right at the counter.</p>
               </div>
               <div className="sp-card">
-                <span className="sp-tag">eTIMS</span>
+                <span className="sp-tag sp-hl-calm">eTIMS</span>
                 <h3>Print tax-ready receipts</h3>
                 <p>Send eTIMS-ready receipts with KRA verification QR codes through Digitax without re-typing sales at night.</p>
               </div>
               <div className="sp-card">
-                <span className="sp-tag">Offline</span>
+                <span className="sp-tag sp-hl-speed">Offline</span>
                 <h3>Never stall a busy queue</h3>
                 <p>When Wi-Fi or fiber drops, your cashier keeps scanning items and printing receipts. Every sale syncs when signal returns.</p>
               </div>
@@ -2088,7 +2114,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         {/* SECTION 2: INDUSTRY SOLUTIONS GALLERY (#solutions) */}
         <section className="sp-s sp-reveal" id="solutions">
           <div className="sp-wrap">
-            <h2 className="sp-t text-balance">Fix what slows down your kind of shop.</h2>
+            <h2 className="sp-t text-balance">
+              Fix what <span className="sp-hl-speed">slows down</span> your kind of shop.
+            </h2>
             <p className="sp-sub">
               Dukas, bars, supermarkets, and chemists lose cash in different ways. Pick your counter type below to see how you stay in control.
             </p>
@@ -2103,7 +2131,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         {/* SECTION 3: HARDWARE FREEDOM (#hardware) */}
         <section className="sp-s sp-reveal" id="hardware">
           <div className="sp-wrap">
-            <h2 className="sp-t text-balance">Skip the Ksh 80,000 POS hardware bundle.</h2>
+            <h2 className="sp-t text-balance">
+              Skip the <span className="sp-hl-savings">Ksh 80,000 POS hardware</span> bundle.
+            </h2>
             <p className="sp-sub">
               Start on the phone, tablet, or laptop already on your counter. Add a scanner or thermal printer only when your shop needs one.
             </p>
@@ -2131,7 +2161,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         {/* SECTION 4: COMPARISON TABLE (#compare) */}
         <section className="sp-s sp-reveal" id="compare">
           <div className="sp-wrap">
-            <h2 className="sp-t text-balance">What changes when you leave paper books and legacy tills behind</h2>
+            <h2 className="sp-t text-balance">
+              What changes when you leave <span className="sp-hl-legacy">paper books and legacy tills</span> behind
+            </h2>
             <div className="sp-scroll">
               <table className="sp-table">
                 <thead>
@@ -2176,7 +2208,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         {/* SECTION: CUSTOMER SUCCESS STORIES & TRUST BADGES */}
         <section className="sp-s sp-reveal" id="success-stories">
           <div className="sp-wrap">
-            <h2 className="sp-t text-balance">What happens when you stop guessing at closing time.</h2>
+            <h2 className="sp-t text-balance">
+              What happens when you <span className="sp-hl-calm">stop guessing at closing time.</span>
+            </h2>
             <p className="sp-sub">
               How shop owners in Nairobi, Mombasa, and Nakuru fixed till shortages, survived fiber outages, and got their evenings back.
             </p>
@@ -2242,7 +2276,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         {/* SECTION 5: FINAL CTA BANNER (Optimized for maximum conversion) */}
         <section className="sp-s sp-reveal sp-final bg-gradient-to-b from-transparent to-blue-50/40">
           <div className="sp-wrap max-w-3xl mx-auto">
-            <h2 className="text-balance">See how fast your till moves before you change a thing.</h2>
+            <h2 className="text-balance">
+              See <span className="sp-hl-action">how fast your till moves</span> before you change a thing.
+            </h2>
             <p className="text-base text-[#4c5a6b] mb-8 leading-relaxed">
               Open a sample shop in 5 seconds, ring up a test M-Pesa payment, and see how a shift closes cleanly—without entering a card or installing software.
             </p>

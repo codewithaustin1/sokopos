@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useId } from 'react';
 import {
   X,
   Building2,
   Phone,
   Mail,
   MapPin,
-  CreditCard,
   Clock,
   FileText,
   Save,
@@ -50,11 +49,28 @@ export const SupplierFormModal: React.FC<SupplierFormModalProps> = ({
   const [errorMessage, setErrorMessage] = useState('');
   const [hasDraftLoaded, setHasDraftLoaded] = useState(false);
 
-  // Track previous open state and target supplier ID so inputs are NOT wiped on background sync/re-renders
   const prevOpenRef = useRef(false);
   const prevSupplierIdRef = useRef<string | null | undefined>(undefined);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Synchronize state strictly when modal opens or when editing target changes
+  // Unique IDs for WCAG explicit label bindings
+  const titleId = useId();
+  const nameId = useId();
+  const statusId = useId();
+  const contactId = useId();
+  const categoryId = useId();
+  const phoneId = useId();
+  const emailId = useId();
+  const addressId = useId();
+  const cityId = useId();
+  const termsId = useId();
+  const leadTimeId = useId();
+  const kraPinId = useId();
+  const mpesaId = useId();
+  const bankNameId = useId();
+  const bankAccountId = useId();
+  const notesId = useId();
+
   useEffect(() => {
     const isNowOpen = isOpen;
     const currentTargetId = supplierToEdit?.id ?? null;
@@ -75,12 +91,13 @@ export const SupplierFormModal: React.FC<SupplierFormModalProps> = ({
         setBankName(supplierToEdit.bankName || '');
         setBankAccount(supplierToEdit.bankAccount || '');
         setMpesaPaybillOrTill(supplierToEdit.mpesaPaybillOrTill || '');
-        setLeadTimeDays(supplierToEdit.leadTimeDays ? supplierToEdit.leadTimeDays.toString() : '2');
+        setLeadTimeDays(
+          supplierToEdit.leadTimeDays !== undefined ? supplierToEdit.leadTimeDays.toString() : '2'
+        );
         setStatus(supplierToEdit.status || 'active');
         setNotes(supplierToEdit.notes || '');
         setHasDraftLoaded(false);
       } else {
-        // When onboarding a new supplier, check for persistent draft to prevent accidental input loss
         try {
           const rawDraft = localStorage.getItem(draftStorageKey);
           if (rawDraft) {
@@ -100,7 +117,9 @@ export const SupplierFormModal: React.FC<SupplierFormModalProps> = ({
             setLeadTimeDays(parsed.leadTimeDays || '2');
             setStatus(parsed.status || 'active');
             setNotes(parsed.notes || '');
-            setHasDraftLoaded(Boolean(parsed.name || parsed.phone !== '+254 ' || parsed.contactPerson));
+            setHasDraftLoaded(
+              Boolean(parsed.name || parsed.phone !== '+254 ' || parsed.contactPerson)
+            );
           } else {
             setName('');
             setContactPerson('');
@@ -120,7 +139,6 @@ export const SupplierFormModal: React.FC<SupplierFormModalProps> = ({
             setHasDraftLoaded(false);
           }
         } catch {
-          // Fallback to blank fields
           setName('');
           setContactPerson('');
           setPhone('+254 ');
@@ -140,17 +158,31 @@ export const SupplierFormModal: React.FC<SupplierFormModalProps> = ({
         }
       }
       setErrorMessage('');
+      requestAnimationFrame(() => {
+        nameInputRef.current?.focus();
+      });
     }
 
     prevOpenRef.current = isNowOpen;
     prevSupplierIdRef.current = currentTargetId;
   }, [isOpen, supplierToEdit, categories, draftStorageKey]);
 
+  // Escape key dismissal
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isSubmitting) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isSubmitting, onClose]);
+
   // Persist draft automatically as user types when onboarding a new supplier
   useEffect(() => {
     if (!isOpen || supplierToEdit) return;
 
-    // Only save draft if user has entered non-default data
     const hasMeaningfulContent =
       name.trim().length > 0 ||
       contactPerson.trim().length > 0 ||
@@ -160,6 +192,7 @@ export const SupplierFormModal: React.FC<SupplierFormModalProps> = ({
       kraPin.trim().length > 0 ||
       notes.trim().length > 0 ||
       bankName.trim().length > 0 ||
+      bankAccount.trim().length > 0 ||
       mpesaPaybillOrTill.trim().length > 0;
 
     if (hasMeaningfulContent) {
@@ -258,46 +291,31 @@ export const SupplierFormModal: React.FC<SupplierFormModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      const leadDays = parseInt(leadTimeDays, 10) || 1;
+      const parsedLead = parseInt(leadTimeDays, 10);
+      const leadDays = Number.isFinite(parsedLead) && parsedLead >= 0 ? parsedLead : 2;
+
+      const payload = {
+        name: trimmedName,
+        contactPerson: contactPerson.trim() || undefined,
+        phone: trimmedPhone,
+        email: email.trim() || undefined,
+        category: category.trim() || undefined,
+        address: address.trim() || undefined,
+        city: city.trim() || undefined,
+        kraPin: kraPin.trim() || undefined,
+        paymentTerms,
+        bankName: bankName.trim() || undefined,
+        bankAccount: bankAccount.trim() || undefined,
+        mpesaPaybillOrTill: mpesaPaybillOrTill.trim() || undefined,
+        leadTimeDays: leadDays,
+        status,
+        notes: notes.trim() || undefined,
+      };
 
       if (supplierToEdit) {
-        await updateSupplier(supplierToEdit.id, {
-          name: trimmedName,
-          contactPerson: contactPerson.trim() || undefined,
-          phone: trimmedPhone,
-          email: email.trim() || undefined,
-          category: category.trim() || undefined,
-          address: address.trim() || undefined,
-          city: city.trim() || undefined,
-          kraPin: kraPin.trim() || undefined,
-          paymentTerms,
-          bankName: bankName.trim() || undefined,
-          bankAccount: bankAccount.trim() || undefined,
-          mpesaPaybillOrTill: mpesaPaybillOrTill.trim() || undefined,
-          leadTimeDays: leadDays,
-          status,
-          notes: notes.trim() || undefined,
-        });
+        await updateSupplier(supplierToEdit.id, payload);
       } else {
-        await addSupplier({
-          name: trimmedName,
-          contactPerson: contactPerson.trim() || undefined,
-          phone: trimmedPhone,
-          email: email.trim() || undefined,
-          category: category.trim() || undefined,
-          address: address.trim() || undefined,
-          city: city.trim() || undefined,
-          kraPin: kraPin.trim() || undefined,
-          paymentTerms,
-          bankName: bankName.trim() || undefined,
-          bankAccount: bankAccount.trim() || undefined,
-          mpesaPaybillOrTill: mpesaPaybillOrTill.trim() || undefined,
-          leadTimeDays: leadDays,
-          status,
-          notes: notes.trim() || undefined,
-        });
-
-        // Supplier successfully created: clear draft from persistent storage
+        await addSupplier(payload);
         try {
           localStorage.removeItem(draftStorageKey);
         } catch {
@@ -309,51 +327,73 @@ export const SupplierFormModal: React.FC<SupplierFormModalProps> = ({
       onClose();
     } catch (err: any) {
       console.error('Failed to save supplier:', err);
-      setErrorMessage(err?.message || 'Failed to save supplier. Please verify details and try again.');
+      setErrorMessage(
+        err?.message || 'Failed to save supplier. Please verify details and try again.'
+      );
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div id="supplier-form-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4">
-      <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[96vh] sm:max-h-[92vh] animate-in fade-in zoom-in-95 duration-150">
+    <div
+      id="supplier-form-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-[1px] p-2 sm:p-4"
+    >
+      <div className="bg-white w-full max-w-xl rounded-xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[94vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 bg-slate-900 text-white shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold">
+        <div className="flex items-center justify-between gap-3 px-5 py-4 bg-slate-900 text-white shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div
+              className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center text-white shrink-0"
+              aria-hidden="true"
+            >
               <Building2 className="w-4 h-4" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-bold text-sm sm:text-base">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 id={titleId} className="font-bold text-sm sm:text-base text-white truncate">
                   {supplierToEdit ? 'Edit Supplier Profile' : 'Register New Supplier'}
                 </h3>
                 {!supplierToEdit && hasDraftLoaded && (
-                  <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-500/30">
-                    Draft auto-saved
+                  <span className="inline-flex items-center gap-1 text-emerald-300 text-xs font-medium">
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                    <span>Draft saved</span>
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-slate-400">
-                Vendor accounts, KRA compliance & supply terms
+              <p className="text-xs text-slate-300 truncate">
+                Vendor accounts, KRA compliance &amp; supply terms
               </p>
             </div>
           </div>
+
           <button
+            type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+            disabled={isSubmitting}
+            aria-label="Close supplier form"
+            className="min-w-[40px] min-h-[40px] flex items-center justify-center text-slate-300 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-white shrink-0"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1 text-slate-800">
-          {/* Error Message Alert */}
+        <form
+          onSubmit={handleSubmit}
+          className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1 text-slate-900"
+        >
           {errorMessage && (
-            <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3 flex items-center gap-2 text-xs">
-              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+            <div
+              role="alert"
+              aria-live="polite"
+              className="bg-red-50 border border-red-200 text-red-900 rounded-lg p-3 flex items-center gap-2 text-xs font-medium"
+            >
+              <AlertCircle className="w-4 h-4 text-red-700 shrink-0" aria-hidden="true" />
               <span>{errorMessage}</span>
             </div>
           )}
@@ -361,24 +401,31 @@ export const SupplierFormModal: React.FC<SupplierFormModalProps> = ({
           {/* Company Name & Status */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="sm:col-span-2">
-              <label className="block text-xs font-bold text-slate-700 mb-1">
+              <label htmlFor={nameId} className="block text-xs font-semibold text-slate-700 mb-1">
                 Company / Vendor Name *
               </label>
               <input
+                ref={nameInputRef}
+                id={nameId}
                 type="text"
                 required
-                placeholder="e.g. Ungar Mills East Africa Ltd"
+                aria-required="true"
+                placeholder="e.g. Unga Mills East Africa Ltd"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-600 focus:bg-white"
+                className="w-full min-h-[42px] bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white focus-visible:outline-2 focus-visible:outline-blue-600"
               />
             </div>
+
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Status</label>
+              <label htmlFor={statusId} className="block text-xs font-semibold text-slate-700 mb-1">
+                Status
+              </label>
               <select
+                id={statusId}
                 value={status}
                 onChange={(e) => setStatus(e.target.value as 'active' | 'inactive')}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-bold"
+                className="w-full min-h-[42px] bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs sm:text-sm font-semibold text-slate-900 focus:outline-none focus:border-blue-600 focus-visible:outline-2 focus-visible:outline-blue-600"
               >
                 <option value="active">Active Vendor</option>
                 <option value="inactive">Inactive / On-Hold</option>
@@ -386,30 +433,39 @@ export const SupplierFormModal: React.FC<SupplierFormModalProps> = ({
             </div>
           </div>
 
-          {/* Contact Person & Primary Category */}
+          {/* Contact Person & Category */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
+              <label
+                htmlFor={contactId}
+                className="block text-xs font-semibold text-slate-700 mb-1"
+              >
                 Sales Rep / Contact Person
               </label>
               <input
+                id={contactId}
                 type="text"
                 placeholder="e.g. David Kilonzo"
                 value={contactPerson}
                 onChange={(e) => setContactPerson(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-600 focus:bg-white"
+                className="w-full min-h-[42px] bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white focus-visible:outline-2 focus-visible:outline-blue-600"
               />
             </div>
+
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
+              <label
+                htmlFor={categoryId}
+                className="block text-xs font-semibold text-slate-700 mb-1"
+              >
                 Supply Category
               </label>
               <input
+                id={categoryId}
                 type="text"
-                placeholder="e.g. Flour & Grains, Dairy, Beverages..."
+                placeholder="e.g. Flour & Grains, Dairy, Beverages"
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-600 focus:bg-white"
+                className="w-full min-h-[42px] bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white focus-visible:outline-2 focus-visible:outline-blue-600"
               />
             </div>
           </div>
@@ -417,34 +473,44 @@ export const SupplierFormModal: React.FC<SupplierFormModalProps> = ({
           {/* Phone & Email */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
+              <label htmlFor={phoneId} className="block text-xs font-semibold text-slate-700 mb-1">
                 Phone Number *
               </label>
               <div className="relative">
+                <Phone
+                  className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                  aria-hidden="true"
+                />
                 <input
-                  type="text"
+                  id={phoneId}
+                  type="tel"
                   required
+                  aria-required="true"
                   placeholder="+254 7XX XXX XXX"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-8 pr-3 py-2 text-xs font-mono font-bold focus:outline-none focus:border-blue-600 focus:bg-white"
+                  className="w-full min-h-[42px] bg-slate-50 border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-xs sm:text-sm font-mono font-semibold text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white focus-visible:outline-2 focus-visible:outline-blue-600"
                 />
-                <Phone className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
               </div>
             </div>
+
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
+              <label htmlFor={emailId} className="block text-xs font-semibold text-slate-700 mb-1">
                 Orders / Invoicing Email
               </label>
               <div className="relative">
+                <Mail
+                  className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                  aria-hidden="true"
+                />
                 <input
+                  id={emailId}
                   type="email"
                   placeholder="orders@supplier.co.ke"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-8 pr-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-600 focus:bg-white"
+                  className="w-full min-h-[42px] bg-slate-50 border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white focus-visible:outline-2 focus-visible:outline-blue-600"
                 />
-                <Mail className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
               </div>
             </div>
           </div>
@@ -452,125 +518,163 @@ export const SupplierFormModal: React.FC<SupplierFormModalProps> = ({
           {/* Physical Address & City */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="sm:col-span-2">
-              <label className="block text-xs font-bold text-slate-700 mb-1">
+              <label
+                htmlFor={addressId}
+                className="block text-xs font-semibold text-slate-700 mb-1"
+              >
                 Depot / Warehouse Address
               </label>
               <div className="relative">
+                <MapPin
+                  className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                  aria-hidden="true"
+                />
                 <input
+                  id={addressId}
                   type="text"
                   placeholder="e.g. Commercial St, Industrial Area"
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-8 pr-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-600 focus:bg-white"
+                  className="w-full min-h-[42px] bg-slate-50 border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white focus-visible:outline-2 focus-visible:outline-blue-600"
                 />
-                <MapPin className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
               </div>
             </div>
+
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">City / Region</label>
+              <label htmlFor={cityId} className="block text-xs font-semibold text-slate-700 mb-1">
+                City / Region
+              </label>
               <input
+                id={cityId}
                 type="text"
                 placeholder="Nairobi"
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-blue-600 focus:bg-white"
+                className="w-full min-h-[42px] bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white focus-visible:outline-2 focus-visible:outline-blue-600"
               />
             </div>
           </div>
 
-          {/* Terms & Compliance Card */}
-          <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
-            <div className="text-[11px] font-black uppercase tracking-wider text-slate-500">
-              Payment Terms & Settlement Details
-            </div>
+          {/* Settlement & Compliance Section (Divider-separated, not nested cards) */}
+          <div className="pt-3 border-t border-slate-200 space-y-3">
+            <h4 className="text-xs font-bold text-slate-800">
+              Payment Terms &amp; Settlement Details
+            </h4>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label htmlFor={termsId} className="block text-xs font-semibold text-slate-700 mb-1">
                   Payment Terms
                 </label>
                 <select
+                  id={termsId}
                   value={paymentTerms}
                   onChange={(e) => setPaymentTerms(e.target.value as SupplierPaymentTerms)}
-                  className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-bold text-blue-700"
+                  className="w-full min-h-[42px] bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold text-blue-800 focus:outline-none focus:border-blue-600 focus-visible:outline-2 focus-visible:outline-blue-600"
                 >
-                  <option value="cod">Weekly / Instant COD (Cash on Delivery)</option>
+                  <option value="cod">Cash on Delivery (COD)</option>
                   <option value="net_7">Net 7 Days</option>
-                  <option value="net_14">Net 14 Days (Standard Trade)</option>
-                  <option value="net_30">Net 30 Days (Wholesale Credit)</option>
-                  <option value="prepaid">Prepaid / Proforma Advance</option>
+                  <option value="net_14">Net 14 Days</option>
+                  <option value="net_30">Net 30 Days</option>
+                  <option value="prepaid">Prepaid / Advance</option>
                   <option value="consignment">Consignment Stock</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label
+                  htmlFor={leadTimeId}
+                  className="block text-xs font-semibold text-slate-700 mb-1"
+                >
                   Lead Time (Days)
                 </label>
                 <div className="relative">
+                  <Clock
+                    className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                    aria-hidden="true"
+                  />
                   <input
+                    id={leadTimeId}
                     type="number"
                     min="0"
                     placeholder="2"
                     value={leadTimeDays}
                     onChange={(e) => setLeadTimeDays(e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-lg pl-8 pr-3 py-2 text-xs font-mono font-bold"
+                    className="w-full min-h-[42px] bg-slate-50 border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-xs sm:text-sm font-mono tabular-nums font-semibold text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white focus-visible:outline-2 focus-visible:outline-blue-600"
                   />
-                  <Clock className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label
+                  htmlFor={kraPinId}
+                  className="block text-xs font-semibold text-slate-700 mb-1"
+                >
                   KRA PIN Number
                 </label>
                 <div className="relative">
+                  <FileText
+                    className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                    aria-hidden="true"
+                  />
                   <input
+                    id={kraPinId}
                     type="text"
                     placeholder="P051234567X"
                     value={kraPin}
                     onChange={(e) => setKraPin(e.target.value.toUpperCase())}
-                    className="w-full bg-white border border-slate-300 rounded-lg pl-8 pr-3 py-2 text-xs font-mono font-bold uppercase"
+                    className="w-full min-h-[42px] bg-slate-50 border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-xs sm:text-sm font-mono font-semibold uppercase text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white focus-visible:outline-2 focus-visible:outline-blue-600"
                   />
-                  <FileText className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
                 </div>
               </div>
             </div>
 
-            {/* Banking / M-Pesa Remittance */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-slate-200">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                  M-Pesa Paybill / Till Number
+                <label htmlFor={mpesaId} className="block text-xs font-semibold text-slate-700 mb-1">
+                  M-Pesa Paybill / Till
                 </label>
                 <input
+                  id={mpesaId}
                   type="text"
-                  placeholder="e.g. Paybill: 247247 (Acc: 0180293847291)"
+                  placeholder="e.g. Paybill 247247"
                   value={mpesaPaybillOrTill}
                   onChange={(e) => setMpesaPaybillOrTill(e.target.value)}
-                  className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono"
+                  className="w-full min-h-[42px] bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs sm:text-sm font-mono text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white focus-visible:outline-2 focus-visible:outline-blue-600"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                  Bank & Account Number
+                <label
+                  htmlFor={bankNameId}
+                  className="block text-xs font-semibold text-slate-700 mb-1"
+                >
+                  Bank Name
                 </label>
                 <input
+                  id={bankNameId}
                   type="text"
-                  placeholder="e.g. Equity Bank - 0180293847291"
-                  value={bankName ? `${bankName} - ${bankAccount}` : ''}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val.includes('-')) {
-                      const [b, a] = val.split('-');
-                      setBankName(b.trim());
-                      setBankAccount(a.trim());
-                    } else {
-                      setBankName(val.trim());
-                    }
-                  }}
-                  className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono"
+                  placeholder="e.g. Co-operative Bank"
+                  value={bankName}
+                  onChange={(e) => setBankName(e.target.value)}
+                  className="w-full min-h-[42px] bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white focus-visible:outline-2 focus-visible:outline-blue-600"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor={bankAccountId}
+                  className="block text-xs font-semibold text-slate-700 mb-1"
+                >
+                  Bank Account No.
+                </label>
+                <input
+                  id={bankAccountId}
+                  type="text"
+                  placeholder="e.g. 0180293847291"
+                  value={bankAccount}
+                  onChange={(e) => setBankAccount(e.target.value)}
+                  className="w-full min-h-[42px] bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs sm:text-sm font-mono text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white focus-visible:outline-2 focus-visible:outline-blue-600"
                 />
               </div>
             </div>
@@ -578,53 +682,54 @@ export const SupplierFormModal: React.FC<SupplierFormModalProps> = ({
 
           {/* Notes */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
-              Supply Notes & Delivery Route Schedules
+            <label htmlFor={notesId} className="block text-xs font-semibold text-slate-700 mb-1">
+              Supply Notes &amp; Delivery Schedules
             </label>
             <textarea
+              id={notesId}
               rows={2}
-              placeholder="e.g. Route drops every Tuesday and Friday morning. Minimum order KES 20,000 for free delivery."
+              placeholder="e.g. Route drops every Tuesday and Friday morning. Minimum order KES 20,000."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs focus:outline-none focus:border-blue-600 focus:bg-white resize-none"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg p-3 text-xs sm:text-sm text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white resize-none focus-visible:outline-2 focus-visible:outline-blue-600"
             />
           </div>
 
           {/* Footer Actions */}
-          <div className="pt-2 flex items-center justify-between gap-2.5">
+          <div className="pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2.5">
             <div>
               {!supplierToEdit && hasDraftLoaded && (
                 <button
                   type="button"
                   onClick={handleClearDraft}
-                  className="text-xs font-bold text-red-600 hover:text-red-700 hover:bg-red-50 px-2.5 py-1.5 rounded-lg transition cursor-pointer"
+                  className="min-h-[40px] text-xs font-semibold text-red-700 hover:text-red-800 hover:bg-red-50 px-3 py-2 rounded-lg transition cursor-pointer focus-visible:outline-2 focus-visible:outline-red-600"
                 >
-                  Clear Form Draft
+                  Clear Draft
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 ml-auto">
               <button
                 type="button"
                 disabled={isSubmitting}
                 onClick={onClose}
-                className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer disabled:opacity-50"
+                className="min-h-[42px] px-4 py-2 rounded-lg border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition cursor-pointer disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-blue-600"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-5 py-2 rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                className="min-h-[42px] bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-5 py-2 rounded-lg text-xs font-semibold transition inline-flex items-center gap-1.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
               >
                 {isSubmitting ? (
                   <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
                     <span>Saving...</span>
                   </>
                 ) : (
                   <>
-                    <Save className="w-3.5 h-3.5" />
+                    <Save className="w-3.5 h-3.5" aria-hidden="true" />
                     <span>{supplierToEdit ? 'Save Changes' : 'Create Supplier'}</span>
                   </>
                 )}

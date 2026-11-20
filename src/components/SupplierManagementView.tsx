@@ -1,32 +1,25 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useDeferredValue, useRef } from 'react';
 import {
   Building2,
-  Search,
   Plus,
-  Phone,
-  Mail,
-  MapPin,
-  Clock,
-  Package,
-  Link as LinkIcon,
-  CreditCard,
-  Edit2,
-  Trash2,
-  Eye,
   Sparkles,
-  FileText,
-  AlertTriangle,
-  CheckCircle2,
-  ChevronRight,
-  TrendingUp,
   RefreshCw,
+  Upload,
+  Loader2,
 } from 'lucide-react';
-import { Supplier, Product } from '../types';
+import { Supplier } from '../types';
 import { usePos } from '../context/PosContext';
 import { SupplierFormModal } from './SupplierFormModal';
 import { LinkSupplierModal } from './LinkSupplierModal';
 import { SupplierDetailModal } from './SupplierDetailModal';
 import { SupplierInvoiceModal } from './SupplierInvoiceModal';
+import { SupplierCsvImportModal } from './SupplierCsvImportModal';
+import { SupplierKpiStrip, SupplierStats } from './suppliers/SupplierKpiStrip';
+import { SupplierToolbar, SupplierStatusFilter } from './suppliers/SupplierToolbar';
+import { SupplierDirectoryTable } from './suppliers/SupplierDirectoryTable';
+import { SupplierMobileCardList } from './suppliers/SupplierMobileCardList';
+import { SupplierPaginationBar } from './suppliers/SupplierPaginationBar';
+import { SortDirection, SupplierSortKey } from './suppliers/supplierConstants';
 
 export const SupplierManagementView: React.FC = () => {
   const {
@@ -34,7 +27,6 @@ export const SupplierManagementView: React.FC = () => {
     products,
     currentLocation,
     currentBusiness,
-    showToast,
     refreshTenantSuppliers,
     isSuppliersLoading,
   } = usePos();
@@ -43,9 +35,15 @@ export const SupplierManagementView: React.FC = () => {
     refreshTenantSuppliers(false).catch(() => {});
   }, [refreshTenantSuppliers]);
 
+  // Filter, sort & pagination state
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearch = useDeferredValue(searchQuery);
   const [selectedTermFilter, setSelectedTermFilter] = useState<string>('all');
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<SupplierStatusFilter>('all');
+  const [sortKey, setSortKey] = useState<SupplierSortKey>('name');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(25);
 
   // Modals state
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
@@ -58,30 +56,42 @@ export const SupplierManagementView: React.FC = () => {
   const [supplierForDetail, setSupplierForDetail] = useState<Supplier | null>(null);
 
   const [isAiInvoiceModalOpen, setIsAiInvoiceModalOpen] = useState(false);
+  const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
+
+  // Focus restoration tracker for WCAG 2.1 AA modal return focus
+  const lastFocusedElementRef = useRef<HTMLElement | null>(null);
+
+  const captureTriggerFocus = useCallback(() => {
+    if (document.activeElement instanceof HTMLElement) {
+      lastFocusedElementRef.current = document.activeElement;
+    }
+  }, []);
+
+  const restoreTriggerFocus = useCallback(() => {
+    requestAnimationFrame(() => {
+      if (lastFocusedElementRef.current && document.body.contains(lastFocusedElementRef.current)) {
+        lastFocusedElementRef.current.focus();
+      }
+      lastFocusedElementRef.current = null;
+    });
+  }, []);
 
   const currency = currentBusiness?.currency || currentLocation?.currency || 'KES';
   const supplierList = suppliers || [];
 
-  // Filtered suppliers
-  const filteredSuppliers = useMemo(() => {
-    return supplierList.filter((s) => {
-      const matchSearch =
-        !searchQuery.trim() ||
-        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (s.contactPerson && s.contactPerson.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        s.phone.includes(searchQuery) ||
-        (s.category && s.category.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (s.kraPin && s.kraPin.toLowerCase().includes(searchQuery.toLowerCase()));
-
-      const matchTerms = selectedTermFilter === 'all' || s.paymentTerms === selectedTermFilter;
-      const matchStatus = selectedStatusFilter === 'all' || s.status === selectedStatusFilter;
-
-      return matchSearch && matchTerms && matchStatus;
+  // Single-pass map of linked products per supplier
+  const linkedProductCountBySupplier = useMemo(() => {
+    const counts = new Map<string, number>();
+    products.forEach((p) => {
+      if (p.supplierId) {
+        counts.set(p.supplierId, (counts.get(p.supplierId) || 0) + 1);
+      }
     });
-  }, [supplierList, searchQuery, selectedTermFilter, selectedStatusFilter]);
+    return counts;
+  }, [products]);
 
-  // Overall analytics / overview metrics
-  const stats = useMemo(() => {
+  // Aggregate KPI metrics
+  const stats = useMemo<SupplierStats>(() => {
     let totalPurchases = 0;
     let activeVendors = 0;
     let totalShipments = 0;
@@ -92,7 +102,10 @@ export const SupplierManagementView: React.FC = () => {
       totalShipments += s.ordersCount || 0;
     });
 
-    const linkedProductsCount = products.filter((p) => Boolean(p.supplierId)).length;
+    let linkedProductsCount = 0;
+    linkedProductCountBySupplier.forEach((c) => {
+      linkedProductsCount += c;
+    });
 
     return {
       totalSuppliers: supplierList.length,
@@ -100,45 +113,184 @@ export const SupplierManagementView: React.FC = () => {
       totalPurchases,
       totalShipments,
       linkedProductsCount,
+      totalCatalogCount: products.length,
     };
-  }, [supplierList, products]);
+  }, [supplierList, linkedProductCountBySupplier, products.length]);
 
-  const handleOpenAddModal = () => {
+  // Filtered & sorted suppliers
+  const sortedSuppliers = useMemo(() => {
+    const q = deferredSearch.trim().toLowerCase();
+
+    const filtered = supplierList.filter((s) => {
+      const matchSearch =
+        !q ||
+        s.name.toLowerCase().includes(q) ||
+        (s.contactPerson && s.contactPerson.toLowerCase().includes(q)) ||
+        s.phone.toLowerCase().includes(q) ||
+        (s.category && s.category.toLowerCase().includes(q)) ||
+        (s.kraPin && s.kraPin.toLowerCase().includes(q));
+
+      const matchTerms = selectedTermFilter === 'all' || s.paymentTerms === selectedTermFilter;
+      const matchStatus = selectedStatusFilter === 'all' || s.status === selectedStatusFilter;
+
+      return matchSearch && matchTerms && matchStatus;
+    });
+
+    const factor = sortDirection === 'asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      switch (sortKey) {
+        case 'name':
+          return a.name.localeCompare(b.name) * factor;
+        case 'category':
+          return (a.category || 'General').localeCompare(b.category || 'General') * factor;
+        case 'paymentTerms':
+          return a.paymentTerms.localeCompare(b.paymentTerms) * factor;
+        case 'linkedCount': {
+          const countA = linkedProductCountBySupplier.get(a.id) || 0;
+          const countB = linkedProductCountBySupplier.get(b.id) || 0;
+          return (countA - countB) * factor;
+        }
+        case 'leadTimeDays':
+          return ((a.leadTimeDays ?? 2) - (b.leadTimeDays ?? 2)) * factor;
+        case 'totalInvoiced':
+          return ((a.totalInvoiced || 0) - (b.totalInvoiced || 0)) * factor;
+        case 'status':
+          return a.status.localeCompare(b.status) * factor;
+        default:
+          return 0;
+      }
+    });
+  }, [
+    supplierList,
+    deferredSearch,
+    selectedTermFilter,
+    selectedStatusFilter,
+    sortKey,
+    sortDirection,
+    linkedProductCountBySupplier,
+  ]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedSuppliers.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+
+  const paginatedSuppliers = useMemo(() => {
+    const startIdx = (safeCurrentPage - 1) * pageSize;
+    return sortedSuppliers.slice(startIdx, startIdx + pageSize);
+  }, [sortedSuppliers, safeCurrentPage, pageSize]);
+
+  // Handlers
+  const handleSearchChange = useCallback((val: string) => {
+    setSearchQuery(val);
+    setCurrentPage(1);
+  }, []);
+
+  const handleTermFilterChange = useCallback((val: string) => {
+    setSelectedTermFilter(val);
+    setCurrentPage(1);
+  }, []);
+
+  const handleStatusFilterChange = useCallback((val: SupplierStatusFilter) => {
+    setSelectedStatusFilter(val);
+    setCurrentPage(1);
+  }, []);
+
+  const handleSortChange = useCallback(
+    (key: SupplierSortKey) => {
+      if (sortKey === key) {
+        setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      } else {
+        setSortKey(key);
+        setSortDirection('asc');
+      }
+      setCurrentPage(1);
+    },
+    [sortKey]
+  );
+
+  const handlePageSizeChange = useCallback((size: number) => {
+    setPageSize(size);
+    setCurrentPage(1);
+  }, []);
+
+  const hasActiveFilters = Boolean(
+    searchQuery.trim() || selectedTermFilter !== 'all' || selectedStatusFilter !== 'all'
+  );
+
+  const handleResetFilters = useCallback(() => {
+    setSearchQuery('');
+    setSelectedTermFilter('all');
+    setSelectedStatusFilter('all');
+    setCurrentPage(1);
+  }, []);
+
+  const handleOpenAddModal = useCallback(() => {
+    captureTriggerFocus();
     setSupplierToEdit(null);
     setIsFormModalOpen(true);
-  };
+  }, [captureTriggerFocus]);
 
-  const handleOpenEditModal = (supp: Supplier) => {
-    setSupplierToEdit(supp);
-    setIsFormModalOpen(true);
-  };
+  const handleOpenEditModal = useCallback(
+    (supp: Supplier) => {
+      captureTriggerFocus();
+      setSupplierToEdit(supp);
+      setIsFormModalOpen(true);
+    },
+    [captureTriggerFocus]
+  );
 
-  const handleOpenLinkModal = (supp: Supplier) => {
-    setSupplierForLink(supp);
-    setIsLinkModalOpen(true);
-  };
+  const handleOpenLinkModal = useCallback(
+    (supp: Supplier) => {
+      captureTriggerFocus();
+      setSupplierForLink(supp);
+      setIsLinkModalOpen(true);
+    },
+    [captureTriggerFocus]
+  );
 
-  const handleOpenDetailModal = (supp: Supplier) => {
-    setSupplierForDetail(supp);
-    setIsDetailModalOpen(true);
-  };
+  const handleOpenDetailModal = useCallback(
+    (supp: Supplier) => {
+      captureTriggerFocus();
+      setSupplierForDetail(supp);
+      setIsDetailModalOpen(true);
+    },
+    [captureTriggerFocus]
+  );
+
+  const handleOpenCsvModal = useCallback(() => {
+    captureTriggerFocus();
+    setIsCsvModalOpen(true);
+  }, [captureTriggerFocus]);
+
+  const handleOpenAiInvoiceModal = useCallback(() => {
+    captureTriggerFocus();
+    setIsAiInvoiceModalOpen(true);
+  }, [captureTriggerFocus]);
 
   return (
-    <div className="flex-1 flex flex-col bg-slate-100 overflow-hidden">
-      {/* Top Banner / Actions Bar */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 shrink-0 shadow-2xs">
-        <div>
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h2 className="text-lg font-black text-slate-800">Supplier & Vendor Directory</h2>
-            <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-0.5 rounded-full">
-              {supplierList.length} Suppliers
+    <div
+      id="pos-suppliers-view"
+      className="flex-1 h-full overflow-y-auto flex flex-col bg-slate-100"
+    >
+      {/* Sticky Top Banner / Actions Bar */}
+      <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-6 py-3.5 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3.5 shrink-0">
+        <div className="min-w-0">
+          <h2 className="text-base sm:text-lg font-bold text-slate-900 truncate">
+            Supplier &amp; Vendor Directory
+          </h2>
+          <p className="text-xs text-slate-600 flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
+            <span className="font-semibold text-slate-800 font-mono tabular-nums">
+              {supplierList.length}
             </span>
-            <span className="bg-indigo-100 text-indigo-800 text-xs font-bold px-2 py-0.5 rounded-full">
-              {stats.linkedProductsCount} Linked Catalog Items
+            <span>Suppliers</span>
+            <span aria-hidden="true">·</span>
+            <span className="font-semibold text-slate-800 font-mono tabular-nums">
+              {stats.linkedProductsCount}
             </span>
-          </div>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Procurement accounts, payment terms, and supply chain inventory oversight
+            <span>Linked catalog items</span>
+            <span aria-hidden="true" className="hidden sm:inline">
+              ·
+            </span>
+            <span className="hidden sm:inline">Procurement &amp; payment terms oversight</span>
           </p>
         </div>
 
@@ -147,313 +299,184 @@ export const SupplierManagementView: React.FC = () => {
             type="button"
             onClick={() => refreshTenantSuppliers(true)}
             disabled={isSuppliersLoading}
-            className="p-2 bg-white hover:bg-slate-50 text-slate-600 rounded-xl border border-slate-200 transition cursor-pointer disabled:opacity-50"
+            aria-label="Refresh suppliers from cloud"
+            className="min-w-[40px] min-h-[40px] px-2.5 bg-white hover:bg-slate-50 text-slate-700 rounded-lg border border-slate-300 transition cursor-pointer disabled:opacity-50 inline-flex items-center justify-center focus-visible:outline-2 focus-visible:outline-blue-600"
             title="Refresh suppliers from cloud"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isSuppliersLoading ? 'animate-spin text-blue-600' : ''}`} />
+            <RefreshCw
+              className={`w-4 h-4 ${isSuppliersLoading ? 'animate-spin text-blue-700' : ''}`}
+              aria-hidden="true"
+            />
           </button>
 
-          {/* AI Invoice Digitization Trigger */}
           <button
+            type="button"
             id="btn-supplier-ai-invoice"
-            onClick={() => setIsAiInvoiceModalOpen(true)}
-            className="bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
-            title="Digitize supplier delivery notes with Gemini AI Vision"
+            onClick={handleOpenAiInvoiceModal}
+            className="min-h-[40px] bg-indigo-700 hover:bg-indigo-800 text-white font-semibold text-xs px-3.5 py-2 rounded-lg transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700"
+            title="Digitize supplier delivery notes with AI invoice scan"
           >
-            <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+            <Sparkles className="w-3.5 h-3.5 text-amber-200" aria-hidden="true" />
             <span>AI Invoice Onboarding</span>
           </button>
 
-          {/* Add Supplier Button */}
           <button
+            type="button"
+            id="btn-supplier-import-csv"
+            onClick={handleOpenCsvModal}
+            className="min-h-[40px] bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 font-semibold text-xs px-3.5 py-2 rounded-lg transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-blue-600"
+            title="Bulk import suppliers from a CSV spreadsheet with data validation"
+          >
+            <Upload className="w-3.5 h-3.5 text-slate-600" aria-hidden="true" />
+            <span>Import CSV</span>
+          </button>
+
+          <button
+            type="button"
             id="btn-add-supplier"
             onClick={handleOpenAddModal}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+            className="min-h-[40px] bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-4 py-2 rounded-lg transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4" aria-hidden="true" />
             <span>Add Supplier</span>
           </button>
         </div>
-      </div>
+      </header>
 
       {/* Main Workspace Container */}
-      <div className="p-3 sm:p-6 flex-1 flex flex-col gap-3 sm:gap-4 overflow-hidden">
-        {/* KPI Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4 shrink-0">
-          <div className="bg-white p-3 sm:p-4 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                Active Suppliers
-              </div>
-              <div className="text-lg sm:text-2xl font-black text-slate-800 mt-0.5">
-                {stats.activeVendors} <span className="text-xs text-slate-400 font-bold">/ {stats.totalSuppliers}</span>
-              </div>
-              <div className="text-[10px] text-slate-500 font-medium">Contracted distributors</div>
-            </div>
-            <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-              <Building2 className="w-5 h-5" />
-            </div>
-          </div>
+      <main className="p-3 sm:p-6 pb-20 lg:pb-8 flex-1 flex flex-col gap-3 sm:gap-4">
+        <SupplierKpiStrip stats={stats} currency={currency} />
 
-          <div className="bg-white p-3 sm:p-4 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                Linked Inventory
-              </div>
-              <div className="text-lg sm:text-2xl font-black text-indigo-600 mt-0.5">
-                {stats.linkedProductsCount} <span className="text-xs text-slate-400 font-bold">/ {products.length}</span>
-              </div>
-              <div className="text-[10px] text-slate-500 font-medium">Supply chain tracked</div>
-            </div>
-            <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-              <LinkIcon className="w-5 h-5" />
-            </div>
-          </div>
+        <SupplierToolbar
+          searchQuery={searchQuery}
+          onSearchChange={handleSearchChange}
+          selectedTermFilter={selectedTermFilter}
+          onTermFilterChange={handleTermFilterChange}
+          selectedStatusFilter={selectedStatusFilter}
+          onStatusFilterChange={handleStatusFilterChange}
+          totalMatchingCount={sortedSuppliers.length}
+          hasActiveFilters={hasActiveFilters}
+          onResetFilters={handleResetFilters}
+        />
 
-          <div className="bg-white p-3 sm:p-4 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                Total Procurement
-              </div>
-              <div className="text-base sm:text-xl font-black text-emerald-600 mt-0.5 truncate">
-                {currency} {stats.totalPurchases.toLocaleString()}
-              </div>
-              <div className="text-[10px] text-slate-500 font-medium">Recorded intake value</div>
-            </div>
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-              <TrendingUp className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="bg-white p-3 sm:p-4 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                Shipments Handled
-              </div>
-              <div className="text-lg sm:text-2xl font-black text-purple-600 mt-0.5">
-                {stats.totalShipments}
-              </div>
-              <div className="text-[10px] text-slate-500 font-medium">Recorded replenishments</div>
-            </div>
-            <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
-              <Package className="w-5 h-5" />
-            </div>
-          </div>
-        </div>
-
-        {/* Search & Filter Controls */}
-        <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-2.5 sm:gap-3 shrink-0 shadow-2xs">
-          <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 sm:gap-2.5 flex-1">
-            {/* Search */}
-            <div className="relative w-full sm:w-64">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-              <input
-                type="text"
-                placeholder="Search vendor, rep, phone, KRA..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg text-xs pl-8 pr-3 py-2 sm:py-1.5 focus:outline-none focus:border-blue-600 focus:bg-white"
-              />
-            </div>
-
-            {/* Terms Filter */}
-            <select
-              value={selectedTermFilter}
-              onChange={(e) => setSelectedTermFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-300 rounded-lg text-xs px-3 py-2 sm:py-1.5 text-slate-700 font-medium"
+        {/* Directory Container: Responsive Table (Desktop) & Stacked Cards (Mobile) */}
+        <section
+          aria-label="Supplier directory list"
+          className="bg-white rounded-xl border border-slate-200 flex-1 flex flex-col min-h-[380px] overflow-hidden"
+        >
+          {isSuppliersLoading && supplierList.length === 0 ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className="flex-1 flex flex-col items-center justify-center p-10 text-center text-slate-600 gap-2.5"
             >
-              <option value="all">All Payment Terms</option>
-              <option value="cod">Cash on Delivery (COD)</option>
-              <option value="net_7">Net 7 Days</option>
-              <option value="net_14">Net 14 Days</option>
-              <option value="net_30">Net 30 Days</option>
-              <option value="consignment">Consignment Stock</option>
-              <option value="prepaid">Prepaid / Advance</option>
-            </select>
-
-            {/* Status Filter */}
-            <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200 text-[11px] font-bold">
-              <button
-                onClick={() => setSelectedStatusFilter('all')}
-                className={`px-2.5 py-1 rounded transition ${
-                  selectedStatusFilter === 'all' ? 'bg-white text-slate-800 shadow-2xs' : 'text-slate-500'
-                }`}
-              >
-                All
-              </button>
-              <button
-                onClick={() => setSelectedStatusFilter('active')}
-                className={`px-2.5 py-1 rounded transition ${
-                  selectedStatusFilter === 'active' ? 'bg-white text-emerald-700 shadow-2xs' : 'text-slate-500'
-                }`}
-              >
-                Active
-              </button>
-              <button
-                onClick={() => setSelectedStatusFilter('inactive')}
-                className={`px-2.5 py-1 rounded transition ${
-                  selectedStatusFilter === 'inactive' ? 'bg-white text-slate-700 shadow-2xs' : 'text-slate-500'
-                }`}
-              >
-                Inactive
-              </button>
+              <Loader2 className="w-6 h-6 animate-spin text-blue-600" aria-hidden="true" />
+              <p className="text-sm font-semibold text-slate-800">Loading supplier directory...</p>
             </div>
-          </div>
-        </div>
+          ) : sortedSuppliers.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 sm:p-10 text-center">
+              <Building2 className="w-8 h-8 text-slate-400 mb-2.5" aria-hidden="true" />
+              <h3 className="text-sm font-bold text-slate-900">
+                {supplierList.length === 0
+                  ? 'No suppliers registered yet'
+                  : 'No suppliers match your current filters'}
+              </h3>
+              <p className="text-xs text-slate-600 max-w-sm mt-1">
+                {supplierList.length === 0
+                  ? 'Add a distributor manually or import a vendor list via CSV to track purchase terms and linked stock.'
+                  : 'Adjust your search query, payment terms, or status filter to see matching vendors.'}
+              </p>
 
-        {/* Suppliers List & Table */}
-        <div className="bg-white rounded-xl border border-slate-200 flex-1 overflow-hidden flex-col flex shadow-2xs">
-          <div className="overflow-x-auto overflow-y-auto flex-1">
-            <table className="w-full text-left border-collapse min-w-[850px]">
-              <thead className="bg-slate-50/90 border-b border-slate-200 text-[10px] font-black text-slate-400 uppercase tracking-wider sticky top-0 z-10">
-                <tr>
-                  <th className="p-3 pl-5">Supplier Name & Contact</th>
-                  <th className="p-3">Category</th>
-                  <th className="p-3">Phone & Email</th>
-                  <th className="p-3">Payment Terms</th>
-                  <th className="p-3">Linked Items</th>
-                  <th className="p-3">Lead Time</th>
-                  <th className="p-3">Total Invoiced</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3 text-right pr-5">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="text-xs divide-y divide-slate-100 text-slate-700">
-                {filteredSuppliers.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="p-10 text-center text-slate-400">
-                      <Building2 className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                      <p className="font-bold text-slate-600">No suppliers found matching criteria.</p>
-                      <button
-                        onClick={handleOpenAddModal}
-                        className="mt-2 text-xs font-bold text-blue-600 hover:underline"
-                      >
-                        + Register a New Supplier
-                      </button>
-                    </td>
-                  </tr>
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
+                {supplierList.length > 0 && hasActiveFilters ? (
+                  <button
+                    type="button"
+                    onClick={handleResetFilters}
+                    className="min-h-[40px] px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600"
+                  >
+                    Reset Filters
+                  </button>
                 ) : (
-                  filteredSuppliers.map((supp) => {
-                    const linkedProds = products.filter((p) => p.supplierId === supp.id);
-                    return (
-                      <tr key={supp.id} className="hover:bg-slate-50/80 transition group">
-                        {/* Company Name & Rep */}
-                        <td className="p-3 pl-5">
-                          <button
-                            onClick={() => handleOpenDetailModal(supp)}
-                            className="font-bold text-slate-900 group-hover:text-blue-600 transition text-left cursor-pointer hover:underline"
-                          >
-                            {supp.name}
-                          </button>
-                          {supp.contactPerson && (
-                            <div className="text-[11px] text-slate-500 font-medium">
-                              Rep: {supp.contactPerson}
-                            </div>
-                          )}
-                        </td>
-
-                        {/* Category */}
-                        <td className="p-3 font-medium text-slate-600">
-                          {supp.category || 'General'}
-                        </td>
-
-                        {/* Phone & Email */}
-                        <td className="p-3">
-                          <div className="font-mono text-slate-800 font-bold">{supp.phone}</div>
-                          {supp.email && (
-                            <div className="text-[10px] text-slate-400 truncate max-w-[140px]">
-                              {supp.email}
-                            </div>
-                          )}
-                        </td>
-
-                        {/* Payment Terms */}
-                        <td className="p-3">
-                          <span className="font-bold text-[10px] uppercase bg-blue-50 text-blue-700 border border-blue-200/60 px-2 py-0.5 rounded-full">
-                            {supp.paymentTerms.replace('_', ' ')}
-                          </span>
-                        </td>
-
-                        {/* Linked Items Count */}
-                        <td className="p-3">
-                          <button
-                            onClick={() => handleOpenLinkModal(supp)}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold transition cursor-pointer"
-                            title="Manage linked inventory products"
-                          >
-                            <LinkIcon className="w-3 h-3 text-indigo-600" />
-                            <span>{linkedProds.length} items</span>
-                          </button>
-                        </td>
-
-                        {/* Lead Time */}
-                        <td className="p-3 font-mono font-medium text-slate-600">
-                          {supp.leadTimeDays || 2} days
-                        </td>
-
-                        {/* Total Invoiced */}
-                        <td className="p-3 font-mono font-bold text-slate-900">
-                          {currency} {(supp.totalInvoiced || 0).toLocaleString()}
-                        </td>
-
-                        {/* Status */}
-                        <td className="p-3">
-                          <span
-                            className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
-                              supp.status === 'active'
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : 'bg-slate-100 text-slate-600 border border-slate-200'
-                            }`}
-                          >
-                            {supp.status}
-                          </span>
-                        </td>
-
-                        {/* Actions */}
-                        <td className="p-3 text-right pr-5 space-x-2 shrink-0">
-                          <button
-                            onClick={() => handleOpenDetailModal(supp)}
-                            className="text-slate-500 hover:text-blue-600 font-bold hover:underline inline-flex items-center gap-1 cursor-pointer"
-                            title="View details & supply chain tracking"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            <span className="hidden lg:inline">View</span>
-                          </button>
-                          <button
-                            onClick={() => handleOpenEditModal(supp)}
-                            className="text-blue-600 font-bold hover:underline inline-flex items-center gap-1 cursor-pointer"
-                            title="Edit supplier profile"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                            <span className="hidden lg:inline">Edit</span>
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleOpenAddModal}
+                      className="min-h-[40px] px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600"
+                    >
+                      Register First Supplier
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenCsvModal}
+                      className="min-h-[40px] px-4 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-semibold cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600"
+                    >
+                      Import CSV
+                    </button>
+                  </>
                 )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <SupplierDirectoryTable
+                suppliers={paginatedSuppliers}
+                linkedCountMap={linkedProductCountBySupplier}
+                currency={currency}
+                sortKey={sortKey}
+                sortDirection={sortDirection}
+                onSortChange={handleSortChange}
+                onView={handleOpenDetailModal}
+                onEdit={handleOpenEditModal}
+                onLink={handleOpenLinkModal}
+              />
 
-      {/* Modals */}
+              <SupplierMobileCardList
+                suppliers={paginatedSuppliers}
+                linkedCountMap={linkedProductCountBySupplier}
+                currency={currency}
+                onView={handleOpenDetailModal}
+                onEdit={handleOpenEditModal}
+                onLink={handleOpenLinkModal}
+              />
+
+              <SupplierPaginationBar
+                currentPage={safeCurrentPage}
+                totalPages={totalPages}
+                totalItems={sortedSuppliers.length}
+                pageSize={pageSize}
+                onPageChange={setCurrentPage}
+                onPageSizeChange={handlePageSizeChange}
+              />
+            </>
+          )}
+        </section>
+      </main>
+
+      {/* Workflow Modals */}
       <SupplierFormModal
         isOpen={isFormModalOpen}
-        onClose={() => setIsFormModalOpen(false)}
+        onClose={() => {
+          setIsFormModalOpen(false);
+          restoreTriggerFocus();
+        }}
         supplierToEdit={supplierToEdit}
       />
 
       <LinkSupplierModal
         isOpen={isLinkModalOpen}
-        onClose={() => setIsLinkModalOpen(false)}
+        onClose={() => {
+          setIsLinkModalOpen(false);
+          restoreTriggerFocus();
+        }}
         supplier={supplierForLink}
       />
 
       <SupplierDetailModal
         isOpen={isDetailModalOpen}
-        onClose={() => setIsDetailModalOpen(false)}
+        onClose={() => {
+          setIsDetailModalOpen(false);
+          restoreTriggerFocus();
+        }}
         supplier={supplierForDetail}
         onEditSupplier={(s) => {
           setIsDetailModalOpen(false);
@@ -463,12 +486,23 @@ export const SupplierManagementView: React.FC = () => {
           setIsDetailModalOpen(false);
           handleOpenLinkModal(s);
         }}
-        onOpenInvoiceModal={() => setIsAiInvoiceModalOpen(true)}
+        onOpenInvoiceModal={() => handleOpenAiInvoiceModal()}
       />
 
       <SupplierInvoiceModal
         isOpen={isAiInvoiceModalOpen}
-        onClose={() => setIsAiInvoiceModalOpen(false)}
+        onClose={() => {
+          setIsAiInvoiceModalOpen(false);
+          restoreTriggerFocus();
+        }}
+      />
+
+      <SupplierCsvImportModal
+        isOpen={isCsvModalOpen}
+        onClose={() => {
+          setIsCsvModalOpen(false);
+          restoreTriggerFocus();
+        }}
       />
     </div>
   );

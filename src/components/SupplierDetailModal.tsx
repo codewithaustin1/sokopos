@@ -1,26 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useId } from 'react';
 import {
   X,
   Building2,
-  Phone,
-  Mail,
-  MapPin,
-  Calendar,
-  Clock,
-  FileText,
-  CreditCard,
   Edit2,
   Trash2,
   Package,
   Plus,
-  Link as LinkIcon,
   CheckCircle2,
+  PauseCircle,
   AlertTriangle,
   ArrowRight,
-  TrendingUp,
+  Loader2,
 } from 'lucide-react';
-import { Supplier, Product } from '../types';
+import { Supplier } from '../types';
 import { usePos } from '../context/PosContext';
+import { formatPaymentTermsLabel } from './suppliers/supplierConstants';
 
 interface SupplierDetailModalProps {
   isOpen: boolean;
@@ -39,320 +33,458 @@ export const SupplierDetailModal: React.FC<SupplierDetailModalProps> = ({
   onOpenLinkModal,
   onOpenInvoiceModal,
 }) => {
-  const { products, deleteSupplier, currentLocation, currentBusiness, linkProductToSupplier } = usePos();
+  const { products, deleteSupplier, currentLocation, currentBusiness, linkProductToSupplier } =
+    usePos();
   const [activeTab, setActiveTab] = useState<'overview' | 'catalog'>('overview');
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const titleId = useId();
+  const overviewTabId = useId();
+  const catalogTabId = useId();
+  const overviewPanelId = useId();
+  const catalogPanelId = useId();
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setActiveTab('overview');
+    setIsConfirmingDelete(false);
+    setIsDeleting(false);
+    requestAnimationFrame(() => {
+      closeButtonRef.current?.focus();
+    });
+  }, [isOpen, supplier?.id]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isDeleting) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isDeleting, onClose]);
+
+  const { linkedProducts, totalBranchStock, lowStockCount } = useMemo(() => {
+    if (!supplier) {
+      return { linkedProducts: [], totalBranchStock: 0, lowStockCount: 0 };
+    }
+    const locId = currentLocation?.id || '';
+    const linked = products.filter((p) => p.supplierId === supplier.id);
+    let totalStock = 0;
+    let lowCount = 0;
+
+    linked.forEach((p) => {
+      const stock = p.stockByLocation[locId] ?? 0;
+      totalStock += stock;
+      if (stock <= p.reorderPoint) lowCount += 1;
+    });
+
+    return {
+      linkedProducts: linked,
+      totalBranchStock: totalStock,
+      lowStockCount: lowCount,
+    };
+  }, [products, supplier, currentLocation?.id]);
 
   if (!isOpen || !supplier) return null;
 
-  const linkedProducts = products.filter((p) => p.supplierId === supplier.id);
   const currency = currentBusiness?.currency || currentLocation?.currency || 'KES';
-
-  // Compute total stock of supplied products at current branch
-  const totalBranchStock = linkedProducts.reduce((sum, p) => {
-    return sum + (p.stockByLocation[currentLocation.id] ?? 0);
-  }, 0);
-
-  const lowStockCount = linkedProducts.filter((p) => {
-    const stock = p.stockByLocation[currentLocation.id] ?? 0;
-    return stock <= p.reorderPoint;
-  }).length;
+  const isActive = supplier.status === 'active';
 
   const handleDelete = async () => {
-    await deleteSupplier(supplier.id);
-    onClose();
+    setIsDeleting(true);
+    try {
+      await deleteSupplier(supplier.id);
+      onClose();
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
-    <div id="supplier-detail-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4">
-      <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-150">
+    <div
+      id="supplier-detail-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-[1px] p-2 sm:p-4"
+    >
+      <div className="bg-white w-full max-w-2xl rounded-xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[92vh]">
         {/* Header */}
-        <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold text-lg shadow-xs">
+        <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div
+              className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center text-white shrink-0"
+              aria-hidden="true"
+            >
               <Building2 className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-bold text-base sm:text-lg">{supplier.name}</h3>
+            <div className="min-w-0">
+              <h3 id={titleId} className="font-bold text-base sm:text-lg text-white truncate">
+                {supplier.name}
+              </h3>
+              <div className="text-xs text-slate-300 flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
                 <span
-                  className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
-                    supplier.status === 'active'
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                      : 'bg-slate-700 text-slate-400'
+                  className={`inline-flex items-center gap-1 font-semibold ${
+                    isActive ? 'text-emerald-300' : 'text-slate-300'
                   }`}
                 >
-                  {supplier.status}
+                  {isActive ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  ) : (
+                    <PauseCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  )}
+                  <span>{isActive ? 'Active' : 'Inactive'}</span>
                 </span>
+                <span aria-hidden="true">·</span>
+                <span>{supplier.category || 'General Supplies'}</span>
+                <span aria-hidden="true">·</span>
+                <span>{formatPaymentTermsLabel(supplier.paymentTerms)}</span>
               </div>
-              <p className="text-xs text-slate-400">
-                {supplier.category || 'General Supplies'} • Terms: {supplier.paymentTerms.toUpperCase()}
-              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
+              type="button"
               onClick={() => onEditSupplier(supplier)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              aria-label={`Edit profile for ${supplier.name}`}
               title="Edit Profile"
+              className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer focus-visible:outline-2 focus-visible:outline-white"
             >
-              <Edit2 className="w-4 h-4" />
+              <Edit2 className="w-4 h-4" aria-hidden="true" />
             </button>
             <button
+              ref={closeButtonRef}
+              type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              disabled={isDeleting}
+              aria-label="Close supplier details modal"
+              className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-white"
             >
-              <X className="w-5 h-5" />
+              <X className="w-5 h-5" aria-hidden="true" />
             </button>
           </div>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex border-b border-slate-200 bg-slate-50 px-5 shrink-0">
+        {/* Accessible Tab Navigation */}
+        <div
+          role="tablist"
+          aria-label="Supplier detail sections"
+          className="flex border-b border-slate-200 bg-slate-50 px-5 shrink-0"
+        >
           <button
+            id={overviewTabId}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'overview'}
+            aria-controls={overviewPanelId}
             onClick={() => setActiveTab('overview')}
-            className={`py-2.5 px-4 text-xs font-bold border-b-2 transition cursor-pointer ${
+            className={`min-h-[44px] py-2.5 px-4 text-xs font-semibold border-b-2 transition cursor-pointer whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 ${
               activeTab === 'overview'
-                ? 'border-blue-600 text-blue-600 bg-white'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
+                ? 'border-blue-600 text-blue-700 bg-white'
+                : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
-            Overview & Account Details
+            Overview &amp; Account Details
           </button>
           <button
+            id={catalogTabId}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'catalog'}
+            aria-controls={catalogPanelId}
             onClick={() => setActiveTab('catalog')}
-            className={`py-2.5 px-4 text-xs font-bold border-b-2 transition cursor-pointer flex items-center gap-1.5 ${
+            className={`min-h-[44px] py-2.5 px-4 text-xs font-semibold border-b-2 transition cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600 ${
               activeTab === 'catalog'
-                ? 'border-blue-600 text-blue-600 bg-white'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
+                ? 'border-blue-600 text-blue-700 bg-white'
+                : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
             <span>Linked Catalog Items</span>
-            <span className="bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.2 rounded-full font-black">
-              {linkedProducts.length}
+            <span className="font-mono tabular-nums text-slate-600">
+              ({linkedProducts.length})
             </span>
           </button>
         </div>
 
         {/* Tab Viewport */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
-          {activeTab === 'overview' && (
-            <div className="space-y-4">
-              {/* Aggregates Summary Strip */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                <div className="bg-blue-50/70 border border-blue-100 rounded-xl p-3">
-                  <div className="text-[10px] font-black uppercase text-blue-600">Supplied Products</div>
-                  <div className="text-xl font-black text-blue-900 mt-0.5">{linkedProducts.length}</div>
-                  <div className="text-[10px] text-blue-700/80">In store catalog</div>
-                </div>
-
-                <div className="bg-emerald-50/70 border border-emerald-100 rounded-xl p-3">
-                  <div className="text-[10px] font-black uppercase text-emerald-600">Units in Stock</div>
-                  <div className="text-xl font-black text-emerald-900 mt-0.5">{totalBranchStock}</div>
-                  <div className="text-[10px] text-emerald-700/80">At {currentLocation.name.split(' ')[0]}</div>
-                </div>
-
-                <div className="bg-amber-50/70 border border-amber-100 rounded-xl p-3">
-                  <div className="text-[10px] font-black uppercase text-amber-600">Lead Time</div>
-                  <div className="text-xl font-black text-amber-900 mt-0.5">
-                    {supplier.leadTimeDays || 2} <span className="text-xs font-bold">days</span>
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-5 flex-1">
+          {activeTab === 'overview' ? (
+            <div
+              id={overviewPanelId}
+              role="tabpanel"
+              aria-labelledby={overviewTabId}
+              className="space-y-5"
+            >
+              {/* Summary Metrics Strip */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pb-4 border-b border-slate-200">
+                <div>
+                  <div className="text-xs font-semibold text-slate-600">Supplied Products</div>
+                  <div className="text-xl font-bold font-mono tabular-nums text-slate-900 mt-0.5">
+                    {linkedProducts.length}
                   </div>
-                  <div className="text-[10px] text-amber-700/80">Delivery window</div>
+                  <div className="text-xs text-slate-600">In catalog</div>
                 </div>
 
-                <div className="bg-purple-50/70 border border-purple-100 rounded-xl p-3">
-                  <div className="text-[10px] font-black uppercase text-purple-600">Total Purchases</div>
-                  <div className="text-base font-black text-purple-900 mt-0.5 truncate">
+                <div>
+                  <div className="text-xs font-semibold text-slate-600">Units in Stock</div>
+                  <div className="text-xl font-bold font-mono tabular-nums text-emerald-700 mt-0.5">
+                    {totalBranchStock.toLocaleString()}
+                  </div>
+                  <div className="text-xs text-slate-600 truncate">
+                    At {currentLocation.name.split(' ')[0]}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-xs font-semibold text-slate-600">Lead Time</div>
+                  <div className="text-xl font-bold font-mono tabular-nums text-slate-900 mt-0.5">
+                    {supplier.leadTimeDays ?? 2} <span className="text-xs font-sans">days</span>
+                  </div>
+                  <div className="text-xs text-slate-600">Delivery window</div>
+                </div>
+
+                <div>
+                  <div className="text-xs font-semibold text-slate-600">Total Purchases</div>
+                  <div className="text-base sm:text-lg font-bold font-mono tabular-nums text-slate-900 mt-0.5 truncate">
                     {currency} {(supplier.totalInvoiced || 0).toLocaleString()}
                   </div>
-                  <div className="text-[10px] text-purple-700/80">{supplier.ordersCount || 0} shipments</div>
+                  <div className="text-xs text-slate-600 font-mono tabular-nums">
+                    {supplier.ordersCount || 0} shipments
+                  </div>
                 </div>
               </div>
 
-              {/* Low stock alert callout if any */}
+              {/* Low Stock Callout */}
               {lowStockCount > 0 && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                    <span className="font-bold text-amber-900">
-                      {lowStockCount} linked product{lowStockCount > 1 ? 's are' : ' is'} below reorder threshold.
+                <div
+                  role="status"
+                  className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2 text-xs"
+                >
+                  <div className="flex items-center gap-2 text-amber-900 font-semibold">
+                    <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" aria-hidden="true" />
+                    <span>
+                      {lowStockCount} linked product{lowStockCount > 1 ? 's are' : ' is'} at or
+                      below reorder threshold.
                     </span>
                   </div>
                   <button
+                    type="button"
                     onClick={() => setActiveTab('catalog')}
-                    className="font-bold text-amber-800 hover:underline shrink-0"
+                    className="font-semibold text-amber-900 hover:underline shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-amber-700 rounded px-1"
                   >
                     View Items →
                   </button>
                 </div>
               )}
 
-              {/* Contact & Banking Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                {/* Contact Card */}
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2.5">
-                  <div className="text-xs font-black uppercase tracking-wider text-slate-500">
-                    Contact & Logistics
-                  </div>
-                  <div className="space-y-1.5 text-xs text-slate-700">
+              {/* Contact & Settlement Details (Divider-separated grid) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <section aria-label="Contact and logistics" className="space-y-2.5">
+                  <h4 className="text-xs font-bold text-slate-900 pb-1.5 border-b border-slate-200">
+                    Contact &amp; Logistics
+                  </h4>
+                  <dl className="space-y-2 text-xs text-slate-800">
                     {supplier.contactPerson && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-slate-400 text-[11px] font-medium w-24">Sales Rep:</span>
-                        <span className="font-bold text-slate-900">{supplier.contactPerson}</span>
+                      <div className="flex items-baseline gap-2">
+                        <dt className="text-slate-600 font-medium w-24 shrink-0">Sales Rep:</dt>
+                        <dd className="font-semibold text-slate-900">{supplier.contactPerson}</dd>
                       </div>
                     )}
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-400 text-[11px] font-medium w-24">Phone:</span>
-                      <a href={`tel:${supplier.phone}`} className="font-mono font-bold text-blue-600 hover:underline">
-                        {supplier.phone}
-                      </a>
+                    <div className="flex items-baseline gap-2">
+                      <dt className="text-slate-600 font-medium w-24 shrink-0">Phone:</dt>
+                      <dd>
+                        <a
+                          href={`tel:${supplier.phone}`}
+                          className="font-mono tabular-nums font-semibold text-blue-700 hover:underline focus-visible:outline-2 focus-visible:outline-blue-600 rounded"
+                        >
+                          {supplier.phone}
+                        </a>
+                      </dd>
                     </div>
                     {supplier.email && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-slate-400 text-[11px] font-medium w-24">Email:</span>
-                        <a href={`mailto:${supplier.email}`} className="text-slate-800 hover:underline truncate">
-                          {supplier.email}
-                        </a>
+                      <div className="flex items-baseline gap-2">
+                        <dt className="text-slate-600 font-medium w-24 shrink-0">Email:</dt>
+                        <dd className="min-w-0">
+                          <a
+                            href={`mailto:${supplier.email}`}
+                            className="text-slate-800 hover:text-blue-700 hover:underline truncate block focus-visible:outline-2 focus-visible:outline-blue-600 rounded"
+                          >
+                            {supplier.email}
+                          </a>
+                        </dd>
                       </div>
                     )}
                     {supplier.address && (
-                      <div className="flex items-start gap-2">
-                        <span className="text-slate-400 text-[11px] font-medium w-24 shrink-0">Depot Address:</span>
-                        <span className="text-slate-800">{supplier.address}, {supplier.city}</span>
+                      <div className="flex items-baseline gap-2">
+                        <dt className="text-slate-600 font-medium w-24 shrink-0">Address:</dt>
+                        <dd className="text-slate-800">
+                          {supplier.address}
+                          {supplier.city ? `, ${supplier.city}` : ''}
+                        </dd>
                       </div>
                     )}
-                  </div>
-                </div>
+                  </dl>
+                </section>
 
-                {/* Remittance Card */}
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2.5">
-                  <div className="text-xs font-black uppercase tracking-wider text-slate-500">
-                    Settlement & Tax Compliance
-                  </div>
-                  <div className="space-y-1.5 text-xs text-slate-700">
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-400 text-[11px] font-medium w-24">Payment Terms:</span>
-                      <span className="font-black text-blue-700 uppercase bg-blue-100/60 px-2 py-0.5 rounded-full text-[10px]">
-                        {supplier.paymentTerms.replace('_', ' ')}
-                      </span>
+                <section aria-label="Settlement and tax compliance" className="space-y-2.5">
+                  <h4 className="text-xs font-bold text-slate-900 pb-1.5 border-b border-slate-200">
+                    Settlement &amp; Tax Compliance
+                  </h4>
+                  <dl className="space-y-2 text-xs text-slate-800">
+                    <div className="flex items-baseline gap-2">
+                      <dt className="text-slate-600 font-medium w-24 shrink-0">Terms:</dt>
+                      <dd className="font-semibold text-blue-800">
+                        {formatPaymentTermsLabel(supplier.paymentTerms)}
+                      </dd>
                     </div>
                     {supplier.kraPin && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-slate-400 text-[11px] font-medium w-24">KRA PIN:</span>
-                        <span className="font-mono font-bold text-slate-900">{supplier.kraPin}</span>
+                      <div className="flex items-baseline gap-2">
+                        <dt className="text-slate-600 font-medium w-24 shrink-0">KRA PIN:</dt>
+                        <dd className="font-mono font-semibold text-slate-900">
+                          {supplier.kraPin}
+                        </dd>
                       </div>
                     )}
                     {supplier.mpesaPaybillOrTill && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-slate-400 text-[11px] font-medium w-24">M-Pesa Till:</span>
-                        <span className="font-mono font-bold text-emerald-700">{supplier.mpesaPaybillOrTill}</span>
+                      <div className="flex items-baseline gap-2">
+                        <dt className="text-slate-600 font-medium w-24 shrink-0">M-Pesa:</dt>
+                        <dd className="font-mono font-semibold text-emerald-700">
+                          {supplier.mpesaPaybillOrTill}
+                        </dd>
                       </div>
                     )}
-                    {supplier.bankName && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-slate-400 text-[11px] font-medium w-24">Bank Account:</span>
-                        <span className="font-mono text-slate-800">{supplier.bankName} {supplier.bankAccount}</span>
+                    {(supplier.bankName || supplier.bankAccount) && (
+                      <div className="flex items-baseline gap-2">
+                        <dt className="text-slate-600 font-medium w-24 shrink-0">Bank:</dt>
+                        <dd className="font-mono text-slate-800">
+                          {[supplier.bankName, supplier.bankAccount].filter(Boolean).join(' · ')}
+                        </dd>
                       </div>
                     )}
-                  </div>
-                </div>
+                  </dl>
+                </section>
               </div>
 
-              {/* Notes */}
+              {/* Operational Notes */}
               {supplier.notes && (
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                    Route Schedules & Operational Notes
-                  </div>
-                  <p className="text-xs text-slate-700 whitespace-pre-wrap">{supplier.notes}</p>
+                <div className="pt-3 border-t border-slate-200">
+                  <h4 className="text-xs font-bold text-slate-700 mb-1">
+                    Route Schedules &amp; Operational Notes
+                  </h4>
+                  <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
+                    {supplier.notes}
+                  </p>
                 </div>
               )}
             </div>
-          )}
-
-          {activeTab === 'catalog' && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
+          ) : (
+            <div
+              id={catalogPanelId}
+              role="tabpanel"
+              aria-labelledby={catalogTabId}
+              className="space-y-3"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h4 className="text-xs font-bold text-slate-800">
-                    Supplied Inventory Catalog ({linkedProducts.length} items)
+                  <h4 className="text-xs font-bold text-slate-900">
+                    Supplied Inventory Catalog ({linkedProducts.length} item
+                    {linkedProducts.length === 1 ? '' : 's'})
                   </h4>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-xs text-slate-600">
                     Inventory items sourced from {supplier.name}
                   </p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => onOpenLinkModal(supplier)}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3 py-1.5 rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                  className="min-h-[38px] bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-3 py-1.5 rounded-lg transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap focus-visible:outline-2 focus-visible:outline-indigo-600"
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus className="w-3.5 h-3.5" aria-hidden="true" />
                   <span>Link / Unlink Products</span>
                 </button>
               </div>
 
               {linkedProducts.length === 0 ? (
-                <div className="text-center py-10 bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-2">
-                  <Package className="w-8 h-8 text-slate-400 mx-auto" />
-                  <p className="text-xs font-bold text-slate-600">No products linked yet</p>
-                  <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
-                    Link specific items to this supplier to track inventory replenishment, order lead times, and unit cost margins.
+                <div className="text-center py-8 border border-dashed border-slate-300 rounded-xl space-y-2 px-4">
+                  <Package className="w-8 h-8 text-slate-400 mx-auto" aria-hidden="true" />
+                  <p className="text-xs font-bold text-slate-800">No products linked yet</p>
+                  <p className="text-xs text-slate-600 max-w-sm mx-auto">
+                    Link catalog items to track inventory replenishment, order lead times, and cost
+                    margins for this vendor.
                   </p>
                   <button
+                    type="button"
                     onClick={() => onOpenLinkModal(supplier)}
-                    className="mt-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 text-xs font-bold px-3 py-1.5 rounded-xl transition"
+                    className="min-h-[38px] mt-1 bg-indigo-50 text-indigo-800 hover:bg-indigo-100 border border-indigo-200 text-xs font-semibold px-3.5 py-1.5 rounded-lg transition cursor-pointer focus-visible:outline-2 focus-visible:outline-indigo-600"
                   >
                     Select Products to Link
                   </button>
                 </div>
               ) : (
-                <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden bg-white">
+                <div className="divide-y divide-slate-200 border border-slate-200 rounded-xl overflow-hidden bg-white">
                   {linkedProducts.map((p) => {
                     const currentStock = p.stockByLocation[currentLocation.id] ?? 0;
                     const isLow = currentStock <= p.reorderPoint;
                     const margin =
                       p.sellingPrice > 0
                         ? (((p.sellingPrice - p.buyingPrice) / p.sellingPrice) * 100).toFixed(1)
-                        : '0';
+                        : '0.0';
 
                     return (
-                      <div key={p.id} className="p-3 flex items-center justify-between gap-3 hover:bg-slate-50 transition">
+                      <div
+                        key={p.id}
+                        className="p-3 flex items-center justify-between gap-3 hover:bg-slate-50 transition"
+                      >
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-slate-900 truncate">{p.name}</span>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-bold text-slate-900 truncate">
+                              {p.name}
+                            </span>
                             {isLow && (
-                              <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-1.5 py-0.2 rounded-full">
-                                Low ({currentStock} left)
+                              <span className="inline-flex items-center gap-1 text-amber-800 text-xs font-semibold">
+                                <AlertTriangle className="w-3 h-3 shrink-0" aria-hidden="true" />
+                                <span>Low ({currentStock} left)</span>
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono mt-0.5">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-600 font-mono tabular-nums mt-0.5">
                             <span>SKU: {p.sku}</span>
-                            <span>•</span>
-                            <span>Cost: {currency} {p.buyingPrice.toFixed(2)}</span>
-                            <span>•</span>
-                            <span>Price: {currency} {p.sellingPrice.toFixed(2)}</span>
-                            <span>•</span>
-                            <span className="text-emerald-700 font-bold">{margin}% Margin</span>
+                            <span aria-hidden="true">·</span>
+                            <span>
+                              Cost: {currency} {p.buyingPrice.toFixed(2)}
+                            </span>
+                            <span aria-hidden="true">·</span>
+                            <span>
+                              Price: {currency} {p.sellingPrice.toFixed(2)}
+                            </span>
+                            <span aria-hidden="true">·</span>
+                            <span className="text-emerald-700 font-semibold">{margin}% margin</span>
                           </div>
                         </div>
 
                         <div className="flex items-center gap-2 shrink-0">
                           <div className="text-right">
-                            <div className="text-xs font-bold font-mono text-slate-800">
-                              {currentStock} {p.unit}s
+                            <div className="text-xs font-bold font-mono tabular-nums text-slate-900">
+                              {currentStock} {p.unit}
                             </div>
-                            <div className="text-[10px] text-slate-400">
-                              Reorder at {p.reorderPoint}
+                            <div className="text-xs text-slate-600 font-mono tabular-nums">
+                              Reorder ≤ {p.reorderPoint}
                             </div>
                           </div>
 
                           <button
+                            type="button"
                             onClick={() => linkProductToSupplier(p.id, null)}
-                            className="text-slate-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition cursor-pointer"
-                            title="Unlink this product"
+                            aria-label={`Unlink ${p.name} from ${supplier.name}`}
+                            title="Unlink product"
+                            className="min-w-[38px] min-h-[38px] flex items-center justify-center text-slate-500 hover:text-red-700 rounded-lg hover:bg-red-50 transition cursor-pointer focus-visible:outline-2 focus-visible:outline-red-600"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-4 h-4" aria-hidden="true" />
                           </button>
                         </div>
                       </div>
@@ -363,59 +495,71 @@ export const SupplierDetailModal: React.FC<SupplierDetailModalProps> = ({
             </div>
           )}
 
-          {/* Delete safeguard zone */}
+          {/* Delete Safeguard Zone */}
           <div className="pt-4 border-t border-slate-200">
             {isConfirmingDelete ? (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-center justify-between gap-2">
-                <div className="text-xs text-red-900 font-bold">
-                  Delete supplier "{supplier.name}"? Products will be unlinked.
+              <div
+                role="alert"
+                className="bg-red-50 border border-red-200 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2"
+              >
+                <div className="text-xs text-red-900 font-semibold">
+                  Delete supplier &ldquo;{supplier.name}&rdquo;? Linked products will remain in your
+                  catalog.
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 ml-auto">
                   <button
+                    type="button"
+                    disabled={isDeleting}
                     onClick={() => setIsConfirmingDelete(false)}
-                    className="text-xs px-2.5 py-1 rounded-lg bg-white border border-slate-300 text-slate-700 font-semibold"
+                    className="min-h-[38px] text-xs px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-800 font-semibold cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600"
                   >
                     Cancel
                   </button>
                   <button
+                    type="button"
+                    disabled={isDeleting}
                     onClick={handleDelete}
-                    className="text-xs px-3 py-1 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold transition shadow-2xs"
+                    className="min-h-[38px] text-xs px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold transition inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-red-700"
                   >
-                    Confirm Delete
+                    {isDeleting && <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />}
+                    <span>Confirm Delete</span>
                   </button>
                 </div>
               </div>
             ) : (
               <button
+                type="button"
                 onClick={() => setIsConfirmingDelete(true)}
-                className="text-xs font-bold text-red-600 hover:text-red-700 hover:underline flex items-center gap-1 cursor-pointer"
+                className="min-h-[38px] text-xs font-semibold text-red-700 hover:text-red-800 hover:underline inline-flex items-center gap-1.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-red-600 rounded px-1"
               >
-                <Trash2 className="w-3.5 h-3.5" />
+                <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>Delete Supplier Record</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Modal Footer */}
-        <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2">
+        {/* Footer */}
+        <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
+          <div>
             {onOpenInvoiceModal && (
               <button
+                type="button"
                 onClick={() => {
                   onClose();
                   onOpenInvoiceModal();
                 }}
-                className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1"
+                className="min-h-[38px] text-xs font-semibold text-blue-700 hover:underline inline-flex items-center gap-1 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600 rounded px-1"
               >
                 <span>AI Invoice Receiving</span>
-                <ArrowRight className="w-3.5 h-3.5" />
+                <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             )}
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-4 py-2 rounded-xl transition cursor-pointer"
+            className="min-h-[40px] bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs px-4 py-2 rounded-lg transition cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600"
           >
             Close
           </button>

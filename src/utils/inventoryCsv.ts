@@ -75,21 +75,38 @@ export function downloadProductCsvTemplate(locations: Location[]): void {
     'Description',
     ...branchCols,
   ];
-  const sampleRow = [
-    'Jogoo Maize Meal 2kg',
-    'SKU-1042',
-    '6161100123456',
-    'Flour & Grains',
-    '',
-    '145.00',
-    '180.00',
-    'packet',
-    '15',
-    'Fortified sifted maize meal',
-    ...branchCols.map(() => '25'),
+  const sampleRows = [
+    [
+      'Jogoo Maize Meal 2kg',
+      'SKU-1042',
+      '6161100123456',
+      'Flour & Grains',
+      'Unga Mills East Africa Ltd',
+      '145.00',
+      '180.00',
+      'packet',
+      '15',
+      'Fortified sifted maize meal',
+      ...branchCols.map(() => '25'),
+    ],
+    [
+      'Brookside Fresh Milk 500ml',
+      'SKU-2085',
+      '6161100654321',
+      'Dairy & Eggs',
+      'Brookside Dairy Ltd',
+      '52.00',
+      '65.00',
+      'carton',
+      '20',
+      'Pasteurized whole milk pouch',
+      ...branchCols.map(() => '40'),
+    ],
   ];
-  const csv = [headers, sampleRow].map((row) => row.map(escapeCsvCell).join(',')).join('\r\n');
-  triggerCsvDownload(csv, 'sokopos-catalog-template.csv');
+  const csv = [headers, ...sampleRows]
+    .map((row) => row.map(escapeCsvCell).join(','))
+    .join('\r\n');
+  triggerCsvDownload(csv, 'sokopos-products-template.csv');
 }
 
 export function parseCsvMatrix(rawText: string): string[][] {
@@ -155,10 +172,14 @@ export function analyzeImportedProductsCsv(
   suppliers: Supplier[],
   locations: Location[],
   activeLocationId: string
-): { headers: string[]; rows: ParsedCsvProductRow[] } {
+): { headers: string[]; missingRequiredColumns: string[]; rows: ParsedCsvProductRow[] } {
   const matrix = parseCsvMatrix(csvText);
-  if (matrix.length < 2) {
-    return { headers: matrix[0] || [], rows: [] };
+  if (matrix.length === 0) {
+    return {
+      headers: [],
+      missingRequiredColumns: ['Name', 'Selling Price'],
+      rows: [],
+    };
   }
 
   const rawHeaders = matrix[0];
@@ -177,6 +198,18 @@ export function analyzeImportedProductsCsv(
   const unitIdx = findCol(['unit', 'uom']);
   const reorderIdx = findCol(['reorder point', 'reorder', 'min stock']);
   const descIdx = findCol(['description', 'notes']);
+
+  const missingRequiredColumns: string[] = [];
+  if (nameIdx < 0) missingRequiredColumns.push('Name');
+  if (sellingIdx < 0) missingRequiredColumns.push('Selling Price');
+
+  if (matrix.length < 2) {
+    return {
+      headers: rawHeaders,
+      missingRequiredColumns,
+      rows: [],
+    };
+  }
 
   // Map stock columns to locations
   const branchStockCols: Array<{ colIndex: number; locationId: string }> = [];
@@ -272,5 +305,5 @@ export function analyzeImportedProductsCsv(
     });
   }
 
-  return { headers: rawHeaders, rows };
+  return { headers: rawHeaders, missingRequiredColumns, rows };
 }

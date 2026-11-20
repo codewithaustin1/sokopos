@@ -7,6 +7,7 @@ import {
 import { AppLogo } from './common/AppLogo';
 import { AppFooter } from './common/AppFooter';
 import { MobileHeaderNav } from './common/MobileHeaderNav';
+import { PWAInstallButton } from './PWAInstallButton';
 import { WhatsAppFloatingButton } from './landing/WhatsAppFloatingButton';
 import { usePos } from '../context/PosContext';
 import { DEFAULT_PRICING_TIERS } from '../types/pricing';
@@ -505,7 +506,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
         }
       `}</style>
 
-      {/* Top Navigation Bar: Light mode matching landing page */}
+      {/* Top Navigation Bar: Matches landing/sign-in page header */}
       <header
         className="px-4 sm:px-8 py-3.5 border-b border-[#d9e1e6] bg-[#f4f7f6]/95 backdrop-blur-md shadow-xs flex items-center justify-between shrink-0 sticky top-0 z-50 transition-colors"
       >
@@ -515,70 +516,72 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
         {/* Quick Nav Anchors for Desktop Visitors */}
         <nav className="hidden lg:flex items-center gap-6 text-xs font-semibold text-[#4c5a6b]">
           <a
-            href="#industry-solutions"
+            href="#solutions"
             onClick={(e) => {
               e.preventDefault();
-              navigateToSection('industry-solutions');
+              navigateToSection('solutions');
             }}
-            className="hover:text-[#059669] transition"
+            className="hover:text-[#059669] transition cursor-pointer whitespace-nowrap shrink-0"
           >
-            Solutions
+            Your Shop
           </a>
           <a
-            href="#kenya-payments"
+            href="#payments"
             onClick={(e) => {
               e.preventDefault();
-              navigateToSection('kenya-payments');
+              navigateToSection('payments');
             }}
-            className="hover:text-[#059669] transition"
+            className="hover:text-[#059669] transition cursor-pointer whitespace-nowrap shrink-0"
           >
             M-Pesa &amp; eTIMS
           </a>
           <a
-            href="#hardware-guide"
+            href="#hardware"
             onClick={(e) => {
               e.preventDefault();
-              navigateToSection('hardware-guide');
+              navigateToSection('hardware');
             }}
-            className="hover:text-[#059669] transition"
+            className="hover:text-[#059669] transition cursor-pointer whitespace-nowrap shrink-0"
           >
-            Hardware Freedom
+            Use Your Hardware
           </a>
           <a
-            href="#pricing-comparison"
+            href="#compare"
             onClick={(e) => {
               e.preventDefault();
-              navigateToSection('pricing-comparison');
+              navigateToSection('compare');
             }}
-            className="hover:text-[#059669] transition"
+            className="hover:text-[#059669] transition cursor-pointer whitespace-nowrap shrink-0"
           >
-            Why SokoPoS
+            Why Switch
           </a>
         </nav>
 
         {/* Action Buttons & Mobile Hamburger Menu */}
-        <div className="flex items-center gap-2 sm:gap-2.5">
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+          <PWAInstallButton variant="compact" />
+
           {currentUser ? (
             <button
               type="button"
               id="pricing-top-nav-pos-terminal-btn"
               onClick={onBackToLogin}
-              className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition cursor-pointer"
+              className="px-3.5 py-2 min-h-[40px] rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition cursor-pointer whitespace-nowrap shrink-0"
             >
-              <Monitor className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Enter POS Terminal</span>
-              <span className="sm:hidden">Terminal</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              <Monitor className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">Open Till</span>
+              <span className="sm:hidden">Till</span>
+              <ArrowRight className="w-3.5 h-3.5 shrink-0" />
             </button>
           ) : (
-            /* Desktop View: Text Login Button in header (returns to login) */
+            /* Desktop View: Text Sign In Button in header (returns to sign-in page) */
             <button
               type="button"
               id="pricing-top-nav-login-btn"
               onClick={onBackToLogin}
-              className="hidden sm:inline-flex items-center px-4 py-1.5 rounded-xl bg-[#059669] hover:bg-[#047857] text-white font-bold text-xs shadow-md shadow-emerald-500/20 transition cursor-pointer"
+              className="hidden sm:inline-flex items-center px-4 py-2 min-h-[40px] rounded-xl bg-[#059669] hover:bg-[#047857] text-white font-bold text-xs shadow-md shadow-emerald-500/20 transition cursor-pointer whitespace-nowrap shrink-0"
             >
-              Login
+              Sign In
             </button>
           )}
 

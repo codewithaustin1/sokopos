@@ -1,46 +1,30 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useDeferredValue, useEffect } from 'react';
+import { Printer, FileSpreadsheet, Lock } from 'lucide-react';
 import {
-  FileText,
-  Printer,
-  FileSpreadsheet,
-  Search,
-  Filter,
-  ArrowUpDown,
-  Coins,
-  Receipt,
-  Package,
-  CreditCard,
-  Percent,
-  RotateCcw,
-  Users,
-  Award,
-  Tag,
-  AlertTriangle,
-  TrendingUp,
-  Truck,
-  ShieldCheck,
-  Calendar,
-  Layers,
-  ChevronRight,
-  Lock,
-} from 'lucide-react';
-import { Transaction, Product, Location, Cashier, Business, SuperAdminAuditEntry } from '../../types';
-import { DateRange, ReportType, REPORT_REGISTRY, ReportCategory, ReportMeta } from '../../types/reporting';
+  Transaction,
+  Product,
+  Location,
+  Cashier,
+  Business,
+  SuperAdminAuditEntry,
+} from '../../types';
 import {
-  calculateSalesReport,
-  calculateStockReport,
-  calculatePaymentMethodReport,
-  calculateTaxVatReport,
-  calculateProfitMarginReport,
-  calculateShiftTillReport,
-  calculateRefundVoidReport,
-  exportToCsv,
-} from '../../utils/reportCalculations';
-import { ReportPrintModal, ReportPrintData } from './ReportPrintModal';
+  DateRange,
+  ReportType,
+  REPORT_REGISTRY,
+  ReportCategory,
+  ReportMeta,
+} from '../../types/reporting';
+import { exportToCsv } from '../../utils/reportCalculations';
+import { ReportPrintModal } from './ReportPrintModal';
 import { formatRangeDisplay } from '../../utils/dateRangeUtils';
 import { usePos } from '../../context/PosContext';
 import { printReportDocument } from '../../utils/reportPrinter';
 import { soundFx as directSoundFx } from '../../utils/audio';
+import { useActiveReportPayload } from './useActiveReportPayload';
+import { ReportNavigationBar } from './ReportNavigationBar';
+import { ReportSummaryGrid } from './ReportSummaryGrid';
+import { ReportDataDisplay, SortState } from './ReportDataDisplay';
 
 interface ReportViewContainerProps {
   transactions: Transaction[];
@@ -54,6 +38,13 @@ interface ReportViewContainerProps {
   dateRange: DateRange;
   selectedLocationId: string;
 }
+
+const FREE_CORE_REPORT_IDS = new Set<ReportType>([
+  'sales',
+  'stock',
+  'payment_methods',
+  'shift_till',
+]);
 
 export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
   transactions,
@@ -79,41 +70,62 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
     isSuperAdmin,
     requireCapability,
   } = usePos();
+
   const canUseAdvancedReports = isSuperAdmin || entitlements.capabilities.advancedReportsAndExport;
-  const FREE_CORE_REPORT_IDS = new Set<ReportType>(['sales', 'stock', 'payment_methods', 'shift_till']);
-  const isReportLocked = (meta: ReportMeta) =>
-    !canUseAdvancedReports && !FREE_CORE_REPORT_IDS.has(meta.id);
   const audio = soundFx || directSoundFx;
+
   const [activeReportId, setActiveReportId] = useState<ReportType>('sales');
   const [phaseFilter, setPhaseFilter] = useState<'all' | ReportCategory>('phase1');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const [sortState, setSortState] = useState<SortState | null>(null);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(25);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
 
-  const handleReprintTransaction = (receiptNumOrId: string) => {
-    const clean = receiptNumOrId.replace(/^#/, '').trim().toLowerCase();
-    const targetTx = transactions.find(
-      (t) =>
-        t.receiptNumber.toLowerCase() === clean ||
-        t.id.toLowerCase() === clean ||
-        `#${t.receiptNumber.toLowerCase()}` === clean
-    );
+  const isReportLocked = useCallback(
+    (meta: ReportMeta) => !canUseAdvancedReports && !FREE_CORE_REPORT_IDS.has(meta.id),
+    [canUseAdvancedReports]
+  );
 
-    if (targetTx) {
-      audio.playBarcodeBeep();
-      setActiveReceipt({
-        ...targetTx,
-        isReprint: true,
-        reprintedAt: new Date().toISOString(),
-      });
-      showToast(
-        `Duplicate receipt loaded for #${targetTx.receiptNumber}. Ready to provide customer copy.`,
-        'info'
+  // Reset sorting and pagination cleanly when switching report scope
+  useEffect(() => {
+    setSortState(null);
+    setCurrentPage(1);
+  }, [activeReportId]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedLocationId, dateRange, deferredSearchQuery, pageSize]);
+
+  const handleReprintTransaction = useCallback(
+    (receiptNumOrId: string) => {
+      const clean = receiptNumOrId.replace(/^#/, '').trim().toLowerCase();
+      const targetTx = transactions.find(
+        (t) =>
+          t.receiptNumber.toLowerCase() === clean ||
+          t.id.toLowerCase() === clean ||
+          `#${t.receiptNumber.toLowerCase()}` === clean
       );
-    } else {
-      audio.playError();
-      showToast(`Could not find transaction record for "${receiptNumOrId}"`, 'error');
-    }
-  };
+
+      if (targetTx) {
+        audio.playBarcodeBeep();
+        setActiveReceipt({
+          ...targetTx,
+          isReprint: true,
+          reprintedAt: new Date().toISOString(),
+        });
+        showToast(
+          `Duplicate receipt loaded for #${targetTx.receiptNumber}. Ready to provide customer copy.`,
+          'info'
+        );
+      } else {
+        audio.playError();
+        showToast(`Could not find transaction record for "${receiptNumOrId}"`, 'error');
+      }
+    },
+    [transactions, audio, setActiveReceipt, showToast]
+  );
 
   const activeBusinessObj: Business = useMemo(() => {
     if (currentBusiness) return currentBusiness;
@@ -168,799 +180,138 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
     };
   }, [selectedLocationId, locations, currentLocation, activeBusinessObj]);
 
-  const activeMeta = useMemo(() => {
-    return REPORT_REGISTRY.find((r) => r.id === activeReportId) || REPORT_REGISTRY[0];
-  }, [activeReportId]);
+  const activeMeta = useMemo(
+    () => REPORT_REGISTRY.find((r) => r.id === activeReportId) || REPORT_REGISTRY[0],
+    [activeReportId]
+  );
 
   const currency = activeBusinessObj.currency || 'KES';
 
-  // Filtered reports for navigation list
   const filteredReportsList = useMemo(() => {
-    return REPORT_REGISTRY.filter((r) => {
-      if (phaseFilter !== 'all' && r.category !== phaseFilter) return false;
-      return true;
-    });
+    return REPORT_REGISTRY.filter((r) => phaseFilter === 'all' || r.category === phaseFilter);
   }, [phaseFilter]);
 
-  // Calculations for Phase 1 & operational reports
-  const salesData = useMemo(() => {
-    return calculateSalesReport(transactions, dateRange, selectedLocationId);
-  }, [transactions, dateRange, selectedLocationId]);
-
-  const stockData = useMemo(() => {
-    return calculateStockReport(products, selectedLocationId);
-  }, [products, selectedLocationId]);
-
-  const paymentData = useMemo(() => {
-    return calculatePaymentMethodReport(transactions, dateRange, selectedLocationId);
-  }, [transactions, dateRange, selectedLocationId]);
-
-  const taxData = useMemo(() => {
-    return calculateTaxVatReport(transactions, products, dateRange, selectedLocationId);
-  }, [transactions, products, dateRange, selectedLocationId]);
-
-  const profitData = useMemo(() => {
-    return calculateProfitMarginReport(transactions, products, dateRange, selectedLocationId);
-  }, [transactions, products, dateRange, selectedLocationId]);
-
-  const shiftData = useMemo(() => {
-    return calculateShiftTillReport(transactions, cashiers, dateRange, selectedLocationId, shiftHistory);
-  }, [transactions, cashiers, dateRange, selectedLocationId, shiftHistory]);
-
-  const refundData = useMemo(() => {
-    return calculateRefundVoidReport(transactions, dateRange, selectedLocationId);
-  }, [transactions, dateRange, selectedLocationId]);
-
-  // Construct structured data for current active report (table headers, rows, summary cards, and print payload)
-  const reportPayload: ReportPrintData = useMemo(() => {
-    switch (activeReportId) {
-      // 1. Sales Report
-      case 'sales': {
-        const headers = ['Receipt #', 'Date / Time', 'Location', 'Cashier', 'Items', 'Payment', `Total (${currency})`, 'Status', 'Action'];
-        const rows = salesData.transactions
-          .filter((tx) => {
-            if (!searchQuery) return true;
-            const q = searchQuery.toLowerCase();
-            return (
-              tx.receiptNumber.toLowerCase().includes(q) ||
-              tx.cashierName.toLowerCase().includes(q) ||
-              tx.items.some((i) => i.productName.toLowerCase().includes(q))
-            );
-          })
-          .map((tx) => [
-            `#${tx.receiptNumber}`,
-            new Date(tx.timestamp).toLocaleString(),
-            tx.locationName,
-            tx.cashierName,
-            tx.items.map((i) => `${i.quantity}x ${i.productName}`).join(', '),
-            tx.paymentMethod.toUpperCase(),
-            tx.total.toFixed(2),
-            tx.status.toUpperCase(),
-            'REPRINT',
-          ]);
-
-        return {
-          meta: activeMeta,
-          dateRange,
-          business: activeBusinessObj,
-          location: activeLocationObj,
-          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
-          summaryCards: [
-            { label: 'Gross Sales', value: `${currency} ${salesData.grossSales.toLocaleString()}`, sub: `${salesData.orderCount} total orders` },
-            { label: 'Total Refunds', value: `${currency} ${salesData.totalRefunded.toLocaleString()}`, sub: 'Returned receipts' },
-            { label: 'Net Realized', value: `${currency} ${salesData.netSales.toLocaleString()}`, sub: 'Gross minus returns' },
-            { label: 'Avg Order Value', value: `${currency} ${salesData.avgOrderValue.toFixed(2)}`, sub: `${salesData.totalItemsSold} items sold` },
-          ],
-          tableHeaders: headers,
-          tableRows: rows,
-        };
-      }
-
-      // 2. Stock Report
-      case 'stock': {
-        const headers = ['SKU', 'Product Name', 'Category', 'Stock Qty', `Cost (${currency})`, `Retail (${currency})`, `Valuation (${currency})`, 'Status'];
-        const rows = stockData.items
-          .filter((item) => {
-            if (!searchQuery) return true;
-            const q = searchQuery.toLowerCase();
-            return item.name.toLowerCase().includes(q) || item.sku.toLowerCase().includes(q) || item.category.toLowerCase().includes(q);
-          })
-          .map((item) => [
-            item.sku,
-            item.name,
-            item.category,
-            item.stock,
-            item.buyingPrice.toFixed(2),
-            item.sellingPrice.toFixed(2),
-            item.valuationRetail.toFixed(2),
-            item.status === 'in_stock' ? 'IN STOCK' : item.status === 'low_stock' ? 'LOW STOCK' : 'OUT OF STOCK',
-          ]);
-
-        return {
-          meta: activeMeta,
-          dateRange,
-          business: activeBusinessObj,
-          location: activeLocationObj,
-          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
-          summaryCards: [
-            { label: 'Total Catalog SKUs', value: stockData.totalSkus, sub: `${stockData.totalUnits.toLocaleString()} units on hand` },
-            { label: 'Valuation (Cost)', value: `${currency} ${stockData.totalValuationCost.toLocaleString()}`, sub: 'Acquisition inventory value' },
-            { label: 'Valuation (Retail)', value: `${currency} ${stockData.totalValuationRetail.toLocaleString()}`, sub: 'Potential retail realization' },
-            { label: 'Reorder Needed', value: stockData.totalLowStockCount + stockData.totalOutOfStockCount, sub: `${stockData.totalOutOfStockCount} depleted out of stock` },
-          ],
-          tableHeaders: headers,
-          tableRows: rows,
-        };
-      }
-
-      // 3. Payment Method Report
-      case 'payment_methods': {
-        const headers = ['Payment Channel', 'Transaction Count', 'Share of Volume', `Gross Volume (${currency})`, `Refunds (${currency})`, `Net Volume (${currency})`, `Avg Ticket (${currency})`];
-        const rows = paymentData.methods.map((m) => [
-          m.name,
-          m.transactionCount,
-          `${m.percentageOfVolume.toFixed(1)}%`,
-          m.volume.toFixed(2),
-          m.refundVolume.toFixed(2),
-          m.netVolume.toFixed(2),
-          m.avgTicket.toFixed(2),
-        ]);
-
-        return {
-          meta: activeMeta,
-          dateRange,
-          business: activeBusinessObj,
-          location: activeLocationObj,
-          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
-          summaryCards: [
-            { label: 'Gross Volume', value: `${currency} ${paymentData.totalGrossVolume.toLocaleString()}`, sub: `${paymentData.totalTransactions} transactions` },
-            { label: 'M-Pesa Share', value: `${paymentData.methods.find((m) => m.method === 'mpesa')?.percentageOfVolume.toFixed(1) || 0}%`, sub: 'Direct mobile money' },
-            { label: 'Cash Drawer', value: `${currency} ${(paymentData.methods.find((m) => m.method === 'cash')?.volume || 0).toLocaleString()}`, sub: 'Physical counter tender' },
-            { label: 'Card Terminals', value: `${currency} ${(paymentData.methods.find((m) => m.method === 'card')?.volume || 0).toLocaleString()}`, sub: 'POS card transactions' },
-          ],
-          tableHeaders: headers,
-          tableRows: rows,
-        };
-      }
-
-      // 4. Tax / VAT Report
-      case 'tax_vat': {
-        const headers = ['Category', 'VAT Rate', `Taxable Sales (${currency})`, `VAT Collected (${currency})`];
-        const rows = taxData.categoryTaxBreakdown.map((cat) => [
-          cat.category,
-          `${cat.taxRatePercent.toFixed(0)}%`,
-          cat.salesVolume.toFixed(2),
-          cat.taxCollected.toFixed(2),
-        ]);
-
-        return {
-          meta: activeMeta,
-          dateRange,
-          business: activeBusinessObj,
-          location: activeLocationObj,
-          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
-          summaryCards: [
-            { label: 'Total VAT Collected', value: `${currency} ${taxData.totalVatCollected.toLocaleString()}`, sub: `Effective: ${taxData.effectiveTaxRate.toFixed(1)}%` },
-            { label: 'Taxable Sales (16%)', value: `${currency} ${taxData.totalTaxableSales.toLocaleString()}`, sub: 'Standard VAT bracket' },
-            { label: 'Zero-Rated / Exempt', value: `${currency} ${taxData.totalZeroRatedSales.toLocaleString()}`, sub: '0% tax produce/exempt' },
-            { label: 'Net Sales Excl. Tax', value: `${currency} ${taxData.totalNetExclusive.toLocaleString()}`, sub: 'KRA net remittance base' },
-          ],
-          tableHeaders: headers,
-          tableRows: rows,
-        };
-      }
-
-      // 5. Profit & Margin Report
-      case 'profit_margin': {
-        const headers = ['Product / Category', 'Units Sold', `Revenue (${currency})`, `COGS (${currency})`, `Gross Profit (${currency})`, 'Gross Margin %'];
-        const rows = profitData.productMargins
-          .filter((p) => {
-            if (!searchQuery) return true;
-            const q = searchQuery.toLowerCase();
-            return p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q);
-          })
-          .map((p) => [
-            p.name,
-            p.unitsSold,
-            p.revenue.toFixed(2),
-            p.cogs.toFixed(2),
-            p.grossProfit.toFixed(2),
-            `${p.marginPercent.toFixed(1)}%`,
-          ]);
-
-        return {
-          meta: activeMeta,
-          dateRange,
-          business: activeBusinessObj,
-          location: activeLocationObj,
-          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
-          summaryCards: [
-            { label: 'Total Gross Profit', value: `${currency} ${profitData.totalGrossProfit.toLocaleString()}`, sub: 'Revenue minus COGS' },
-            { label: 'Overall Gross Margin', value: `${profitData.overallGrossMargin.toFixed(1)}%`, sub: 'Weighted average margin' },
-            { label: 'Gross Revenue', value: `${currency} ${profitData.totalRevenue.toLocaleString()}`, sub: 'Total item sales' },
-            { label: 'Total COGS', value: `${currency} ${profitData.totalCogs.toLocaleString()}`, sub: 'Product acquisition costs' },
-          ],
-          tableHeaders: headers,
-          tableRows: rows,
-        };
-      }
-
-      // 6. Shift / Till Report (Z-Report)
-      case 'shift_till': {
-        const headers = ['Shift / Operator', 'Shift Opened', 'Orders', `Drawer Expenses (${currency})`, `Safe Drops (${currency})`, `Total Sales (${currency})`];
-        const rows = shiftData.recentShifts && shiftData.recentShifts.length > 0
-          ? shiftData.recentShifts.map((s) => [
-              `${s.shiftNumber} • ${s.cashierName}`,
-              new Date(s.openedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              s.transactionCount,
-              s.expenses.reduce((sum, e) => sum + e.amount, 0).toFixed(2),
-              s.cashDrops.reduce((sum, d) => sum + d.amount, 0).toFixed(2),
-              s.totalSales.toFixed(2),
-            ])
-          : shiftData.cashierShifts.map((c) => [
-              c.cashierName,
-              new Date(c.shiftStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              c.transactionCount,
-              '0.00',
-              '0.00',
-              c.totalHandled.toFixed(2),
-            ]);
-
-        return {
-          meta: activeMeta,
-          dateRange,
-          business: activeBusinessObj,
-          location: activeLocationObj,
-          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
-          summaryCards: [
-            { label: 'Expected Drawer Cash', value: `${currency} ${shiftData.expectedCashInDrawer.toLocaleString()}`, sub: `Opening float: ${currency} ${shiftData.openingFloat.toLocaleString()}` },
-            { label: 'Cash Tendered', value: `${currency} ${shiftData.cashSalesTendered.toLocaleString()}`, sub: `Cash refunds: -${currency} ${shiftData.cashRefundsGiven.toLocaleString()}` },
-            { label: 'Petty Cash & Safe Drops', value: `${currency} ${(shiftData.drawerExpensesTotal + shiftData.cashDropsTotal).toLocaleString()}`, sub: `Exp: -${currency} ${shiftData.drawerExpensesTotal.toLocaleString()} | Drops: -${currency} ${shiftData.cashDropsTotal.toLocaleString()}` },
-            { label: 'Audited Drawer Variance', value: `${currency} ${shiftData.variance.toFixed(2)}`, sub: Math.abs(shiftData.variance) < 0.01 ? 'Audit verified balanced' : 'Variance discrepancy detected' },
-          ],
-          tableHeaders: headers,
-          tableRows: rows,
-        };
-      }
-
-      // 7. Refund / Void / Return Report
-      case 'refund_void': {
-        const headers = ['Receipt #', 'Timestamp', 'Cashier', 'Returned Items', `Refund Amount (${currency})`, 'Return Reason', 'Action'];
-        const rows = refundData.itemizedRefunds
-          .filter((r) => {
-            if (!searchQuery) return true;
-            const q = searchQuery.toLowerCase();
-            return (
-              r.receiptNumber.toLowerCase().includes(q) ||
-              r.productName.toLowerCase().includes(q) ||
-              r.reason.toLowerCase().includes(q)
-            );
-          })
-          .map((r) => [
-            `#${r.receiptNumber}`,
-            new Date(r.timestamp).toLocaleString(),
-            r.cashierName,
-            r.productName,
-            r.amount.toFixed(2),
-            r.reason,
-            'REPRINT',
-          ]);
-
-        return {
-          meta: activeMeta,
-          dateRange,
-          business: activeBusinessObj,
-          location: activeLocationObj,
-          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
-          summaryCards: [
-            { label: 'Total Refunded', value: `${currency} ${refundData.totalRefundAmount.toLocaleString()}`, sub: `${refundData.totalRefundTransactions} refunded orders` },
-            { label: 'Return Rate', value: `${refundData.refundRatePercent.toFixed(1)}%`, sub: '% of gross sales revenue' },
-            { label: 'Primary Return Reason', value: refundData.reasonBreakdown[0]?.reason || 'Customer Return', sub: `${refundData.reasonBreakdown[0]?.count || 0} occurrences` },
-            { label: 'Inventory Restocked', value: 'Restocked', sub: 'Audited back into catalog' },
-          ],
-          tableHeaders: headers,
-          tableRows: rows,
-        };
-      }
-
-      // Phase 2: Customer Report
-      case 'customer': {
-        const headers = ['Customer Phone / Identifier', 'Total Visits', `Lifetime Spend (${currency})`, 'Favorite Category', 'Last Visit'];
-        const rows = [
-          ['+254 712 345 678 (Kariuki N.)', 14, (38450).toFixed(2), 'Flour & Grains', 'Today 11:20 AM'],
-          ['+254 722 890 123 (Wanjiru M.)', 9, (24180).toFixed(2), 'Dairy & Bakery', 'Yesterday 04:15 PM'],
-          ['+254 733 456 789 (Otieno D.)', 7, (18900).toFixed(2), 'Pantry & Oil', '3 days ago'],
-          ['+254 798 112 233 (Mutiso P.)', 5, (12600).toFixed(2), 'Beverages', '5 days ago'],
-          ['+254 701 556 778 (Chebet L.)', 4, (9450).toFixed(2), 'Personal Care', 'Last week'],
-        ];
-
-        return {
-          meta: activeMeta,
-          dateRange,
-          business: activeBusinessObj,
-          location: activeLocationObj,
-          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
-          summaryCards: [
-            { label: 'Active Repeat Customers', value: 128, sub: 'Tracked via M-Pesa & receipts' },
-            { label: 'Repeat Purchase Rate', value: '64.2%', sub: '2+ store visits in 30 days' },
-            { label: 'Avg Customer LTV', value: `${currency} 14,200`, sub: 'Lifetime sales volume' },
-            { label: 'Top Customer Spend', value: `${currency} 38,450`, sub: '14 total store orders' },
-          ],
-          tableHeaders: headers,
-          tableRows: rows,
-        };
-      }
-
-      // Phase 2: Staff / Cashier Performance Report
-      case 'staff_performance': {
-        const headers = ['Cashier Name', 'Employee Code', 'Role', 'Orders Completed', `Total Sales (${currency})`, `Avg Ticket (${currency})`, 'Voids / Refunds'];
-        const rows = cashiers.map((c) => {
-          const cashTxs = transactions.filter((t) => t.cashierId === c.id);
-          const totalRev = cashTxs.reduce((s, t) => s + t.total, 0);
-          const count = cashTxs.length || 12;
-          const rev = totalRev || 48500;
-          return [
-            c.name,
-            c.code,
-            c.role.toUpperCase(),
-            count,
-            rev.toFixed(2),
-            (rev / count).toFixed(2),
-            c.role === 'cashier' ? 1 : 0,
-          ];
-        });
-
-        return {
-          meta: activeMeta,
-          dateRange,
-          business: activeBusinessObj,
-          location: activeLocationObj,
-          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
-          summaryCards: [
-            { label: 'Active Cashiers', value: cashiers.length, sub: 'Staff on duty' },
-            { label: 'Top Producer', value: cashiers[0]?.name || 'Staff', sub: `${currency} 64,800 throughput` },
-            { label: 'Avg Speed per Order', value: '42 seconds', sub: 'Scan-to-tender duration' },
-            { label: 'Total Staff Voids', value: 2, sub: 'Audited supervisor approvals' },
-          ],
-          tableHeaders: headers,
-          tableRows: rows,
-        };
-      }
-
-      // Phase 2: Discount / Promotion Report
-      case 'discount_promo': {
-        const headers = ['Discount Type', 'Times Applied', `Total Discount Given (${currency})`, `Associated Sales (${currency})`, 'Effective Discount Rate'];
-        const rows = [
-          ['Wholesale Bulk Markdown (5%)', 18, (4250).toFixed(2), (85000).toFixed(2), '5.0%'],
-          ['Loyalty Customer Perk (10%)', 12, (2840).toFixed(2), (28400).toFixed(2), '10.0%'],
-          ['Manager Special Discretionary', 5, (1150).toFixed(2), (15300).toFixed(2), '7.5%'],
-          ['Staff Family Discount (15%)', 3, (680).toFixed(2), (4530).toFixed(2), '15.0%'],
-        ];
-
-        return {
-          meta: activeMeta,
-          dateRange,
-          business: activeBusinessObj,
-          location: activeLocationObj,
-          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
-          summaryCards: [
-            { label: 'Total Markdowns Given', value: `${currency} 8,920`, sub: 'Discounts applied across sales' },
-            { label: 'Impact on Margin', value: '-2.4%', sub: 'Gross profit variance' },
-            { label: 'Sales with Discount', value: '24 orders', sub: '14.8% of total volume' },
-            { label: 'Primary Promo Code', value: 'WHOLESALE-5', sub: '18 times utilized' },
-          ],
-          tableHeaders: headers,
-          tableRows: rows,
-        };
-      }
-
-      // Phase 2: Low-Stock / Reorder Report
-      case 'low_stock_reorder': {
-        const headers = ['SKU', 'Product Name', 'Category', 'Current Stock', 'Reorder Point', 'Suggested PO Qty', 'Depletion Velocity'];
-        const lowItems = stockData.items.filter((i) => i.stock <= i.reorderPoint);
-        const rows = lowItems.map((i) => [
-          i.sku,
-          i.name,
-          i.category,
-          i.stock,
-          i.reorderPoint,
-          Math.max(20, i.reorderPoint * 2 - i.stock),
-          '4.2 units/day (Urgent)',
-        ]);
-
-        return {
-          meta: activeMeta,
-          dateRange,
-          business: activeBusinessObj,
-          location: activeLocationObj,
-          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
-          summaryCards: [
-            { label: 'SKUs Below Reorder', value: lowItems.length, sub: 'Immediate stock-out risk' },
-            { label: 'Estimated Out-of-Stock', value: '< 48 Hours', sub: 'Fast moving staple items' },
-            { label: 'Est. Replenishment Cost', value: `${currency} 24,600`, sub: 'Recommended PO total' },
-            { label: 'Dead Stock Detected', value: '2 SKUs', sub: '0 sales in past 30 days' },
-          ],
-          tableHeaders: headers,
-          tableRows: rows,
-        };
-      }
-
-      // Phase 2: Product Performance Report
-      case 'product_performance': {
-        const headers = ['Product Name', 'SKU', 'Category', 'Units Sold', `Gross Revenue (${currency})`, `Gross Profit (${currency})`, 'Velocity Tier'];
-        const rows = profitData.productMargins.map((p, idx) => [
-          p.name,
-          p.productId.slice(-8),
-          p.category,
-          p.unitsSold,
-          p.revenue.toFixed(2),
-          p.grossProfit.toFixed(2),
-          idx < 3 ? 'A (Fast Mover)' : idx < 8 ? 'B (Consistent)' : 'C (Slow Mover)',
-        ]);
-
-        return {
-          meta: activeMeta,
-          dateRange,
-          business: activeBusinessObj,
-          location: activeLocationObj,
-          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
-          summaryCards: [
-            { label: 'Top Grosser', value: profitData.productMargins[0]?.name || 'Flour 2kg', sub: `${currency} ${profitData.productMargins[0]?.revenue.toLocaleString()} revenue` },
-            { label: 'Top Unit Volume', value: 'Indomie Noodles', sub: '120 units sold' },
-            { label: 'Highest Margin Item', value: 'Savanna Cider (25%)', sub: 'Margin contributor' },
-            { label: 'Active Catalog Velocity', value: '78.4%', sub: 'SKUs with active sales' },
-          ],
-          tableHeaders: headers,
-          tableRows: rows,
-        };
-      }
-
-      // Phase 3: Supplier / PO Report
-      case 'supplier_po': {
-        const headers = ['Supplier Name', 'Category', 'Total POs Received', `Total Invoiced (${currency})`, 'Payment Terms', 'Lead Time'];
-        const activeSuppList = suppliers && suppliers.length > 0 ? suppliers : [];
-        const rows = activeSuppList.map((s) => [
-          s.name,
-          s.category || 'General Supplies',
-          s.ordersCount || 0,
-          (s.totalInvoiced || 0).toFixed(2),
-          s.paymentTerms.replace('_', ' ').toUpperCase(),
-          `${s.leadTimeDays || 2} Days`,
-        ]);
-
-        const totalProcurement = activeSuppList.reduce((sum, s) => sum + (s.totalInvoiced || 0), 0);
-        const totalShipments = activeSuppList.reduce((sum, s) => sum + (s.ordersCount || 0), 0);
-
-        return {
-          meta: activeMeta,
-          dateRange,
-          business: activeBusinessObj,
-          location: activeLocationObj,
-          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
-          summaryCards: [
-            { label: 'Total POs Received', value: totalShipments, sub: 'Replenishment shipments' },
-            { label: 'Total Procurement Spend', value: `${currency} ${totalProcurement.toLocaleString()}`, sub: 'Wholesale COGS intake' },
-            { label: 'Active Suppliers', value: activeSuppList.filter((s) => s.status === 'active').length, sub: 'Direct distribution contracts' },
-            { label: 'Total Supplier Accounts', value: activeSuppList.length, sub: 'Registered trade accounts' },
-          ],
-          tableHeaders: headers,
-          tableRows: rows,
-        };
-      }
-
-      // Phase 3: Audit / Activity Log Report (Edge Cases 1 & 5)
-      case 'audit_log': {
-        const headers = [
-          'Timestamp',
-          'Classification',
-          'Performing Operator / Admin',
-          'Authorizing Supervisor',
-          'Action',
-          'Audit Description & Details',
-        ];
-
-        type UnifiedAuditRow = {
-          timestamp: string;
-          classification: string;
-          actor: string;
-          supervisor: string;
-          action: string;
-          description: string;
-        };
-
-        const combinedList: UnifiedAuditRow[] = [];
-
-        // 1. Edge Case 5: Administrative Activity (Back-office / Admin Changes - Excluded from Shift Activity)
-        adminActivityLogs.forEach((a) => {
-          combinedList.push({
-            timestamp: a.timestamp,
-            classification: 'Administrative Activity (Back-Office)',
-            actor: `${a.adminName} (${a.adminEmail}) [${a.adminRole}]`,
-            supervisor: 'N/A (Admin Initiated)',
-            action: `${a.category.toUpperCase()}:${a.action.toUpperCase()}`,
-            description: `${a.description} [${a.recordType} #${a.recordId.slice(-6)}] • EXCLUDED FROM SHIFT ACTIVITY`,
-          });
-        });
-
-        // 2. Edge Case 1: Supervisor Overrides (Discounts, Refunds, Voids)
-        supervisorOverrideLogs.forEach((s) => {
-          combinedList.push({
-            timestamp: s.timestamp,
-            classification: `Supervisor Override (${s.overrideType.toUpperCase()})`,
-            actor: `${s.performingOperatorName} (${s.performingOperatorRole})`,
-            supervisor: `${s.authorizingSupervisorName} (${s.authorizingSupervisorRole})`,
-            action: `OVERRIDE_${s.overrideType.toUpperCase()}`,
-            description: `Reason: ${s.reason}${s.transactionId ? ` | Tx: ${s.transactionId.slice(-8)}` : ''}${
-              s.details.amount ? ` | Amount: ${currency} ${s.details.amount}` : ''
-            }`,
-          });
-        });
-
-        // 3. SuperAdmin Audit Logs
-        auditLogs.forEach((l) => {
-          combinedList.push({
-            timestamp: l.timestamp,
-            classification: 'Security & Tenant Ledger',
-            actor: l.adminEmail,
-            supervisor: 'System / SuperAdmin',
-            action: l.action.toUpperCase(),
-            description: `${l.description} [${l.recordType}:${l.recordId}]`,
-          });
-        });
-
-        // Sort latest first
-        combinedList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-        const rows = combinedList.map((entry) => [
-          new Date(entry.timestamp).toLocaleString(),
-          entry.classification,
-          entry.actor,
-          entry.supervisor,
-          entry.action,
-          entry.description,
-        ]);
-
-        return {
-          meta: activeMeta,
-          dateRange,
-          business: activeBusinessObj,
-          location: activeLocationObj,
-          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
-          summaryCards: [
-            {
-              label: 'Administrative Actions',
-              value: adminActivityLogs.length,
-              sub: 'Excluded from shift activity',
-            },
-            {
-              label: 'Supervisor Overrides',
-              value: supervisorOverrideLogs.length,
-              sub: 'Voids, refunds, discounts',
-            },
-            {
-              label: 'Total Audit Logs',
-              value: combinedList.length,
-              sub: 'Non-repudiable audit trail',
-            },
-            {
-              label: 'Attribution Policy',
-              value: 'Enforced',
-              sub: 'Shared logins prohibited',
-            },
-          ],
-          tableHeaders: headers,
-          tableRows: rows.length > 0 ? rows : [
-            [
-              new Date().toLocaleString(),
-              'Administrative Activity',
-              currentUserEmail,
-              'N/A',
-              'SYSTEM_INIT',
-              'Audit trail initialized and compliant with non-repudiable operator attribution',
-            ],
-          ],
-        };
-      }
-
-      // Phase 3: Comparative Period-over-Period Report
-      case 'comparative': {
-        const headers = ['Metric', `Current Period (${currency})`, `Prior Period (${currency})`, 'Absolute Change', '% Growth'];
-        const rows = [
-          ['Gross Sales Revenue', (salesData.grossSales).toFixed(2), (salesData.grossSales * 0.88).toFixed(2), `+${(salesData.grossSales * 0.12).toFixed(2)}`, '+13.6%'],
-          ['Net Realized Revenue', (salesData.netSales).toFixed(2), (salesData.netSales * 0.87).toFixed(2), `+${(salesData.netSales * 0.13).toFixed(2)}`, '+14.9%'],
-          ['Order Count', salesData.orderCount, Math.round(salesData.orderCount * 0.9), `+${salesData.orderCount - Math.round(salesData.orderCount * 0.9)}`, '+11.1%'],
-          ['Gross Profit Margin', `${profitData.overallGrossMargin.toFixed(1)}%`, `${(profitData.overallGrossMargin - 1.2).toFixed(1)}%`, '+1.2 pts', '+5.7%'],
-          ['Total Refunds', (salesData.totalRefunded).toFixed(2), (salesData.totalRefunded * 1.1).toFixed(2), `-${(salesData.totalRefunded * 0.1).toFixed(2)}`, '-9.1%'],
-        ];
-
-        return {
-          meta: activeMeta,
-          dateRange,
-          business: activeBusinessObj,
-          location: activeLocationObj,
-          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
-          summaryCards: [
-            { label: 'Revenue Growth', value: '+13.6%', sub: 'Vs prior equivalent period' },
-            { label: 'Transaction Growth', value: '+11.1%', sub: 'Increased register footfall' },
-            { label: 'Margin Expansion', value: '+1.2 pts', sub: 'Improved vendor wholesale prices' },
-            { label: 'Refund Reduction', value: '-9.1%', sub: 'Decreased product return rates' },
-          ],
-          tableHeaders: headers,
-          tableRows: rows,
-        };
-      }
-
-      default:
-        return {
-          meta: activeMeta,
-          dateRange,
-          business: activeBusinessObj,
-          location: activeLocationObj,
-          generatedBy: currentUserEmail || 'admin@sokopos.co.ke',
-          summaryCards: [],
-          tableHeaders: [],
-          tableRows: [],
-        };
-    }
-  }, [
+  const reportPayload = useActiveReportPayload({
     activeReportId,
     activeMeta,
+    transactions,
+    products,
+    locations,
+    cashiers,
+    shiftHistory,
+    suppliers,
+    adminActivityLogs,
+    supervisorOverrideLogs,
+    auditLogs,
     dateRange,
+    selectedLocationId,
     activeBusinessObj,
     activeLocationObj,
     currentUserEmail,
     currency,
-    salesData,
-    stockData,
-    paymentData,
-    taxData,
-    profitData,
-    shiftData,
-    refundData,
-    cashiers,
-    transactions,
-    auditLogs,
-    searchQuery,
-  ]);
+    searchQuery: deferredSearchQuery,
+  });
 
-  const handleInstantCsv = () => {
+  const handleSelectReport = useCallback(
+    (report: ReportMeta) => {
+      if (isReportLocked(report)) {
+        requireCapability('advancedReportsAndExport');
+        return;
+      }
+      setActiveReportId(report.id);
+    },
+    [isReportLocked, requireCapability]
+  );
+
+  const handleToggleSort = useCallback((colIndex: number) => {
+    setSortState((prev) => {
+      if (!prev || prev.colIndex !== colIndex) {
+        return { colIndex, dir: 'asc' };
+      }
+      if (prev.dir === 'asc') {
+        return { colIndex, dir: 'desc' };
+      }
+      return null;
+    });
+    setCurrentPage(1);
+  }, []);
+
+  const handleInstantCsv = useCallback(() => {
     if (!requireCapability('advancedReportsAndExport')) return;
-    const filename = `${activeBusinessObj.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${activeMeta.id}_${Date.now()}`;
+    const filename = `${activeBusinessObj.name
+      .replace(/[^a-z0-9]/gi, '_')
+      .toLowerCase()}_${activeMeta.id}_${Date.now()}`;
     const hasAction = reportPayload.tableHeaders.some((h) => h.toLowerCase() === 'action');
-    const headers = hasAction ? reportPayload.tableHeaders.filter((h) => h.toLowerCase() !== 'action') : reportPayload.tableHeaders;
-    const rows = hasAction ? reportPayload.tableRows.map((r) => r.slice(0, headers.length)) : reportPayload.tableRows;
+    const headers = hasAction
+      ? reportPayload.tableHeaders.filter((h) => h.toLowerCase() !== 'action')
+      : reportPayload.tableHeaders;
+    const rows = hasAction
+      ? reportPayload.tableRows.map((r) => r.slice(0, headers.length))
+      : reportPayload.tableRows;
     exportToCsv(filename, headers, rows);
-  };
+  }, [requireCapability, activeBusinessObj.name, activeMeta.id, reportPayload]);
+
+  const handleQuickPrint = useCallback(() => {
+    if (!requireCapability('advancedReportsAndExport')) return;
+    audio?.playSuccess?.();
+    showToast(`Sending ${reportPayload.meta.title} directly to printer...`, 'info');
+    printReportDocument(reportPayload);
+  }, [requireCapability, audio, showToast, reportPayload]);
+
+  const handleOpenPrintPreview = useCallback(() => {
+    if (!requireCapability('advancedReportsAndExport')) return;
+    audio?.playBeep?.();
+    setIsPrintModalOpen(true);
+  }, [requireCapability, audio]);
 
   return (
-    <div className="space-y-6">
-      {/* Report Selection Navigation Header */}
-      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
-        {/* Phase Filter Tabs (Phase 1, Phase 2, Phase 3, All) */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-          <div>
-            <h3 className="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-blue-600" />
-              <span>Retail Reporting & Audit Suite</span>
-            </h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Select a compliance or operational report to view, export to CSV, or print on A4
-            </p>
-          </div>
+    <div className="space-y-4 sm:space-y-5">
+      {/* Report Selection Navigation */}
+      <ReportNavigationBar
+        phaseFilter={phaseFilter}
+        onSelectPhase={setPhaseFilter}
+        reports={filteredReportsList}
+        activeReportId={activeReportId}
+        onSelectReport={handleSelectReport}
+        isReportLocked={isReportLocked}
+      />
 
-          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold self-start sm:self-auto">
-            <button
-              type="button"
-              id="report-filter-phase1-btn"
-              onClick={() => setPhaseFilter('phase1')}
-              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                phaseFilter === 'phase1' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Phase 1 (Core 7)
-            </button>
-            <button
-              type="button"
-              id="report-filter-phase2-btn"
-              onClick={() => setPhaseFilter('phase2')}
-              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                phaseFilter === 'phase2' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Phase 2 (Ops)
-            </button>
-            <button
-              type="button"
-              id="report-filter-phase3-btn"
-              onClick={() => setPhaseFilter('phase3')}
-              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                phaseFilter === 'phase3' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Phase 3 (Advanced)
-            </button>
-            <button
-              type="button"
-              id="report-filter-all-btn"
-              onClick={() => setPhaseFilter('all')}
-              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                phaseFilter === 'all' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              All
-            </button>
-          </div>
-        </div>
-
-        {/* Report Selector Pills Bar */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
-          {filteredReportsList.map((r) => {
-            const isSelected = r.id === activeReportId;
-            const locked = isReportLocked(r);
-            return (
-              <button
-                key={r.id}
-                type="button"
-                id={`report-select-${r.id}-btn`}
-                onClick={() => {
-                  if (locked) {
-                    requireCapability('advancedReportsAndExport');
-                    return;
-                  }
-                  setActiveReportId(r.id);
-                }}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition flex items-center gap-1.5 cursor-pointer shrink-0 border ${
-                  isSelected
-                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs ring-2 ring-blue-500/20'
-                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:text-slate-900'
-                }`}
-              >
-                <span>{r.title}</span>
-                {locked ? (
-                  <Lock className={`w-3 h-3 shrink-0 ${isSelected ? 'text-white/80' : 'text-slate-400'}`} />
-                ) : (
-                  r.category === 'phase1' && (
-                    <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-black ${isSelected ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800'}`}>
-                      Core
-                    </span>
-                  )
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Active Report Header & Action Controls */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-5">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-black text-slate-900 tracking-tight">
+      {/* Active Report Workspace Panel */}
+      <section
+        id="active-report-panel"
+        role="tabpanel"
+        aria-labelledby={`report-select-${activeReportId}-btn`}
+        className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 space-y-5"
+      >
+        {/* Report Title & Action Controls */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-200/80 pb-4">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-baseline gap-2">
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
                 {activeMeta.title}
               </h2>
-              <span className="text-xs bg-slate-100 text-slate-600 font-bold px-2.5 py-0.5 rounded-full border border-slate-200">
-                {activeMeta.phaseLabel}
+              <span className="text-xs font-medium text-slate-600">
+                · {activeMeta.phaseLabel}
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-              {activeMeta.description} • Filtered for {formatRangeDisplay(dateRange)}
+            <p className="text-xs text-slate-600 mt-1 max-w-2xl">
+              {activeMeta.description} · Filtered for {formatRangeDisplay(dateRange)}
             </p>
           </div>
 
-          {/* Action Buttons: Instant CSV, Direct Quick Print & A4 Print / PDF Preview */}
+          {/* Export & Print Controls */}
           <div className="flex items-center gap-2 self-start lg:self-auto flex-wrap">
             <button
               type="button"
               id="report-instant-csv-btn"
               onClick={handleInstantCsv}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer"
+              className="min-h-[40px] inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
               title="Download RFC 4180 CSV spreadsheet"
             >
               {!canUseAdvancedReports ? (
-                <Lock className="w-3.5 h-3.5 text-emerald-700" />
+                <Lock className="w-3.5 h-3.5 text-emerald-700 shrink-0" aria-hidden="true" />
               ) : (
-                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                <FileSpreadsheet className="w-4 h-4 text-emerald-700 shrink-0" aria-hidden="true" />
               )}
               <span>Export CSV</span>
             </button>
@@ -968,19 +319,14 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
             <button
               type="button"
               id="report-direct-quick-print-btn"
-              onClick={() => {
-                if (!requireCapability('advancedReportsAndExport')) return;
-                audio?.playSuccess?.();
-                showToast(`Sending ${reportPayload.meta.title} directly to printer...`, 'info');
-                printReportDocument(reportPayload);
-              }}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
+              onClick={handleQuickPrint}
+              className="min-h-[40px] inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white border border-slate-800 rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
               title="Quick Print directly to connected printer or Save as PDF"
             >
               {!canUseAdvancedReports ? (
-                <Lock className="w-3.5 h-3.5 text-slate-400" />
+                <Lock className="w-3.5 h-3.5 text-slate-300 shrink-0" aria-hidden="true" />
               ) : (
-                <Printer className="w-3.5 h-3.5 text-blue-400" />
+                <Printer className="w-3.5 h-3.5 text-blue-300 shrink-0" aria-hidden="true" />
               )}
               <span>Quick Print</span>
             </button>
@@ -988,163 +334,41 @@ export const ReportViewContainer: React.FC<ReportViewContainerProps> = ({
             <button
               type="button"
               id="report-open-print-btn"
-              onClick={() => {
-                if (!requireCapability('advancedReportsAndExport')) return;
-                audio?.playBeep?.();
-                setIsPrintModalOpen(true);
-              }}
-              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+              onClick={handleOpenPrintPreview}
+              className="min-h-[40px] inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
               title="Preview A4 document, format pagination, and print or export PDF"
             >
-              {!canUseAdvancedReports ? <Lock className="w-3.5 h-3.5" /> : <Printer className="w-4 h-4" />}
+              {!canUseAdvancedReports ? (
+                <Lock className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              ) : (
+                <Printer className="w-4 h-4 shrink-0" aria-hidden="true" />
+              )}
               <span>Print / PDF (A4)</span>
             </button>
           </div>
         </div>
 
-        {/* Live KPI Summary Cards for the active report */}
-        {reportPayload.summaryCards.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {reportPayload.summaryCards.map((card, idx) => (
-              <div
-                key={idx}
-                className="p-4 bg-slate-50/80 rounded-xl border border-slate-200/80"
-              >
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  {card.label}
-                </div>
-                <div className="text-xl font-black text-slate-900 mt-1 font-mono">
-                  {card.value}
-                </div>
-                {card.sub && (
-                  <div className="text-[11px] text-slate-500 font-medium mt-0.5">
-                    {card.sub}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Live KPI Summary Cards */}
+        <ReportSummaryGrid cards={reportPayload.summaryCards} />
 
-        {/* Table Search & Record Count Bar */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-            <input
-              type="text"
-              id="report-search-input"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={`Search ${activeMeta.title.toLowerCase()}...`}
-              className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 pl-10 pr-4 text-xs font-medium focus:outline-none focus:border-blue-600 focus:bg-white text-slate-900 placeholder:text-slate-400"
-            />
-          </div>
-
-          <div className="text-xs text-slate-400 font-medium flex items-center gap-2">
-            <span>Showing <strong>{reportPayload.tableRows.length}</strong> records</span>
-            <span>•</span>
-            <span className="font-mono text-[11px]">Branch: {currentLocation.name}</span>
-          </div>
-        </div>
-
-        {/* Interactive Tabular Data Display */}
-        <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-          <div className="overflow-x-auto max-h-[500px]">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead className="sticky top-0 bg-slate-100/90 backdrop-blur-xs text-[10px] font-black uppercase tracking-wider text-slate-600 border-b border-slate-200 z-10">
-                <tr>
-                  {reportPayload.tableHeaders.map((h, idx) => (
-                    <th
-                      key={idx}
-                      className={`py-3 px-4 whitespace-nowrap ${
-                        idx === 0
-                          ? 'text-left'
-                          : h === 'Action'
-                          ? 'text-center'
-                          : idx >= reportPayload.tableHeaders.length - (reportPayload.tableHeaders.includes('Action') ? 3 : 2)
-                          ? 'text-right'
-                          : 'text-left'
-                      }`}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {reportPayload.tableRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={reportPayload.tableHeaders.length} className="py-12 text-center text-slate-400">
-                      No transactional records matched the search query or time range.
-                    </td>
-                  </tr>
-                ) : (
-                  reportPayload.tableRows.map((row, rIdx) => (
-                    <tr key={rIdx} className="hover:bg-slate-50/80 transition">
-                      {row.map((cell, cIdx) => {
-                        const isActionColumn =
-                          reportPayload.tableHeaders[cIdx] === 'Action' || cell === 'REPRINT';
-
-                        if (isActionColumn) {
-                          const receiptNum = String(row[0]);
-                          return (
-                            <td key={cIdx} className="py-2.5 px-4 text-center whitespace-nowrap">
-                              <button
-                                type="button"
-                                id={`reprint-order-btn-${rIdx}`}
-                                onClick={() => handleReprintTransaction(receiptNum)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 active:bg-blue-200 text-blue-700 hover:text-blue-900 border border-blue-200/80 hover:border-blue-300 font-bold text-xs transition cursor-pointer shadow-2xs group"
-                                title={`Reprint duplicate receipt for ${receiptNum}`}
-                              >
-                                <Printer className="w-3.5 h-3.5 text-blue-600 group-hover:scale-110 transition-transform" />
-                                <span>Reprint</span>
-                              </button>
-                            </td>
-                          );
-                        }
-
-                        if (cIdx === 0 && (activeReportId === 'sales' || activeReportId === 'refund_void')) {
-                          return (
-                            <td key={cIdx} className="py-3 px-4 whitespace-nowrap">
-                              <button
-                                type="button"
-                                onClick={() => handleReprintTransaction(String(cell))}
-                                className="font-mono font-bold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer flex items-center gap-1 text-left"
-                                title={`Click to reprint duplicate receipt for ${cell}`}
-                              >
-                                <span>{String(cell)}</span>
-                              </button>
-                            </td>
-                          );
-                        }
-
-                        const isNumericTotal =
-                          cIdx >= reportPayload.tableHeaders.length - (reportPayload.tableHeaders.includes('Action') ? 3 : 2) &&
-                          !reportPayload.tableHeaders[cIdx].includes('Status');
-
-                        return (
-                          <td
-                            key={cIdx}
-                            className={`py-3 px-4 whitespace-nowrap ${
-                              cIdx === 0
-                                ? 'font-bold text-slate-900'
-                                : isNumericTotal
-                                ? 'text-right font-mono font-medium text-slate-900'
-                                : 'text-slate-600 text-[11px]'
-                            }`}
-                          >
-                            {typeof cell === 'boolean' ? (cell ? 'YES' : 'NO') : String(cell)}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+        {/* Responsive, Sortable, Paginated Report Data */}
+        <ReportDataDisplay
+          reportTitle={activeMeta.title}
+          activeReportId={activeReportId}
+          tableHeaders={reportPayload.tableHeaders}
+          tableRows={reportPayload.tableRows}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          sortState={sortState}
+          onToggleSort={handleToggleSort}
+          currentPage={currentPage}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+          onReprintTransaction={handleReprintTransaction}
+          branchName={activeLocationObj.name}
+        />
+      </section>
 
       {/* A4 Print & PDF Preview Modal */}
       <ReportPrintModal

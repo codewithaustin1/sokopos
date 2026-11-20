@@ -489,6 +489,11 @@ interface PosContextType {
   selectedSupplier: Supplier | null;
   setSelectedSupplier: (supplier: Supplier | null) => void;
   addSupplier: (supplier: Omit<Supplier, 'id' | 'businessId' | 'createdAt'>) => Promise<Supplier>;
+  bulkAddSuppliers: (suppliers: Array<Omit<Supplier, 'id' | 'businessId' | 'createdAt'>>) => Promise<number>;
+  bulkUpdateSuppliers: (
+    items: Array<{ id: string; updates: Partial<Supplier> }>,
+    summaryLabel?: string
+  ) => Promise<number>;
   updateSupplier: (id: string, updates: Partial<Supplier>) => Promise<void>;
   deleteSupplier: (id: string) => Promise<boolean>;
   getProductsForSupplier: (supplierId: string) => Product[];
@@ -4275,6 +4280,129 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
 
     showToast(`Supplier "${updatedSupp.name}" updated`, 'success');
+  };
+
+  const bulkAddSuppliers = async (
+    items: Array<Omit<Supplier, 'id' | 'businessId' | 'createdAt'>>
+  ): Promise<number> => {
+    if (!Array.isArray(items) || items.length === 0) return 0;
+    if (!isSuperAdmin && !requireCapability('suppliers')) {
+      throw new Error('Upgrade to Business or Premium to import suppliers.');
+    }
+
+    const nowMs = Date.now();
+    const nowIso = new Date(nowMs).toISOString();
+    const createdSuppliers: Supplier[] = items
+      .filter((item) => item.name?.trim() && item.phone?.trim())
+      .map((item, idx) => ({
+        ...item,
+        name: item.name.trim(),
+        phone: item.phone.trim(),
+        id: `supp-${nowMs}-${idx}-${Math.floor(100 + Math.random() * 900)}`,
+        businessId: activeBusinessId,
+        status: item.status || 'active',
+        paymentTerms: item.paymentTerms || 'net_14',
+        totalInvoiced: item.totalInvoiced || 0,
+        ordersCount: item.ordersCount || 0,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        isPendingCloudSync: !isOnline,
+      }));
+
+    if (createdSuppliers.length === 0) return 0;
+
+    setAllSuppliers((prev) => [...createdSuppliers, ...prev]);
+
+    const entries = createdSuppliers.map((s) =>
+      buildOutboxEntry({
+        businessId: activeBusinessId,
+        collectionName: 'suppliers',
+        docId: s.id,
+        operation: 'upsert',
+        payload: s,
+        label: `Import supplier ${s.name}`,
+      })
+    );
+    setOutboxItems((prev) => {
+      const entryIds = new Set(entries.map((e) => e.id));
+      return [...entries, ...prev.filter((o) => !entryIds.has(o.id))];
+    });
+    void enqueueOutboxMutations(entries);
+
+    logAdminActivity({
+      category: 'inventory',
+      action: 'bulk_create_suppliers',
+      description: `Imported ${createdSuppliers.length} supplier${createdSuppliers.length === 1 ? '' : 's'} via CSV`,
+      recordType: 'supplier',
+      recordId: activeBusinessId,
+    });
+
+    soundFx.playSuccess();
+    showToast(
+      `Imported ${createdSuppliers.length} supplier${createdSuppliers.length === 1 ? '' : 's'}`,
+      'success'
+    );
+    return createdSuppliers.length;
+  };
+
+  const bulkUpdateSuppliers = async (
+    items: Array<{ id: string; updates: Partial<Supplier> }>,
+    summaryLabel?: string
+  ): Promise<number> => {
+    if (!Array.isArray(items) || items.length === 0) return 0;
+    const updateMap = new Map(items.map((item) => [item.id, item.updates]));
+    const nowIso = new Date().toISOString();
+    const updatedRecords: Supplier[] = [];
+
+    setAllSuppliers((prev) =>
+      prev.map((s) => {
+        const patch = updateMap.get(s.id);
+        if (!patch) return s;
+        const merged: Supplier = {
+          ...s,
+          ...patch,
+          updatedAt: nowIso,
+          isPendingCloudSync: !isOnline,
+        };
+        updatedRecords.push(merged);
+        return merged;
+      })
+    );
+
+    if (updatedRecords.length === 0) return 0;
+
+    const entries = updatedRecords.map((s) =>
+      buildOutboxEntry({
+        businessId: s.businessId || activeBusinessId,
+        collectionName: 'suppliers',
+        docId: s.id,
+        operation: 'upsert',
+        payload: s,
+        label: `Update supplier ${s.name}`,
+      })
+    );
+    setOutboxItems((prev) => {
+      const entryIds = new Set(entries.map((e) => e.id));
+      return [...entries, ...prev.filter((o) => !entryIds.has(o.id))];
+    });
+    void enqueueOutboxMutations(entries);
+
+    logAdminActivity({
+      category: 'inventory',
+      action: 'bulk_update_suppliers',
+      description:
+        summaryLabel ||
+        `Updated ${updatedRecords.length} supplier${updatedRecords.length === 1 ? '' : 's'} via CSV`,
+      recordType: 'supplier',
+      recordId: activeBusinessId,
+    });
+
+    showToast(
+      summaryLabel ||
+        `Updated ${updatedRecords.length} supplier${updatedRecords.length === 1 ? '' : 's'}`,
+      'success'
+    );
+    return updatedRecords.length;
   };
 
   const deleteSupplier = async (id: string): Promise<boolean> => {
@@ -10608,6 +10736,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         selectedSupplier,
         setSelectedSupplier,
         addSupplier,
+        bulkAddSuppliers,
+        bulkUpdateSuppliers,
         updateSupplier,
         deleteSupplier,
         getProductsForSupplier,
