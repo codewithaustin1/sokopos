@@ -265,7 +265,7 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
         {/* Drawer Header */}
         <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
           <div className="flex items-center gap-2.5 text-slate-900 font-bold text-lg min-w-0">
-            <div className="w-7 h-7 rounded-lg bg-[#059669] flex items-center justify-center text-white text-xs shadow-sm shadow-emerald-500/20 shrink-0">
+            <div className="w-7 h-7 rounded-lg bg-[#28a745] flex items-center justify-center text-white text-xs shadow-sm shadow-emerald-500/20 shrink-0">
               <Layers className="w-4 h-4 text-white" />
             </div>
             <span className="font-bold text-lg text-slate-900 tracking-tight">Navigation</span>
@@ -292,27 +292,27 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
               <button
                 type="button"
                 onClick={() => handleItemClick(() => onNavigateTab!('register'))}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#059669] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
               >
-                <ShoppingCart className="w-5 h-5 text-slate-400 group-hover:text-[#059669] transition-colors shrink-0" />
+                <ShoppingCart className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
                 <span className="truncate flex-1">Register / Sell</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleItemClick(() => onNavigateTab!('inventory'))}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#059669] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
               >
-                <Package className="w-5 h-5 text-slate-400 group-hover:text-[#059669] transition-colors shrink-0" />
+                <Package className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
                 <span className="truncate flex-1">Inventory Catalog</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleItemClick(() => onNavigateTab!('analytics'))}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#059669] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
               >
-                <BarChart3 className="w-5 h-5 text-slate-400 group-hover:text-[#059669] transition-colors shrink-0" />
+                <BarChart3 className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
                 <span className="truncate flex-1">Sales Analytics</span>
                 {!isSuperAdmin && entitlements && !entitlements.capabilities.analytics && (
                   <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -322,27 +322,27 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
               <button
                 type="button"
                 onClick={() => handleItemClick(() => onNavigateTab!('shifts'))}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#059669] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
               >
-                <Clock className="w-5 h-5 text-slate-400 group-hover:text-[#059669] transition-colors shrink-0" />
+                <Clock className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
                 <span className="truncate flex-1">Shifts & Till Sessions</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleItemClick(() => onNavigateTab!('reports'))}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#059669] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
               >
-                <FileText className="w-5 h-5 text-slate-400 group-hover:text-[#059669] transition-colors shrink-0" />
+                <FileText className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
                 <span className="truncate flex-1">Thermal Z-Reports</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleItemClick(() => onNavigateTab!('suppliers'))}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#059669] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
               >
-                <Truck className="w-5 h-5 text-slate-400 group-hover:text-[#059669] transition-colors shrink-0" />
+                <Truck className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
                 <span className="truncate flex-1">Suppliers & Invoices</span>
                 {!isSuperAdmin && entitlements && !entitlements.capabilities.suppliers && (
                   <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -352,27 +352,27 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
               <button
                 type="button"
                 onClick={() => handleItemClick(() => onNavigateTab!('customers'))}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#059669] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
               >
-                <Users className="w-5 h-5 text-slate-400 group-hover:text-[#059669] transition-colors shrink-0" />
+                <Users className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
                 <span className="truncate flex-1">Customers & Daftari</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleItemClick(() => onNavigateTab!('cloud-sync'))}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#059669] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
               >
-                <RefreshCw className="w-5 h-5 text-slate-400 group-hover:text-[#059669] transition-colors shrink-0" />
+                <RefreshCw className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
                 <span className="truncate flex-1">Cloud Sync Vault</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleItemClick(() => onNavigateTab!('settings'))}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#059669] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
               >
-                <Settings className="w-5 h-5 text-slate-400 group-hover:text-[#059669] transition-colors shrink-0" />
+                <Settings className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
                 <span className="truncate flex-1">Store Settings</span>
               </button>
 
@@ -389,9 +389,9 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
                 <button
                   type="button"
                   onClick={() => handleItemClick(() => onNavigateTab!('super-admin'))}
-                  className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#059669] transition-all cursor-pointer group text-sm w-full text-left"
+                  className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
                 >
-                  <ShieldCheck className="w-5 h-5 text-amber-500 group-hover:text-[#059669] transition-colors shrink-0" />
+                  <ShieldCheck className="w-5 h-5 text-amber-500 group-hover:text-[#28a745] transition-colors shrink-0" />
                   <span className="truncate flex-1">Super Admin Console</span>
                 </button>
               )}
@@ -402,54 +402,54 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
               <button
                 type="button"
                 onClick={handleScrollHome}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#059669] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
               >
-                <Home className="w-5 h-5 text-slate-400 group-hover:text-[#059669] transition-colors shrink-0" />
+                <Home className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
                 <span className="truncate flex-1">Home</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleSectionNav('solutions')}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#059669] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
               >
-                <Layers className="w-5 h-5 text-slate-400 group-hover:text-[#059669] transition-colors shrink-0" />
+                <Layers className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
                 <span className="truncate flex-1">Your Shop</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleSectionNav('payments')}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#059669] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
               >
-                <Smartphone className="w-5 h-5 text-slate-400 group-hover:text-[#059669] transition-colors shrink-0" />
+                <Smartphone className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
                 <span className="truncate flex-1">M-Pesa &amp; eTIMS</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleSectionNav('hardware')}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#059669] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
               >
-                <Cpu className="w-5 h-5 text-slate-400 group-hover:text-[#059669] transition-colors shrink-0" />
+                <Cpu className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
                 <span className="truncate flex-1">Use Your Hardware</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleSectionNav('compare')}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#059669] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
               >
-                <Award className="w-5 h-5 text-slate-400 group-hover:text-[#059669] transition-colors shrink-0" />
+                <Award className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
                 <span className="truncate flex-1">Why Switch</span>
               </button>
 
               <button
                 type="button"
                 onClick={handlePricingNav}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#059669] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
               >
-                <CreditCard className="w-5 h-5 text-slate-400 group-hover:text-[#059669] transition-colors shrink-0" />
+                <CreditCard className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
                 <span className="truncate flex-1">Pricing</span>
               </button>
 
@@ -470,7 +470,7 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
           <button
             type="button"
             onClick={handleFooterCta}
-            className="drawer-item flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl text-sm font-semibold text-white bg-[#059669] hover:bg-[#047857] shadow-sm shadow-emerald-600/25 transition-all hover:shadow-md cursor-pointer whitespace-nowrap"
+            className="drawer-item flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl text-sm font-semibold text-white bg-[#28a745] hover:bg-[#218838] shadow-sm shadow-emerald-600/25 transition-all hover:shadow-md cursor-pointer whitespace-nowrap"
           >
             {isPosOperational ? (
               <>
@@ -485,8 +485,8 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
               </>
             )}
           </button>
-          <div className="text-center text-xs text-slate-400 pt-1">
-            &copy; 2026 SokoPoS Enterprise Platform
+          <div className="text-center text-[11px] text-slate-400 pt-1 leading-snug">
+            &copy; 2026 Sokoplus Horizon &middot; SokoPoS&trade; &middot; All rights reserved
           </div>
         </div>
       </aside>

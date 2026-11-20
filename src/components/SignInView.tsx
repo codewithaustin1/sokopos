@@ -521,6 +521,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const [shopEmailInput, setShopEmailInput] = useState<string>('');
   const [shopPasswordInput, setShopPasswordInput] = useState<string>('');
   const [showShopPassword, setShowShopPassword] = useState<boolean>(false);
+  const [acceptedShopTerms, setAcceptedShopTerms] = useState<boolean>(false);
+  const [acceptedPartnerTerms, setAcceptedPartnerTerms] = useState<boolean>(false);
 
   // Synchronize URL hash with active legal or pricing page for browser history & direct links
   useEffect(() => {
@@ -1015,6 +1017,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       setEmailAuthError('Use at least 6 characters for your password.');
       return;
     }
+    if (!acceptedShopTerms) {
+      setEmailAuthError('Please review and accept the Terms of Service, Liability Cap, and Privacy Policy to continue.');
+      soundFx.playError();
+      return;
+    }
 
     trackPlatformEvent('signin_start', {
       channel: pendingCheckoutIntent && pendingCheckoutIntent.planId !== 'free' ? 'checkout_register' : 'register',
@@ -1070,6 +1077,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       const cleanPhone = phone.replace(/\D/g, '');
       if (cleanPhone.length < 9) {
         setPartnerAuthError('Please enter a valid Safaricom M-Pesa phone number for commission payouts.');
+        return;
+      }
+      if (!acceptedPartnerTerms) {
+        setPartnerAuthError('Please review and accept the Terms of Service, Liability Cap, and Privacy Policy to continue.');
+        soundFx.playError();
         return;
       }
 
@@ -1231,14 +1243,14 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     systemUsers.length > 0
       ? systemUsers.slice(0, 4)
       : [
-          { id: 'staff-101', name: 'John Mutua', code: 'C-101 · Cashier', initials: 'JM', bg: '#059669' },
-          { id: 'staff-102', name: 'Amina Wanjiru', code: 'C-102 · Manager', initials: 'AW', bg: '#059669' },
+          { id: 'staff-101', name: 'John Mutua', code: 'C-101 · Cashier', initials: 'JM', bg: '#28a745' },
+          { id: 'staff-102', name: 'Amina Wanjiru', code: 'C-102 · Manager', initials: 'AW', bg: '#28a745' },
         ];
 
   return (
     <div
       id="pos-landing-root"
-      className="min-h-full w-full flex flex-col justify-between selection:bg-[#059669] selection:text-white relative"
+      className="min-h-full w-full flex flex-col justify-between selection:bg-[#28a745] selection:text-white relative"
       style={{
         backgroundColor: '#f8fafc',
         color: '#090d16',
@@ -1253,12 +1265,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           --ink: #090d16;
           --muted: #475569;
           --line: #e2e8f0;
-          --blue: #059669;
+          --blue: #28a745;
           --blue-ink: #ffffff;
           --red: #c8231b;
-          --green: #059669;
+          --green: #28a745;
           --soft: #ecfdf5;
-          --tone-money: #047857;
+          --tone-money: #28a745;
           --tone-speed: #1e40af;
           --tone-savings: #b45309;
           --tone-legacy: #475569;
@@ -1910,7 +1922,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               e.preventDefault();
               scrollToSection('solutions');
             }}
-            className="hover:text-[#059669] transition cursor-pointer whitespace-nowrap shrink-0"
+            className="hover:text-[#28a745] transition cursor-pointer whitespace-nowrap shrink-0"
           >
             Your Shop
           </a>
@@ -1920,7 +1932,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               e.preventDefault();
               scrollToSection('payments');
             }}
-            className="hover:text-[#059669] transition cursor-pointer whitespace-nowrap shrink-0"
+            className="hover:text-[#28a745] transition cursor-pointer whitespace-nowrap shrink-0"
           >
             M-Pesa &amp; eTIMS
           </a>
@@ -1930,7 +1942,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               e.preventDefault();
               scrollToSection('hardware');
             }}
-            className="hover:text-[#059669] transition cursor-pointer whitespace-nowrap shrink-0"
+            className="hover:text-[#28a745] transition cursor-pointer whitespace-nowrap shrink-0"
           >
             Use Your Hardware
           </a>
@@ -1940,7 +1952,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               e.preventDefault();
               scrollToSection('compare');
             }}
-            className="hover:text-[#059669] transition cursor-pointer whitespace-nowrap shrink-0"
+            className="hover:text-[#28a745] transition cursor-pointer whitespace-nowrap shrink-0"
           >
             Why Switch
           </a>
@@ -1968,7 +1980,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               type="button"
               id="top-nav-login-btn"
               onClick={() => openAuthModal('owner')}
-              className="hidden sm:inline-flex items-center px-4 py-2 min-h-[40px] rounded-xl bg-[#059669] hover:bg-[#047857] text-white font-bold text-xs shadow-md shadow-emerald-500/20 transition cursor-pointer whitespace-nowrap shrink-0"
+              className="hidden sm:inline-flex items-center px-4 py-2 min-h-[40px] rounded-xl bg-[#28a745] hover:bg-[#218838] text-white font-bold text-xs shadow-md shadow-emerald-500/20 transition cursor-pointer whitespace-nowrap shrink-0"
             >
               Sign In
             </button>
@@ -2389,7 +2401,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 >
                   <div className="space-y-4">
                     <div className="flex items-center justify-between pr-8 md:pr-0">
-                      <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-[#059669]">
+                      <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-[#28a745]">
                         Checkout Summary
                       </span>
                       <button
@@ -2463,7 +2475,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         >
                           <span>Annual</span>
                           {annualSavePct > 0 && (
-                            <span className="text-[10px] font-extrabold text-[#059669] tabular-nums">
+                            <span className="text-[10px] font-extrabold text-[#28a745] tabular-nums">
                               -{annualSavePct}%
                             </span>
                           )}
@@ -2472,18 +2484,18 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
                       {annualSavingsKes > 0 && (
                         isAnnualBilling ? (
-                          <div className="mt-2.5 px-3 py-2 rounded-xl bg-[#ecfdf5] border border-[#a7f3d0] text-[#047857] text-xs font-semibold flex items-center gap-2 tabular-nums">
-                            <Check className="w-3.5 h-3.5 shrink-0 text-[#059669]" />
+                          <div className="mt-2.5 px-3 py-2 rounded-xl bg-[#ecfdf5] border border-[#a7f3d0] text-[#28a745] text-xs font-semibold flex items-center gap-2 tabular-nums">
+                            <Check className="w-3.5 h-3.5 shrink-0 text-[#28a745]" />
                             <span>You save Ksh {annualSavingsKes.toLocaleString('en-KE')}/yr (2 months free)</span>
                           </div>
                         ) : (
                           <button
                             type="button"
                             onClick={() => handleToggleCheckoutBilling('annual')}
-                            className="mt-2.5 w-full px-3 py-2 rounded-xl bg-white hover:bg-[#ecfdf5]/70 border border-dashed border-[#059669]/50 text-[#090d16] text-xs font-semibold flex items-center justify-between gap-2 transition cursor-pointer tabular-nums text-left"
+                            className="mt-2.5 w-full px-3 py-2 rounded-xl bg-white hover:bg-[#ecfdf5]/70 border border-dashed border-[#28a745]/50 text-[#090d16] text-xs font-semibold flex items-center justify-between gap-2 transition cursor-pointer tabular-nums text-left"
                           >
                             <span>Save Ksh {annualSavingsKes.toLocaleString('en-KE')}/yr with Annual</span>
-                            <ArrowRight className="w-3.5 h-3.5 shrink-0 text-[#059669]" />
+                            <ArrowRight className="w-3.5 h-3.5 shrink-0 text-[#28a745]" />
                           </button>
                         )
                       )}
@@ -2492,7 +2504,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     {/* Trust Signals */}
                     <div className="pt-3 border-t border-[#e2e8f0] space-y-2.5">
                       <div className="flex items-start gap-2.5">
-                        <Zap className="w-4 h-4 text-[#059669] shrink-0 mt-0.5" />
+                        <Zap className="w-4 h-4 text-[#28a745] shrink-0 mt-0.5" />
                         <div className="text-xs leading-snug">
                           <span className="font-bold text-[#090d16] block">Ready right after M-Pesa</span>
                           <span className="text-[#475569]">Your shop features unlock the moment STK Push or card payment completes.</span>
@@ -2524,7 +2536,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             <div className={isCheckoutContextActive ? 'p-5 sm:p-7 flex flex-col justify-center' : ''}>
             {pendingOtpEmail ? (
               <div id="p-verify-login-otp" className="space-y-4 pt-2 text-left">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#059669]">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#28a745]">
                   <ShieldCheck className="w-6 h-6" />
                 </div>
                 <div>
@@ -2576,7 +2588,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         setLoginOtpError(null);
                       }}
                       placeholder="000000"
-                      className="w-full h-13 px-4 rounded-xl border border-[#d9e1e6] bg-[#f8fafc] text-center font-mono tabular-nums text-2xl tracking-[0.4em] font-extrabold text-[#090d16] focus:outline-none focus:border-[#059669] focus:bg-white transition"
+                      className="w-full h-13 px-4 rounded-xl border border-[#d9e1e6] bg-[#f8fafc] text-center font-mono tabular-nums text-2xl tracking-[0.4em] font-extrabold text-[#090d16] focus:outline-none focus:border-[#28a745] focus:bg-white transition"
                       autoFocus
                     />
                   </div>
@@ -2584,7 +2596,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   <button
                     type="submit"
                     disabled={isVerifyingLoginOtp || loginOtpCode.length !== 6 || otpExpirySeconds <= 0}
-                    className="w-full h-11 bg-[#059669] hover:bg-[#047857] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap"
+                    className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap"
                   >
                     {isVerifyingLoginOtp ? (
                       <>
@@ -2608,7 +2620,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       type="button"
                       onClick={handleResendLoginOtp}
                       disabled={isSendingLoginOtp || otpResendCooldownSec > 0}
-                      className="text-xs font-bold text-[#059669] hover:underline cursor-pointer disabled:text-slate-400 disabled:no-underline disabled:cursor-not-allowed font-mono tabular-nums"
+                      className="text-xs font-bold text-[#28a745] hover:underline cursor-pointer disabled:text-slate-400 disabled:no-underline disabled:cursor-not-allowed font-mono tabular-nums"
                     >
                       {isSendingLoginOtp
                         ? 'Sending code...'
@@ -2633,7 +2645,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               </div>
             ) : pendingVerificationEmail ? (
               <div id="p-verify-email" className="space-y-4 pt-2">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#059669]">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#28a745]">
                   <Mail className="w-6 h-6" />
                 </div>
                 <div>
@@ -2654,8 +2666,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 </div>
 
                 {verificationContext !== 'partner' && pendingCheckoutIntent && pendingCheckoutIntent.planId !== 'free' && (
-                  <div className="p-3 rounded-xl bg-[#ecfdf5] border border-[#a7f3d0] text-[#047857] text-xs font-semibold flex items-start gap-2">
-                    <Zap className="w-4 h-4 shrink-0 mt-0.5 text-[#059669]" />
+                  <div className="p-3 rounded-xl bg-[#ecfdf5] border border-[#a7f3d0] text-[#28a745] text-xs font-semibold flex items-start gap-2">
+                    <Zap className="w-4 h-4 shrink-0 mt-0.5 text-[#28a745]" />
                     <span>
                       Your <strong>{pendingCheckoutIntent.planName} Plan ({pendingCheckoutIntent.billingCycle === 'annual' ? 'Annual' : 'Monthly'})</strong> choice is saved—payment opens as soon as you confirm.
                     </span>
@@ -2681,7 +2693,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     type="button"
                     onClick={handleCheckVerification}
                     disabled={isCheckingVerification}
-                    className="w-full h-11 bg-[#059669] hover:bg-[#047857] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap"
+                    className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap"
                   >
                     {isCheckingVerification ? (
                       <>
@@ -2823,7 +2835,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                               setEmailAuthError(null);
                               setResetEmailSuccessMessage(null);
                             }}
-                            className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#059669] focus:outline-none transition-colors"
+                            className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors"
                           />
                           <Mail className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
                         </div>
@@ -2848,7 +2860,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       <button
                         type="submit"
                         disabled={isSendingResetEmail}
-                        className="w-full h-11 bg-[#059669] hover:bg-[#047857] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-2 whitespace-nowrap"
+                        className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-2 whitespace-nowrap"
                       >
                         {isSendingResetEmail ? (
                           <>
@@ -2868,7 +2880,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                             setEmailAuthError(null);
                             setResetEmailSuccessMessage(null);
                           }}
-                          className="text-xs font-bold text-[#059669] hover:underline cursor-pointer"
+                          className="text-xs font-bold text-[#28a745] hover:underline cursor-pointer"
                         >
                           ← Back to sign in
                         </button>
@@ -2924,7 +2936,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         }}
                         className={`py-1.5 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
                           ownerLoginMethod === 'otp'
-                            ? 'bg-white text-[#059669] shadow-xs'
+                            ? 'bg-white text-[#28a745] shadow-xs'
                             : 'text-[#4c5a6b] hover:text-[#090d16]'
                         }`}
                       >
@@ -2953,7 +2965,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                                 setOwnerEmailInput(e.target.value);
                                 setEmailAuthError(null);
                               }}
-                              className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#059669] focus:outline-none transition-colors"
+                              className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors"
                             />
                             <Mail className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
                           </div>
@@ -2971,7 +2983,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                                 setEmailAuthError(null);
                                 setResetEmailSuccessMessage(null);
                               }}
-                              className="text-[11px] font-bold text-[#059669] hover:underline cursor-pointer"
+                              className="text-[11px] font-bold text-[#28a745] hover:underline cursor-pointer"
                             >
                               Forgot password?
                             </button>
@@ -2989,7 +3001,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                                 setOwnerPasswordInput(e.target.value);
                                 setEmailAuthError(null);
                               }}
-                              className="w-full h-11 pl-3.5 pr-10 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#059669] focus:outline-none transition-colors"
+                              className="w-full h-11 pl-3.5 pr-10 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors"
                             />
                             <button
                               type="button"
@@ -3013,7 +3025,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         <button
                           type="submit"
                           disabled={isAuthenticatingEmail}
-                          className="w-full h-11 bg-[#059669] hover:bg-[#047857] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1 whitespace-nowrap"
+                          className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1 whitespace-nowrap"
                         >
                           {isAuthenticatingEmail ? (
                             <>
@@ -3064,7 +3076,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                                 setOwnerEmailInput(e.target.value);
                                 setEmailAuthError(null);
                               }}
-                              className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#059669] focus:outline-none transition-colors"
+                              className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors"
                             />
                             <Mail className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
                           </div>
@@ -3080,7 +3092,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         <button
                           type="submit"
                           disabled={isSendingLoginOtp}
-                          className="w-full h-11 bg-[#059669] hover:bg-[#047857] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1 whitespace-nowrap"
+                          className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1 whitespace-nowrap"
                         >
                           {isSendingLoginOtp ? (
                             <>
@@ -3237,7 +3249,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                             setIsForgotPasswordMode(true);
                             setOwnerEmailInput(partnerEmailInput);
                           }}
-                          className="text-[11px] font-bold text-[#059669] hover:underline cursor-pointer"
+                          className="text-[11px] font-bold text-[#28a745] hover:underline cursor-pointer"
                         >
                           Forgot password?
                         </button>
@@ -3288,6 +3300,60 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     </div>
                   )}
 
+                  {partnerMode === 'register' && (
+                    <label
+                      htmlFor="partner-terms-consent"
+                      className="flex items-start gap-2.5 p-2.5 rounded-xl bg-[#f8fafc] border border-[#e2e8f0] text-[11px] text-[#475569] leading-relaxed cursor-pointer select-none min-h-[44px]"
+                    >
+                      <input
+                        id="partner-terms-consent"
+                        type="checkbox"
+                        checked={acceptedPartnerTerms}
+                        onChange={(e) => {
+                          setAcceptedPartnerTerms(e.target.checked);
+                          if (e.target.checked) setPartnerAuthError(null);
+                        }}
+                        className="mt-0.5 w-4 h-4 rounded border-[#cbd5e1] accent-[#28a745] cursor-pointer shrink-0"
+                      />
+                      <span>
+                        I agree to the Sokoplus Horizon{' '}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            navigateToLegalPage('terms');
+                          }}
+                          className="font-bold text-[#28a745] hover:underline cursor-pointer"
+                        >
+                          Terms &amp; 12-Month Liability Cap
+                        </button>
+                        ,{' '}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            navigateToLegalPage('privacy');
+                          }}
+                          className="font-bold text-[#28a745] hover:underline cursor-pointer"
+                        >
+                          Privacy Policy
+                        </button>
+                        , and{' '}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            navigateToLegalPage('ownership');
+                          }}
+                          className="font-bold text-[#28a745] hover:underline cursor-pointer"
+                        >
+                          IP Notice
+                        </button>
+                        .
+                      </span>
+                    </label>
+                  )}
+
                   {/* Error alert banner */}
                   {partnerAuthError && (
                     <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
@@ -3299,7 +3365,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   <button
                     type="submit"
                     disabled={isAuthenticatingPartner}
-                    className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1"
+                    className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1"
                   >
                     {isAuthenticatingPartner ? (
                       <>
@@ -3333,12 +3399,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 {/* STAFF ID / USERNAME INPUT OR APPOINTED DEMO CASHIER CARD */}
                 {isDemoModeActive && !isEditingStaffId ? (
                   <div
-                    className="border-2 border-[#059669] bg-white rounded-2xl p-3 flex items-center justify-between shadow-2xs transition-all hover:shadow-xs"
+                    className="border-2 border-[#28a745] bg-white rounded-2xl p-3 flex items-center justify-between shadow-2xs transition-all hover:shadow-xs"
                     id="selectedStaffCard"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div
-                        className="w-10 h-10 rounded-xl bg-[#059669] text-white font-extrabold text-sm flex items-center justify-center shrink-0 shadow-2xs"
+                        className="w-10 h-10 rounded-xl bg-[#28a745] text-white font-extrabold text-sm flex items-center justify-center shrink-0 shadow-2xs"
                         aria-hidden="true"
                       >
                         {matchedStaff?.initials ||
@@ -3364,7 +3430,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     <button
                       type="button"
                       onClick={() => setIsEditingStaffId(true)}
-                      className="text-xs text-[#059669] hover:text-[#047857] font-bold px-2.5 py-1.5 rounded-lg hover:bg-emerald-50 transition cursor-pointer shrink-0 whitespace-nowrap"
+                      className="text-xs text-[#28a745] hover:text-[#218838] font-bold px-2.5 py-1.5 rounded-lg hover:bg-emerald-50 transition cursor-pointer shrink-0 whitespace-nowrap"
                     >
                       Switch cashier
                     </button>
@@ -3396,13 +3462,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           }
                         }}
                         placeholder="e.g. #1001 or cashier.a"
-                        className="flex-1 h-10 px-3.5 rounded-xl border border-[#d9e1e6] bg-white text-[#0e1a2b] font-bold text-sm focus:border-[#059669] focus:outline-none transition-colors"
+                        className="flex-1 h-10 px-3.5 rounded-xl border border-[#d9e1e6] bg-white text-[#0e1a2b] font-bold text-sm focus:border-[#28a745] focus:outline-none transition-colors"
                       />
                       {isDemoModeActive && (
                         <button
                           type="button"
                           onClick={() => setIsEditingStaffId(false)}
-                          className="h-10 px-3.5 bg-[#059669] hover:bg-[#047857] text-white rounded-xl text-xs font-bold transition cursor-pointer shrink-0"
+                          className="h-10 px-3.5 bg-[#28a745] hover:bg-[#218838] text-white rounded-xl text-xs font-bold transition cursor-pointer shrink-0"
                         >
                           Done
                         </button>
@@ -3439,7 +3505,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       }}
                       placeholder="••••"
                       aria-label="4-digit secure PIN"
-                      className="w-full h-11 text-center font-mono text-2xl tracking-[0.4em] rounded-xl border border-[#d9e1e6] bg-[#f8fafc] text-[#0e1a2b] font-black focus:bg-white focus:border-[#059669] focus:outline-none transition-colors shadow-2xs select-none"
+                      className="w-full h-11 text-center font-mono text-2xl tracking-[0.4em] rounded-xl border border-[#d9e1e6] bg-[#f8fafc] text-[#0e1a2b] font-black focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors shadow-2xs select-none"
                     />
                   </div>
 
@@ -3452,7 +3518,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           key={idx}
                           className={`w-3.5 h-3.5 rounded-full border-2 transition-all duration-150 ${
                             isFilled
-                              ? 'bg-[#059669] border-[#059669] scale-110 shadow-2xs'
+                              ? 'bg-[#28a745] border-[#28a745] scale-110 shadow-2xs'
                               : 'bg-[#f4f7f6] border-[#cbd5e1]'
                           }`}
                         />
@@ -3472,7 +3538,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     <button
                       key={k}
                       type="button"
-                      className="h-13 sm:h-14 rounded-2xl border border-[#d9e1e6] bg-[#f8fafc] hover:bg-[#edf2f7] active:bg-[#059669] active:text-white text-[#0e1a2b] font-bold text-lg sm:text-xl transition-all cursor-pointer shadow-2xs flex items-center justify-center select-none font-mono tabular-nums"
+                      className="h-13 sm:h-14 rounded-2xl border border-[#d9e1e6] bg-[#f8fafc] hover:bg-[#edf2f7] active:bg-[#28a745] active:text-white text-[#0e1a2b] font-bold text-lg sm:text-xl transition-all cursor-pointer shadow-2xs flex items-center justify-center select-none font-mono tabular-nums"
                       onClick={() => handleKeypadPress(k)}
                     >
                       {k === '⌫' ? (
@@ -3491,7 +3557,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   {isDemoModeActive ? (
                     <button
                       type="button"
-                      className="text-[#059669] hover:underline font-bold cursor-pointer font-mono tabular-nums"
+                      className="text-[#28a745] hover:underline font-bold cursor-pointer font-mono tabular-nums"
                       id="fillPin"
                       onClick={handleFillDemoPin}
                     >
@@ -3537,7 +3603,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         setShopNameInput(e.target.value);
                         setEmailAuthError(null);
                       }}
-                      className="w-full h-11 px-3.5 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#059669] focus:outline-none transition-colors"
+                      className="w-full h-11 px-3.5 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors"
                     />
                   </div>
                   <div>
@@ -3555,7 +3621,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           setShopEmailInput(e.target.value);
                           setEmailAuthError(null);
                         }}
-                        className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#059669] focus:outline-none transition-colors"
+                        className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors"
                       />
                       <Mail className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
                     </div>
@@ -3576,7 +3642,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           setShopPasswordInput(e.target.value);
                           setEmailAuthError(null);
                         }}
-                        className="w-full h-11 pl-3.5 pr-10 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#059669] focus:outline-none transition-colors"
+                        className="w-full h-11 pl-3.5 pr-10 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors"
                       />
                       <button
                         type="button"
@@ -3589,6 +3655,58 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     </div>
                   </div>
 
+                  <label
+                    htmlFor="shop-terms-consent"
+                    className="flex items-start gap-2.5 p-2.5 rounded-xl bg-[#f8fafc] border border-[#e2e8f0] text-[11px] text-[#475569] leading-relaxed cursor-pointer select-none min-h-[44px]"
+                  >
+                    <input
+                      id="shop-terms-consent"
+                      type="checkbox"
+                      checked={acceptedShopTerms}
+                      onChange={(e) => {
+                        setAcceptedShopTerms(e.target.checked);
+                        if (e.target.checked) setEmailAuthError(null);
+                      }}
+                      className="mt-0.5 w-4 h-4 rounded border-[#cbd5e1] accent-[#28a745] cursor-pointer shrink-0"
+                    />
+                    <span>
+                      I accept the Sokoplus Horizon{' '}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          navigateToLegalPage('terms');
+                        }}
+                        className="font-bold text-[#28a745] hover:underline cursor-pointer"
+                      >
+                        Terms &amp; 12-Month Liability Cap
+                      </button>
+                      ,{' '}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          navigateToLegalPage('privacy');
+                        }}
+                        className="font-bold text-[#28a745] hover:underline cursor-pointer"
+                      >
+                        Privacy Policy
+                      </button>
+                      , and{' '}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          navigateToLegalPage('ownership');
+                        }}
+                        className="font-bold text-[#28a745] hover:underline cursor-pointer"
+                      >
+                        IP Notice
+                      </button>
+                      .
+                    </span>
+                  </label>
+
                   {/* Error alert banner */}
                   {emailAuthError && (
                     <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
@@ -3600,7 +3718,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   <button
                     type="submit"
                     disabled={isAuthenticatingEmail}
-                    className="w-full h-12 bg-[#059669] hover:bg-[#047857] active:scale-[0.99] disabled:opacity-60 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs mt-1 whitespace-nowrap"
+                    className="w-full h-12 bg-[#28a745] hover:bg-[#218838] active:scale-[0.99] disabled:opacity-60 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs mt-1 whitespace-nowrap"
                   >
                     {isAuthenticatingEmail ? (
                       <>
@@ -3660,6 +3778,32 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   ? 'Sign in instead'
                   : 'Set up a new shop'}
               </button>
+              <p className="mt-3 text-[11px] text-[#64748b] leading-snug">
+                SokoPoS&trade; by Sokoplus Horizon &middot;{' '}
+                <button
+                  type="button"
+                  onClick={() => navigateToLegalPage('terms')}
+                  className="font-semibold text-[#475569] hover:text-[#28a745] hover:underline cursor-pointer"
+                >
+                  Terms &amp; Liability Cap
+                </button>
+                {' · '}
+                <button
+                  type="button"
+                  onClick={() => navigateToLegalPage('privacy')}
+                  className="font-semibold text-[#475569] hover:text-[#28a745] hover:underline cursor-pointer"
+                >
+                  Privacy
+                </button>
+                {' · '}
+                <button
+                  type="button"
+                  onClick={() => navigateToLegalPage('ownership')}
+                  className="font-semibold text-[#475569] hover:text-[#28a745] hover:underline cursor-pointer"
+                >
+                  IP Notice
+                </button>
+              </p>
             </div>
               </>
             )}

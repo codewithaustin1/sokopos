@@ -166,9 +166,9 @@ export const ExecutiveTrendVisualizer: React.FC<ExecutiveTrendVisualizerProps> =
                 <Area
                   type="monotone"
                   dataKey="marginPct"
-                  stroke="#059669"
+                  stroke="#28a745"
                   strokeWidth={2}
-                  fill="#059669"
+                  fill="#28a745"
                   fillOpacity={0.12}
                 />
               </AreaChart>
@@ -222,7 +222,7 @@ export const ExecutiveTrendVisualizer: React.FC<ExecutiveTrendVisualizerProps> =
                       <Line
                         type="monotone"
                         dataKey="grossProfit"
-                        stroke="#059669"
+                        stroke="#28a745"
                         strokeWidth={2}
                         dot={false}
                       />
@@ -242,9 +242,9 @@ export const ExecutiveTrendVisualizer: React.FC<ExecutiveTrendVisualizerProps> =
                     <Area
                       type="monotone"
                       dataKey="grossProfit"
-                      stroke="#059669"
+                      stroke="#28a745"
                       strokeWidth={2}
-                      fill="#059669"
+                      fill="#28a745"
                       fillOpacity={0.14}
                     />
                     <Line

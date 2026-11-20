@@ -58,7 +58,7 @@ const LOGO_PRESETS = [
     id: 'logo-preset-apex',
     name: 'Apex Supermarket',
     tag: '4:1 Horizontal Lockup',
-    url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="100" viewBox="0 0 400 100"><rect width="400" height="100" fill="none"/><g transform="translate(15, 15)"><rect width="70" height="70" rx="18" fill="%23059669"/><path d="M22 30h26l-3 24H25L22 30z" fill="none" stroke="white" stroke-width="4" stroke-linejoin="round"/><path d="M28 30V24a7 7 0 0 1 14 0v6" fill="none" stroke="white" stroke-width="4" stroke-linecap="round"/></g><text x="100" y="55" fill="%23064e3b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="900" font-size="32" letter-spacing="-0.03em">APEX MART</text><rect x="306" y="32" width="76" height="24" rx="6" fill="%2310b981"/><text x="344" y="48" fill="white" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="900" font-size="11" text-anchor="middle" letter-spacing="0.05em">RETAIL</text><text x="102" y="73" fill="%23047857" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="700" font-size="10.5" letter-spacing="0.1em">FRESH FOODS &amp; GROCERY</text></svg>',
+    url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="100" viewBox="0 0 400 100"><rect width="400" height="100" fill="none"/><g transform="translate(15, 15)"><rect width="70" height="70" rx="18" fill="%2328a745"/><path d="M22 30h26l-3 24H25L22 30z" fill="none" stroke="white" stroke-width="4" stroke-linejoin="round"/><path d="M28 30V24a7 7 0 0 1 14 0v6" fill="none" stroke="white" stroke-width="4" stroke-linecap="round"/></g><text x="100" y="55" fill="%23064e3b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="900" font-size="32" letter-spacing="-0.03em">APEX MART</text><rect x="306" y="32" width="76" height="24" rx="6" fill="%2310b981"/><text x="344" y="48" fill="white" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="900" font-size="11" text-anchor="middle" letter-spacing="0.05em">RETAIL</text><text x="102" y="73" fill="%2328a745" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="700" font-size="10.5" letter-spacing="0.1em">FRESH FOODS &amp; GROCERY</text></svg>',
   },
   {
     id: 'logo-preset-metro',
@@ -79,7 +79,7 @@ const FAVICON_PRESETS = [
     id: 'fav-preset-emerald-cart',
     name: 'Emerald Cart',
     tag: 'Green Till',
-    url: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="%23059669"/><path d="M7 8h3l2.5 9h10l2-6H11" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="13" cy="21" r="1.5" fill="white"/><circle cx="21" cy="21" r="1.5" fill="white"/></svg>',
+    url: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="%2328a745"/><path d="M7 8h3l2.5 9h10l2-6H11" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="13" cy="21" r="1.5" fill="white"/><circle cx="21" cy="21" r="1.5" fill="white"/></svg>',
   },
   {
     id: 'fav-preset-amber-bag',

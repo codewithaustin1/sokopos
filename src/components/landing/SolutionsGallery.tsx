@@ -222,7 +222,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
               key={industry.id}
               className={`group bg-white rounded-2xl border overflow-hidden flex flex-col transition-all duration-200 ${
                 isSelected
-                  ? 'border-[#059669] ring-1 ring-[#059669]/30'
+                  ? 'border-[#28a745] ring-1 ring-[#28a745]/30'
                   : 'border-[#e2e8f0] hover:border-slate-300'
               }`}
             >
@@ -230,7 +230,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
               <div className="relative aspect-[4/3] w-full overflow-hidden bg-slate-100 border-b border-[#e2e8f0]">
                 {isFailed ? (
                   <div className="w-full h-full bg-gradient-to-br from-slate-100 via-slate-50 to-emerald-50 flex flex-col items-center justify-center p-6 text-center">
-                    <div className="w-12 h-12 rounded-xl bg-white border border-[#e2e8f0] flex items-center justify-center text-[#059669] mb-3">
+                    <div className="w-12 h-12 rounded-xl bg-white border border-[#e2e8f0] flex items-center justify-center text-[#28a745] mb-3">
                       <Icon className="w-6 h-6" />
                     </div>
                     <span className="text-sm font-bold text-[#090d16]">{industry.name}</span>
@@ -258,7 +258,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
                 <div>
                   {/* Quiet Unboxed Metadata Kicker */}
                   <div className="flex items-center gap-2 text-xs font-medium text-[#475569] mb-2">
-                    <span className="font-semibold text-[#059669]">{industry.name}</span>
+                    <span className="font-semibold text-[#28a745]">{industry.name}</span>
                     <span aria-hidden="true">·</span>
                     <span className="truncate">{industry.sectorLabel}</span>
                   </div>
@@ -285,7 +285,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
                     type="button"
                     id={`solutions-learn-more-${industry.id}`}
                     onClick={() => setSelectedIndustryId(industry.id)}
-                    className="inline-flex items-center gap-2 px-4 py-2 min-h-[40px] rounded-xl bg-[#f8fafc] hover:bg-[#059669] text-[#090d16] hover:text-white border border-[#e2e8f0] hover:border-[#059669] text-xs font-bold transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#059669]"
+                    className="inline-flex items-center gap-2 px-4 py-2 min-h-[40px] rounded-xl bg-[#f8fafc] hover:bg-[#28a745] text-[#090d16] hover:text-white border border-[#e2e8f0] hover:border-[#28a745] text-xs font-bold transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#28a745]"
                   >
                     <span>Learn More</span>
                     <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
@@ -323,7 +323,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
               {/* Top Utility Bar */}
               <div className="px-5 sm:px-6 py-4 bg-[#f8fafc] border-b border-[#e2e8f0] flex items-center justify-between gap-4">
                 <div className="flex items-center gap-2 text-xs font-medium text-[#475569] min-w-0">
-                  <span className="font-bold text-[#059669] whitespace-nowrap shrink-0">
+                  <span className="font-bold text-[#28a745] whitespace-nowrap shrink-0">
                     {activeIndustry.name}
                   </span>
                   <span aria-hidden="true">·</span>
@@ -366,7 +366,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
                   <div className="relative aspect-[4/3] w-full bg-slate-100 overflow-hidden border-b border-[#e2e8f0]">
                     {failedImages[activeIndustry.id] ? (
                       <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-slate-100">
-                        <ShoppingBag className="w-8 h-8 text-[#059669] mb-2" />
+                        <ShoppingBag className="w-8 h-8 text-[#28a745] mb-2" />
                         <span className="text-sm font-bold text-[#090d16]">
                           {activeIndustry.name}
                         </span>
@@ -387,7 +387,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
                     <div>
                       <div className="text-[11px] font-semibold text-[#475569] mb-2.5 flex items-center justify-between">
                         <span>Typical Kenyan Till Receipt</span>
-                        <span className="font-mono text-[#059669] tabular-nums">
+                        <span className="font-mono text-[#28a745] tabular-nums">
                           {activeIndustry.metricValue}
                         </span>
                       </div>
@@ -440,7 +440,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
                       <ul className="space-y-2.5">
                         {activeIndustry.capabilities.map((cap) => (
                           <li key={cap} className="flex items-start gap-2.5 text-sm text-[#090d16]">
-                            <span className="w-5 h-5 rounded-md bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#059669] shrink-0 mt-0.5">
+                            <span className="w-5 h-5 rounded-md bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#28a745] shrink-0 mt-0.5">
                               <Check className="w-3.5 h-3.5 stroke-[2.5]" />
                             </span>
                             <span className="leading-snug">{cap}</span>
@@ -460,7 +460,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
                             setSelectedIndustryId(null);
                             onLaunchDemo();
                           }}
-                          className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[42px] rounded-xl bg-[#059669] hover:bg-[#047857] text-white text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0"
+                          className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[42px] rounded-xl bg-[#28a745] hover:bg-[#218838] text-white text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0"
                         >
                           <Zap className="w-3.5 h-3.5 fill-white" />
                           <span>Test the live till</span>

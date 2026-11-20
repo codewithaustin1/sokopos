@@ -75,7 +75,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
         <div className={`flex items-center gap-2.5 flex-wrap justify-center ${isLight ? 'text-[#4c5a6b]' : 'text-[#9FB2A7]'}`}>
           <AppLogo theme={theme} size="sm" onClick={handleLogoClick} />
           <span className={`hidden sm:inline ${isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}`}>•</span>
-          <span>{t('footer_copyright', '© 2026 SokoPoS Enterprise Platform')}</span>
+          <span>{t('footer_copyright', '© 2026 Sokoplus Horizon · SokoPoS™ · All rights reserved')}</span>
         </div>
 
         {/* Legal & Pricing Navigation Links */}

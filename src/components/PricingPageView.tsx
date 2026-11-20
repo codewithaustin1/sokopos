@@ -280,7 +280,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
   return (
     <div
       id="pricing-page"
-      className="min-h-full w-full flex flex-col justify-between relative selection:bg-[#059669] selection:text-white"
+      className="min-h-full w-full flex flex-col justify-between relative selection:bg-[#28a745] selection:text-white"
       style={{
         backgroundColor: '#f8fafc',
         color: '#090d16',
@@ -295,7 +295,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
           --ink: #090d16;
           --muted: #475569;
           --line: #e2e8f0;
-          --accent: #059669;
+          --accent: #28a745;
           --on-accent: #ffffff;
           --mark: #d98e04;
           --mark-soft: #fbf0d6;
@@ -521,7 +521,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
               e.preventDefault();
               navigateToSection('solutions');
             }}
-            className="hover:text-[#059669] transition cursor-pointer whitespace-nowrap shrink-0"
+            className="hover:text-[#28a745] transition cursor-pointer whitespace-nowrap shrink-0"
           >
             Your Shop
           </a>
@@ -531,7 +531,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
               e.preventDefault();
               navigateToSection('payments');
             }}
-            className="hover:text-[#059669] transition cursor-pointer whitespace-nowrap shrink-0"
+            className="hover:text-[#28a745] transition cursor-pointer whitespace-nowrap shrink-0"
           >
             M-Pesa &amp; eTIMS
           </a>
@@ -541,7 +541,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
               e.preventDefault();
               navigateToSection('hardware');
             }}
-            className="hover:text-[#059669] transition cursor-pointer whitespace-nowrap shrink-0"
+            className="hover:text-[#28a745] transition cursor-pointer whitespace-nowrap shrink-0"
           >
             Use Your Hardware
           </a>
@@ -551,7 +551,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
               e.preventDefault();
               navigateToSection('compare');
             }}
-            className="hover:text-[#059669] transition cursor-pointer whitespace-nowrap shrink-0"
+            className="hover:text-[#28a745] transition cursor-pointer whitespace-nowrap shrink-0"
           >
             Why Switch
           </a>
@@ -579,7 +579,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
               type="button"
               id="pricing-top-nav-login-btn"
               onClick={onBackToLogin}
-              className="hidden sm:inline-flex items-center px-4 py-2 min-h-[40px] rounded-xl bg-[#059669] hover:bg-[#047857] text-white font-bold text-xs shadow-md shadow-emerald-500/20 transition cursor-pointer whitespace-nowrap shrink-0"
+              className="hidden sm:inline-flex items-center px-4 py-2 min-h-[40px] rounded-xl bg-[#28a745] hover:bg-[#218838] text-white font-bold text-xs shadow-md shadow-emerald-500/20 transition cursor-pointer whitespace-nowrap shrink-0"
             >
               Sign In
             </button>
@@ -785,7 +785,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
             onClick={onBackToLogin}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-[#0e1a2b] text-xs font-bold border border-[#d9e1e6] transition cursor-pointer shadow-xs"
           >
-            <ArrowLeft className="w-4 h-4 text-[#059669]" />
+            <ArrowLeft className="w-4 h-4 text-[#28a745]" />
             <span>{currentUser ? 'Return to Active POS Register' : 'Return to POS Terminal Login'}</span>
           </button>
 

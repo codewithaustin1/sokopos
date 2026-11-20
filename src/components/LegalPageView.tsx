@@ -24,6 +24,12 @@ import { AppFooter } from './common/AppFooter';
 import { MobileHeaderNav } from './common/MobileHeaderNav';
 import { scrollToTop } from '../utils/scrollUtils';
 import { FAQ_ITEMS, FAQ_CATEGORIES } from '../data/faqData';
+import {
+  LEGAL_ENTITY,
+  TERMS_SECTIONS,
+  PRIVACY_SECTIONS,
+  OWNERSHIP_IP_SECTIONS,
+} from '../data/legalContent';
 
 interface LegalPageViewProps {
   currentTab: LegalTab;
@@ -93,7 +99,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
   return (
     <div
       id="legal-page-body"
-      className="min-h-screen w-full flex flex-col justify-between font-sans selection:bg-[#059669] selection:text-white bg-[#f8fafc] text-[#090d16]"
+      className="min-h-screen w-full flex flex-col justify-between font-sans selection:bg-[#28a745] selection:text-white bg-[#f8fafc] text-[#090d16]"
     >
       {/* Top Navigation Bar: Light mode */}
       <header className="fixed top-0 left-0 right-0 z-30 w-full border-b border-[#e2e8f0] bg-[#f8fafc]/95 backdrop-blur-md px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4 shadow-xs">
@@ -104,7 +110,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
             onClick={onBackToLogin}
             className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-[#090d16] text-xs font-bold border border-[#e2e8f0] transition cursor-pointer shadow-xs"
           >
-            <ArrowLeft className="w-4 h-4 text-[#059669]" />
+            <ArrowLeft className="w-4 h-4 text-[#28a745]" />
             <span className="hidden sm:inline">Back to POS Terminal</span>
             <span className="sm:hidden">Back</span>
           </button>
@@ -165,7 +171,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
             <button
               type="button"
               onClick={onBackToLogin}
-              className="hover:text-[#059669] transition cursor-pointer"
+              className="hover:text-[#28a745] transition cursor-pointer"
             >
               Home
             </button>
@@ -184,7 +190,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
               onClick={() => onTabChange('terms')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                 currentTab === 'terms'
-                  ? 'bg-[#059669] text-white shadow-md shadow-emerald-600/30'
+                  ? 'bg-[#28a745] text-white shadow-md shadow-emerald-600/30'
                   : 'text-[#4c5a6b] hover:text-[#0e1a2b] hover:bg-slate-100'
               }`}
             >
@@ -198,7 +204,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
               onClick={() => onTabChange('privacy')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                 currentTab === 'privacy'
-                  ? 'bg-[#059669] text-white shadow-md shadow-emerald-600/30'
+                  ? 'bg-[#28a745] text-white shadow-md shadow-emerald-600/30'
                   : 'text-[#4c5a6b] hover:text-[#0e1a2b] hover:bg-slate-100'
               }`}
             >
@@ -212,7 +218,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
               onClick={() => onTabChange('faq')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                 currentTab === 'faq'
-                  ? 'bg-[#059669] text-white shadow-md shadow-emerald-600/30'
+                  ? 'bg-[#28a745] text-white shadow-md shadow-emerald-600/30'
                   : 'text-[#4c5a6b] hover:text-[#0e1a2b] hover:bg-slate-100'
               }`}
             >
@@ -226,7 +232,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
               onClick={() => onTabChange('ownership')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                 currentTab === 'ownership'
-                  ? 'bg-[#059669] text-white shadow-md shadow-emerald-600/30'
+                  ? 'bg-[#28a745] text-white shadow-md shadow-emerald-600/30'
                   : 'text-[#4c5a6b] hover:text-[#0e1a2b] hover:bg-slate-100'
               }`}
             >
@@ -240,7 +246,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
               onClick={() => onTabChange('compliance')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                 currentTab === 'compliance'
-                  ? 'bg-[#059669] text-white shadow-md shadow-emerald-600/30'
+                  ? 'bg-[#28a745] text-white shadow-md shadow-emerald-600/30'
                   : 'text-[#4c5a6b] hover:text-[#0e1a2b] hover:bg-slate-100'
               }`}
             >
@@ -273,136 +279,58 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
         {currentTab === 'terms' && (
           <div className="space-y-6">
             {/* Overview Card */}
-            <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-white/60 p-6 shadow-md text-black">
+            <div className="bg-white/95 backdrop-blur-md rounded-2xl border border-[#e2e8f0] p-6 shadow-xs text-[#090d16]">
               <div className="flex items-start gap-3">
-                <FileText className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                <FileText className="w-5 h-5 text-[#28a745] shrink-0 mt-0.5" />
                 <div>
-                  <h2 className="font-black text-base text-black mb-1">
-                    SokoPoS Commercial Software License & Terms of Service
+                  <h2 className="font-black text-base text-[#090d16] mb-1">
+                    {LEGAL_ENTITY.trademarkName} Commercial Software License &amp; Terms of Service
                   </h2>
-                  <p className="text-xs text-neutral-600 font-medium leading-relaxed">
-                    Last Revised: January 2026. SokoPoS is an enterprise retail point-of-sale and business
-                    management platform engineered, wholly owned, and operated by <strong>Sokoplus Horizon</strong>.
+                  <p className="text-xs text-[#475569] font-medium leading-relaxed">
+                    Last Revised: {LEGAL_ENTITY.lastRevised} &middot; {LEGAL_ENTITY.productName} is engineered, wholly owned,
+                    and operated by <strong>{LEGAL_ENTITY.companyName}</strong>. Key protections include an &ldquo;AS IS&rdquo;
+                    warranty disclaimer, a 12-month fee liability cap, and explicit third-party disclaimers for eTIMS, M-Pesa,
+                    offline storage, hardware, and AI features.
                   </p>
                 </div>
               </div>
             </div>
 
             {/* Document Content Sections */}
-            <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-white/60 p-6 sm:p-8 shadow-xl text-black space-y-7 text-xs leading-relaxed">
-              <section className="space-y-2.5">
-                <h3 className="text-sm sm:text-base font-black text-black flex items-center gap-2.5">
-                  <span className="w-6 h-6 rounded-full bg-slate-200 text-black inline-flex items-center justify-center text-xs font-mono font-bold">
-                    1
-                  </span>
-                  Acceptance & Scope of Agreement
-                </h3>
-                <p className="text-neutral-700">
-                  By accessing, deploying, or utilizing SokoPoS across your registers, tablets, phones, or computers,
-                  authenticating via Google Accounts or terminal staff PINs, or accessing the cloud management console,
-                  you (“Merchant”, “Subscriber”) enter into a binding agreement with <strong>Sokoplus Horizon</strong> (“Company”, “we”, “our”).
-                  If you do not agree to these terms, you may not provision business accounts or operate the software.
-                </p>
-              </section>
-
-              <hr className="border-neutral-200" />
-
-              <section className="space-y-2.5">
-                <h3 className="text-sm sm:text-base font-black text-black flex items-center gap-2.5">
-                  <span className="w-6 h-6 rounded-full bg-slate-200 text-black inline-flex items-center justify-center text-xs font-mono font-bold">
-                    2
-                  </span>
-                  Cloud Service & Multi-Tenant Provisioning
-                </h3>
-                <p className="text-neutral-700">
-                  Sokoplus Horizon provides an elastic, multi-tenant cloud service hosted on redundant Google Cloud infrastructure.
-                  Each store entity is assigned a secure tenant space segregated via cryptographic Row-Level Security.
-                  Subscribers receive continuous software improvements, automatic database backups, and access to cloud sync services.
-                </p>
-              </section>
-
-              <hr className="border-neutral-200" />
-
-              <section className="space-y-2.5">
-                <h3 className="text-sm sm:text-base font-black text-black flex items-center gap-2.5">
-                  <span className="w-6 h-6 rounded-full bg-slate-200 text-black inline-flex items-center justify-center text-xs font-mono font-bold">
-                    3
-                  </span>
-                  Offline Mode & Merchant Synchronization Duty
-                </h3>
-                <p className="text-neutral-700">
-                  SokoPoS includes autonomous offline registers designed to safeguard store revenues during internet disruptions.
-                  Merchants acknowledge that offline transactions remain localized in terminal browser storage until an active
-                  network connection is re-established. Merchants must reconnect registers to the internet at least once every
-                  7 days to synchronize transaction queues, prevent inventory skew, and preserve audit histories.
-                </p>
-              </section>
-
-              <hr className="border-neutral-200" />
-
-              <section className="space-y-2.5">
-                <h3 className="text-sm sm:text-base font-black text-black flex items-center gap-2.5">
-                  <span className="w-6 h-6 rounded-full bg-slate-200 text-black inline-flex items-center justify-center text-xs font-mono font-bold">
-                    4
-                  </span>
-                  Cashier PIN Security & Staff Governance
-                </h3>
-                <p className="text-neutral-700">
-                  Merchants are solely responsible for assigning and revoking staff PINs and maintaining manager overrides.
-                  Sokoplus Horizon secures PINs using salted cryptographic hashing (bcrypt) and maintains immutable audit logs
-                  for refunds, manual discounts, and price adjustments. The Merchant assumes responsibility for all sales operations
-                  executed under authorized staff profiles.
-                </p>
-              </section>
-
-              <hr className="border-neutral-200" />
-
-              <section className="space-y-2.5">
-                <h3 className="text-sm sm:text-base font-black text-black flex items-center gap-2.5">
-                  <span className="w-6 h-6 rounded-full bg-slate-200 text-black inline-flex items-center justify-center text-xs font-mono font-bold">
-                    5
-                  </span>
-                  Payment Integrations & Financial Compliance
-                </h3>
-                <p className="text-neutral-700">
-                  When utilizing M-Pesa STK Push, Till numbers, Paybill channels, or external card payment terminals, the Merchant
-                  agrees to comply with telecommunications carrier rules, Anti-Money Laundering (AML) standards, and applicable
-                  central bank directives. Sokoplus Horizon facilitates technological integration and verification but is not
-                  a banking institution or custodian of merchant funds.
-                </p>
-              </section>
-
-              <hr className="border-neutral-200" />
-
-              <section className="space-y-2.5">
-                <h3 className="text-sm sm:text-base font-black text-black flex items-center gap-2.5">
-                  <span className="w-6 h-6 rounded-full bg-slate-200 text-black inline-flex items-center justify-center text-xs font-mono font-bold">
-                    6
-                  </span>
-                  Data Ownership & Zero Lock-In
-                </h3>
-                <p className="text-neutral-700">
-                  The Merchant retains 100% legal ownership of their customer records, product catalogs, sales receipts, and price books.
-                  Sokoplus Horizon provides on-demand data export tools (JSON and CSV) allowing merchants to export their entire store
-                  history at any time with no export penalties or transfer restrictions.
-                </p>
-              </section>
-
-              <hr className="border-neutral-200" />
-
-              <section className="space-y-2.5">
-                <h3 className="text-sm sm:text-base font-black text-black flex items-center gap-2.5">
-                  <span className="w-6 h-6 rounded-full bg-slate-200 text-black inline-flex items-center justify-center text-xs font-mono font-bold">
-                    7
-                  </span>
-                  Service Level Commitment & Uptime Guarantee
-                </h3>
-                <p className="text-neutral-700">
-                  Sokoplus Horizon targets a 99.9% cloud operational availability backed by Google Cloud Platform’s enterprise
-                  infrastructure. Scheduled maintenance windows are communicated in advance. Autonomous offline registers
-                  remain capable of processing cash sales, printing receipts, and ringing inventory even during cloud maintenance.
-                </p>
-              </section>
+            <div className="bg-white/95 backdrop-blur-md rounded-3xl border border-[#e2e8f0] p-6 sm:p-8 shadow-sm text-[#090d16] space-y-7 text-xs sm:text-[13px] leading-relaxed">
+              {TERMS_SECTIONS.map((section, idx) => (
+                <React.Fragment key={section.number}>
+                  {idx > 0 && <hr className="border-[#e2e8f0]" />}
+                  <section className="space-y-2.5">
+                    <h3 className="text-sm sm:text-base font-black text-[#090d16] flex items-center gap-2.5">
+                      <span className="w-6 h-6 rounded-full bg-slate-100 border border-[#e2e8f0] text-[#090d16] inline-flex items-center justify-center text-xs font-mono font-bold tabular-nums shrink-0">
+                        {section.number}
+                      </span>
+                      <span>{section.title}</span>
+                    </h3>
+                    {section.paragraphs.map((para, pIdx) => (
+                      <p key={pIdx} className="text-[#334155]">
+                        {para}
+                      </p>
+                    ))}
+                    {section.bullets && section.bullets.length > 0 && (
+                      <ul className="list-disc pl-5 space-y-2 text-[#334155] pt-1">
+                        {section.bullets.map((b, bIdx) => (
+                          <li key={bIdx}>
+                            {b.label && <strong className="text-[#090d16]">{b.label}: </strong>}
+                            <span>{b.text}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {section.callout && (
+                      <div className="mt-2 p-3.5 rounded-xl bg-slate-50 border border-[#e2e8f0] text-[#090d16] text-xs font-medium">
+                        {section.callout}
+                      </div>
+                    )}
+                  </section>
+                </React.Fragment>
+              ))}
             </div>
           </div>
         )}
@@ -413,88 +341,54 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
         {currentTab === 'privacy' && (
           <div className="space-y-6">
             {/* Overview Card */}
-            <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-white/60 p-6 shadow-md text-black">
+            <div className="bg-white/95 backdrop-blur-md rounded-2xl border border-[#e2e8f0] p-6 shadow-xs text-[#090d16]">
               <div className="flex items-start gap-3">
-                <Shield className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                <Shield className="w-5 h-5 text-[#28a745] shrink-0 mt-0.5" />
                 <div>
-                  <h2 className="font-black text-base text-black mb-1">
-                    SokoPoS Privacy & Data Protection Commitment
+                  <h2 className="font-black text-base text-[#090d16] mb-1">
+                    {LEGAL_ENTITY.productName} Privacy &amp; Data Protection Commitment
                   </h2>
-                  <p className="text-xs text-neutral-600 font-medium leading-relaxed">
-                    Operated by <strong>Sokoplus Horizon</strong>. We adhere strictly to the Kenya Data Protection Act 2019,
-                    General Data Protection Regulation (GDPR) standards, multi-tenant cryptographic isolation, and zero third-party data monetization.
+                  <p className="text-xs text-[#475569] font-medium leading-relaxed">
+                    Operated by <strong>{LEGAL_ENTITY.companyName}</strong>. We adhere strictly to the Kenya Data Protection Act 2019,
+                    GDPR alignment standards, multi-tenant cryptographic isolation, and zero third-party data monetization.
                   </p>
                 </div>
               </div>
             </div>
 
             {/* Document Content Sections */}
-            <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-white/60 p-6 sm:p-8 shadow-xl text-black space-y-7 text-xs leading-relaxed">
-              <section className="space-y-2.5">
-                <h3 className="text-sm sm:text-base font-black text-black flex items-center gap-2">
-                  <Lock className="w-4 h-4 text-emerald-600" />
-                  1. Information Collected and Processed
-                </h3>
-                <p className="text-neutral-700">
-                  To provide point-of-sale functionality, inventory sync, and sales reporting, Sokoplus Horizon processes:
-                </p>
-                <ul className="list-disc pl-5 space-y-1.5 text-neutral-700">
-                  <li>
-                    <strong>Merchant Credentials:</strong> Business name, tax registration/PIN numbers, location addresses, and owner contact emails.
-                  </li>
-                  <li>
-                    <strong>Staff Records:</strong> Cashier display names, role permissions, and one-way bcrypt hashed PINs.
-                  </li>
-                  <li>
-                    <strong>Transaction Details:</strong> Items purchased, total prices, tax breakdowns, timestamps, and payment modes.
-                  </li>
-                  <li>
-                    <strong>Payment Identifiers:</strong> M-Pesa phone numbers (solely for STK Push prompt delivery) and transaction reference codes (e.g. QKJ4...). We never store customer credit card CVVs or M-Pesa secret PINs.
-                  </li>
-                </ul>
-              </section>
-
-              <hr className="border-neutral-200" />
-
-              <section className="space-y-2.5">
-                <h3 className="text-sm sm:text-base font-black text-black flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  2. Strict No-Sale Policy
-                </h3>
-                <p className="text-neutral-700 font-medium">
-                  Sokoplus Horizon does NOT sell, rent, or trade your retail business data, customer lists,
-                  or transaction volumes to third-party data brokers, marketers, or advertisers under any circumstances.
-                  Your business data belongs strictly to you.
-                </p>
-              </section>
-
-              <hr className="border-neutral-200" />
-
-              <section className="space-y-2.5">
-                <h3 className="text-sm sm:text-base font-black text-black flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  3. Multi-Tenant Architecture & Row-Level Security
-                </h3>
-                <p className="text-neutral-700">
-                  All database operations on Google Cloud Firestore are protected by cryptographically enforced security rules.
-                  Every query is strictly bounded by your unique <code className="bg-slate-200 text-blue-700 px-1.5 py-0.5 rounded font-mono">businessId</code>,
-                  guaranteeing that no other business or tenant on SokoPoS can access, view, or modify your sales records.
-                </p>
-              </section>
-
-              <hr className="border-neutral-200" />
-
-              <section className="space-y-2.5">
-                <h3 className="text-sm sm:text-base font-black text-black flex items-center gap-2">
-                  <Server className="w-4 h-4 text-emerald-600" />
-                  4. Data Retention & Right to Erasure
-                </h3>
-                <p className="text-neutral-700">
-                  Transaction histories are retained in compliance with statutory tax retention guidelines. Should you choose to
-                  close your account, our administrative tools allow you to purge sales records (with automated backup archives)
-                  or request complete tenant deletion from our servers.
-                </p>
-              </section>
+            <div className="bg-white/95 backdrop-blur-md rounded-3xl border border-[#e2e8f0] p-6 sm:p-8 shadow-sm text-[#090d16] space-y-7 text-xs sm:text-[13px] leading-relaxed">
+              {PRIVACY_SECTIONS.map((section, idx) => (
+                <React.Fragment key={section.number}>
+                  {idx > 0 && <hr className="border-[#e2e8f0]" />}
+                  <section className="space-y-2.5">
+                    <h3 className="text-sm sm:text-base font-black text-[#090d16] flex items-center gap-2">
+                      {section.number === '1' && <Lock className="w-4 h-4 text-[#28a745] shrink-0" />}
+                      {section.number === '2' && <CheckCircle2 className="w-4 h-4 text-[#28a745] shrink-0" />}
+                      {section.number === '3' && <ShieldCheck className="w-4 h-4 text-[#28a745] shrink-0" />}
+                      {section.number === '4' && <Server className="w-4 h-4 text-[#28a745] shrink-0" />}
+                      <span>
+                        {section.number}. {section.title}
+                      </span>
+                    </h3>
+                    {section.paragraphs.map((para, pIdx) => (
+                      <p key={pIdx} className="text-[#334155]">
+                        {para}
+                      </p>
+                    ))}
+                    {section.bullets && section.bullets.length > 0 && (
+                      <ul className="list-disc pl-5 space-y-1.5 text-[#334155]">
+                        {section.bullets.map((b, bIdx) => (
+                          <li key={bIdx}>
+                            {b.label && <strong className="text-[#090d16]">{b.label}: </strong>}
+                            <span>{b.text}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                </React.Fragment>
+              ))}
             </div>
           </div>
         )}
@@ -616,79 +510,79 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
         {currentTab === 'ownership' && (
           <div className="space-y-6">
             {/* Overview Card */}
-            <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-white/60 p-6 shadow-md text-black">
+            <div className="bg-white/95 backdrop-blur-md rounded-2xl border border-[#e2e8f0] p-6 shadow-xs text-[#090d16]">
               <div className="flex items-start gap-3">
                 <Building className="w-5 h-5 text-purple-600 shrink-0 mt-0.5" />
                 <div>
-                  <h2 className="font-black text-base text-black mb-1">
-                    Corporate Ownership & Intellectual Property Notice
+                  <h2 className="font-black text-base text-[#090d16] mb-1">
+                    Corporate Ownership &amp; Intellectual Property Notice
                   </h2>
-                  <p className="text-xs text-neutral-600 font-medium leading-relaxed">
-                    Official declaration of entity ownership, intellectual property rights, and platform governance.
+                  <p className="text-xs text-[#475569] font-medium leading-relaxed">
+                    Official declaration of entity ownership, trademark attribution, anti-cloning protections, and IP reporting under{' '}
+                    <strong>{LEGAL_ENTITY.companyName}</strong>.
                   </p>
                 </div>
               </div>
             </div>
 
             {/* Corporate Entity Grid */}
-            <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-white/60 p-6 sm:p-8 shadow-xl text-black space-y-6 text-xs leading-relaxed">
+            <div className="bg-white/95 backdrop-blur-md rounded-3xl border border-[#e2e8f0] p-6 sm:p-8 shadow-sm text-[#090d16] space-y-6 text-xs sm:text-[13px] leading-relaxed">
               <div className="space-y-2">
-                <div className="flex items-center gap-2 text-black font-black text-sm sm:text-base">
-                  <Store className="w-5 h-5 text-blue-600" />
-                  <span>SokoPoS Brand & Operations Statement</span>
+                <div className="flex items-center gap-2 text-[#090d16] font-black text-sm sm:text-base">
+                  <Store className="w-5 h-5 text-[#28a745]" />
+                  <span>{LEGAL_ENTITY.trademarkName} Brand &amp; Operations Statement</span>
                 </div>
-                <p className="text-neutral-700">
-                  <strong>SokoPoS</strong> is a proprietary enterprise retail management, point-of-sale, and cloud synchronization
-                  software solution developed, owned, and operated exclusively by <strong>Sokoplus Horizon</strong>.
+                <p className="text-[#334155]">
+                  <strong>{LEGAL_ENTITY.trademarkName}</strong> is a proprietary enterprise retail management, point-of-sale,
+                  and cloud synchronization software platform engineered, wholly owned, and operated exclusively by{' '}
+                  <strong>{LEGAL_ENTITY.companyName}</strong>.
                 </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2">
-                <div className="p-4 bg-neutral-100 rounded-xl border border-neutral-200">
-                  <span className="text-neutral-500 block text-[10px] uppercase font-bold">Operating Entity</span>
-                  <strong className="text-black text-sm">Sokoplus Horizon</strong>
+                <div className="p-4 bg-slate-50 rounded-xl border border-[#e2e8f0]">
+                  <span className="text-[#475569] block text-[11px] font-semibold">Operating Legal Entity &amp; IP Owner</span>
+                  <strong className="text-[#090d16] text-sm">{LEGAL_ENTITY.companyName}</strong>
                 </div>
-                <div className="p-4 bg-neutral-100 rounded-xl border border-neutral-200">
-                  <span className="text-neutral-500 block text-[10px] uppercase font-bold">Platform Product</span>
-                  <strong className="text-black text-sm">SokoPoS Enterprise Platform</strong>
+                <div className="p-4 bg-slate-50 rounded-xl border border-[#e2e8f0]">
+                  <span className="text-[#475569] block text-[11px] font-semibold">Protected Brand &amp; Platform</span>
+                  <strong className="text-[#090d16] text-sm">{LEGAL_ENTITY.trademarkName} Point of Sale Platform</strong>
                 </div>
-                <div className="p-4 bg-neutral-100 rounded-xl border border-neutral-200">
-                  <span className="text-neutral-500 block text-[10px] uppercase font-bold">Technical Operations</span>
-                  <strong className="text-black text-sm">Cloud Architecture & Retail Systems</strong>
+                <div className="p-4 bg-slate-50 rounded-xl border border-[#e2e8f0]">
+                  <span className="text-[#475569] block text-[11px] font-semibold">Governing Law &amp; Jurisdiction</span>
+                  <strong className="text-[#090d16] text-sm">{LEGAL_ENTITY.governingLaw}</strong>
                 </div>
-                <div className="p-4 bg-neutral-100 rounded-xl border border-neutral-200">
-                  <span className="text-neutral-500 block text-[10px] uppercase font-bold">Inquiries & Support</span>
-                  <strong className="text-black text-sm">support@sokoplushorizon.com</strong>
+                <div className="p-4 bg-slate-50 rounded-xl border border-[#e2e8f0]">
+                  <span className="text-[#475569] block text-[11px] font-semibold">Legal, IP &amp; Takedown Contact</span>
+                  <strong className="text-[#090d16] text-sm">{LEGAL_ENTITY.legalEmail}</strong>
                 </div>
               </div>
 
-              <hr className="border-neutral-200" />
-
-              <section className="space-y-2.5">
-                <h3 className="text-sm sm:text-base font-black text-black flex items-center gap-2">
-                  <Scale className="w-4 h-4 text-purple-600" />
-                  Intellectual Property & Trademarks
-                </h3>
-                <p className="text-neutral-700">
-                  All source code, algorithms, offline synchronization protocols, UI visual assets, logos, and technical documentation
-                  comprising SokoPoS are the exclusive intellectual property of <strong>Sokoplus Horizon</strong>. Unauthorized copying,
-                  reverse engineering, decompilation, or sub-licensing without written authorization is strictly prohibited.
-                </p>
-              </section>
-
-              <hr className="border-neutral-200" />
-
-              <section className="space-y-2.5">
-                <h3 className="text-sm sm:text-base font-black text-black flex items-center gap-2">
-                  <Building className="w-4 h-4 text-purple-600" />
-                  Governing Law & Legal Jurisdiction
-                </h3>
-                <p className="text-neutral-700">
-                  These agreements and operations are governed by the Laws of Kenya, in harmony with international digital commerce
-                  standards and cloud compliance best practices. Any disputes arising out of the platform shall be submitted to
-                  competent commercial arbitration in Nairobi, Kenya.
-                </p>
-              </section>
+              {OWNERSHIP_IP_SECTIONS.map((section) => (
+                <React.Fragment key={section.number}>
+                  <hr className="border-[#e2e8f0]" />
+                  <section className="space-y-2.5">
+                    <h3 className="text-sm sm:text-base font-black text-[#090d16] flex items-center gap-2">
+                      <Scale className="w-4 h-4 text-[#28a745] shrink-0" />
+                      <span>
+                        {section.number}. {section.title}
+                      </span>
+                    </h3>
+                    {section.paragraphs.map((para, pIdx) => (
+                      <p key={pIdx} className="text-[#334155]">
+                        {para}
+                      </p>
+                    ))}
+                    {section.bullets && section.bullets.length > 0 && (
+                      <ul className="list-disc pl-5 space-y-1.5 text-[#334155]">
+                        {section.bullets.map((b, bIdx) => (
+                          <li key={bIdx}>{b.text}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                </React.Fragment>
+              ))}
             </div>
           </div>
         )}
@@ -810,7 +704,7 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
             onClick={onBackToLogin}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-[#0e1a2b] text-xs font-bold border border-[#d9e1e6] transition cursor-pointer shadow-xs"
           >
-            <ArrowLeft className="w-4 h-4 text-[#059669]" />
+            <ArrowLeft className="w-4 h-4 text-[#28a745]" />
             <span>Return to POS Terminal Login</span>
           </button>
 

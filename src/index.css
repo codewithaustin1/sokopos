@@ -6,6 +6,9 @@
   --font-display: 'Bricolage Grotesque', system-ui, -apple-system, sans-serif;
   --font-sans: 'Figtree', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --color-emerald-600: #28a745;
+  --color-emerald-700: #218838;
+  --color-emerald-800: #1e7e34;
 }
 
 @layer base {
@@ -45,7 +48,7 @@
    RETAIL DOMAIN ACCENT PALETTES
    Tailored domain color themes:
    - Enterprise Classic: Modern indigo & cobalt blue (#2563eb)
-   - Fresh Market Emerald: Deep emerald & mint (#059669)
+   - Fresh Market Emerald: Deep emerald & mint (#28a745)
    - Artisan Cafe & Bakery: Warm amber, espresso & terracotta (#d97706)
    - Boutique & Luxury: Burgundy, rosewood & champagne gold (#9f1239)
    - Industrial & Hardware: High-visibility graphite & caution amber (#1e293b / #f59e0b)
@@ -66,16 +69,16 @@ html[data-retail-theme="classic"] {
 }
 
 html[data-retail-theme="emerald"] {
-  --retail-primary: #059669;
-  --retail-primary-hover: #047857;
-  --retail-primary-active: #065f46;
+  --retail-primary: #28a745;
+  --retail-primary-hover: #218838;
+  --retail-primary-active: #1e7e34;
   --retail-primary-light: #ecfdf5;
   --retail-primary-border: #a7f3d0;
-  --retail-primary-text: #047857;
-  --retail-primary-ring: rgba(5, 150, 105, 0.4);
+  --retail-primary-text: #28a745;
+  --retail-primary-ring: rgba(40, 167, 69, 0.4);
   --retail-accent: #10b981;
   --retail-dark-highlight: #34d399;
-  --retail-gradient: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  --retail-gradient: linear-gradient(135deg, #28a745 0%, #10b981 100%);
 }
 
 html[data-retail-theme="amber"] {

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   FileText,
@@ -12,16 +12,18 @@ import {
   ChevronDown,
   ChevronUp,
   Printer,
-  Smartphone,
-  WifiOff,
-  Database,
-  ArrowRight,
   Store,
   ShieldCheck,
   Server,
   FileCheck,
 } from 'lucide-react';
 import { FAQ_ITEMS, FAQ_CATEGORIES } from '../data/faqData';
+import {
+  LEGAL_ENTITY,
+  TERMS_SECTIONS,
+  PRIVACY_SECTIONS,
+  OWNERSHIP_IP_SECTIONS,
+} from '../data/legalContent';
 
 export type LegalTab = 'terms' | 'privacy' | 'compliance' | 'ownership' | 'faq';
 
@@ -40,6 +42,12 @@ export const LegalAndFaqModal: React.FC<LegalAndFaqModalProps> = ({
   const [faqSearchQuery, setFaqSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [expandedFaqId, setExpandedFaqId] = useState<string | null>('faq-ownership');
+
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
 
   if (!isOpen) return null;
 
@@ -171,94 +179,51 @@ export const LegalAndFaqModal: React.FC<LegalAndFaqModalProps> = ({
           {/* ======================================================== */}
           {activeTab === 'terms' && (
             <div className="space-y-5 animate-fade-in">
-              <div className="p-4 rounded-xl bg-blue-950/40 border border-blue-800/60 flex items-start gap-3">
-                <FileText className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-start gap-3">
+                <FileText className="w-5 h-5 text-[#28a745] shrink-0 mt-0.5" />
                 <div>
                   <h4 className="font-bold text-white text-sm mb-1">
-                    SokoPoS Commercial Software License & Terms of Service
+                    {LEGAL_ENTITY.trademarkName} Commercial Software License &amp; Terms of Service
                   </h4>
-                  <p className="text-[11px] text-blue-200/90">
-                    Last Revised: January 2026. SokoPoS is a retail point of sale and business management platform
-                    wholly owned and operated by <strong>Sokoplus Horizon</strong>.
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    Last Revised: {LEGAL_ENTITY.lastRevised} &middot; {LEGAL_ENTITY.productName} is engineered, wholly owned,
+                    and operated by <strong>{LEGAL_ENTITY.companyName}</strong>. Includes &ldquo;AS IS&rdquo; warranty
+                    disclaimers, a 12-month fee liability cap, and operational disclaimers for eTIMS, M-Pesa, offline sync,
+                    hardware, and AI features.
                   </p>
                 </div>
               </div>
 
-              <section className="space-y-2">
-                <h5 className="text-sm font-bold text-white flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-slate-800 text-slate-300 inline-flex items-center justify-center text-[10px] font-mono">1</span>
-                  Acceptance & Scope of Agreement
-                </h5>
-                <p>
-                  By deploying SokoPoS across your registers, authenticating via Google Accounts or terminal staff PINs,
-                  or accessing the cloud management console, you (“Merchant”, “Subscriber”) enter into a binding
-                  agreement with <strong>Sokoplus Horizon</strong> (“Company”, “we”, “our”). If you do not accept these terms,
-                  you may not provision business accounts or operate the software.
-                </p>
-              </section>
-
-              <section className="space-y-2">
-                <h5 className="text-sm font-bold text-white flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-slate-800 text-slate-300 inline-flex items-center justify-center text-[10px] font-mono">2</span>
-                  Cloud Service & Multi-Tenant Provisioning
-                </h5>
-                <p>
-                  Sokoplus Horizon provides an elastic, multi-tenant cloud service backed by Google Cloud infrastructure.
-                  Each store entity is assigned a secure tenant space segregated via cryptographic Row-Level Security.
-                  Subscribers receive continuous software improvements, automatic database backups, and access to cloud sync services.
-                </p>
-              </section>
-
-              <section className="space-y-2">
-                <h5 className="text-sm font-bold text-white flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-slate-800 text-slate-300 inline-flex items-center justify-center text-[10px] font-mono">3</span>
-                  Offline Mode & Merchant Synchronization Duty
-                </h5>
-                <p>
-                  SokoPoS includes autonomous offline registers designed to safeguard store revenues during internet disruptions.
-                  Merchants acknowledge that offline transactions remain localized in terminal browser storage until an active
-                  network connection is re-established. Merchants must reconnect registers to the internet at least once every
-                  7 days to synchronize transaction queues, prevent inventory skew, and preserve audit histories.
-                </p>
-              </section>
-
-              <section className="space-y-2">
-                <h5 className="text-sm font-bold text-white flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-slate-800 text-slate-300 inline-flex items-center justify-center text-[10px] font-mono">4</span>
-                  Cashier PIN Security & Staff Governance
-                </h5>
-                <p>
-                  Merchants are solely responsible for assigning and revoking staff PINs and maintaining manager overrides.
-                  Sokoplus Horizon secures PINs using salted cryptographic hashing (bcrypt) and maintains immutable audit logs
-                  for refunds, manual discounts, and price adjustments. The Merchant assumes responsibility for all sales operations
-                  executed under authorized staff profiles.
-                </p>
-              </section>
-
-              <section className="space-y-2">
-                <h5 className="text-sm font-bold text-white flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-slate-800 text-slate-300 inline-flex items-center justify-center text-[10px] font-mono">5</span>
-                  Payment Integrations & Financial Compliance
-                </h5>
-                <p>
-                  When utilizing M-Pesa STK Push, Till numbers, Paybill channels, or external card payment terminals, the Merchant
-                  agrees to comply with telecommunications carrier rules, Anti-Money Laundering (AML) standards, and applicable
-                  central bank directives. Sokoplus Horizon facilitates technological integration and verification but is not
-                  a banking institution or custodian of merchant funds.
-                </p>
-              </section>
-
-              <section className="space-y-2">
-                <h5 className="text-sm font-bold text-white flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-slate-800 text-slate-300 inline-flex items-center justify-center text-[10px] font-mono">6</span>
-                  Data Ownership & Zero Lock-in
-                </h5>
-                <p>
-                  The Merchant retains 100% legal ownership of their customer records, product catalogs, sales receipts, and price books.
-                  Sokoplus Horizon provides on-demand data export tools (JSON and CSV) allowing merchants to export their entire store
-                  history at any time with no export penalties or transfer restrictions.
-                </p>
-              </section>
+              {TERMS_SECTIONS.map((section) => (
+                <section key={section.number} className="space-y-2 pb-4 border-b border-slate-800/80 last:border-b-0">
+                  <h5 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-slate-800 text-slate-200 inline-flex items-center justify-center text-[10px] font-mono tabular-nums shrink-0">
+                      {section.number}
+                    </span>
+                    <span>{section.title}</span>
+                  </h5>
+                  {section.paragraphs.map((para, pIdx) => (
+                    <p key={pIdx} className="text-slate-300">
+                      {para}
+                    </p>
+                  ))}
+                  {section.bullets && section.bullets.length > 0 && (
+                    <ul className="list-disc pl-5 space-y-1.5 text-slate-300 pt-1">
+                      {section.bullets.map((b, bIdx) => (
+                        <li key={bIdx}>
+                          {b.label && <strong className="text-white">{b.label}: </strong>}
+                          <span>{b.text}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {section.callout && (
+                    <div className="mt-2 p-3 rounded-lg bg-slate-950 border border-slate-800 text-slate-200 text-[11px]">
+                      {section.callout}
+                    </div>
+                  )}
+                </section>
+              ))}
             </div>
           )}
 
@@ -271,66 +236,40 @@ export const LegalAndFaqModal: React.FC<LegalAndFaqModalProps> = ({
                 <Shield className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
                 <div>
                   <h4 className="font-bold text-white text-sm mb-1">
-                    SokoPoS Privacy & Data Protection Commitment
+                    {LEGAL_ENTITY.productName} Privacy &amp; Data Protection Commitment
                   </h4>
                   <p className="text-[11px] text-emerald-200/90">
-                    Operated by <strong>Sokoplus Horizon</strong>. We adhere to rigorous data privacy principles, multi-tenant
-                    cryptographic isolation, and zero third-party data monetization.
+                    Operated by <strong>{LEGAL_ENTITY.companyName}</strong>. We adhere to the Kenya Data Protection Act 2019,
+                    multi-tenant cryptographic isolation, and zero third-party data monetization.
                   </p>
                 </div>
               </div>
 
-              <section className="space-y-2">
-                <h5 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Lock className="w-4 h-4 text-emerald-400" />
-                  1. Information Collected and Processed
-                </h5>
-                <p>
-                  To provide point-of-sale functionality, inventory sync, and sales reporting, Sokoplus Horizon collects:
-                </p>
-                <ul className="list-disc pl-5 space-y-1 text-slate-300">
-                  <li><strong>Merchant Credentials:</strong> Business name, tax registration/PIN numbers, location addresses, and owner contact emails.</li>
-                  <li><strong>Staff Records:</strong> Cashier display names, role permissions, and one-way hashed PINs.</li>
-                  <li><strong>Transaction Details:</strong> Items purchased, total prices, tax breakdowns, timestamps, and payment modes.</li>
-                  <li><strong>Payment Identifiers:</strong> M-Pesa phone numbers (for STK Push prompt delivery) and transaction reference codes (e.g. QKJ4...). We never store customer credit card CVVs or M-Pesa secret PINs.</li>
-                </ul>
-              </section>
-
-              <section className="space-y-2">
-                <h5 className="text-sm font-bold text-white flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  2. Strict No-Sale Policy
-                </h5>
-                <p>
-                  <strong>Sokoplus Horizon does NOT sell, rent, or trade your retail business data</strong>, customer lists,
-                  or transaction volumes to third-party data brokers, marketers, or advertisers under any circumstances.
-                  Your business data belongs strictly to you.
-                </p>
-              </section>
-
-              <section className="space-y-2">
-                <h5 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Database className="w-4 h-4 text-emerald-400" />
-                  3. Multi-Tenant Architecture & Row-Level Security
-                </h5>
-                <p>
-                  All database operations on Google Cloud Firestore are protected by cryptographically enforced security rules.
-                  Every query is strictly bounded by your unique <code className="bg-slate-800 text-blue-400 px-1.5 py-0.5 rounded">businessId</code>,
-                  guaranteeing that no other business or tenant on SokoPoS can access, view, or modify your sales records.
-                </p>
-              </section>
-
-              <section className="space-y-2">
-                <h5 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-emerald-400" />
-                  4. Data Retention & Right to Erasure
-                </h5>
-                <p>
-                  Transaction histories are retained in compliance with statutory tax retention guidelines. Should you choose to
-                  close your account, our administrative tools allow you to purge sales records (with automated backup archives)
-                  or request complete tenant deletion from our servers.
-                </p>
-              </section>
+              {PRIVACY_SECTIONS.map((section) => (
+                <section key={section.number} className="space-y-2 pb-4 border-b border-slate-800/80 last:border-b-0">
+                  <h5 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>
+                      {section.number}. {section.title}
+                    </span>
+                  </h5>
+                  {section.paragraphs.map((para, pIdx) => (
+                    <p key={pIdx} className="text-slate-300">
+                      {para}
+                    </p>
+                  ))}
+                  {section.bullets && section.bullets.length > 0 && (
+                    <ul className="list-disc pl-5 space-y-1 text-slate-300">
+                      {section.bullets.map((b, bIdx) => (
+                        <li key={bIdx}>
+                          {b.label && <strong className="text-white">{b.label}: </strong>}
+                          <span>{b.text}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              ))}
             </div>
           )}
 
@@ -447,7 +386,7 @@ export const LegalAndFaqModal: React.FC<LegalAndFaqModalProps> = ({
           )}
 
           {/* ======================================================== */}
-          {/* TAB 3: OWNERSHIP & LEGAL NOTICE */}
+          {/* TAB 4: OWNERSHIP & LEGAL NOTICE */}
           {/* ======================================================== */}
           {activeTab === 'ownership' && (
             <div className="space-y-5 animate-fade-in">
@@ -455,66 +394,67 @@ export const LegalAndFaqModal: React.FC<LegalAndFaqModalProps> = ({
                 <Building className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
                 <div>
                   <h4 className="font-bold text-white text-sm mb-1">
-                    Corporate Ownership & Intellectual Property Notice
+                    Corporate Ownership &amp; Intellectual Property Notice
                   </h4>
                   <p className="text-[11px] text-purple-200/90">
-                    Official declaration of entity ownership, intellectual property rights, and platform governance.
+                    Official declaration of entity ownership, trademark rights, anti-cloning protections, and IP reporting under{' '}
+                    <strong>{LEGAL_ENTITY.companyName}</strong>.
                   </p>
                 </div>
               </div>
 
               <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 space-y-3">
                 <div className="flex items-center gap-2 text-white font-bold text-sm">
-                  <Store className="w-4 h-4 text-blue-400" />
-                  <span>SokoPoS Brand & Operations Statement</span>
+                  <Store className="w-4 h-4 text-[#28a745]" />
+                  <span>{LEGAL_ENTITY.trademarkName} Brand &amp; Operations Statement</span>
                 </div>
                 <p className="text-xs text-slate-300">
-                  <strong>SokoPoS</strong> is a proprietary enterprise retail management, point of sale, and cloud synchronization
-                  software solution developed, owned, and operated exclusively by <strong>Sokoplus Horizon</strong>.
+                  <strong>{LEGAL_ENTITY.trademarkName}</strong> is a proprietary enterprise retail management, point-of-sale,
+                  and cloud synchronization software solution engineered, owned, and operated exclusively by{' '}
+                  <strong>{LEGAL_ENTITY.companyName}</strong>.
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 text-[11px]">
                   <div className="p-3 bg-slate-900 rounded-lg border border-slate-800">
-                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Operating Entity</span>
-                    <strong className="text-white">Sokoplus Horizon</strong>
+                    <span className="text-slate-400 block text-[10px] font-semibold">Operating Entity &amp; IP Owner</span>
+                    <strong className="text-white">{LEGAL_ENTITY.companyName}</strong>
                   </div>
                   <div className="p-3 bg-slate-900 rounded-lg border border-slate-800">
-                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Platform Product</span>
-                    <strong className="text-white">SokoPoS Enterprise Platform</strong>
+                    <span className="text-slate-400 block text-[10px] font-semibold">Protected Brand &amp; Platform</span>
+                    <strong className="text-white">{LEGAL_ENTITY.trademarkName} Point of Sale Platform</strong>
                   </div>
                   <div className="p-3 bg-slate-900 rounded-lg border border-slate-800">
-                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Technical Operations</span>
-                    <strong className="text-white">Cloud Architecture & Retail Systems</strong>
+                    <span className="text-slate-400 block text-[10px] font-semibold">Governing Law &amp; Jurisdiction</span>
+                    <strong className="text-white">{LEGAL_ENTITY.governingLaw}</strong>
                   </div>
                   <div className="p-3 bg-slate-900 rounded-lg border border-slate-800">
-                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Inquiries & Support</span>
-                    <strong className="text-white">support@sokoplushorizon.com</strong>
+                    <span className="text-slate-400 block text-[10px] font-semibold">Legal, IP &amp; Takedown Contact</span>
+                    <strong className="text-white">{LEGAL_ENTITY.legalEmail}</strong>
                   </div>
                 </div>
               </div>
 
-              <section className="space-y-2">
-                <h5 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Scale className="w-4 h-4 text-purple-400" />
-                  Intellectual Property & Trademarks
-                </h5>
-                <p>
-                  All source code, algorithms, offline synchronization protocols, UI visual assets, logos, and technical documentation
-                  comprising SokoPoS are the exclusive intellectual property of <strong>Sokoplus Horizon</strong>. Unauthorized copying,
-                  reverse engineering, decompilation, or sub-licensing without written authorization is strictly prohibited.
-                </p>
-              </section>
-
-              <section className="space-y-2">
-                <h5 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Building className="w-4 h-4 text-purple-400" />
-                  Governing Law & Legal Jurisdiction
-                </h5>
-                <p>
-                  These agreements and operations are governed by the Laws of Kenya, in harmony with international digital commerce
-                  standards and cloud compliance best practices. Any disputes arising out of the platform shall be submitted to
-                  competent commercial arbitration in Nairobi, Kenya.
-                </p>
-              </section>
+              {OWNERSHIP_IP_SECTIONS.map((section) => (
+                <section key={section.number} className="space-y-2 pb-4 border-b border-slate-800/80 last:border-b-0">
+                  <h5 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Scale className="w-4 h-4 text-purple-400 shrink-0" />
+                    <span>
+                      {section.number}. {section.title}
+                    </span>
+                  </h5>
+                  {section.paragraphs.map((para, pIdx) => (
+                    <p key={pIdx} className="text-slate-300">
+                      {para}
+                    </p>
+                  ))}
+                  {section.bullets && section.bullets.length > 0 && (
+                    <ul className="list-disc pl-5 space-y-1 text-slate-300">
+                      {section.bullets.map((b, bIdx) => (
+                        <li key={bIdx}>{b.text}</li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              ))}
             </div>
           )}
 

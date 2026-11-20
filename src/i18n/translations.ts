@@ -166,7 +166,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     footer_legal_ip: 'Legal & IP',
     footer_scroll_top: 'Scroll to Top ↑',
     footer_select_language: 'Language',
-    footer_copyright: '© 2026 SokoPoS Enterprise Platform',
+    footer_copyright: '© 2026 Sokoplus Horizon · SokoPoS™ · All rights reserved',
   },
 
   fr: {
@@ -322,7 +322,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     footer_legal_ip: 'Mentions légales & PI',
     footer_scroll_top: 'Haut de page ↑',
     footer_select_language: 'Langue',
-    footer_copyright: '© 2026 Plateforme SokoPoS Enterprise',
+    footer_copyright: '© 2026 Sokoplus Horizon · SokoPoS™ · Tous droits réservés',
   },
 
   sw: {
@@ -478,7 +478,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     footer_legal_ip: 'Kisheria & Hakimiliki',
     footer_scroll_top: 'Rudi Juu ↑',
     footer_select_language: 'Lugha',
-    footer_copyright: '© 2026 Jukwaa la SokoPoS Enterprise',
+    footer_copyright: '© 2026 Sokoplus Horizon · SokoPoS™ · Haki zote zimehifadhiwa',
   },
 };
 
