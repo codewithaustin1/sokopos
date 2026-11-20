@@ -9,6 +9,7 @@ import {
   AuthUser,
   Business,
   BusinessBrandingSettings,
+  BusinessLegalConsent,
   CartItem,
   Cashier,
   Category,
@@ -78,6 +79,7 @@ import {
   DEFAULT_APPOINTED_DEMO_CASHIER_ID,
   INITIAL_DEMO_BUSINESS,
 } from '../data/initialData';
+import { LEGAL_ENTITY, hasValidBusinessLegalConsent } from '../data/legalContent';
 import { soundFx } from '../utils/audio';
 import { Haptics } from '../utils/haptics';
 import { calculatePaymentGuardrails } from '../utils/cashRounding';
@@ -122,6 +124,7 @@ import {
   purgeTenantTransactionsFromFirestore,
   saveBusinessToFirestore,
   updateBusinessInFirestore,
+  saveBusinessLegalConsentToFirestore,
   ensureBusinessDocInFirestore,
   deleteBusinessFromFirestore,
   purgeTenantAllDataFromFirestore,
@@ -288,6 +291,8 @@ interface PosContextType {
   performSystemCleanup: () => Promise<{ removedCount: number; removedBusinesses: string[] }>;
   refreshAllBusinessesForSuperAdmin: (force?: boolean) => Promise<Business[]>;
   isRealGoogleAccount: (email?: string | null) => boolean;
+  requiresLegalConsent: boolean;
+  recordMerchantLegalConsent: () => Promise<BusinessLegalConsent>;
 
   // Business Profile Settings & Branch Management
   isBusinessSettingsOpen: boolean;
@@ -1396,6 +1401,23 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   });
 
   const isDemoSession = Boolean(currentUser?.isDemoSession || activeBusinessId === 'biz-demo');
+
+  const requiresLegalConsent = useMemo(() => {
+    if (!currentUser || !isStorageHydrated || isFirebaseAuthLoading) return false;
+    if (isSuperAdmin || isDemoSession) return false;
+    if (!currentBusiness?.id || currentBusiness.id === 'biz-demo' || currentBusiness.id === 'biz-upfront') {
+      return false;
+    }
+    return !hasValidBusinessLegalConsent(currentBusiness.legalConsent);
+  }, [
+    currentUser,
+    isStorageHydrated,
+    isFirebaseAuthLoading,
+    isSuperAdmin,
+    isDemoSession,
+    currentBusiness?.id,
+    currentBusiness?.legalConsent,
+  ]);
 
   // 4c. Pricing Architecture & Subscription Entitlement Engine (persisted in IndexedDB)
   const [pricingTiers, setPricingTiers] = useState<PricingTier[]>(DEFAULT_PRICING_TIERS);
@@ -9845,6 +9867,60 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const recordMerchantLegalConsent = async (): Promise<BusinessLegalConsent> => {
+    if (!currentUser || !currentBusiness) {
+      throw new Error('Active merchant session and business setup are required.');
+    }
+    if (isDemoSession || currentBusiness.id === 'biz-demo') {
+      throw new Error('Legal onboarding consent is only required for live merchant accounts.');
+    }
+    if (!isOnline) {
+      throw new Error('You appear to be offline. Reconnect to the internet so your consent can be recorded in Firestore.');
+    }
+    if (!auth.currentUser) {
+      throw new Error('Verified cloud authentication is required before recording legal consent. Please sign in with your merchant Google or email account.');
+    }
+    const isAdminEmail =
+      (auth.currentUser.email || '').toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+    if (!auth.currentUser.emailVerified && !isAdminEmail) {
+      throw new Error('Please verify your email address before completing initial legal setup.');
+    }
+
+    const consentRecord: BusinessLegalConsent = {
+      termsAccepted: true,
+      asIsWarrantyAcknowledged: true,
+      operationalRisksAccepted: true,
+      termsVersion: LEGAL_ENTITY.lastRevised,
+      privacyPolicyVersion: LEGAL_ENTITY.lastRevised,
+      entityName: LEGAL_ENTITY.companyName,
+      acceptedAt: new Date().toISOString(),
+      acceptedByUid: auth.currentUser.uid,
+      acceptedByEmail: (auth.currentUser.email || currentUser.email || currentBusiness.ownerEmail).trim().toLowerCase(),
+      acceptedByName: currentUser.name || currentBusiness.ownerName || auth.currentUser.displayName || 'Merchant Owner',
+    };
+
+    await saveBusinessLegalConsentToFirestore(currentBusiness, consentRecord);
+
+    setBusinesses((prev) =>
+      prev.map((b) =>
+        b.id === currentBusiness.id ? { ...b, legalConsent: consentRecord } : b
+      )
+    );
+
+    logAdminActivity({
+      category: 'security',
+      action: 'merchant_legal_consent_recorded',
+      description: `Recorded Sokoplus Horizon Terms of Service (${LEGAL_ENTITY.lastRevised}), AS-IS disclaimer, and operational risk acknowledgements in Firestore for "${currentBusiness.name}"`,
+      recordType: 'business',
+      recordId: currentBusiness.id,
+      afterValue: consentRecord,
+    });
+
+    soundFx.playSuccess();
+    showToast(`Legal agreement recorded in cloud. POS access unlocked for ${currentBusiness.name}.`, 'success');
+    return consentRecord;
+  };
+
   const updateBusinessStatus = async (businessId: string, status: 'active' | 'suspended'): Promise<void> => {
     const targetBiz = businesses.find((b) => b.id === businessId);
     if (!targetBiz) return;
@@ -10329,6 +10405,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (b.id !== bizId) return b;
           const prevSub = b.subscription || {};
           const remSub = remoteBiz.subscription || {};
+          const legalChanged =
+            JSON.stringify(b.legalConsent || null) !== JSON.stringify(remoteBiz.legalConsent || null);
           const subChanged =
             prevSub.status !== remSub.status ||
             prevSub.expiresAt !== remSub.expiresAt ||
@@ -10338,12 +10416,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             prevSub.planId !== remSub.planId ||
             b.plan !== remoteBiz.plan ||
             b.status !== remoteBiz.status;
-          if (!subChanged) return b;
+          if (!subChanged && !legalChanged) return b;
           changed = true;
           return {
             ...b,
             plan: remoteBiz.plan || b.plan,
             status: remoteBiz.status || b.status,
+            ...(remoteBiz.legalConsent !== undefined ? { legalConsent: remoteBiz.legalConsent } : {}),
             subscription: {
               ...prevSub,
               ...remSub,
@@ -10592,6 +10671,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         performSystemCleanup,
         refreshAllBusinessesForSuperAdmin,
         isRealGoogleAccount,
+        requiresLegalConsent,
+        recordMerchantLegalConsent,
 
         isBusinessSettingsOpen,
         setIsBusinessSettingsOpen,

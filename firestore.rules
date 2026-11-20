@@ -107,6 +107,41 @@ service cloud.firestore {
       allow delete: if isSuperAdmin() && isValidId(userId);
     }
 
+    function isValidLegalConsent(lc) {
+      return lc is map &&
+        lc.keys().hasAll([
+          'termsAccepted',
+          'asIsWarrantyAcknowledged',
+          'operationalRisksAccepted',
+          'termsVersion',
+          'entityName',
+          'acceptedAt',
+          'acceptedByEmail'
+        ]) &&
+        lc.keys().hasOnly([
+          'termsAccepted',
+          'asIsWarrantyAcknowledged',
+          'operationalRisksAccepted',
+          'termsVersion',
+          'privacyPolicyVersion',
+          'entityName',
+          'acceptedAt',
+          'acceptedByUid',
+          'acceptedByEmail',
+          'acceptedByName'
+        ]) &&
+        lc.termsAccepted == true &&
+        lc.asIsWarrantyAcknowledged == true &&
+        lc.operationalRisksAccepted == true &&
+        lc.termsVersion is string && lc.termsVersion.size() > 0 && lc.termsVersion.size() <= 64 &&
+        (!('privacyPolicyVersion' in lc) || (lc.privacyPolicyVersion is string && lc.privacyPolicyVersion.size() <= 64)) &&
+        lc.entityName == 'Sokoplus Horizon' &&
+        lc.acceptedAt is string && lc.acceptedAt.size() > 0 && lc.acceptedAt.size() <= 64 &&
+        (!('acceptedByUid' in lc) || (lc.acceptedByUid is string && lc.acceptedByUid == request.auth.uid && lc.acceptedByUid.size() <= 128)) &&
+        lc.acceptedByEmail is string && lc.acceptedByEmail.size() > 0 && lc.acceptedByEmail.size() <= 200 &&
+        (!('acceptedByName' in lc) || (lc.acceptedByName is string && lc.acceptedByName.size() <= 160));
+    }
+
     // Businesses Collection (Tenants - billing, status, and Paystack subaccount fields protected)
     match /businesses/{businessId} {
       allow get: if isSignedIn() && isValidId(businessId) && (
@@ -119,6 +154,8 @@ service cloud.firestore {
         (request.auth.token.email_verified == true && request.auth.token.email is string && resource.data.ownerEmail is string && resource.data.ownerEmail.lower() == request.auth.token.email.lower())
       );
       allow create: if isEmailVerified() && isValidId(businessId) && (
+        !('legalConsent' in request.resource.data) || isValidLegalConsent(request.resource.data.legalConsent)
+      ) && (
         isSuperAdmin() ||
         (
           businessId != 'biz-demo' &&
@@ -133,6 +170,9 @@ service cloud.firestore {
         )
       );
       allow update: if isEmailVerified() && isValidId(businessId) && (
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['legalConsent']) ||
+        ('legalConsent' in request.resource.data && isValidLegalConsent(request.resource.data.legalConsent))
+      ) && (
         isSuperAdmin() ||
         (
           (

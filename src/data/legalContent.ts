@@ -233,3 +233,19 @@ export const PRIVACY_SECTIONS: LegalClauseSection[] = [
     ],
   },
 ];
+
+export function hasValidBusinessLegalConsent(
+  consent?: import('../types').BusinessLegalConsent | null
+): boolean {
+  if (!consent) return false;
+  return Boolean(
+    consent.termsAccepted === true &&
+      consent.asIsWarrantyAcknowledged === true &&
+      consent.operationalRisksAccepted === true &&
+      consent.entityName === LEGAL_ENTITY.companyName &&
+      typeof consent.acceptedAt === 'string' &&
+      consent.acceptedAt.trim().length > 0 &&
+      typeof consent.acceptedByEmail === 'string' &&
+      consent.acceptedByEmail.trim().length > 0
+  );
+}

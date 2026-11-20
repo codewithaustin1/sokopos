@@ -17,6 +17,7 @@ import {
 import { db, auth } from './firebase';
 import {
   Business,
+  BusinessLegalConsent,
   Product,
   Category,
   Location,
@@ -257,6 +258,40 @@ export async function updateBusinessInFirestore(
   const path = `businesses/${businessId}`;
   try {
     await setDoc(doc(db, 'businesses', businessId), sanitizeForFirestore(updates), { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function saveBusinessLegalConsentToFirestore(
+  biz: Business,
+  legalConsent: BusinessLegalConsent
+): Promise<void> {
+  if (!db) {
+    throw new Error('Cloud database service is unavailable.');
+  }
+  if (!auth.currentUser) {
+    throw new Error('An active verified merchant sign-in session is required to record legal consent in Firestore.');
+  }
+  if (!biz?.id || isDemoBusinessId(biz.id)) {
+    throw new Error('Legal consent is only recorded for live merchant stores.');
+  }
+
+  const ensureRes = await ensureBusinessDocInFirestore(
+    biz,
+    biz.ownerEmail || auth.currentUser.email || ''
+  );
+  if (!ensureRes.ok) {
+    throw new Error(ensureRes.error || 'Could not initialize business record in Firestore.');
+  }
+
+  const path = `businesses/${biz.id}`;
+  try {
+    await setDoc(
+      doc(db, 'businesses', biz.id),
+      sanitizeForFirestore({ legalConsent }),
+      { merge: true }
+    );
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }

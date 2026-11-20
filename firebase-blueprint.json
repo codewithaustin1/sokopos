@@ -74,6 +74,21 @@
             "updatedAt": { "type": "string" },
             "updatedBy": { "type": "string" }
           }
+        },
+        "legalConsent": {
+          "type": "object",
+          "properties": {
+            "termsAccepted": { "type": "boolean" },
+            "asIsWarrantyAcknowledged": { "type": "boolean" },
+            "operationalRisksAccepted": { "type": "boolean" },
+            "termsVersion": { "type": "string", "maxLength": 64 },
+            "privacyPolicyVersion": { "type": "string", "maxLength": 64 },
+            "entityName": { "type": "string", "enum": ["Sokoplus Horizon"] },
+            "acceptedAt": { "type": "string", "maxLength": 64 },
+            "acceptedByUid": { "type": "string", "maxLength": 128 },
+            "acceptedByEmail": { "type": "string", "maxLength": 200 },
+            "acceptedByName": { "type": "string", "maxLength": 160 }
+          }
         }
       },
       "required": ["id", "name", "ownerEmail", "currency"]

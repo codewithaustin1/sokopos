@@ -166,6 +166,19 @@ export interface BusinessLoyaltySettings {
 
 export type BusinessPlanTier = 'free' | 'starter' | 'professional' | 'enterprise' | 'business' | 'premium';
 
+export interface BusinessLegalConsent {
+  termsAccepted: boolean;
+  asIsWarrantyAcknowledged: boolean;
+  operationalRisksAccepted: boolean;
+  termsVersion: string;
+  privacyPolicyVersion?: string;
+  entityName: 'Sokoplus Horizon';
+  acceptedAt: string;
+  acceptedByUid?: string;
+  acceptedByEmail: string;
+  acceptedByName?: string;
+}
+
 export interface Business {
   id: string;
   name: string;
@@ -185,6 +198,7 @@ export interface Business {
   taxSettings?: BusinessTaxSettings;
   loyaltySettings?: BusinessLoyaltySettings;
   securitySettings?: BusinessSecuritySettings;
+  legalConsent?: BusinessLegalConsent;
   rolePermissions?: import('./types/permissions').RolePermissionsMap;
   appointedDemoCashierId?: string; // Appointed cashier profile for public try-demo routing
   referredByCode?: string; // Affiliate referral code captured on signup

@@ -50,6 +50,7 @@ import {
 import { AffiliatePortalModal } from './components/AffiliatePortalModal';
 import { trackPlatformEvent } from './lib/telemetryService';
 import { UpgradePromptModal } from './components/common/UpgradePromptModal';
+import { LegalConsentModal } from './components/LegalConsentModal';
 import { auth } from './lib/firebase';
 
 function PosAppContent() {
@@ -103,6 +104,7 @@ function PosAppContent() {
     isMobileMenuOpen,
     setIsMobileMenuOpen,
     requireCapability,
+    requiresLegalConsent,
   } = usePos();
 
   // URL Path Routing: Ensure root URL ('/') always routes to landing page, not logged-in dashboard
@@ -147,9 +149,9 @@ function PosAppContent() {
     }
   }, [currentUser]);
 
-  // Auto-resume pending paid checkout immediately once owner signs in or registers a shop
+  // Auto-resume pending paid checkout immediately once owner signs in or registers a shop (after legal consent)
   useEffect(() => {
-    if (!currentUser || isAtLandingPage || isDemoSession || !pendingCheckoutIntent) return;
+    if (!currentUser || isAtLandingPage || isDemoSession || requiresLegalConsent || !pendingCheckoutIntent) return;
     if (pendingCheckoutIntent.planId === 'free') {
       clearPendingCheckoutIntent();
       return;
@@ -169,6 +171,7 @@ function PosAppContent() {
     currentUser,
     isAtLandingPage,
     isDemoSession,
+    requiresLegalConsent,
     pendingCheckoutIntent,
     currentBusiness?.id,
     currentBusiness?.name,
@@ -346,6 +349,7 @@ function PosAppContent() {
   const [currentTab, setCurrentTab] = useState<AppTab>('register');
 
   const handleSetCurrentTab = (tab: AppTab) => {
+    if (requiresLegalConsent) return;
     if (tab === 'suppliers' && !requireCapability('suppliers')) return;
     if (tab === 'analytics' && !requireCapability('analytics')) return;
     setCurrentTab(tab);
@@ -418,6 +422,7 @@ function PosAppContent() {
   }, [currentTab, currentUser?.id, isAtLandingPage, currentBusiness?.id, currentBusiness?.name]);
 
   const handleOpenPayment = (method: PaymentMethod = 'cash') => {
+    if (requiresLegalConsent) return;
     // Strict Guardrail: No transaction may be tendered or completed without an open session
     if (!activeShift || activeShift.status !== 'open') {
       soundFx.playErrorTone();
@@ -474,8 +479,8 @@ function PosAppContent() {
         openUnknownBarcodeModal(barcode, { metadata: meta, source: 'hardware' });
       }
     },
-    // Only enable background scanner listener when logged into POS terminal (not on public landing/auth page)
-    enabled: Boolean(currentUser) && !isAtLandingPage,
+    // Only enable background scanner listener when logged into POS terminal and initial legal consent is recorded
+    enabled: Boolean(currentUser) && !isAtLandingPage && !requiresLegalConsent,
     enableQuickCheckHUD: true,
     products,
     onUnrecognizedBarcode: (barcode, meta) => {
@@ -681,8 +686,21 @@ function PosAppContent() {
           openSuperAdminModal={handleOpenSuperAdmin}
         />
 
-        {/* Primary Tab Viewport OR Suspended Subscription Screen for Non-Super-Admin */}
-        {currentBusiness?.status === 'suspended' && !isSuperAdmin ? (
+        {/* Primary Tab Viewport OR Initial Legal Consent Gate OR Suspended Subscription Screen */}
+        {requiresLegalConsent ? (
+          <main className="flex-1 flex items-center justify-center p-6 bg-slate-900 text-white min-w-0">
+            <div className="max-w-md w-full bg-slate-850 border border-slate-700 rounded-2xl p-6 text-center shadow-xl">
+              <div className="w-12 h-12 rounded-xl bg-[#28a745]/15 border border-[#28a745]/30 text-[#28a745] flex items-center justify-center mx-auto mb-3">
+                <Lock className="w-6 h-6" />
+              </div>
+              <h2 className="text-lg font-bold text-white">POS Setup Pending Legal Acknowledgement</h2>
+              <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
+                Complete the Sokoplus Horizon merchant terms &amp; operational risk consent dialog to activate register and inventory access for{' '}
+                <strong className="text-white">{currentBusiness?.name}</strong>.
+              </p>
+            </div>
+          </main>
+        ) : currentBusiness?.status === 'suspended' && !isSuperAdmin ? (
           <main className="flex-1 flex items-center justify-center p-6 bg-slate-900 text-white min-w-0">
             <div className="max-w-md w-full bg-slate-850 border border-slate-700 rounded-2xl p-6 sm:p-8 text-center shadow-2xl animate-in fade-in zoom-in-95 duration-200">
               <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-500 flex items-center justify-center mx-auto mb-4">
@@ -852,6 +870,12 @@ function PosAppContent() {
       />
 
       <UpgradePromptModal />
+
+      {/* Mandatory Initial Merchant Legal Consent Gate (Blocks POS until recorded in Firestore) */}
+      <LegalConsentModal
+        isOpen={requiresLegalConsent}
+        onRequestSignOut={() => setIsSignOutModalOpen(true)}
+      />
     </div>
   );
 }
