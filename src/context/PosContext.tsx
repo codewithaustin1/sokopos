@@ -5,6 +5,7 @@ import {
   clearCapturedReferralCode,
 } from '../lib/affiliateService';
 import { trackPlatformEvent } from '../lib/telemetryService';
+import { resolveApiUrl } from '../lib/apiConfig';
 import {
   AuthUser,
   Business,
@@ -2406,7 +2407,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       auth.currentUser
         .getIdToken()
         .then((idToken) =>
-          fetch('/api/auth/bulk-hash-pins', {
+          fetch(resolveApiUrl('/api/auth/bulk-hash-pins'), {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

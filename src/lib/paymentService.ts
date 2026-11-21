@@ -1,3 +1,5 @@
+import { resolveApiUrl } from './apiConfig';
+
 export type ClientPaymentChannel = 'mpesa_stk' | 'card';
 export type ClientPaymentFlowType = 'pos_sale' | 'subscription';
 
@@ -207,7 +209,7 @@ export function clearPendingSubscriptionCheckout(): void {
 
 export async function getPaymentGatewayConfig(): Promise<PaymentConfigResponse> {
   try {
-    const resp = await fetch('/api/payments/config');
+    const resp = await fetch(resolveApiUrl('/api/payments/config'));
     if (resp.ok) {
       return await resp.json();
     }
@@ -227,7 +229,7 @@ export async function fetchPaystackSettlementBanks(): Promise<{
   error?: string;
 }> {
   try {
-    const resp = await fetch('/api/payments/banks');
+    const resp = await fetch(resolveApiUrl('/api/payments/banks'));
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok || !data?.success) {
       return {
@@ -264,7 +266,7 @@ export async function manageBusinessPaystackSubaccount(
   idToken: string
 ): Promise<ManageSubaccountResponse> {
   try {
-    const resp = await fetch('/api/payments/subaccounts', {
+    const resp = await fetch(resolveApiUrl('/api/payments/subaccounts'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -301,7 +303,7 @@ export async function initiateServerPayment(
     if (idToken) {
       headers.Authorization = `Bearer ${idToken}`;
     }
-    const resp = await fetch('/api/payments/initiate', {
+    const resp = await fetch(resolveApiUrl('/api/payments/initiate'), {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
@@ -351,7 +353,7 @@ export async function fetchBusinessPaymentHistory(
       headers.Authorization = `Bearer ${idToken}`;
     }
     const resp = await fetch(
-      `/api/payments/history/${encodeURIComponent(businessId)}?flow=subscription`,
+      resolveApiUrl(`/api/payments/history/${encodeURIComponent(businessId)}?flow=subscription`),
       { headers }
     );
     const data = await readJsonSafe(resp);
@@ -384,7 +386,7 @@ export async function verifyServerPayment(
     if (idToken) {
       headers.Authorization = `Bearer ${idToken}`;
     }
-    const resp = await fetch(`/api/payments/verify/${encodeURIComponent(reference)}`, {
+    const resp = await fetch(resolveApiUrl(`/api/payments/verify/${encodeURIComponent(reference)}`), {
       headers,
     });
     const data = await readJsonSafe(resp);

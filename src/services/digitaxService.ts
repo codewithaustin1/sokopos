@@ -6,6 +6,7 @@
  * and KRA verification QR codes in partnership with Digitax Technologies.
  */
 import { auth } from '../lib/firebase';
+import { resolveApiUrl } from '../lib/apiConfig';
 
 export interface DigitaxEtimsInfo {
   tax_pin: string;
@@ -164,7 +165,7 @@ class DigitaxService {
   async getEtimsInfo(): Promise<DigitaxEtimsInfo> {
     // Try backend proxy first for optimal reliability, then fallback to direct API if proxy is unavailable
     try {
-      const res = await fetch('/api/digitax/etims-info', {
+      const res = await fetch(resolveApiUrl('/api/digitax/etims-info'), {
         headers: await this.getProxyHeaders(false),
       });
       if (res.ok) {
@@ -197,7 +198,7 @@ class DigitaxService {
    */
   async getItems(): Promise<DigitaxItem[]> {
     try {
-      const res = await fetch('/api/digitax/items', {
+      const res = await fetch(resolveApiUrl('/api/digitax/items'), {
         headers: await this.getProxyHeaders(false),
       });
       if (res.ok) {
@@ -232,7 +233,7 @@ class DigitaxService {
    */
   async getSales(): Promise<DigitaxSaleResponse[]> {
     try {
-      const res = await fetch('/api/digitax/sales', {
+      const res = await fetch(resolveApiUrl('/api/digitax/sales'), {
         headers: await this.getProxyHeaders(false),
       });
       if (res.ok) {
@@ -267,7 +268,7 @@ class DigitaxService {
    */
   async createSale(params: CreateSaleParams): Promise<DigitaxSaleResponse> {
     try {
-      const res = await fetch('/api/digitax/sales', {
+      const res = await fetch(resolveApiUrl('/api/digitax/sales'), {
         method: 'POST',
         headers: await this.getProxyHeaders(true),
         body: JSON.stringify(params),
@@ -311,7 +312,7 @@ class DigitaxService {
       try {
         let sale: DigitaxSaleResponse | null = null;
         try {
-          const res = await fetch(`/api/digitax/sales/${encodeURIComponent(saleId)}`, {
+          const res = await fetch(resolveApiUrl(`/api/digitax/sales/${encodeURIComponent(saleId)}`), {
             headers: await this.getProxyHeaders(false),
           });
           if (res.ok) {

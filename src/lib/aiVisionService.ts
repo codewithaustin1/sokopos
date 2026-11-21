@@ -1,6 +1,7 @@
 import { ParsedSupplierInvoice, ParsedProductPackage, ParsedInvoiceLineItem } from '../types/aiVision';
 import { Product } from '../types';
 import { auth } from './firebase';
+import { resolveApiUrl } from './apiConfig';
 
 export async function parseSupplierInvoiceWithAi(
   imageBase64: string,
@@ -16,7 +17,7 @@ export async function parseSupplierInvoiceWithAi(
     headers['Authorization'] = `Bearer ${idToken}`;
   }
 
-  const response = await fetch('/api/ai/parse-invoice', {
+  const response = await fetch(resolveApiUrl('/api/ai/parse-invoice'), {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -99,7 +100,7 @@ export async function parseProductPackageWithAi(
     headers['Authorization'] = `Bearer ${idToken}`;
   }
 
-  const response = await fetch('/api/ai/parse-package', {
+  const response = await fetch(resolveApiUrl('/api/ai/parse-package'), {
     method: 'POST',
     headers,
     body: JSON.stringify({

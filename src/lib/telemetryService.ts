@@ -1,4 +1,5 @@
 import { auth } from './firebase';
+import { resolveApiUrl } from './apiConfig';
 import {
   PlatformTrafficCollectPayload,
   PlatformTrafficEventType,
@@ -239,7 +240,7 @@ export function trackPlatformEvent(
     const currentUser = auth.currentUser;
     if (!currentUser && typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
       const blob = new Blob([bodyStr], { type: 'application/json' });
-      const sent = navigator.sendBeacon('/api/telemetry/collect', blob);
+      const sent = navigator.sendBeacon(resolveApiUrl('/api/telemetry/collect'), blob);
       if (sent) return;
     }
 
@@ -253,7 +254,7 @@ export function trackPlatformEvent(
           const token = await currentUser.getIdToken().catch(() => '');
           if (token) headers.Authorization = `Bearer ${token}`;
         }
-        await fetch('/api/telemetry/collect', {
+        await fetch(resolveApiUrl('/api/telemetry/collect'), {
           method: 'POST',
           headers,
           body: bodyStr,
@@ -284,7 +285,7 @@ export async function fetchPlatformTrafficOverview(
     (user ? await user.getIdToken(Boolean(options.forceTokenRefresh)).catch(() => '') : '');
 
   const resp = await fetch(
-    `/api/telemetry/overview?days=${rangeDays}&excludeDemo=${excludeDemo ? 'true' : 'false'}`,
+    resolveApiUrl(`/api/telemetry/overview?days=${rangeDays}&excludeDemo=${excludeDemo ? 'true' : 'false'}`),
     {
       method: 'GET',
       headers: {

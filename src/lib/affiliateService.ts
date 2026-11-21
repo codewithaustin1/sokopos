@@ -1,5 +1,6 @@
 import { AffiliateAccountType, AffiliateCommission, AffiliatePayout, AffiliateProfile } from '../types';
 import { auth } from './firebase';
+import { resolveApiUrl } from './apiConfig';
 
 const REFERRAL_STORAGE_KEY = 'sokopos_referral_attribution';
 const REFERRAL_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30-day attribution window
@@ -71,7 +72,7 @@ export async function validateReferralCode(
   code: string
 ): Promise<{ valid: boolean; code?: string; partnerName?: string }> {
   try {
-    const resp = await fetch(`/api/affiliates/validate/${encodeURIComponent(code.trim())}`);
+    const resp = await fetch(resolveApiUrl(`/api/affiliates/validate/${encodeURIComponent(code.trim())}`));
     if (!resp.ok) return { valid: false };
     return await resp.json();
   } catch {
@@ -89,7 +90,7 @@ export async function enrollAffiliate(params: {
 }): Promise<{ success: boolean; affiliate?: AffiliateProfile; error?: string }> {
   try {
     const headers = await getAffiliateAuthHeaders(true);
-    const resp = await fetch('/api/affiliates/enroll', {
+    const resp = await fetch(resolveApiUrl('/api/affiliates/enroll'), {
       method: 'POST',
       headers,
       body: JSON.stringify(params),
@@ -117,7 +118,7 @@ export async function fetchAffiliateDashboard(uid: string, email?: string): Prom
   if (uid) query.set('uid', uid);
   if (email) query.set('email', email.trim().toLowerCase());
   const headers = await getAffiliateAuthHeaders(false);
-  const resp = await fetch(`/api/affiliates/me?${query.toString()}`, { headers });
+  const resp = await fetch(resolveApiUrl(`/api/affiliates/me?${query.toString()}`), { headers });
   if (!resp.ok) {
     throw new Error('Failed to load affiliate dashboard');
   }
@@ -131,7 +132,7 @@ export async function requestAffiliatePayout(params: {
 }): Promise<{ success: boolean; payout?: AffiliatePayout; remainingBalanceKes?: number; error?: string }> {
   try {
     const headers = await getAffiliateAuthHeaders(true);
-    const resp = await fetch('/api/affiliates/payout-request', {
+    const resp = await fetch(resolveApiUrl('/api/affiliates/payout-request'), {
       method: 'POST',
       headers,
       body: JSON.stringify(params),
@@ -154,7 +155,7 @@ export interface AdminAffiliateOverview {
 
 export async function fetchAdminAffiliateOverview(): Promise<AdminAffiliateOverview> {
   const headers = await getAffiliateAuthHeaders(false);
-  const resp = await fetch('/api/affiliates/admin/overview', { headers });
+  const resp = await fetch(resolveApiUrl('/api/affiliates/admin/overview'), { headers });
   if (!resp.ok) {
     throw new Error('Failed to load admin affiliate overview');
   }
@@ -170,7 +171,7 @@ export async function reviewAffiliatePayout(params: {
 }): Promise<{ success: boolean; error?: string }> {
   try {
     const headers = await getAffiliateAuthHeaders(true);
-    const resp = await fetch('/api/affiliates/admin/payout-review', {
+    const resp = await fetch(resolveApiUrl('/api/affiliates/admin/payout-review'), {
       method: 'POST',
       headers,
       body: JSON.stringify(params),
@@ -192,7 +193,7 @@ export async function updateAffiliateRateOrStatus(params: {
 }): Promise<{ success: boolean; error?: string }> {
   try {
     const headers = await getAffiliateAuthHeaders(true);
-    const resp = await fetch('/api/affiliates/admin/update-rate', {
+    const resp = await fetch(resolveApiUrl('/api/affiliates/admin/update-rate'), {
       method: 'POST',
       headers,
       body: JSON.stringify(params),
@@ -219,7 +220,7 @@ export type EmailOtpPurpose = 'passwordless_login' | 'step_up_2fa';
 
 export async function fetchEmailOtpCapabilities(): Promise<EmailOtpCapabilities | null> {
   try {
-    const resp = await fetch('/api/auth/otp/capabilities', { method: 'GET' });
+    const resp = await fetch(resolveApiUrl('/api/auth/otp/capabilities'), { method: 'GET' });
     if (!resp.ok) return null;
     const data = await resp.json().catch(() => null);
     if (!data) return null;
@@ -247,7 +248,7 @@ export async function requestLoginOtp(
   error?: string;
 }> {
   try {
-    const resp = await fetch('/api/auth/otp/send', {
+    const resp = await fetch(resolveApiUrl('/api/auth/otp/send'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, purpose }),
@@ -286,7 +287,7 @@ export async function verifyLoginOtp(
   error?: string;
 }> {
   try {
-    const resp = await fetch('/api/auth/otp/verify', {
+    const resp = await fetch(resolveApiUrl('/api/auth/otp/verify'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, otp, purpose }),

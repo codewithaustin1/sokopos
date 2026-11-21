@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { auth } from './firebase';
+import { resolveApiUrl } from './apiConfig';
 
 export const PROTECTED_PIN_MASK = '••••••••';
 
@@ -61,7 +62,7 @@ export async function hashPinOnServer(pin: string): Promise<string> {
       headers['Authorization'] = `Bearer ${idToken}`;
     }
 
-    const response = await fetch('/api/auth/hash-pin', {
+    const response = await fetch(resolveApiUrl('/api/auth/hash-pin'), {
       method: 'POST',
       headers,
       body: JSON.stringify({ pin }),
@@ -90,7 +91,7 @@ export async function checkStaffIdentityAvailabilityOnServer(params: {
   try {
     const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
     if (!idToken) return null;
-    const response = await fetch('/api/auth/check-staff-identity', {
+    const response = await fetch(resolveApiUrl('/api/auth/check-staff-identity'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -138,7 +139,7 @@ export async function saveStaffCredentialOnServer(params: {
       headers['Authorization'] = `Bearer ${idToken}`;
     }
 
-    const response = await fetch('/api/auth/save-staff-credential', {
+    const response = await fetch(resolveApiUrl('/api/auth/save-staff-credential'), {
       method: 'POST',
       headers,
       body: JSON.stringify(params),
@@ -171,7 +172,7 @@ export async function syncStaffCredentialsOnServer(cashiers: any[]): Promise<num
       headers['Authorization'] = `Bearer ${idToken}`;
     }
 
-    const response = await fetch('/api/auth/sync-credentials', {
+    const response = await fetch(resolveApiUrl('/api/auth/sync-credentials'), {
       method: 'POST',
       headers,
       body: JSON.stringify({ cashiers }),
@@ -203,7 +204,7 @@ export async function verifyStaffPinViaServer(params: {
   }
 
   try {
-    const response = await fetch('/api/auth/verify-pin', {
+    const response = await fetch(resolveApiUrl('/api/auth/verify-pin'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -288,7 +289,7 @@ export async function verifyManagerOverrideViaServer(params: {
   }
 
   try {
-    const response = await fetch('/api/auth/verify-pin', {
+    const response = await fetch(resolveApiUrl('/api/auth/verify-pin'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

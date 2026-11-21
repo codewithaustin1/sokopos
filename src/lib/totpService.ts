@@ -1,5 +1,6 @@
 import QRCode from 'qrcode';
 import { auth } from './firebase';
+import { resolveApiUrl } from './apiConfig';
 
 /**
  * RFC 6238 Time-based One-Time Password (TOTP) Service for SokoPoS
@@ -172,7 +173,7 @@ export async function verifyTotpOnServer(code: string, secret: string): Promise<
     if (idToken) {
       headers['Authorization'] = `Bearer ${idToken}`;
     }
-    const res = await fetch('/api/auth/verify-totp', {
+    const res = await fetch(resolveApiUrl('/api/auth/verify-totp'), {
       method: 'POST',
       headers,
       body: JSON.stringify({ code, secret }),
