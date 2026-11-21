@@ -554,7 +554,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                     <kbd className="font-mono text-slate-600">F1</kbd>
                   </div>
                   <div className="flex justify-between">
-                    <span>Pay / Checkout</span>
+                    <span>Collect / Checkout</span>
                     <kbd className="font-mono text-slate-600">Enter / Space</kbd>
                   </div>
                 </div>
@@ -938,10 +938,10 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               disabled={cart.length === 0}
               onClick={onProceedToPayment}
               className="flex-1 bg-blue-600 hover:bg-blue-700 active:scale-[0.985] disabled:bg-slate-300 text-white font-bold min-h-[48px] px-5 rounded-xl transition-all duration-150 text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed whitespace-nowrap group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-              title="Pay / Proceed to Checkout (Shortcuts: Space, Enter)"
+              title="Collect / Proceed to Checkout (Shortcuts: Space, Enter)"
             >
               <span className="text-sm font-bold font-mono tabular-nums truncate">
-                {t('reg_pay_button', 'Pay')} {currentLocation.currency} {cartTotal.toFixed(2)}
+                {t('reg_pay_button', 'Collect')} {currentLocation.currency} {cartTotal.toFixed(2)}
               </span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform duration-150 shrink-0" />
             </button>
@@ -1026,9 +1026,9 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                 onProceedToPayment();
               }}
               className="bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-xs min-h-[44px] px-4 rounded-lg flex items-center gap-1.5 transition-colors duration-150 cursor-pointer shrink-0 ml-2 whitespace-nowrap"
-              title="Pay / Proceed to Checkout"
+              title="Collect / Proceed to Checkout"
             >
-              <span>Pay</span>
+              <span>Collect</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>

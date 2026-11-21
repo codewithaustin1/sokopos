@@ -2013,10 +2013,10 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               {/* Left Column: Value Proposition & Stats */}
               <div className="sp-hero-left flex flex-col items-center lg:items-start text-center lg:text-left">
                 <h1 className="sp-h1 text-balance">
-                  Close your till in minutes—<span className="sp-hl-money">with M-Pesa, cash, and eTIMS already matched.</span>
+                  End-of-day totals done in minutes—<span className="sp-hl-money">with M-Pesa, cash, and receipts already matched.</span>
                 </h1>
                 <p className="sp-lead">
-                  Stop spending your evenings checking M-Pesa texts against paper books or worrying about missing till cash. Ring up customers in seconds on the phone or laptop you already own—even when the internet drops.
+                  M-Pesa messages, notebooks, and missing cash shouldn&apos;t eat up your evenings. Ring up sales fast on the phone or laptop you already have—even when the internet drops, sales save and sync when it’s back.
                 </p>
                 <div className="sp-cta">
                   <button
