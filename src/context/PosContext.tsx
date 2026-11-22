@@ -12,6 +12,7 @@ import {
   BusinessBrandingSettings,
   BusinessLegalConsent,
   CartItem,
+  HeldOrder,
   Cashier,
   Category,
   DestructiveActionRequest,
@@ -470,6 +471,19 @@ interface PosContextType {
   setIsPinLocked: (locked: boolean) => void;
   verifyPin: (pin: string) => Promise<boolean>;
 
+  // Focused Selling Mode (Hides all tabs across all roles; PIN required to exit)
+  isSellingMode: boolean;
+  enterSellingMode: () => void;
+  verifyAndExitSellingMode: (
+    pin: string
+  ) => Promise<{ success: boolean; verifiedBy?: string; error?: string }>;
+
+  // Device-local Held Orders (Park & Resume carts inside Register)
+  heldOrders: HeldOrder[];
+  holdActiveCart: (note?: string) => boolean;
+  resumeHeldOrder: (heldId: string) => void;
+  discardHeldOrder: (heldId: string) => void;
+
   // Products & Inventory (Scoped to Current Business)
   products: Product[];
   categories: string[];
@@ -797,6 +811,9 @@ const STORAGE_KEYS = {
   getTenantBluetoothPrinterIdKey: (bizId: string) => `sokopos_bt_printer_id_${bizId || 'default'}_v1`,
   getTenantBluetoothPrinterNameKey: (bizId: string) => `sokopos_bt_printer_name_${bizId || 'default'}_v1`,
   getTenantRetailThemeKey: (bizId: string) => `sokopos_retail_theme_${bizId || 'default'}_v2`,
+  SELLING_MODE: 'sokopos_selling_mode_v1',
+  getTenantHeldOrdersKey: (bizId: string, locId: string) =>
+    `sokopos_held_orders_${bizId || 'default'}_${locId || 'default'}_v1`,
 };
 
 export function isRealGoogleAccount(email?: string | null): boolean {
@@ -2963,6 +2980,27 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       throw err;
     }
   };
+
+  // Terminal-device Selling Mode (persisted locally across refreshes; applies across all roles)
+  const [isSellingMode, setIsSellingMode] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.SELLING_MODE) === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.SELLING_MODE, String(isSellingMode));
+    } catch {}
+  }, [isSellingMode]);
+
+  const enterSellingMode = useCallback(() => {
+    setIsSellingMode(true);
+    soundFx.playSuccess();
+    showToast('Selling Mode ON — navigation tabs hidden. Enter PIN to exit.', 'info');
+  }, [showToast]);
 
   // 9. Multi-Tenant Products & Categories Stores (persisted in IndexedDB)
   const [allProducts, setAllProducts] = useState<Product[]>(() => {
@@ -5205,6 +5243,140 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
   }, [cart, currentLocation.id, currentBusiness?.taxSettings, allProducts]);
 
+  // Device-local Held Orders scoped to active business + branch
+  const heldOrdersStorageKey = useMemo(
+    () => STORAGE_KEYS.getTenantHeldOrdersKey(activeBusinessId, currentLocation.id),
+    [activeBusinessId, currentLocation.id]
+  );
+
+  const [heldOrders, setHeldOrders] = useState<HeldOrder[]>(() => {
+    try {
+      const raw = localStorage.getItem(
+        STORAGE_KEYS.getTenantHeldOrdersKey(activeBusinessId, currentLocation.id)
+      );
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(heldOrdersStorageKey);
+      if (!raw) {
+        setHeldOrders([]);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      setHeldOrders(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setHeldOrders([]);
+    }
+  }, [heldOrdersStorageKey]);
+
+  const persistHeldOrders = useCallback(
+    (nextOrders: HeldOrder[]) => {
+      setHeldOrders(nextOrders);
+      try {
+        localStorage.setItem(heldOrdersStorageKey, JSON.stringify(nextOrders));
+      } catch {}
+    },
+    [heldOrdersStorageKey]
+  );
+
+  const holdActiveCart = useCallback(
+    (note?: string): boolean => {
+      if (cart.length === 0) return false;
+      const newHeld: HeldOrder = {
+        id: `hold-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        heldAt: new Date().toISOString(),
+        cashierName: currentCashier.name,
+        customerId: selectedCustomer?.id || null,
+        customerName: selectedCustomer?.name || null,
+        customerPhone: selectedCustomer?.phone || null,
+        note: note?.trim() || undefined,
+        items: [...cart],
+        total: Number(cartTotal.toFixed(2)),
+      };
+      persistHeldOrders([newHeld, ...heldOrders].slice(0, 20));
+      setCart([]);
+      setSelectedCustomer(null);
+      soundFx.playBeep(520, 0.08);
+      showToast(
+        selectedCustomer
+          ? `Order for ${selectedCustomer.name} placed on hold`
+          : 'Current basket placed on hold',
+        'info'
+      );
+      return true;
+    },
+    [cart, cartTotal, currentCashier.name, heldOrders, persistHeldOrders, selectedCustomer, showToast]
+  );
+
+  const resumeHeldOrder = useCallback(
+    (heldId: string) => {
+      const target = heldOrders.find((h) => h.id === heldId);
+      if (!target) return;
+
+      let nextHeld = heldOrders.filter((h) => h.id !== heldId);
+      // If an active basket already has items, park it automatically so nothing is lost
+      if (cart.length > 0) {
+        const parkedCurrent: HeldOrder = {
+          id: `hold-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          heldAt: new Date().toISOString(),
+          cashierName: currentCashier.name,
+          customerId: selectedCustomer?.id || null,
+          customerName: selectedCustomer?.name || null,
+          customerPhone: selectedCustomer?.phone || null,
+          items: [...cart],
+          total: Number(cartTotal.toFixed(2)),
+        };
+        nextHeld = [parkedCurrent, ...nextHeld].slice(0, 20);
+      }
+
+      persistHeldOrders(nextHeld);
+      setCart(target.items);
+
+      if (target.customerId) {
+        const matchedCustomer = customers.find((c) => c.id === target.customerId) || null;
+        setSelectedCustomer(matchedCustomer);
+      } else {
+        setSelectedCustomer(null);
+      }
+
+      soundFx.playSuccess();
+      showToast(
+        cart.length > 0
+          ? 'Current cart parked & held order resumed'
+          : target.customerName
+          ? `Resumed held order for ${target.customerName}`
+          : 'Held order resumed to cart',
+        'success'
+      );
+    },
+    [
+      cart,
+      cartTotal,
+      currentCashier.name,
+      customers,
+      heldOrders,
+      persistHeldOrders,
+      selectedCustomer,
+      showToast,
+    ]
+  );
+
+  const discardHeldOrder = useCallback(
+    (heldId: string) => {
+      const nextHeld = heldOrders.filter((h) => h.id !== heldId);
+      persistHeldOrders(nextHeld);
+      showToast('Held order removed', 'info');
+    },
+    [heldOrders, persistHeldOrders, showToast]
+  );
+
   const addToCart = (product: Product, quantity = 1) => {
     // Strict Guardrail: Sales interface & cart actions require an open shift session
     if (!activeShift || activeShift.status !== 'open') {
@@ -5588,6 +5760,55 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: false, error: 'Invalid Manager or Supervisor PIN' };
   };
 
+  const verifyAndExitSellingMode = async (
+    pin: string
+  ): Promise<{ success: boolean; verifiedBy?: string; error?: string }> => {
+    const trimmed = pin.trim();
+    if (!trimmed) {
+      return { success: false, error: 'PIN is required to exit Selling Mode.' };
+    }
+
+    try {
+      const staffRes = await verifyStaffPinViaServer({
+        pin: trimmed,
+        cashierId: currentCashier.id,
+        businessId: currentCashier.businessId,
+        fallbackHash: currentCashier.pin,
+      });
+
+      if (staffRes.isValid) {
+        setIsSellingMode(false);
+        soundFx.playSuccess();
+        showToast('Selling Mode exited — all tabs restored.', 'success');
+        return { success: true, verifiedBy: currentCashier.name };
+      }
+
+      if (staffRes.error && (staffRes.error.includes('locked') || staffRes.error.includes('Too many'))) {
+        soundFx.playError();
+        return { success: false, error: staffRes.error };
+      }
+    } catch (err: any) {
+      if (err?.message?.includes('locked') || err?.message?.includes('Too many')) {
+        soundFx.playError();
+        return { success: false, error: err.message };
+      }
+    }
+
+    const mgrRes = await verifyManagerOverridePin(trimmed);
+    if (mgrRes.success) {
+      setIsSellingMode(false);
+      soundFx.playSuccess();
+      showToast('Selling Mode exited — all tabs restored.', 'success');
+      return { success: true, verifiedBy: mgrRes.managerName || 'Authorized Manager' };
+    }
+
+    soundFx.playError();
+    return {
+      success: false,
+      error: 'Incorrect PIN. Enter your operator or manager PIN to exit Selling Mode.',
+    };
+  };
+
   // Unified Unknown-Barcode Quick-Add / Restricted Notice State
   const [unknownBarcodePrompt, setUnknownBarcodePrompt] = useState<{
     isOpen: boolean;
@@ -5612,6 +5833,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     ) => {
       const clean = rawBarcode.trim().replace(/^['"]+|['"]+$/g, '');
       if (!clean) return;
+      if (isSellingMode) {
+        soundFx.playError();
+        showToast(
+          `Barcode "${clean}" is not in catalog. Exit Selling Mode to add new products.`,
+          'error'
+        );
+        return;
+      }
       const canManage = isSuperAdmin || can('manageInventory');
       if (!options?.silent) {
         if (canManage) {
@@ -5635,7 +5864,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         source: options?.source || 'manual',
       });
     },
-    [can, currentBusiness?.name, isSuperAdmin, showToast]
+    [can, currentBusiness?.name, isSellingMode, isSuperAdmin, showToast]
   );
 
   const closeUnknownBarcodeModal = useCallback(() => {
@@ -10864,6 +11093,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         cartTaxBreakdown,
         cartDiscount,
         cartTotal,
+        heldOrders,
+        holdActiveCart,
+        resumeHeldOrder,
+        discardHeldOrder,
+        isSellingMode,
+        enterSellingMode,
+        verifyAndExitSellingMode,
 
         // Customer & Store Credit Directory (CRM)
         customers,

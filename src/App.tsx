@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { PosProvider, usePos } from './context/PosContext';
 import { Header } from './components/Header';
 import { SuperAdminBanner } from './components/SuperAdminBanner';
@@ -111,6 +111,7 @@ function PosAppContent() {
     setIsMobileMenuOpen,
     requireCapability,
     requiresLegalConsent,
+    isSellingMode,
   } = usePos();
 
   // URL Path Routing: Keep clean public paths indexable while protecting private /pos routes
@@ -383,24 +384,44 @@ function PosAppContent() {
 
   const handleSetCurrentTab = (tab: AppTab) => {
     if (requiresLegalConsent) return;
+    if (isSellingMode && tab !== 'register') return;
     if (tab === 'suppliers' && !requireCapability('suppliers')) return;
     if (tab === 'analytics' && !requireCapability('analytics')) return;
     setCurrentTab(tab);
   };
 
+  const handleCloseSettings = useCallback(() => {
+    setCurrentTab('register');
+  }, []);
+
+  useEffect(() => {
+    if (isSellingMode) {
+      if (currentTab !== 'register') {
+        setCurrentTab('register');
+      }
+      if (isMobileMenuOpen) {
+        setIsMobileMenuOpen(false);
+      }
+    }
+  }, [isSellingMode, currentTab, isMobileMenuOpen, setIsMobileMenuOpen]);
+
   useEffect(() => {
     if (isShiftModalOpen) {
-      setCurrentTab('shifts');
+      if (!isSellingMode) {
+        setCurrentTab('shifts');
+      }
       setIsShiftModalOpen(false);
     }
-  }, [isShiftModalOpen, setIsShiftModalOpen]);
+  }, [isShiftModalOpen, isSellingMode, setIsShiftModalOpen]);
 
   useEffect(() => {
     if (isBusinessSettingsOpen) {
-      setCurrentTab('settings');
+      if (!isSellingMode) {
+        setCurrentTab('settings');
+      }
       setIsBusinessSettingsOpen(false);
     }
-  }, [isBusinessSettingsOpen, setIsBusinessSettingsOpen]);
+  }, [isBusinessSettingsOpen, isSellingMode, setIsBusinessSettingsOpen]);
 
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
@@ -409,6 +430,7 @@ function PosAppContent() {
   const [superAdminModalDefaultTab, setSuperAdminModalDefaultTab] = useState<'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding' | 'traffic'>('tenants');
 
   const handleOpenSuperAdmin = (tab?: 'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding' | 'traffic') => {
+    if (isSellingMode) return;
     const targetTab = (tab === 'subscriptions' || tab === 'traffic') && !isSuperAdminEmail(currentUser?.email) ? 'tenants' : (tab || 'tenants');
     setSuperAdminModalDefaultTab(targetTab);
     setCurrentTab('super-admin');
@@ -463,7 +485,9 @@ function PosAppContent() {
         'Tendering Blocked: An active shift session is required before initiating or tendering payment.',
         'error'
       );
-      setCurrentTab('shifts');
+      if (!isSellingMode) {
+        setCurrentTab('shifts');
+      }
       return;
     }
 
@@ -500,7 +524,9 @@ function PosAppContent() {
           'Scan Blocked: An active shift session is required before scanning items or initiating transactions.',
           'error'
         );
-        setCurrentTab('shifts');
+        if (!isSellingMode) {
+          setCurrentTab('shifts');
+        }
         return;
       }
       // If currently in another view, switch to register so the scanned item is visible in the cart
@@ -514,7 +540,7 @@ function PosAppContent() {
     },
     // Only enable background scanner listener when logged into POS terminal and initial legal consent is recorded
     enabled: Boolean(currentUser) && !isAtLandingPage && !requiresLegalConsent,
-    enableQuickCheckHUD: true,
+    enableQuickCheckHUD: !isSellingMode,
     products,
     onUnrecognizedBarcode: (barcode, meta) => {
       openUnknownBarcodeModal(barcode, { metadata: meta, source: 'hardware' });
@@ -709,15 +735,17 @@ function PosAppContent() {
         </div>
       )}
 
-      {/* Main Workspace: Left Vertical Navigation Tabs + Primary Viewport */}
+      {/* Main Workspace: Left Vertical Navigation Tabs (hidden in Selling Mode) + Primary Viewport */}
       <div className="flex-1 flex overflow-hidden relative min-h-0 min-w-0">
-        {/* Left Vertical Navigation */}
-        <SidebarNav
-          currentTab={currentTab}
-          setCurrentTab={handleSetCurrentTab}
-          openBarcodeScanner={() => setIsScannerOpen(true)}
-          openSuperAdminModal={handleOpenSuperAdmin}
-        />
+        {/* Left Vertical Navigation (Hidden across all roles when Selling Mode is ON) */}
+        {!isSellingMode && (
+          <SidebarNav
+            currentTab={currentTab}
+            setCurrentTab={handleSetCurrentTab}
+            openBarcodeScanner={() => setIsScannerOpen(true)}
+            openSuperAdminModal={handleOpenSuperAdmin}
+          />
+        )}
 
         {/* Primary Tab Viewport OR Initial Legal Consent Gate OR Suspended Subscription Screen */}
         {requiresLegalConsent ? (
@@ -778,27 +806,31 @@ function PosAppContent() {
             </div>
           </main>
         ) : (
-          <main className="flex-1 flex overflow-hidden relative pb-14 lg:pb-0 min-w-0 min-h-0">
-            {currentTab === 'register' && (
+          <main
+            className={`flex-1 flex overflow-hidden relative ${
+              isSellingMode ? 'pb-0' : 'pb-14 lg:pb-0'
+            } min-w-0 min-h-0`}
+          >
+            {(isSellingMode || currentTab === 'register') && (
               <RegisterView
                 onProceedToPayment={() => handleOpenPayment('cash')}
                 openBarcodeScanner={() => setIsScannerOpen(true)}
               />
             )}
-            {currentTab === 'inventory' && <InventoryView />}
-            {currentTab === 'suppliers' && <SupplierManagementView />}
-            {currentTab === 'analytics' && (
+            {!isSellingMode && currentTab === 'inventory' && <InventoryView />}
+            {!isSellingMode && currentTab === 'suppliers' && <SupplierManagementView />}
+            {!isSellingMode && currentTab === 'analytics' && (
               <AnalyticsView
                 onNavigateToReports={() => handleSetCurrentTab('reports')}
                 onNavigateToInventory={() => handleSetCurrentTab('inventory')}
                 onNavigateToRegister={() => handleSetCurrentTab('register')}
               />
             )}
-            {currentTab === 'reports' && <ReportsView />}
-            {currentTab === 'cloud-sync' && <CloudSyncView />}
-            {currentTab === 'staff' && <StaffManagementView />}
-            {currentTab === 'shifts' && <ShiftManagementView />}
-            {currentTab === 'customers' && (
+            {!isSellingMode && currentTab === 'reports' && <ReportsView />}
+            {!isSellingMode && currentTab === 'cloud-sync' && <CloudSyncView />}
+            {!isSellingMode && currentTab === 'staff' && <StaffManagementView />}
+            {!isSellingMode && currentTab === 'shifts' && <ShiftManagementView />}
+            {!isSellingMode && currentTab === 'customers' && (
               <CustomerManagementView
                 onAssignCustomerToCart={(cust) => {
                   setSelectedCustomer(cust);
@@ -806,13 +838,13 @@ function PosAppContent() {
                 }}
               />
             )}
-            {currentTab === 'settings' && (
+            {!isSellingMode && currentTab === 'settings' && (
               <BusinessProfileSettingsModal
                 initialTab={businessSettingsDefaultTab}
-                onClose={() => setCurrentTab('register')}
+                onClose={handleCloseSettings}
               />
             )}
-            {currentTab === 'super-admin' && isSuperAdmin && (
+            {!isSellingMode && currentTab === 'super-admin' && isSuperAdmin && (
               <SuperAdminDashboardModal
                 defaultTab={superAdminModalDefaultTab}
                 onClose={() => setCurrentTab('register')}
@@ -822,13 +854,15 @@ function PosAppContent() {
         )}
       </div>
 
-      {/* Mobile Bottom Navigation Bar (< lg screens) */}
-      <MobileBottomNav
-        currentTab={currentTab}
-        setCurrentTab={handleSetCurrentTab}
-        openBarcodeScanner={() => setIsScannerOpen(true)}
-        onRequestSignOut={() => setIsSignOutModalOpen(true)}
-      />
+      {/* Mobile Bottom Navigation Bar (< lg screens, hidden across all roles in Selling Mode) */}
+      {!isSellingMode && (
+        <MobileBottomNav
+          currentTab={currentTab}
+          setCurrentTab={handleSetCurrentTab}
+          openBarcodeScanner={() => setIsScannerOpen(true)}
+          onRequestSignOut={() => setIsSignOutModalOpen(true)}
+        />
+      )}
 
       {/* Global Modals & Safeguards */}
       <BarcodeScannerModal
@@ -866,7 +900,7 @@ function PosAppContent() {
 
       {/* Inventory Quick-Check / Quick-Add Modal for Unified Unrecognized Barcode Onboarding */}
       <InventoryQuickCheckHUD
-        isOpen={unknownBarcodePrompt.isOpen || isQuickCheckOpen}
+        isOpen={(unknownBarcodePrompt.isOpen || isQuickCheckOpen) && !isSellingMode}
         barcode={unknownBarcodePrompt.barcode || quickCheckBarcode}
         metadata={unknownBarcodePrompt.metadata || quickCheckMetadata}
         source={unknownBarcodePrompt.source || 'hardware'}
@@ -885,9 +919,9 @@ function PosAppContent() {
         onClose={() => setIsSitemapOpen(false)}
       />
 
-      {/* Single Immersive Bento Overlay (Managed globally) */}
+      {/* Single Immersive Bento Overlay (Managed globally, hidden in Selling Mode) */}
       <MobileBentoMenuOverlay
-        isOpen={isMobileMenuOpen}
+        isOpen={isMobileMenuOpen && !isSellingMode}
         onClose={() => setIsMobileMenuOpen(false)}
         onNavigateTab={(tab) => {
           handleSetCurrentTab(tab);

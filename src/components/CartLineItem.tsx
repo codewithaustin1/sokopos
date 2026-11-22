@@ -166,8 +166,13 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
                 <span>{discountBadge}</span>
               </button>
             ) : (
-              <span className="text-[11px] text-slate-400 opacity-0 group-hover/item:opacity-100 transition-opacity duration-150 hidden sm:inline">
-                · Tap to discount
+              <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 group-hover/item:text-blue-600 transition-colors duration-150">
+                <span aria-hidden="true">·</span>
+                <Tag className="w-3 h-3 shrink-0" />
+                <span className="sm:hidden">Discount</span>
+                <span className="hidden sm:inline opacity-0 group-hover/item:opacity-100 transition-opacity duration-150">
+                  Tap to discount
+                </span>
               </span>
             )}
             {item.discountReason && (
@@ -228,6 +233,7 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
             onClick={handleVoidClick}
             className="text-slate-400 hover:text-red-600 transition-colors min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center cursor-pointer touch-manipulation rounded-lg hover:bg-red-50"
             title="Void line item with supervisor audit"
+            aria-label={`Remove ${item.productName} from cart`}
           >
             <Trash2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
           </button>

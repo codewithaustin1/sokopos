@@ -3,26 +3,15 @@ import {
   Users,
   Search,
   Plus,
-  Filter,
   Phone,
-  Mail,
-  MapPin,
-  Tag,
   CreditCard,
   ShoppingCart,
   Star,
   ArrowUpDown,
   Download,
-  AlertCircle,
-  CheckCircle2,
   Wallet,
-  TrendingUp,
-  Receipt,
   Eye,
   Edit2,
-  Building2,
-  BadgePercent,
-  Clock,
   RefreshCw,
   Lock,
 } from 'lucide-react';
@@ -117,15 +106,6 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
       totalPoints,
       totalSpent,
     };
-  }, [customerList]);
-
-  // Extract all unique tags
-  const availableTags = useMemo(() => {
-    const set = new Set<string>();
-    customerList.forEach((c) => {
-      (c.tags || []).forEach((t) => set.add(t));
-    });
-    return Array.from(set);
   }, [customerList]);
 
   // Filter & sort
@@ -244,34 +224,27 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
       className="flex-1 flex flex-col h-full overflow-hidden bg-slate-100 select-none"
     >
       {/* Top Banner & Control Bar */}
-      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-4 shrink-0 shadow-2xs">
+      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3.5 shrink-0">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-blue-600/10 border border-blue-200 text-blue-600 flex items-center justify-center">
-                <Users className="w-4 h-4" />
-              </div>
-              <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
-                Customer Management & Credit Directory
-              </h1>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
-                {currentBusiness.name}
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Client accounts, store credit / "daftari" ledger, loyalty points & purchase histories
+          <div className="min-w-0">
+            <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight truncate">
+              Customer &amp; Daftari Credit Directory
+            </h1>
+            <p className="text-xs text-slate-500 mt-0.5 truncate">
+              {currentBusiness.name} · Store credit ledger, loyalty points &amp; purchase history
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={() => refreshTenantCustomers(true)}
               disabled={isCustomersLoading}
-              className="p-2 bg-white hover:bg-slate-50 text-slate-600 rounded-xl border border-slate-200 transition cursor-pointer disabled:opacity-50"
+              aria-label="Refresh customers from cloud"
+              className="min-w-[40px] min-h-[40px] px-2.5 bg-white hover:bg-slate-50 text-slate-700 rounded-lg border border-slate-300 transition inline-flex items-center justify-center cursor-pointer disabled:opacity-50"
               title="Refresh customers from cloud"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isCustomersLoading ? 'animate-spin text-blue-600' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${isCustomersLoading ? 'animate-spin text-blue-600' : ''}`} />
             </button>
 
             <button
@@ -281,21 +254,21 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
                 if (!requireCapability('loyaltyAndStoreCredit')) return;
                 openBusinessSettings('loyalty');
               }}
-              className="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-xs rounded-xl border border-amber-200 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              className="min-h-[40px] px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs rounded-lg border border-slate-300 transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
               title="Configure Loyalty Points Earning & Redemption Values"
             >
-              <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-600" />
+              <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500 shrink-0" />
               <span className="hidden sm:inline">Loyalty Rules</span>
-              {!hasLoyaltyAndCredit && <Lock className="w-3 h-3 text-amber-700 shrink-0" />}
+              {!hasLoyaltyAndCredit && <Lock className="w-3 h-3 text-slate-400 shrink-0" />}
             </button>
 
             <button
               type="button"
               onClick={handleExportCsv}
-              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 transition flex items-center gap-1.5 cursor-pointer"
+              className="min-h-[40px] px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs rounded-lg border border-slate-300 transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
               title="Download customer database as CSV"
             >
-              <Download className="w-3.5 h-3.5" />
+              <Download className="w-3.5 h-3.5 text-slate-500 shrink-0" />
               <span className="hidden sm:inline">Export CSV</span>
             </button>
 
@@ -305,94 +278,98 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
                 setCustomerToEdit(null);
                 setIsFormModalOpen(true);
               }}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-black text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+              className="min-h-[40px] px-4 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-xs rounded-lg transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-4 h-4 shrink-0" />
               <span>Add Customer</span>
             </button>
           </div>
         </div>
 
-        {/* Aggregates Dashboard Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
-          <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-              <Users className="w-3.5 h-3.5 text-blue-600" />
-              <span>Total Customers</span>
+        {/* Aggregates Dashboard Cards (Single-elevation flat 1px surfaces, sentence-case) */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 mt-3.5">
+          <div className="bg-white border border-slate-200 rounded-xl p-3.5 flex items-center justify-between gap-2.5">
+            <div className="min-w-0">
+              <div className="text-xs font-semibold text-slate-600">Total Customers</div>
+              <div className="text-lg sm:text-xl font-bold font-mono tabular-nums text-slate-900 mt-0.5">
+                {stats.totalCustomers}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5 truncate">All branch profiles</div>
             </div>
-            <div className="text-lg sm:text-xl font-black text-slate-900 mt-1">
-              {stats.totalCustomers}
-            </div>
-            <div className="text-[10px] text-slate-500 mt-0.5">
-              Across all business locations
-            </div>
-          </div>
-
-          <div className="bg-red-50/50 border border-red-200 rounded-2xl p-3.5">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-red-600 flex items-center gap-1.5">
-              <CreditCard className="w-3.5 h-3.5 text-red-600" />
-              <span>Outstanding Daftari Debt</span>
-            </div>
-            <div className="text-lg sm:text-xl font-black text-red-700 font-mono mt-1">
-              {currentLocation.currency} {stats.totalDebt.toFixed(2)}
-            </div>
-            <div className="text-[10px] text-red-600/90 mt-0.5 font-medium">
-              Owed by {stats.debtCustomerCount} client{stats.debtCustomerCount !== 1 ? 's' : ''} on tab
+            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0" aria-hidden="true">
+              <Users className="w-4 h-4" />
             </div>
           </div>
 
-          <div className="bg-emerald-50/50 border border-emerald-200 rounded-2xl p-3.5">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 flex items-center gap-1.5">
-              <Wallet className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Prepaid Store Credit</span>
+          <div className="bg-white border border-slate-200 rounded-xl p-3.5 flex items-center justify-between gap-2.5">
+            <div className="min-w-0">
+              <div className="text-xs font-semibold text-slate-600">Outstanding Tab Debt</div>
+              <div className="text-base sm:text-xl font-bold font-mono tabular-nums text-red-700 mt-0.5 truncate">
+                {currentLocation.currency} {stats.totalDebt.toFixed(2)}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5 truncate">
+                {stats.debtCustomerCount} client{stats.debtCustomerCount !== 1 ? 's' : ''} on tab
+              </div>
             </div>
-            <div className="text-lg sm:text-xl font-black text-emerald-800 font-mono mt-1">
-              {currentLocation.currency} {stats.totalPrepaid.toFixed(2)}
-            </div>
-            <div className="text-[10px] text-emerald-700/90 mt-0.5">
-              In customer favour / deposit
+            <div className="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center shrink-0" aria-hidden="true">
+              <CreditCard className="w-4 h-4" />
             </div>
           </div>
 
-          <div className="bg-amber-50/50 border border-amber-200 rounded-2xl p-3.5">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700 flex items-center gap-1.5">
-              <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-              <span>Loyalty Points Active</span>
+          <div className="bg-white border border-slate-200 rounded-xl p-3.5 flex items-center justify-between gap-2.5">
+            <div className="min-w-0">
+              <div className="text-xs font-semibold text-slate-600">Prepaid Store Credit</div>
+              <div className="text-base sm:text-xl font-bold font-mono tabular-nums text-emerald-700 mt-0.5 truncate">
+                {currentLocation.currency} {stats.totalPrepaid.toFixed(2)}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5 truncate">Customer deposits</div>
             </div>
-            <div className="text-lg sm:text-xl font-black text-amber-900 font-mono mt-1">
-              {stats.totalPoints} pts
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0" aria-hidden="true">
+              <Wallet className="w-4 h-4" />
             </div>
-            <div className="text-[10px] text-amber-700/90 mt-0.5">
-              Value: {currentLocation.currency} {stats.totalPoints.toFixed(2)}
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-xl p-3.5 flex items-center justify-between gap-2.5">
+            <div className="min-w-0">
+              <div className="text-xs font-semibold text-slate-600">Active Loyalty Points</div>
+              <div className="text-base sm:text-xl font-bold font-mono tabular-nums text-amber-800 mt-0.5 truncate">
+                {stats.totalPoints} pts
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5 truncate font-mono tabular-nums">
+                Value: {currentLocation.currency} {stats.totalPoints.toFixed(2)}
+              </div>
+            </div>
+            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0" aria-hidden="true">
+              <Star className="w-4 h-4 fill-amber-500" />
             </div>
           </div>
         </div>
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 shrink-0 flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-2.5 shrink-0 flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
         {/* Search */}
         <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search by name, phone (+254...), email, or tag..."
-            className="w-full pl-9 pr-3 py-1.5 text-xs font-medium rounded-xl border border-slate-300 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 bg-slate-50/60"
+            className="w-full min-h-[40px] pl-9 pr-3 py-2 text-xs font-medium rounded-lg border border-slate-300 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 bg-slate-50 focus:bg-white text-slate-900"
           />
         </div>
 
-        {/* Filter Pills and Sort Selector */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0">
-          <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl text-xs font-bold shrink-0">
+        {/* Segmented Filter Tabs & Sort Selector (Zero Pill Badges, Zero Shadow-2xs) */}
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 overflow-x-auto">
+          <div className="inline-flex items-center gap-0.5 bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs font-semibold shrink-0">
             <button
               type="button"
               onClick={() => setSelectedTagFilter('all')}
-              className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
+              className={`min-h-[34px] px-2.5 py-1 rounded-md transition cursor-pointer whitespace-nowrap tabular-nums ${
                 selectedTagFilter === 'all'
-                  ? 'bg-white text-slate-900 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white text-slate-900 border border-slate-200'
+                  : 'text-slate-600 hover:text-slate-900 border border-transparent'
               }`}
             >
               All ({customers.length})
@@ -400,37 +377,32 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
             <button
               type="button"
               onClick={() => setSelectedTagFilter('has_debt')}
-              className={`px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1 ${
+              className={`min-h-[34px] px-2.5 py-1 rounded-md transition cursor-pointer whitespace-nowrap tabular-nums ${
                 selectedTagFilter === 'has_debt'
-                  ? 'bg-red-600 text-white shadow-2xs'
-                  : 'text-red-700 hover:bg-red-50'
+                  ? 'bg-white text-red-700 border border-slate-200'
+                  : 'text-slate-600 hover:text-red-700 border border-transparent'
               }`}
             >
-              <span>Has Debt</span>
-              {stats.debtCustomerCount > 0 && (
-                <span className="text-[10px] px-1 py-0.2 rounded-full bg-white/20">
-                  {stats.debtCustomerCount}
-                </span>
-              )}
+              Has Debt{stats.debtCustomerCount > 0 ? ` (${stats.debtCustomerCount})` : ''}
             </button>
             <button
               type="button"
               onClick={() => setSelectedTagFilter('prepaid_credit')}
-              className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
+              className={`min-h-[34px] px-2.5 py-1 rounded-md transition cursor-pointer whitespace-nowrap ${
                 selectedTagFilter === 'prepaid_credit'
-                  ? 'bg-emerald-600 text-white shadow-2xs'
-                  : 'text-emerald-700 hover:bg-emerald-50'
+                  ? 'bg-white text-emerald-700 border border-slate-200'
+                  : 'text-slate-600 hover:text-emerald-700 border border-transparent'
               }`}
             >
-              Prepaid Credit
+              Prepaid
             </button>
             <button
               type="button"
               onClick={() => setSelectedTagFilter('credit_allowed')}
-              className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
+              className={`min-h-[34px] px-2.5 py-1 rounded-md transition cursor-pointer whitespace-nowrap ${
                 selectedTagFilter === 'credit_allowed'
-                  ? 'bg-indigo-600 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white text-indigo-700 border border-slate-200'
+                  : 'text-slate-600 hover:text-slate-900 border border-transparent'
               }`}
             >
               Credit Authorized
@@ -438,12 +410,13 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
           </div>
 
           {/* Sort Selector */}
-          <div className="flex items-center gap-1.5 shrink-0 pl-2 border-l border-slate-200">
+          <div className="flex items-center gap-1.5 shrink-0 sm:pl-2 sm:border-l sm:border-slate-200">
             <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
             <select
               value={sortBy}
-              onChange={(e: any) => setSortBy(e.target.value)}
-              className="bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-700 py-1 px-2 focus:outline-none focus:border-blue-600"
+              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+              aria-label="Sort customers"
+              className="min-h-[40px] bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 py-1.5 px-2.5 focus:outline-none focus:border-blue-600 cursor-pointer"
             >
               <option value="debt_desc">Highest Debt First</option>
               <option value="spend_desc">Highest Spend First</option>
@@ -457,14 +430,14 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
       </div>
 
       {/* Directory Customer List Content */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-6 pb-24 lg:pb-8">
         {filteredCustomers.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center p-8 text-center text-slate-400">
-            <Users className="w-12 h-12 text-slate-300 stroke-1 mb-2" />
+          <div className="h-full min-h-[280px] bg-white rounded-xl border border-slate-200 flex flex-col items-center justify-center p-8 text-center text-slate-400">
+            <Users className="w-10 h-10 text-slate-300 stroke-1 mb-2" />
             <div className="text-sm font-bold text-slate-700">No Customers Found</div>
-            <p className="text-xs text-slate-400 mt-1 max-w-sm">
+            <p className="text-xs text-slate-500 mt-1 max-w-sm">
               {searchQuery || selectedTagFilter !== 'all'
-                ? 'No client profiles matched your search criteria or tag filters.'
+                ? 'No client profiles matched your search criteria or filters.'
                 : 'No customer profiles have been added to this business directory yet.'}
             </p>
             <button
@@ -474,205 +447,356 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
                 setSelectedTagFilter('all');
                 setIsFormModalOpen(true);
               }}
-              className="mt-4 px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl"
+              className="mt-4 min-h-[40px] px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition cursor-pointer"
             >
               Add First Customer
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
-            {filteredCustomers.map((cust) => {
-              const balance = cust.storeCreditBalance || 0;
-              const hasDebt = balance < 0;
-              const isSelected = selectedCustomer?.id === cust.id;
-              const creditLimit = cust.creditLimit || 0;
+          <>
+            {/* Desktop Directory Table (md and up) */}
+            <div className="hidden md:block bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <div className="overflow-x-auto max-h-[62vh]">
+                <table className="w-full text-left border-collapse min-w-[880px]">
+                  <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 text-xs font-semibold text-slate-600">
+                    <tr>
+                      <th scope="col" className="py-2.5 pl-5 pr-3">
+                        <button
+                          type="button"
+                          onClick={() => setSortBy('name_asc')}
+                          className={`inline-flex items-center gap-1 hover:text-slate-900 cursor-pointer ${
+                            sortBy === 'name_asc' ? 'text-blue-700' : ''
+                          }`}
+                        >
+                          <span>Customer</span>
+                        </button>
+                      </th>
+                      <th scope="col" className="py-2.5 px-3">Phone</th>
+                      <th scope="col" className="py-2.5 px-3">Credit Terms</th>
+                      <th scope="col" className="py-2.5 px-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setSortBy('debt_desc')}
+                          className={`inline-flex items-center gap-1 hover:text-slate-900 cursor-pointer ml-auto ${
+                            sortBy === 'debt_desc' ? 'text-blue-700' : ''
+                          }`}
+                        >
+                          <span>Tab / Balance</span>
+                        </button>
+                      </th>
+                      <th scope="col" className="py-2.5 px-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setSortBy('points_desc')}
+                          className={`inline-flex items-center gap-1 hover:text-slate-900 cursor-pointer ml-auto ${
+                            sortBy === 'points_desc' ? 'text-blue-700' : ''
+                          }`}
+                        >
+                          <span>Loyalty</span>
+                        </button>
+                      </th>
+                      <th scope="col" className="py-2.5 px-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setSortBy('spend_desc')}
+                          className={`inline-flex items-center gap-1 hover:text-slate-900 cursor-pointer ml-auto ${
+                            sortBy === 'spend_desc' ? 'text-blue-700' : ''
+                          }`}
+                        >
+                          <span>Lifetime Spend</span>
+                        </button>
+                      </th>
+                      <th scope="col" className="py-2.5 px-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setSortBy('visits_desc')}
+                          className={`inline-flex items-center gap-1 hover:text-slate-900 cursor-pointer ml-auto ${
+                            sortBy === 'visits_desc' ? 'text-blue-700' : ''
+                          }`}
+                        >
+                          <span>Orders</span>
+                        </button>
+                      </th>
+                      <th scope="col" className="py-2.5 pl-3 pr-5 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-xs divide-y divide-slate-100 text-slate-700">
+                    {filteredCustomers.map((cust) => {
+                      const balance = cust.storeCreditBalance || 0;
+                      const hasDebt = balance < 0;
+                      const isSelected = selectedCustomer?.id === cust.id;
+                      const creditLimit = cust.creditLimit || 0;
 
-              return (
-                <div
-                  key={cust.id}
-                  className={`bg-white border rounded-2xl p-4 shadow-2xs hover:shadow-md transition flex flex-col justify-between group ${
-                    isSelected
-                      ? 'border-blue-500 ring-2 ring-blue-500/20'
-                      : hasDebt
-                      ? 'border-red-200/90 hover:border-red-300'
-                      : 'border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  <div>
-                    {/* Top Row: Avatar, Name, and Status */}
+                      return (
+                        <tr
+                          key={cust.id}
+                          className={`transition-colors ${
+                            isSelected ? 'bg-blue-50/50' : 'hover:bg-slate-50/90'
+                          }`}
+                        >
+                          <td className="py-2.5 pl-5 pr-3 align-middle">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCustomerForDetail(cust);
+                                setIsDetailModalOpen(true);
+                              }}
+                              className="font-semibold text-slate-900 hover:text-blue-700 hover:underline text-left cursor-pointer"
+                            >
+                              {cust.name}
+                            </button>
+                            {cust.tags && cust.tags.length > 0 && (
+                              <div className="text-[11px] text-slate-500 mt-0.5 truncate max-w-[220px]">
+                                {cust.tags.join(' · ')}
+                              </div>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-3 align-middle font-mono tabular-nums text-slate-700 whitespace-nowrap">
+                            {cust.phone}
+                          </td>
+
+                          <td className="py-2.5 px-3 align-middle whitespace-nowrap">
+                            {cust.isCreditAllowed ? (
+                              <span className="text-indigo-700 font-medium font-mono tabular-nums">
+                                Limit {currentLocation.currency} {creditLimit.toLocaleString()}
+                              </span>
+                            ) : (
+                              <span className="text-slate-500">Cash only</span>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-3 align-middle text-right font-mono tabular-nums font-semibold whitespace-nowrap">
+                            {hasDebt ? (
+                              <span className="text-red-700">
+                                Owes {currentLocation.currency} {Math.abs(balance).toFixed(2)}
+                              </span>
+                            ) : balance > 0 ? (
+                              <span className="text-emerald-700">
+                                +{currentLocation.currency} {balance.toFixed(2)}
+                              </span>
+                            ) : (
+                              <span className="text-slate-500 font-medium">Clear</span>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-3 align-middle text-right font-mono tabular-nums text-amber-800 font-medium whitespace-nowrap">
+                            {cust.loyaltyPoints || 0} pts
+                          </td>
+
+                          <td className="py-2.5 px-3 align-middle text-right font-mono tabular-nums font-semibold text-slate-900 whitespace-nowrap">
+                            {currentLocation.currency} {cust.totalSpent.toFixed(2)}
+                          </td>
+
+                          <td className="py-2.5 px-3 align-middle text-right font-mono tabular-nums text-slate-600 whitespace-nowrap">
+                            {cust.visitCount}
+                          </td>
+
+                          <td className="py-2.5 pl-3 pr-5 align-middle text-right whitespace-nowrap">
+                            <div className="inline-flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleAssignAndCheckout(cust)}
+                                className={`min-h-[34px] px-2.5 py-1 rounded-md text-xs font-semibold inline-flex items-center gap-1 transition cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-blue-600 text-white'
+                                    : 'text-blue-700 hover:bg-blue-50'
+                                }`}
+                                title="Assign customer to cart and open checkout"
+                              >
+                                <ShoppingCart className="w-3.5 h-3.5 shrink-0" />
+                                <span>{isSelected ? 'Active' : 'Assign'}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!requireCapability('loyaltyAndStoreCredit')) return;
+                                  setCustomerForCreditAdjustment(cust);
+                                  setIsCreditAdjustmentModalOpen(true);
+                                }}
+                                className="min-w-[34px] min-h-[34px] inline-flex items-center justify-center rounded-md text-slate-500 hover:text-indigo-700 hover:bg-indigo-50 transition cursor-pointer"
+                                title="Record payment or adjust credit ledger"
+                                aria-label={`Adjust credit ledger for ${cust.name}`}
+                              >
+                                {!hasLoyaltyAndCredit ? <Lock className="w-3.5 h-3.5" /> : <Wallet className="w-3.5 h-3.5" />}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCustomerForDetail(cust);
+                                  setIsDetailModalOpen(true);
+                                }}
+                                className="min-w-[34px] min-h-[34px] inline-flex items-center justify-center rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer"
+                                title="View Profile & Purchase History"
+                                aria-label={`View profile for ${cust.name}`}
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCustomerToEdit(cust);
+                                  setIsFormModalOpen(true);
+                                }}
+                                className="min-w-[34px] min-h-[34px] inline-flex items-center justify-center rounded-md text-slate-500 hover:text-blue-700 hover:bg-blue-50 transition cursor-pointer"
+                                title="Edit Customer Profile"
+                                aria-label={`Edit ${cust.name}`}
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Mobile Cards (< md): Clean Hairline Layout with >=44px Touch Targets */}
+            <div className="md:hidden space-y-2.5">
+              {filteredCustomers.map((cust) => {
+                const balance = cust.storeCreditBalance || 0;
+                const hasDebt = balance < 0;
+                const isSelected = selectedCustomer?.id === cust.id;
+                const creditLimit = cust.creditLimit || 0;
+
+                return (
+                  <article
+                    key={cust.id}
+                    className={`bg-white border rounded-xl p-3.5 space-y-3 ${
+                      isSelected
+                        ? 'border-blue-500 bg-blue-50/20'
+                        : 'border-slate-200'
+                    }`}
+                  >
                     <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`w-10 h-10 rounded-xl font-black text-sm flex items-center justify-center shrink-0 shadow-2xs ${
-                            hasDebt
-                              ? 'bg-red-100 text-red-800'
-                              : balance > 0
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-blue-100 text-blue-800'
-                          }`}
+                      <div className="min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomerForDetail(cust);
+                            setIsDetailModalOpen(true);
+                          }}
+                          className="text-sm font-bold text-slate-900 hover:text-blue-700 text-left cursor-pointer"
                         >
-                          {cust.name
-                            .split(' ')
-                            .map((n) => n[0])
-                            .join('')
-                            .toUpperCase()
-                            .slice(0, 2)}
-                        </div>
-                        <div className="min-w-0">
-                          <h3
-                            onClick={() => {
-                              setCustomerForDetail(cust);
-                              setIsDetailModalOpen(true);
-                            }}
-                            className="text-xs font-black text-slate-900 truncate hover:text-blue-600 transition-colors cursor-pointer"
-                          >
-                            {cust.name}
-                          </h3>
-                          <div className="flex items-center gap-2 text-[11px] text-slate-500 font-mono mt-0.5">
-                            <span className="flex items-center gap-1">
-                              <Phone className="w-3 h-3 text-emerald-600" />
-                              {cust.phone}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Store Credit Balance Pill */}
-                      <div className="text-right shrink-0">
-                        <span
-                          className={`inline-flex items-center text-[10px] font-black px-2 py-0.5 rounded-full font-mono ${
-                            hasDebt
-                              ? 'bg-red-100 text-red-800 border border-red-200'
-                              : balance > 0
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          {hasDebt
-                            ? `Owes ${currentLocation.currency} ${Math.abs(balance).toFixed(2)}`
-                            : balance > 0
-                            ? `+${currentLocation.currency} ${balance.toFixed(2)} Credit`
-                            : 'Clear Tab'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Tags row */}
-                    <div className="flex items-center gap-1.5 flex-wrap mt-2.5">
-                      {cust.tags && cust.tags.length > 0 ? (
-                        cust.tags.map((tag) => (
-                          <span
-                            key={tag}
-                            className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-slate-100 text-slate-600 border border-slate-200/80"
-                          >
-                            {tag}
+                          {cust.name}
+                        </button>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500 mt-0.5">
+                          <span className="inline-flex items-center gap-1 font-mono tabular-nums text-slate-700">
+                            <Phone className="w-3 h-3 text-emerald-600 shrink-0" />
+                            {cust.phone}
                           </span>
-                        ))
-                      ) : (
-                        <span className="text-[9px] text-slate-400 italic">No tags</span>
-                      )}
-                      {cust.isCreditAllowed ? (
-                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
-                          Credit Allowed
-                        </span>
-                      ) : (
-                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-slate-100 text-slate-400">
-                          Cash Only
-                        </span>
-                      )}
+                          <span aria-hidden="true">·</span>
+                          <span>
+                            {cust.isCreditAllowed
+                              ? `Credit limit ${currentLocation.currency} ${creditLimit.toLocaleString()}`
+                              : 'Cash only'}
+                          </span>
+                        </div>
+                        {cust.tags && cust.tags.length > 0 && (
+                          <div className="text-[11px] text-slate-500 mt-1">
+                            {cust.tags.join(' · ')}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="text-right shrink-0 font-mono tabular-nums text-xs font-bold">
+                        {hasDebt ? (
+                          <span className="text-red-700">
+                            Owes {currentLocation.currency} {Math.abs(balance).toFixed(2)}
+                          </span>
+                        ) : balance > 0 ? (
+                          <span className="text-emerald-700">
+                            +{currentLocation.currency} {balance.toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500 font-medium">Clear tab</span>
+                        )}
+                      </div>
                     </div>
 
-                    {/* Metrics Bar */}
-                    <div className="grid grid-cols-3 gap-2 mt-3 pt-2.5 border-t border-slate-100 text-[11px]">
+                    <div className="grid grid-cols-3 gap-2 pt-2.5 border-t border-slate-100 text-xs">
                       <div>
-                        <span className="text-[9px] font-bold uppercase text-slate-400 block">
-                          Lifetime
-                        </span>
-                        <span className="font-bold text-slate-800 font-mono">
+                        <span className="text-[11px] text-slate-500 block">Lifetime</span>
+                        <span className="font-semibold text-slate-900 font-mono tabular-nums">
                           {currentLocation.currency} {cust.totalSpent.toFixed(0)}
                         </span>
                       </div>
                       <div>
-                        <span className="text-[9px] font-bold uppercase text-slate-400 block">
-                          Visits
-                        </span>
-                        <span className="font-bold text-slate-800">
-                          {cust.visitCount} orders
+                        <span className="text-[11px] text-slate-500 block">Orders</span>
+                        <span className="font-semibold text-slate-900 font-mono tabular-nums">
+                          {cust.visitCount}
                         </span>
                       </div>
                       <div>
-                        <span className="text-[9px] font-bold uppercase text-slate-400 block flex items-center gap-0.5">
-                          <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
-                          <span>Loyalty</span>
-                        </span>
-                        <span className="font-bold text-amber-700 font-mono">
+                        <span className="text-[11px] text-slate-500 block">Loyalty</span>
+                        <span className="font-semibold text-amber-800 font-mono tabular-nums">
                           {cust.loyaltyPoints || 0} pts
                         </span>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Card Bottom Actions */}
-                  <div className="mt-3.5 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-1.5">
-                    {/* Ring Up / Assign Cart */}
-                    <button
-                      type="button"
-                      onClick={() => handleAssignAndCheckout(cust)}
-                      className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                        isSelected
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/80'
-                      }`}
-                      title="Assign customer to cart and open checkout"
-                    >
-                      <ShoppingCart className="w-3.5 h-3.5" />
-                      <span>{isSelected ? 'Active in Cart' : 'Assign to Cart'}</span>
-                    </button>
+                    <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleAssignAndCheckout(cust)}
+                        className={`flex-1 min-h-[44px] px-3 py-2 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                          isSelected
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200'
+                        }`}
+                      >
+                        <ShoppingCart className="w-3.5 h-3.5 shrink-0" />
+                        <span>{isSelected ? 'Active in Cart' : 'Assign'}</span>
+                      </button>
 
-                    {/* Pay / Credit Button */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!requireCapability('loyaltyAndStoreCredit')) return;
-                        setCustomerForCreditAdjustment(cust);
-                        setIsCreditAdjustmentModalOpen(true);
-                      }}
-                      className="p-1.5 rounded-xl bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 border border-slate-200 transition cursor-pointer relative"
-                      title="Record payment or adjust credit ledger"
-                    >
-                      {!hasLoyaltyAndCredit ? <Lock className="w-4 h-4 text-slate-400" /> : <Wallet className="w-4 h-4" />}
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!requireCapability('loyaltyAndStoreCredit')) return;
+                          setCustomerForCreditAdjustment(cust);
+                          setIsCreditAdjustmentModalOpen(true);
+                        }}
+                        className="min-w-[44px] min-h-[44px] rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 inline-flex items-center justify-center transition cursor-pointer"
+                        title="Record payment or adjust credit ledger"
+                        aria-label={`Adjust credit ledger for ${cust.name}`}
+                      >
+                        {!hasLoyaltyAndCredit ? <Lock className="w-4 h-4 text-slate-400" /> : <Wallet className="w-4 h-4" />}
+                      </button>
 
-                    {/* View Details */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCustomerForDetail(cust);
-                        setIsDetailModalOpen(true);
-                      }}
-                      className="p-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 transition cursor-pointer"
-                      title="View Profile & Purchase History"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomerForDetail(cust);
+                          setIsDetailModalOpen(true);
+                        }}
+                        className="min-w-[44px] min-h-[44px] rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 inline-flex items-center justify-center transition cursor-pointer"
+                        title="View Profile & Purchase History"
+                        aria-label={`View profile for ${cust.name}`}
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
 
-                    {/* Edit Profile */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCustomerToEdit(cust);
-                        setIsFormModalOpen(true);
-                      }}
-                      className="p-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 transition cursor-pointer"
-                      title="Edit Customer Profile"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomerToEdit(cust);
+                          setIsFormModalOpen(true);
+                        }}
+                        className="min-w-[44px] min-h-[44px] rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 inline-flex items-center justify-center transition cursor-pointer"
+                        title="Edit Customer Profile"
+                        aria-label={`Edit ${cust.name}`}
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
 

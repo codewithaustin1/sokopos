@@ -104,10 +104,10 @@ export const SupplierToolbar: React.FC<SupplierToolbarProps> = React.memo(
                   role="tab"
                   aria-selected={isSelected}
                   onClick={() => onStatusFilterChange(tab.id)}
-                  className={`min-h-[32px] px-3 py-1 rounded-md text-xs font-semibold transition cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-blue-600 ${
+                  className={`min-h-[34px] px-3 py-1 rounded-md text-xs font-semibold transition cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-blue-600 ${
                     isSelected
-                      ? 'bg-white text-slate-900 shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'bg-white text-slate-900 border border-slate-200'
+                      : 'text-slate-600 hover:text-slate-900 border border-transparent'
                   }`}
                 >
                   {tab.label}

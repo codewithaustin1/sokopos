@@ -18,6 +18,8 @@ import {
   PackagePlus,
   MoreHorizontal,
   Keyboard,
+  PauseCircle,
+  Trash2,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { CartItem } from '../types';
@@ -64,6 +66,11 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
     openShiftManagement,
     selectedCustomer,
     setSelectedCustomer,
+    isSellingMode,
+    heldOrders,
+    holdActiveCart,
+    resumeHeldOrder,
+    discardHeldOrder,
     t,
   } = usePos();
 
@@ -78,6 +85,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
   const [isInitializingShift, setIsInitializingShift] = useState<boolean>(false);
   const [isQuickActionsOpen, setIsQuickActionsOpen] = useState<boolean>(false);
+  const [isHeldOrdersOpen, setIsHeldOrdersOpen] = useState<boolean>(false);
   const [isBreakdownOpen, setIsBreakdownOpen] = useState<boolean>(false);
 
   // Void Management Modal State (Edge Case 1)
@@ -96,6 +104,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const quickActionsRef = useRef<HTMLDivElement>(null);
+  const heldOrdersRef = useRef<HTMLDivElement>(null);
 
   const RECENT_SEARCHES_STORAGE_KEY = 'sokopos_recent_searches';
   const MAX_RECENT_SEARCHES = 8;
@@ -178,6 +187,12 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         !quickActionsRef.current.contains(event.target as Node)
       ) {
         setIsQuickActionsOpen(false);
+      }
+      if (
+        heldOrdersRef.current &&
+        !heldOrdersRef.current.contains(event.target as Node)
+      ) {
+        setIsHeldOrdersOpen(false);
       }
     };
 
@@ -319,13 +334,15 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                 >
                   ← Back to Closed Status
                 </button>
-                <button
-                  type="button"
-                  onClick={openShiftManagement}
-                  className="text-xs font-bold text-[#132c54] hover:underline cursor-pointer"
-                >
-                  Open in Shift &amp; Till Tab →
-                </button>
+                {!isSellingMode && (
+                  <button
+                    type="button"
+                    onClick={openShiftManagement}
+                    className="text-xs font-bold text-[#132c54] hover:underline cursor-pointer"
+                  >
+                    Open in Shift &amp; Till Tab →
+                  </button>
+                )}
               </div>
               <ShiftInitializationCard
                 onSuccess={() => setIsInitializingShift(false)}
@@ -422,7 +439,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
             {/* Recent Searches Dropdown Popover */}
             {isSearchFocused && (
-              <div className="absolute top-full left-0 right-0 mt-1.5 z-40 bg-white rounded-xl shadow-lg border border-slate-200 py-1.5 overflow-hidden">
+              <div className="absolute top-full left-0 right-0 mt-1.5 z-40 bg-white rounded-xl shadow-md border border-slate-200 py-1.5 overflow-hidden">
                 <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-100 text-[11px]">
                   <div className="flex items-center gap-1.5 font-semibold text-slate-500">
                     <Clock className="w-3.5 h-3.5 text-slate-400" />
@@ -432,7 +449,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                     <button
                       type="button"
                       onClick={clearAllRecentSearches}
-                      className="text-[11px] font-medium text-slate-400 hover:text-red-600 transition cursor-pointer"
+                      className="min-h-[32px] px-2 text-[11px] font-medium text-slate-500 hover:text-red-600 rounded transition cursor-pointer"
                     >
                       Clear All
                     </button>
@@ -453,7 +470,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                         <div
                           key={term}
                           onClick={() => handleSelectRecentSearch(term)}
-                          className="flex items-center justify-between px-3 py-2 hover:bg-slate-50 transition-colors cursor-pointer group text-xs"
+                          className="flex items-center justify-between pl-3 pr-1.5 py-1 hover:bg-slate-50 transition-colors cursor-pointer group text-xs min-h-[44px]"
                         >
                           <div className="flex items-center gap-2 min-w-0 flex-1">
                             <Clock className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 shrink-0" />
@@ -468,9 +485,10 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                             type="button"
                             onClick={(e) => removeRecentSearch(term, e)}
                             title={`Remove "${term}" from history`}
-                            className="p-1 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded transition shrink-0 ml-2 cursor-pointer"
+                            aria-label={`Remove "${term}" from recent searches`}
+                            className="min-w-[40px] min-h-[40px] flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition shrink-0 ml-1 cursor-pointer"
                           >
-                            <X className="w-3 h-3" />
+                            <X className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       );
@@ -517,28 +535,51 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                     {selectedCustomer ? `Customer: ${selectedCustomer.name}` : 'Assign Customer'}
                   </span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsQuickActionsOpen(false);
-                    openReturnsModal(null);
-                  }}
-                  className="w-full min-h-[40px] flex items-center gap-2.5 px-3 py-2 rounded-lg text-left font-medium text-slate-700 hover:bg-slate-50 transition cursor-pointer"
-                >
-                  <RotateCcw className="w-4 h-4 text-slate-500 shrink-0" />
-                  <span>{t('nav_returns', 'Returns & Refunds')}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsQuickActionsOpen(false);
-                    openShiftManagement();
-                  }}
-                  className="w-full min-h-[40px] flex items-center gap-2.5 px-3 py-2 rounded-lg text-left font-medium text-slate-700 hover:bg-slate-50 transition cursor-pointer"
-                >
-                  <Clock className="w-4 h-4 text-slate-500 shrink-0" />
-                  <span>Shift &amp; Till Drawer</span>
-                </button>
+                {heldOrders.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsQuickActionsOpen(false);
+                      setMobileActiveView('cart');
+                      setIsHeldOrdersOpen(true);
+                    }}
+                    className="w-full min-h-[40px] flex items-center justify-between gap-2.5 px-3 py-2 rounded-lg text-left font-medium text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <PauseCircle className="w-4 h-4 text-slate-500 shrink-0" />
+                      <span>{t('reg_resume_cart', 'Held Orders')}</span>
+                    </span>
+                    <span className="text-[11px] font-mono font-semibold text-blue-600 tabular-nums">
+                      {heldOrders.length}
+                    </span>
+                  </button>
+                )}
+                {!isSellingMode && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsQuickActionsOpen(false);
+                        openReturnsModal(null);
+                      }}
+                      className="w-full min-h-[40px] flex items-center gap-2.5 px-3 py-2 rounded-lg text-left font-medium text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                    >
+                      <RotateCcw className="w-4 h-4 text-slate-500 shrink-0" />
+                      <span>{t('nav_returns', 'Returns & Refunds')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsQuickActionsOpen(false);
+                        openShiftManagement();
+                      }}
+                      className="w-full min-h-[40px] flex items-center gap-2.5 px-3 py-2 rounded-lg text-left font-medium text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                    >
+                      <Clock className="w-4 h-4 text-slate-500 shrink-0" />
+                      <span>Shift &amp; Till Drawer</span>
+                    </button>
+                  </>
+                )}
 
                 <div className="mt-1 pt-1.5 px-3 pb-1 border-t border-slate-100 text-[11px] text-slate-500 space-y-1">
                   <div className="flex items-center gap-1.5 font-semibold text-slate-600">
@@ -554,7 +595,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                     <kbd className="font-mono text-slate-600">F1</kbd>
                   </div>
                   <div className="flex justify-between">
-                    <span>Collect / Checkout</span>
+                    <span>Pay / Checkout</span>
                     <kbd className="font-mono text-slate-600">Enter / Space</kbd>
                   </div>
                 </div>
@@ -593,14 +634,16 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               </p>
               <p className="text-xs text-slate-500 mt-1 max-w-sm">
                 {searchQuery.trim()
-                  ? canManageInventory
+                  ? !isSellingMode && canManageInventory
                     ? 'You can add this barcode or SKU directly to your catalog, or clear the search.'
+                    : isSellingMode
+                    ? 'Try another category or clear the search query.'
                     : 'Try another category, clear the search query, or ask a manager to add missing stock.'
                   : 'Try another category or clear the search query.'}
               </p>
               {searchQuery.trim() && (
                 <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-                  {canManageInventory && (
+                  {!isSellingMode && canManageInventory && (
                     <button
                       type="button"
                       onClick={() => openUnknownBarcodeModal(searchQuery.trim(), { source: 'search' })}
@@ -702,7 +745,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         }`}
       >
         {/* Cart Header */}
-        <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 border-b border-slate-200 flex justify-between items-center bg-white shrink-0 gap-2">
+        <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 border-b border-slate-200 flex justify-between items-center bg-white shrink-0 gap-2 relative">
           <div className="min-w-0">
             <h2 className="font-display font-bold text-slate-900 text-sm sm:text-base truncate">
               {t('reg_cart_title', 'Active Order')}
@@ -722,6 +765,95 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               >
                 <User className="w-3.5 h-3.5 shrink-0" />
                 <span>+ Customer</span>
+              </button>
+            )}
+            {heldOrders.length > 0 && (
+              <div ref={heldOrdersRef} className="relative">
+                <button
+                  id="register-held-orders-btn"
+                  type="button"
+                  aria-expanded={isHeldOrdersOpen}
+                  onClick={() => setIsHeldOrdersOpen((prev) => !prev)}
+                  className={`min-h-[40px] px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-colors duration-150 flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                    isHeldOrdersOpen
+                      ? 'bg-blue-50 text-blue-700'
+                      : 'text-slate-700 hover:text-blue-700 hover:bg-slate-100'
+                  }`}
+                  title="Resume or manage held baskets"
+                >
+                  <Clock className="w-3.5 h-3.5 shrink-0" />
+                  <span className="tabular-nums">
+                    Held ({heldOrders.length})
+                  </span>
+                </button>
+
+                {isHeldOrdersOpen && (
+                  <div className="absolute right-0 top-full mt-1.5 w-72 sm:w-80 bg-white rounded-xl shadow-lg border border-slate-200 p-2 z-40 text-xs">
+                    <div className="px-2 py-1.5 border-b border-slate-100 flex items-center justify-between">
+                      <span className="font-bold text-slate-800">Held Orders</span>
+                      <span className="text-[11px] text-slate-400 tabular-nums">
+                        {heldOrders.length} parked
+                      </span>
+                    </div>
+                    <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 mt-1">
+                      {heldOrders.map((order) => {
+                        const itemCount = order.items.reduce((sum, i) => sum + i.quantity, 0);
+                        const heldTime = new Date(order.heldAt).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        });
+                        return (
+                          <div key={order.id} className="py-2 px-1.5 flex items-center justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="font-semibold text-slate-900 truncate">
+                                {order.customerName || 'Walk-in Basket'}
+                              </div>
+                              <div className="text-[11px] text-slate-500 tabular-nums mt-0.5">
+                                {heldTime} · {itemCount} item{itemCount !== 1 ? 's' : ''} ·{' '}
+                                <span className="font-mono font-semibold text-slate-700">
+                                  {currentLocation.currency} {order.total.toFixed(2)}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  resumeHeldOrder(order.id);
+                                  setIsHeldOrdersOpen(false);
+                                }}
+                                className="min-h-[36px] px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-semibold transition cursor-pointer whitespace-nowrap"
+                              >
+                                Resume
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => discardHeldOrder(order.id)}
+                                aria-label="Discard held order"
+                                title="Discard held order"
+                                className="min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            {cart.length > 0 && (
+              <button
+                id="register-hold-cart-btn"
+                type="button"
+                onClick={() => holdActiveCart()}
+                className="min-h-[40px] px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150 flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                title="Place current basket on hold to serve next customer"
+              >
+                <PauseCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{t('reg_hold_cart', 'Hold')}</span>
               </button>
             )}
             <button
@@ -938,10 +1070,10 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               disabled={cart.length === 0}
               onClick={onProceedToPayment}
               className="flex-1 bg-blue-600 hover:bg-blue-700 active:scale-[0.985] disabled:bg-slate-300 text-white font-bold min-h-[48px] px-5 rounded-xl transition-all duration-150 text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed whitespace-nowrap group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-              title="Collect / Proceed to Checkout (Shortcuts: Space, Enter)"
+              title="Pay / Proceed to Checkout (Shortcuts: Space, Enter)"
             >
               <span className="text-sm font-bold font-mono tabular-nums truncate">
-                {t('reg_pay_button', 'Collect')} {currentLocation.currency} {cartTotal.toFixed(2)}
+                {t('reg_pay_button', 'Pay')} {currentLocation.currency} {cartTotal.toFixed(2)}
               </span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform duration-150 shrink-0" />
             </button>
@@ -984,54 +1116,56 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         onSelectCustomer={(c) => setSelectedCustomer(c)}
       />
 
-      {/* Mobile Sticky Floating Cart Action Bar (Thumb-Zone Checkout) */}
+      {/* Mobile Sticky Quick Checkout Strip (Flush above bottom nav, or flush to bottom in Selling Mode) */}
       {cart.length > 0 && mobileActiveView === 'catalog' && (
         <aside
           id="mobile-sticky-cart-pill"
           aria-label="Active order quick checkout bar"
-          className="md:hidden fixed bottom-16 inset-x-3 sm:inset-x-4 z-40 safe-bottom"
+          className={`md:hidden fixed inset-x-0 z-30 bg-white border-t border-slate-200 px-3 py-1.5 flex items-center justify-between gap-2 ${
+            isSellingMode
+              ? 'bottom-0 pb-[max(0.375rem,env(safe-area-inset-bottom,0px))]'
+              : 'bottom-[calc(54px+env(safe-area-inset-bottom,0px))]'
+          }`}
         >
-          <div className="bg-slate-900 text-white rounded-xl p-2 pl-3 flex items-center justify-between shadow-lg border border-slate-700/80">
-            <button
-              type="button"
-              onClick={() => {
-                Haptics.light();
-                setMobileActiveView('cart');
-              }}
-              className="flex items-center gap-2.5 min-w-0 flex-1 min-h-[44px] text-left cursor-pointer active:opacity-85"
-              title="Inspect Active Cart"
-            >
-              <div className="w-9 h-9 rounded-lg bg-blue-600/30 text-blue-300 flex items-center justify-center shrink-0">
-                <ShoppingCart className="w-4 h-4" />
+          <button
+            type="button"
+            onClick={() => {
+              Haptics.light();
+              setMobileActiveView('cart');
+            }}
+            className="flex items-center gap-2.5 min-w-0 flex-1 min-h-[44px] text-left cursor-pointer active:opacity-80"
+            title="Inspect Active Cart"
+          >
+            <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center shrink-0">
+              <ShoppingCart className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5 truncate tabular-nums">
+                <span>{totalCartCount} item{totalCartCount !== 1 ? 's' : ''}</span>
+                <span className="text-slate-300" aria-hidden="true">·</span>
+                <span className="text-blue-700 font-mono">
+                  {currentLocation.currency} {cartTotal.toFixed(2)}
+                </span>
               </div>
-              <div className="min-w-0">
-                <div className="text-xs font-bold text-white flex items-center gap-1.5 truncate tabular-nums">
-                  <span>{totalCartCount} item{totalCartCount !== 1 ? 's' : ''}</span>
-                  <span className="text-slate-400">·</span>
-                  <span className="text-emerald-400 font-mono">
-                    {currentLocation.currency} {cartTotal.toFixed(2)}
-                  </span>
-                </div>
-                <div className="text-[11px] text-slate-400 truncate flex items-center gap-0.5">
-                  <span>Tap to view order</span>
-                  <ChevronRight className="w-3 h-3 text-slate-500 inline" />
-                </div>
+              <div className="text-[11px] text-slate-500 truncate flex items-center gap-0.5">
+                <span>View order</span>
+                <ChevronRight className="w-3 h-3 text-slate-400 inline" />
               </div>
-            </button>
+            </div>
+          </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                Haptics.light();
-                onProceedToPayment();
-              }}
-              className="bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-xs min-h-[44px] px-4 rounded-lg flex items-center gap-1.5 transition-colors duration-150 cursor-pointer shrink-0 ml-2 whitespace-nowrap"
-              title="Collect / Proceed to Checkout"
-            >
-              <span>Collect</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              Haptics.light();
+              onProceedToPayment();
+            }}
+            className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-xs min-h-[44px] px-4 rounded-lg flex items-center gap-1.5 transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap"
+            title="Pay / Proceed to Checkout"
+          >
+            <span>Pay</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
         </aside>
       )}
     </div>

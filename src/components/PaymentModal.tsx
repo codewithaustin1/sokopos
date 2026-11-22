@@ -68,6 +68,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
     isSuperAdmin,
     entitlements,
     requireCapability,
+    isSellingMode,
   } = usePos();
 
   const canUseStoreCredit = isSuperAdmin || entitlements.capabilities.loyaltyAndStoreCredit;
@@ -83,11 +84,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
     currentBusiness?.paystackSubaccountStatus === 'verified'
   );
 
-  const canConfigureSettlement = Boolean(
-    isSuperAdmin ||
-    currentUser?.role === 'business_owner' ||
-    currentUser?.role === 'manager'
-  );
+  const canConfigureSettlement =
+    !isSellingMode &&
+    Boolean(
+      isSuperAdmin ||
+      currentUser?.role === 'business_owner' ||
+      currentUser?.role === 'manager'
+    );
 
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>(initialMethod || 'cash');
   const [isCustomerSelectOpen, setIsCustomerSelectOpen] = useState(false);
@@ -895,8 +898,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
   if (!isOpen) return null;
 
   return (
-    <div id="payment-checkout-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4">
-      <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[96vh] sm:max-h-[92vh]">
+    <div id="payment-checkout-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-2 sm:p-4">
+      <div className="bg-white w-full max-w-3xl rounded-2xl shadow-lg overflow-hidden border border-slate-200 flex flex-col max-h-[96vh] sm:max-h-[92vh]">
         {/* Header */}
         <div className="bg-white border-b border-slate-200 h-16 px-4 sm:px-6 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3 min-w-0">
@@ -1242,31 +1245,31 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                         <div className="flex items-center gap-2">
                           {mpesaQrType === 'buy_goods' ? (
                             <div className="flex items-center gap-1.5 text-xs">
-                              <span className="text-slate-500 font-semibold uppercase tracking-wide whitespace-nowrap">Till</span>
+                              <span className="text-slate-500 font-medium whitespace-nowrap">Till</span>
                               <input
                                 type="text"
                                 value={tillNumber}
                                 onChange={(e) => setTillNumber(e.target.value)}
-                                className="w-24 min-h-[36px] bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 font-mono tabular-nums font-bold text-slate-800 text-xs focus:outline-hidden focus:border-emerald-500"
+                                className="w-24 min-h-[36px] bg-white border border-slate-300 rounded-lg px-2 py-1 font-mono tabular-nums font-bold text-slate-800 text-xs focus:outline-hidden focus:border-emerald-500"
                                 placeholder="882910"
                               />
                             </div>
                           ) : (
                             <div className="flex items-center gap-1.5 text-xs">
-                              <span className="text-slate-500 font-semibold uppercase tracking-wide whitespace-nowrap">PB</span>
+                              <span className="text-slate-500 font-medium whitespace-nowrap">Paybill</span>
                               <input
                                 type="text"
                                 value={paybillNumber}
                                 onChange={(e) => setPaybillNumber(e.target.value)}
-                                className="w-20 min-h-[36px] bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 font-mono tabular-nums font-bold text-slate-800 text-xs focus:outline-hidden"
+                                className="w-20 min-h-[36px] bg-white border border-slate-300 rounded-lg px-2 py-1 font-mono tabular-nums font-bold text-slate-800 text-xs focus:outline-hidden"
                                 placeholder="522522"
                               />
-                              <span className="text-slate-500 font-semibold uppercase tracking-wide whitespace-nowrap">Acc</span>
+                              <span className="text-slate-500 font-medium whitespace-nowrap">Account</span>
                               <input
                                 type="text"
                                 value={accountNumber}
                                 onChange={(e) => setAccountNumber(e.target.value)}
-                                className="w-24 min-h-[36px] bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 font-mono tabular-nums font-bold text-slate-800 text-xs focus:outline-hidden"
+                                className="w-24 min-h-[36px] bg-white border border-slate-300 rounded-lg px-2 py-1 font-mono tabular-nums font-bold text-slate-800 text-xs focus:outline-hidden"
                                 placeholder="ACC"
                               />
                             </div>
@@ -1275,7 +1278,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                       </div>
 
                       {/* QR Display Card */}
-                      <div className="bg-white border-2 border-emerald-500/80 rounded-2xl p-3.5 shadow-xs flex flex-col sm:flex-row items-center gap-4">
+                      <div className="bg-white border border-emerald-300 rounded-xl p-3.5 flex flex-col sm:flex-row items-center gap-4">
                         {/* Dynamic QR Code Canvas */}
                         <div className="relative shrink-0 w-36 h-36 bg-emerald-50/40 rounded-xl border border-emerald-200 flex items-center justify-center p-1 overflow-hidden">
                           {isGeneratingInlineQr || !inlineQrUrl ? (
@@ -1432,7 +1435,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                           type="button"
                           onClick={handleMpesaStkPush}
                           disabled={isSendingMpesaPrompt || (!isDemoMode && !isPaystackSubaccountVerified)}
-                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-lg text-xs shadow-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="w-full min-h-[44px] bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-lg text-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {isSendingMpesaPrompt ? (
                             <>
@@ -1932,7 +1935,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
 
                     {/* Quick Split Presets Bar */}
                     <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
-                      <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap">Presets</span>
+                      <span className="text-[11px] font-medium text-slate-500 whitespace-nowrap">Quick presets</span>
                       <div className="flex flex-wrap items-center gap-1.5">
                         <button
                           type="button"
@@ -2011,12 +2014,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                           key={row.id}
                           className={`p-3 rounded-xl border bg-white transition space-y-2 ${
                             row.method === 'cash'
-                              ? 'border-blue-200 shadow-2xs'
+                              ? 'border-blue-200'
                               : row.method === 'mpesa'
-                              ? 'border-emerald-200 shadow-2xs'
+                              ? 'border-emerald-200'
                               : row.method === 'card'
-                              ? 'border-purple-200 shadow-2xs'
-                              : 'border-indigo-200 shadow-2xs'
+                              ? 'border-purple-200'
+                              : 'border-indigo-200'
                           }`}
                         >
                           {/* Row Header: Method selector and delete */}
@@ -2106,8 +2109,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                           {/* Amount input row */}
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-start">
                             <div>
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                                Portion Amount ({currentLocation.currency})
+                              <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                                Portion amount ({currentLocation.currency})
                               </label>
                               <div className="relative">
                                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 font-mono">
@@ -2143,11 +2146,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                               {row.method === 'cash' && (
                                 <div>
                                   <div className="flex justify-between items-center mb-1">
-                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                                      Cash Given (Tendered)
+                                    <label className="block text-[11px] font-medium text-slate-600">
+                                      Cash tendered
                                     </label>
                                     {parseFloat(row.cashTendered || row.amount) > rowAmount && (
-                                      <span className="text-[10px] font-bold text-blue-700 font-mono tabular-nums">
+                                      <span className="text-[11px] font-semibold text-blue-700 font-mono tabular-nums">
                                         Change {currentLocation.currency}{' '}
                                         {(parseFloat(row.cashTendered || '0') - rowAmount).toFixed(2)}
                                       </span>
@@ -2172,8 +2175,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
 
                               {row.method === 'mpesa' && (
                                 <div>
-                                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                                    M-Pesa Reference Code
+                                  <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                                    M-Pesa reference code
                                   </label>
                                   <div className="flex gap-1.5">
                                     <input
@@ -2198,7 +2201,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                                           prev.map((r) => (r.id === row.id ? { ...r, mpesaCode: code } : r))
                                         );
                                       }}
-                                      className="min-h-[40px] px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-[11px] font-bold transition cursor-pointer whitespace-nowrap shrink-0"
+                                      className="min-h-[40px] px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-[11px] font-semibold transition cursor-pointer whitespace-nowrap shrink-0"
                                       title="Generate reference code"
                                     >
                                       Auto-Gen
@@ -2210,7 +2213,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                               {row.method === 'card' && (
                                 <div className="grid grid-cols-2 gap-1.5">
                                   <div>
-                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                    <label className="block text-[11px] font-medium text-slate-600 mb-1">
                                       Network
                                     </label>
                                     <select
@@ -2229,8 +2232,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                                     </select>
                                   </div>
                                   <div>
-                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                                      Last 4
+                                    <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                                      Last 4 digits
                                     </label>
                                     <input
                                       type="text"
@@ -2251,8 +2254,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
 
                               {row.method === 'store_credit' && (
                                 <div>
-                                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                                    Customer Tab
+                                  <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                                    Customer tab
                                   </label>
                                   {!selectedCustomer ? (
                                     <button
@@ -2535,11 +2538,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                       Math.max(0, -((selectedCustomer.storeCreditBalance || 0) - currentGuardrail.payableAmount)) >
                         (selectedCustomer.creditLimit || 0)))
                 }
-                className={`w-full min-h-[48px] bg-emerald-600 hover:bg-emerald-700 active:scale-[0.985] disabled:bg-slate-300 text-white font-bold py-3.5 px-4 rounded-xl transition-all duration-150 text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed whitespace-nowrap ${
-                  !isProcessing && !hasZeroStock && activeShift?.status === 'open' && (selectedMethod !== 'cash' || tenderedAmount >= currentGuardrail.payableAmount) && (selectedMethod !== 'split' || isSplitValid)
-                    ? 'primary-cta-shimmer-emerald'
-                    : ''
-                }`}
+                className="w-full min-h-[48px] bg-emerald-600 hover:bg-emerald-700 active:scale-[0.985] disabled:bg-slate-300 text-white font-bold py-3.5 px-4 rounded-xl transition-all duration-150 text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed whitespace-nowrap"
               >
                 {isProcessing ? (
                   <>

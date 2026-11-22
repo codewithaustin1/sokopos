@@ -124,9 +124,7 @@ export const InventoryView: React.FC = () => {
   // Refs & Scroller
   const searchInputRef = useRef<HTMLInputElement>(null);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const productsTableScrollRef = useRef<HTMLDivElement>(null);
-  const [showScrollTop, setShowScrollTop] = useState(false);
   const [rowMenuPosition, setRowMenuPosition] = useState<{
     top?: number;
     bottom?: number;
@@ -171,24 +169,10 @@ export const InventoryView: React.FC = () => {
     };
   }, []);
 
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const pageTop = e.currentTarget.scrollTop;
-    const tableTop = productsTableScrollRef.current?.scrollTop ?? 0;
-    setShowScrollTop(pageTop > 140 || tableTop > 140);
-  };
-
-  const handleProductsScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const tableTop = e.currentTarget.scrollTop;
-    const pageTop = scrollContainerRef.current?.scrollTop ?? 0;
-    setShowScrollTop(tableTop > 140 || pageTop > 140);
+  const handleProductsScroll = () => {
     if (openRowMenuId) {
       setOpenRowMenuId(null);
     }
-  };
-
-  const scrollToTop = () => {
-    productsTableScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const inspectedProduct = useMemo(
@@ -450,8 +434,6 @@ export const InventoryView: React.FC = () => {
 
   return (
     <div
-      ref={scrollContainerRef}
-      onScroll={handleScroll}
       className="flex-1 flex flex-col bg-slate-100 overflow-y-auto md:overflow-hidden overflow-x-hidden min-h-0 relative inventory-vertical-scroller"
       id="inventory-scroll-container"
     >
@@ -509,7 +491,7 @@ export const InventoryView: React.FC = () => {
             </button>
 
             {isToolsMenuOpen && (
-              <div className="absolute right-0 mt-1.5 w-60 bg-white rounded-xl border border-slate-200 shadow-xl py-1.5 z-30">
+              <div className="absolute right-0 mt-1.5 w-60 bg-white rounded-xl border border-slate-200 shadow-md py-1.5 z-30">
                 <div className="px-3 py-1 text-[11px] font-semibold text-slate-400">
                   Catalog &amp; Labels
                 </div>
@@ -818,18 +800,18 @@ export const InventoryView: React.FC = () => {
             <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200 text-xs font-medium overflow-x-auto">
               {(
                 [
-                  { id: 'all', label: 'All', activeClass: 'bg-white text-slate-900 shadow-2xs' },
-                  { id: 'in_stock', label: 'In Stock', activeClass: 'bg-white text-emerald-700 shadow-2xs' },
-                  { id: 'low_stock', label: 'Low Stock', activeClass: 'bg-white text-amber-700 shadow-2xs' },
-                  { id: 'out_of_stock', label: 'Out', activeClass: 'bg-white text-rose-700 shadow-2xs' },
+                  { id: 'all', label: 'All', activeClass: 'bg-white text-slate-900 border border-slate-200' },
+                  { id: 'in_stock', label: 'In Stock', activeClass: 'bg-white text-emerald-700 border border-slate-200' },
+                  { id: 'low_stock', label: 'Low Stock', activeClass: 'bg-white text-amber-700 border border-slate-200' },
+                  { id: 'out_of_stock', label: 'Out', activeClass: 'bg-white text-rose-700 border border-slate-200' },
                 ] as const
               ).map((tab) => (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => setStockFilter(tab.id)}
-                  className={`px-2.5 py-1 rounded-md transition flex-1 sm:flex-none text-center whitespace-nowrap cursor-pointer ${
-                    stockFilter === tab.id ? tab.activeClass : 'text-slate-600 hover:text-slate-900'
+                  className={`min-h-[34px] px-2.5 py-1 rounded-md transition flex-1 sm:flex-none text-center whitespace-nowrap cursor-pointer ${
+                    stockFilter === tab.id ? tab.activeClass : 'text-slate-600 hover:text-slate-900 border border-transparent'
                   }`}
                 >
                   {tab.label}
@@ -959,8 +941,8 @@ export const InventoryView: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="bg-slate-50 rounded-lg px-2.5 py-2 flex items-center justify-between border border-slate-100 text-xs">
-                    <div className="flex items-center gap-1.5">
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
                       <span className="text-[11px] text-slate-500">
                         {currentLocation.name.split(' ')[0]}:
                       </span>
@@ -969,29 +951,31 @@ export const InventoryView: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => stepQuickAdjust(-1)}
-                            className="w-6 h-6 rounded border border-slate-300 bg-white flex items-center justify-center text-slate-700"
+                            className="w-8 h-8 rounded-lg border border-slate-300 bg-white flex items-center justify-center text-slate-700 cursor-pointer"
+                            aria-label="Decrease stock count"
                           >
-                            <Minus className="w-3 h-3" />
+                            <Minus className="w-3.5 h-3.5" />
                           </button>
                           <input
                             type="number"
                             min="0"
                             value={adjustValue}
                             onChange={(e) => setAdjustValue(e.target.value)}
-                            className="w-14 bg-white border border-blue-500 rounded px-1.5 py-0.5 text-xs font-mono font-semibold text-center tabular-nums"
+                            className="w-14 h-8 bg-white border border-blue-500 rounded-lg px-1.5 py-1 text-xs font-mono font-semibold text-center tabular-nums"
                             autoFocus
                           />
                           <button
                             type="button"
                             onClick={() => stepQuickAdjust(1)}
-                            className="w-6 h-6 rounded border border-slate-300 bg-white flex items-center justify-center text-slate-700"
+                            className="w-8 h-8 rounded-lg border border-slate-300 bg-white flex items-center justify-center text-slate-700 cursor-pointer"
+                            aria-label="Increase stock count"
                           >
-                            <Plus className="w-3 h-3" />
+                            <Plus className="w-3.5 h-3.5" />
                           </button>
                           <button
                             type="button"
                             onClick={() => submitQuickAdjust(p)}
-                            className="bg-blue-600 text-white px-2 py-1 rounded text-[11px] font-semibold"
+                            className="bg-blue-600 text-white px-2.5 h-8 rounded-lg text-xs font-semibold cursor-pointer"
                           >
                             Save
                           </button>
@@ -1004,7 +988,7 @@ export const InventoryView: React.FC = () => {
                             setQuickAdjustProductId(p.id);
                             setAdjustValue(currentStock.toString());
                           }}
-                          className={`font-semibold tabular-nums ${
+                          className={`min-h-[36px] px-1.5 rounded font-semibold tabular-nums cursor-pointer ${
                             isOutOfStock
                               ? 'text-rose-600'
                               : isLowStock
@@ -1016,25 +1000,25 @@ export const InventoryView: React.FC = () => {
                         </button>
                       )}
                     </div>
-                    <span className="text-[11px] font-mono text-slate-400 tabular-nums">
+                    <span className="text-[11px] font-mono text-slate-400 tabular-nums shrink-0">
                       {p.barcode}
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-xs">
+                  <div className="flex items-center justify-between pt-1.5 border-t border-slate-100 text-xs gap-2">
                     <button
                       type="button"
                       onClick={() => setInspectedProductId(p.id)}
-                      className="text-slate-700 font-semibold flex items-center gap-1 py-1 cursor-pointer"
+                      className="min-h-[44px] px-2 -ml-2 text-slate-700 hover:text-slate-900 font-semibold inline-flex items-center gap-1.5 rounded-lg hover:bg-slate-50 cursor-pointer"
                     >
-                      <Eye className="w-3.5 h-3.5 text-slate-500" />
+                      <Eye className="w-4 h-4 text-slate-500" />
                       <span>Details</span>
                     </button>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1">
                       <button
                         type="button"
                         onClick={() => handleOpenLabelModalForSingle(p)}
-                        className="text-slate-600 font-semibold py-1 cursor-pointer"
+                        className="min-h-[44px] px-2.5 text-slate-600 hover:bg-slate-50 rounded-lg font-semibold cursor-pointer"
                       >
                         Label
                       </button>
@@ -1043,14 +1027,14 @@ export const InventoryView: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => handleOpenEditModal(p)}
-                            className="text-blue-600 font-semibold py-1 cursor-pointer"
+                            className="min-h-[44px] px-2.5 text-blue-600 hover:bg-blue-50 rounded-lg font-semibold cursor-pointer"
                           >
                             Edit
                           </button>
                           <button
                             type="button"
                             onClick={() => deleteProduct(p.id)}
-                            className="text-rose-600 font-semibold py-1 cursor-pointer"
+                            className="min-h-[44px] px-2.5 text-rose-600 hover:bg-rose-50 rounded-lg font-semibold cursor-pointer"
                           >
                             Delete
                           </button>
@@ -1245,7 +1229,7 @@ export const InventoryView: React.FC = () => {
                         }`}
                       >
                         {/* Selection Checkbox */}
-                        <td className="py-2.5 pl-3 pr-1.5 text-center">
+                        <td className="py-2 pl-3 pr-1.5 text-center">
                           <input
                             type="checkbox"
                             checked={isSelected}
@@ -1256,7 +1240,7 @@ export const InventoryView: React.FC = () => {
                         </td>
 
                         {/* Name & Barcode (Click opens Slide-Over Drawer) */}
-                        <td className="py-2.5 px-2.5">
+                        <td className="py-2 px-2.5">
                           <button
                             type="button"
                             onClick={() => setInspectedProductId(p.id)}
@@ -1273,17 +1257,17 @@ export const InventoryView: React.FC = () => {
                         </td>
 
                         {/* SKU */}
-                        <td className="py-2.5 px-2.5 font-mono tabular-nums text-slate-500 whitespace-nowrap">
+                        <td className="py-2 px-2.5 font-mono tabular-nums text-slate-500 whitespace-nowrap">
                           {p.sku}
                         </td>
 
                         {/* Category */}
-                        <td className="py-2.5 px-2.5 text-slate-600 whitespace-nowrap max-w-[140px] truncate">
+                        <td className="py-2 px-2.5 text-slate-600 whitespace-nowrap max-w-[140px] truncate">
                           {p.category}
                         </td>
 
                         {/* Supplier (Zero-Pill Clean Text) */}
-                        <td className="py-2.5 px-2.5">
+                        <td className="py-2 px-2.5">
                           {p.supplierName ? (
                             <span className="inline-flex items-center gap-1.5 text-slate-700 max-w-[130px]">
                               <Truck className="w-3 h-3 text-slate-400 shrink-0" />
@@ -1295,28 +1279,28 @@ export const InventoryView: React.FC = () => {
                         </td>
 
                         {/* Buying Price */}
-                        <td className="py-2.5 px-2.5 text-right font-mono tabular-nums text-slate-500 whitespace-nowrap">
+                        <td className="py-2 px-2.5 text-right font-mono tabular-nums text-slate-500 whitespace-nowrap">
                           {canViewCost ? `${currentLocation.currency} ${p.buyingPrice.toFixed(2)}` : '••••'}
                         </td>
 
                         {/* Selling Price */}
-                        <td className="py-2.5 px-2.5 text-right font-mono tabular-nums font-semibold text-slate-900 whitespace-nowrap">
+                        <td className="py-2 px-2.5 text-right font-mono tabular-nums font-semibold text-slate-900 whitespace-nowrap">
                           {currentLocation.currency} {p.sellingPrice.toFixed(2)}
                         </td>
 
                         {/* Margin */}
-                        <td className="py-2.5 px-2.5 text-right font-mono tabular-nums font-medium text-emerald-700 whitespace-nowrap">
+                        <td className="py-2 px-2.5 text-right font-mono tabular-nums font-medium text-emerald-700 whitespace-nowrap">
                           {canViewCost ? `${margin}%` : '—'}
                         </td>
 
                         {/* Current Location Stock Level + Inline Stepper Editor */}
-                        <td className="py-2.5 px-2.5 whitespace-nowrap">
+                        <td className="py-2 px-2.5 whitespace-nowrap">
                           {quickAdjustProductId === p.id && canManage ? (
                             <div className="flex items-center gap-1">
                               <button
                                 type="button"
                                 onClick={() => stepQuickAdjust(-1)}
-                                className="w-6 h-6 rounded border border-slate-300 bg-white hover:bg-slate-50 flex items-center justify-center text-slate-700 cursor-pointer"
+                                className="w-7 h-7 rounded-md border border-slate-300 bg-white hover:bg-slate-50 flex items-center justify-center text-slate-700 cursor-pointer"
                                 title="Decrease 1"
                               >
                                 <Minus className="w-3 h-3" />
@@ -1330,13 +1314,13 @@ export const InventoryView: React.FC = () => {
                                   if (e.key === 'Enter') submitQuickAdjust(p);
                                   if (e.key === 'Escape') setQuickAdjustProductId(null);
                                 }}
-                                className="w-14 bg-white border border-blue-500 rounded px-1.5 py-0.5 text-xs font-mono font-semibold text-center tabular-nums"
+                                className="w-14 h-7 bg-white border border-blue-500 rounded-md px-1.5 text-xs font-mono font-semibold text-center tabular-nums"
                                 autoFocus
                               />
                               <button
                                 type="button"
                                 onClick={() => stepQuickAdjust(1)}
-                                className="w-6 h-6 rounded border border-slate-300 bg-white hover:bg-slate-50 flex items-center justify-center text-slate-700 cursor-pointer"
+                                className="w-7 h-7 rounded-md border border-slate-300 bg-white hover:bg-slate-50 flex items-center justify-center text-slate-700 cursor-pointer"
                                 title="Increase 1"
                               >
                                 <Plus className="w-3 h-3" />
@@ -1344,7 +1328,7 @@ export const InventoryView: React.FC = () => {
                               <select
                                 value={adjustReason}
                                 onChange={(e) => setAdjustReason(e.target.value)}
-                                className="px-1.5 py-0.5 border border-slate-200 rounded bg-white text-[11px] text-slate-600"
+                                className="h-7 px-1.5 border border-slate-200 rounded-md bg-white text-[11px] text-slate-600"
                               >
                                 <option value="Cycle count">Count</option>
                                 <option value="Restock">Restock</option>
@@ -1353,7 +1337,7 @@ export const InventoryView: React.FC = () => {
                               <button
                                 type="button"
                                 onClick={() => submitQuickAdjust(p)}
-                                className="w-6 h-6 rounded bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center cursor-pointer"
+                                className="w-7 h-7 rounded-md bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center cursor-pointer"
                                 title="Save stock count"
                               >
                                 <Check className="w-3.5 h-3.5" />
@@ -1361,7 +1345,7 @@ export const InventoryView: React.FC = () => {
                               <button
                                 type="button"
                                 onClick={() => setQuickAdjustProductId(null)}
-                                className="w-6 h-6 rounded text-slate-400 hover:text-slate-700 flex items-center justify-center cursor-pointer"
+                                className="w-7 h-7 rounded-md text-slate-400 hover:text-slate-700 flex items-center justify-center cursor-pointer"
                                 title="Cancel"
                               >
                                 <X className="w-3.5 h-3.5" />
@@ -1379,12 +1363,12 @@ export const InventoryView: React.FC = () => {
                                 setAdjustValue(currentStock.toString());
                                 setAdjustReason('Cycle count');
                               }}
-                              className={`inline-flex items-center gap-1.5 font-mono tabular-nums font-semibold px-2 py-0.5 rounded-md transition cursor-pointer ${
+                              className={`inline-flex items-center gap-1 font-mono tabular-nums font-semibold px-1.5 py-1 rounded-md transition cursor-pointer ${
                                 isOutOfStock
-                                  ? 'text-rose-700 bg-rose-50 hover:bg-rose-100'
+                                  ? 'text-rose-700 hover:bg-rose-50'
                                   : isLowStock
-                                  ? 'text-amber-800 bg-amber-50 hover:bg-amber-100'
-                                  : 'text-emerald-800 bg-emerald-50 hover:bg-emerald-100'
+                                  ? 'text-amber-700 hover:bg-amber-50'
+                                  : 'text-emerald-700 hover:bg-emerald-50'
                               }`}
                               title={canManage ? 'Click to adjust stock inline' : 'View stock details'}
                             >
@@ -1404,7 +1388,7 @@ export const InventoryView: React.FC = () => {
                             return (
                               <td
                                 key={loc.id}
-                                className={`py-2.5 px-3 text-center font-mono tabular-nums font-medium ${
+                                className={`py-2 px-3 text-center font-mono tabular-nums font-medium ${
                                   locQty === 0
                                     ? 'text-rose-600'
                                     : locQty <= p.reorderPoint
@@ -1419,7 +1403,7 @@ export const InventoryView: React.FC = () => {
 
                         {/* Actions: Primary Inspect/Edit + Compact Row Overflow Menu (Sticky Right) */}
                         <td
-                          className={`py-2.5 pl-2.5 pr-4 text-right whitespace-nowrap sticky right-0 z-10 border-l border-slate-100 transition-colors ${
+                          className={`py-2 pl-2.5 pr-4 text-right whitespace-nowrap sticky right-0 z-10 border-l border-slate-100 transition-colors ${
                             isInspected
                               ? 'bg-blue-50'
                               : isSelected
@@ -1433,7 +1417,7 @@ export const InventoryView: React.FC = () => {
                               onClick={() =>
                                 canManage ? handleOpenEditModal(p) : setInspectedProductId(p.id)
                               }
-                              className="px-2 py-1 rounded-md text-xs font-semibold text-blue-600 hover:bg-blue-50 transition cursor-pointer"
+                              className="min-h-[34px] px-2.5 py-1 rounded-md text-xs font-semibold text-blue-600 hover:bg-blue-50 transition cursor-pointer"
                             >
                               {canManage ? 'Edit' : 'View'}
                             </button>
@@ -1461,7 +1445,7 @@ export const InventoryView: React.FC = () => {
                                   }
                                   setOpenRowMenuId(p.id);
                                 }}
-                                className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                                className="min-w-[36px] min-h-[36px] rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer inline-flex items-center justify-center"
                                 aria-label={`More actions for ${p.name}`}
                               >
                                 <MoreHorizontal className="w-4 h-4" />
@@ -1474,7 +1458,7 @@ export const InventoryView: React.FC = () => {
                                     bottom: rowMenuPosition.bottom,
                                     right: rowMenuPosition.right,
                                   }}
-                                  className="fixed w-48 bg-white rounded-xl border border-slate-200 shadow-xl py-1 z-50 text-left"
+                                  className="fixed w-48 bg-white rounded-xl border border-slate-200 shadow-md py-1 z-50 text-left"
                                 >
                                   <button
                                     type="button"
@@ -1555,19 +1539,6 @@ export const InventoryView: React.FC = () => {
           </div>
         </div>
       </div>
-
-      {/* Scroll Back To Top */}
-      {showScrollTop && (
-        <button
-          type="button"
-          onClick={scrollToTop}
-          className="fixed sm:absolute bottom-20 sm:bottom-8 right-5 sm:right-9 z-30 bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg border border-blue-500/50 transition-all duration-150 flex items-center justify-center cursor-pointer"
-          title="Scroll back to top of inventory"
-          aria-label="Scroll to top"
-        >
-          <ArrowUp className="w-4 h-4" />
-        </button>
-      )}
 
       {/* Slide-Over Product Inspector Drawer */}
       <ProductInspectorDrawer

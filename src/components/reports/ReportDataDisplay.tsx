@@ -402,10 +402,10 @@ export const ReportDataDisplay: React.FC<ReportDataDisplayProps> = React.memo(
                                     type="button"
                                     id={`reprint-order-btn-${absoluteIndex}`}
                                     onClick={() => onReprintTransaction(receiptNum)}
-                                    className="min-h-[34px] inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 active:bg-blue-200 text-blue-800 border border-blue-200 font-semibold text-xs transition cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600"
+                                    className="min-h-[34px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-blue-700 hover:bg-blue-50 active:bg-blue-100 font-semibold text-xs transition cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600"
                                     aria-label={`Reprint duplicate receipt for ${receiptNum}`}
                                   >
-                                    <Printer className="w-3.5 h-3.5 text-blue-700 shrink-0" aria-hidden="true" />
+                                    <Printer className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                                     <span>Reprint</span>
                                   </button>
                                 </td>
@@ -414,7 +414,7 @@ export const ReportDataDisplay: React.FC<ReportDataDisplayProps> = React.memo(
 
                             if (cIdx === 0 && isReceiptClickable) {
                               return (
-                                <td key={cIdx} className="py-2.5 px-4 whitespace-nowrap">
+                                <td key={cIdx} className="py-2 px-4 whitespace-nowrap">
                                   <button
                                     type="button"
                                     onClick={() => onReprintTransaction(String(cell))}
@@ -437,7 +437,7 @@ export const ReportDataDisplay: React.FC<ReportDataDisplayProps> = React.memo(
                             return (
                               <td
                                 key={cIdx}
-                                className={`py-2.5 px-4 whitespace-nowrap ${
+                                className={`py-2 px-4 whitespace-nowrap ${
                                   cIdx === 0
                                     ? 'font-semibold text-slate-900'
                                     : isNumeric
@@ -470,7 +470,7 @@ export const ReportDataDisplay: React.FC<ReportDataDisplayProps> = React.memo(
                   id="report-page-size-select"
                   value={pageSize}
                   onChange={(e) => onPageSizeChange(Number(e.target.value))}
-                  className="min-h-[38px] px-2.5 py-1 rounded-lg border border-slate-300 bg-white text-slate-900 font-semibold font-mono tabular-nums text-xs cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600"
+                  className="min-h-[40px] sm:min-h-[36px] px-2.5 py-1 rounded-lg border border-slate-300 bg-white text-slate-900 font-semibold font-mono tabular-nums text-xs cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600"
                 >
                   {PAGE_SIZE_OPTIONS.map((size) => (
                     <option key={size} value={size}>
@@ -491,7 +491,7 @@ export const ReportDataDisplay: React.FC<ReportDataDisplayProps> = React.memo(
                     onClick={() => onPageChange(1)}
                     disabled={safePage <= 1}
                     aria-label="First page"
-                    className="min-w-[38px] min-h-[38px] inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600"
+                    className="min-w-[44px] min-h-[44px] sm:min-w-[38px] sm:min-h-[38px] inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600"
                   >
                     <ChevronsLeft className="w-4 h-4" aria-hidden="true" />
                   </button>
@@ -500,7 +500,7 @@ export const ReportDataDisplay: React.FC<ReportDataDisplayProps> = React.memo(
                     onClick={() => onPageChange(safePage - 1)}
                     disabled={safePage <= 1}
                     aria-label="Previous page"
-                    className="min-w-[38px] min-h-[38px] inline-flex items-center justify-center gap-1 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600"
+                    className="min-w-[44px] min-h-[44px] sm:min-w-[38px] sm:min-h-[38px] inline-flex items-center justify-center gap-1 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600"
                   >
                     <ChevronLeft className="w-4 h-4" aria-hidden="true" />
                     <span className="hidden sm:inline">Prev</span>
@@ -510,7 +510,7 @@ export const ReportDataDisplay: React.FC<ReportDataDisplayProps> = React.memo(
                     onClick={() => onPageChange(safePage + 1)}
                     disabled={safePage >= totalPages}
                     aria-label="Next page"
-                    className="min-w-[38px] min-h-[38px] inline-flex items-center justify-center gap-1 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600"
+                    className="min-w-[44px] min-h-[44px] sm:min-w-[38px] sm:min-h-[38px] inline-flex items-center justify-center gap-1 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600"
                   >
                     <span className="hidden sm:inline">Next</span>
                     <ChevronRight className="w-4 h-4" aria-hidden="true" />
@@ -520,7 +520,7 @@ export const ReportDataDisplay: React.FC<ReportDataDisplayProps> = React.memo(
                     onClick={() => onPageChange(totalPages)}
                     disabled={safePage >= totalPages}
                     aria-label="Last page"
-                    className="min-w-[38px] min-h-[38px] inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600"
+                    className="min-w-[44px] min-h-[44px] sm:min-w-[38px] sm:min-h-[38px] inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600"
                   >
                     <ChevronsRight className="w-4 h-4" aria-hidden="true" />
                   </button>

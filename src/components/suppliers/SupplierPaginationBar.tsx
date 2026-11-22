@@ -52,7 +52,7 @@ export const SupplierPaginationBar: React.FC<SupplierPaginationBarProps> = React
               id="supplier-page-size-select"
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
-              className="min-h-[36px] px-2 py-1 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-600 focus-visible:outline-2 focus-visible:outline-blue-600"
+              className="min-h-[40px] sm:min-h-[36px] px-2 py-1 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-600 focus-visible:outline-2 focus-visible:outline-blue-600"
             >
               {PAGE_SIZES.map((size) => (
                 <option key={size} value={size}>
@@ -69,7 +69,7 @@ export const SupplierPaginationBar: React.FC<SupplierPaginationBarProps> = React
             onClick={() => onPageChange(currentPage - 1)}
             disabled={currentPage <= 1}
             aria-label="Previous page"
-            className="min-w-[40px] min-h-[40px] px-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-xs font-semibold text-slate-700 inline-flex items-center justify-center gap-1 cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-blue-600"
+            className="min-w-[44px] min-h-[44px] sm:min-w-[40px] sm:min-h-[38px] px-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-xs font-semibold text-slate-700 inline-flex items-center justify-center gap-1 cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-blue-600"
           >
             <ChevronLeft className="w-4 h-4" aria-hidden="true" />
             <span className="hidden sm:inline">Prev</span>
@@ -91,7 +91,7 @@ export const SupplierPaginationBar: React.FC<SupplierPaginationBarProps> = React
                 onClick={() => onPageChange(item)}
                 aria-label={`Page ${item}`}
                 aria-current={item === currentPage ? 'page' : undefined}
-                className={`min-w-[38px] min-h-[40px] px-2.5 rounded-lg text-xs font-semibold font-mono tabular-nums transition cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600 ${
+                className={`min-w-[44px] min-h-[44px] sm:min-w-[38px] sm:min-h-[38px] px-2.5 rounded-lg text-xs font-semibold font-mono tabular-nums transition cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600 ${
                   item === currentPage
                     ? 'bg-blue-600 text-white border border-blue-600'
                     : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-100'
@@ -107,7 +107,7 @@ export const SupplierPaginationBar: React.FC<SupplierPaginationBarProps> = React
             onClick={() => onPageChange(currentPage + 1)}
             disabled={currentPage >= totalPages}
             aria-label="Next page"
-            className="min-w-[40px] min-h-[40px] px-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-xs font-semibold text-slate-700 inline-flex items-center justify-center gap-1 cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-blue-600"
+            className="min-w-[44px] min-h-[44px] sm:min-w-[40px] sm:min-h-[38px] px-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-xs font-semibold text-slate-700 inline-flex items-center justify-center gap-1 cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-blue-600"
           >
             <span className="hidden sm:inline">Next</span>
             <ChevronRight className="w-4 h-4" aria-hidden="true" />

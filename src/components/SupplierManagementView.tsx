@@ -313,10 +313,10 @@ export const SupplierManagementView: React.FC = () => {
             type="button"
             id="btn-supplier-ai-invoice"
             onClick={handleOpenAiInvoiceModal}
-            className="min-h-[40px] bg-indigo-700 hover:bg-indigo-800 text-white font-semibold text-xs px-3.5 py-2 rounded-lg transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700"
+            className="min-h-[40px] bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 font-semibold text-xs px-3.5 py-2 rounded-lg transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
             title="Digitize supplier delivery notes with AI invoice scan"
           >
-            <Sparkles className="w-3.5 h-3.5 text-amber-200" aria-hidden="true" />
+            <Sparkles className="w-3.5 h-3.5 text-indigo-600" aria-hidden="true" />
             <span>AI Invoice Onboarding</span>
           </button>
 

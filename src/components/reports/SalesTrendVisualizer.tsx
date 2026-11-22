@@ -213,36 +213,31 @@ export const SalesTrendVisualizer: React.FC<SalesTrendVisualizerProps> = ({
   const activeStat = stats[activeMetric];
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-4 sm:p-5 flex flex-col justify-between">
+    <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 flex flex-col justify-between">
       {/* Visualizer Top Bar Controls */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
         <div>
-          <div className="flex items-center gap-2">
-            <h3 className="font-bold text-slate-800 text-sm sm:text-base flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-blue-600" />
-              <span>Sales Trend Visualizer</span>
-            </h3>
-            <span className="text-[10px] bg-blue-50 text-blue-700 font-bold px-2 py-0.5 rounded-full border border-blue-100">
-              {granularity === 'daily' ? 'Hourly Intraday' : 'Weekly Daily Totals'}
-            </span>
-          </div>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Real-time throughput curve respecting {dateRange.label}
+          <h3 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-blue-600 shrink-0" />
+            <span>Sales Trend Visualizer</span>
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {granularity === 'daily' ? 'Hourly intraday breakdown' : 'Weekly daily totals'} · {dateRange.label}
           </p>
         </div>
 
         {/* Granularity & Comparison Controls */}
         <div className="flex flex-wrap items-center gap-2">
           {/* Granularity Toggle: Daily (Hourly) vs Weekly (Daily) */}
-          <div className="inline-flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
+          <div className="inline-flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs font-semibold">
             <button
               type="button"
               id="granularity-daily-btn"
               onClick={() => setGranularity('daily')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition cursor-pointer ${
+              className={`min-h-[34px] flex items-center gap-1.5 px-3 py-1 rounded-md transition cursor-pointer ${
                 granularity === 'daily'
-                  ? 'bg-white text-blue-700 shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-800'
+                  ? 'bg-white text-blue-700 border border-slate-200'
+                  : 'text-slate-600 hover:text-slate-900 border border-transparent'
               }`}
             >
               <Clock className="w-3.5 h-3.5" />
@@ -252,10 +247,10 @@ export const SalesTrendVisualizer: React.FC<SalesTrendVisualizerProps> = ({
               type="button"
               id="granularity-weekly-btn"
               onClick={() => setGranularity('weekly')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition cursor-pointer ${
+              className={`min-h-[34px] flex items-center gap-1.5 px-3 py-1 rounded-md transition cursor-pointer ${
                 granularity === 'weekly'
-                  ? 'bg-white text-blue-700 shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-800'
+                  ? 'bg-white text-blue-700 border border-slate-200'
+                  : 'text-slate-600 hover:text-slate-900 border border-transparent'
               }`}
             >
               <CalendarDays className="w-3.5 h-3.5" />
@@ -268,10 +263,10 @@ export const SalesTrendVisualizer: React.FC<SalesTrendVisualizerProps> = ({
             type="button"
             id="trend-comparison-toggle-btn"
             onClick={() => setShowComparison(!showComparison)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition cursor-pointer ${
+            className={`min-h-[36px] flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer ${
               showComparison
-                ? 'bg-slate-800 text-white border-slate-700 shadow-2xs'
-                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                ? 'bg-slate-800 text-white border-slate-800'
+                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
             }`}
             title="Overlay prior equivalent period"
           >
@@ -281,7 +276,7 @@ export const SalesTrendVisualizer: React.FC<SalesTrendVisualizerProps> = ({
         </div>
       </div>
 
-      {/* Metric Selector Pills (Revenue, Transactions, Basket) */}
+      {/* Metric Selector Tiles (Revenue, Transactions, Basket) */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 my-4">
         {/* Metric 1: Revenue */}
         <button
@@ -289,17 +284,17 @@ export const SalesTrendVisualizer: React.FC<SalesTrendVisualizerProps> = ({
           onClick={() => setActiveMetric('revenue')}
           className={`p-3.5 rounded-xl border text-left transition cursor-pointer ${
             activeMetric === 'revenue'
-              ? 'bg-blue-50/60 border-blue-400 ring-2 ring-blue-500/20'
+              ? 'bg-blue-50/50 border-blue-500'
               : 'bg-slate-50/70 border-slate-200 hover:bg-slate-100/70'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
               <Coins className="w-3.5 h-3.5 text-blue-600" /> Revenue
             </span>
             <span
-              className={`text-[10px] font-black flex items-center gap-0.5 ${
-                stats.revenue.growth >= 0 ? 'text-emerald-600' : 'text-rose-600'
+              className={`text-[11px] font-bold font-mono tabular-nums flex items-center gap-0.5 ${
+                stats.revenue.growth >= 0 ? 'text-emerald-700' : 'text-rose-700'
               }`}
             >
               {stats.revenue.growth >= 0 ? (
@@ -310,11 +305,11 @@ export const SalesTrendVisualizer: React.FC<SalesTrendVisualizerProps> = ({
               {Math.abs(stats.revenue.growth).toFixed(1)}%
             </span>
           </div>
-          <div className="text-lg font-black text-slate-900 mt-1">
+          <div className="text-lg font-bold font-mono tabular-nums text-slate-900 mt-1">
             {currency} {stats.revenue.current.toLocaleString()}
           </div>
           {showComparison && (
-            <div className="text-[10px] text-slate-400 mt-0.5">
+            <div className="text-[11px] text-slate-500 font-mono tabular-nums mt-0.5">
               Prior: {currency} {stats.revenue.previous.toLocaleString()}
             </div>
           )}
@@ -326,17 +321,17 @@ export const SalesTrendVisualizer: React.FC<SalesTrendVisualizerProps> = ({
           onClick={() => setActiveMetric('transactions')}
           className={`p-3.5 rounded-xl border text-left transition cursor-pointer ${
             activeMetric === 'transactions'
-              ? 'bg-emerald-50/60 border-emerald-400 ring-2 ring-emerald-500/20'
+              ? 'bg-emerald-50/50 border-emerald-500'
               : 'bg-slate-50/70 border-slate-200 hover:bg-slate-100/70'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
               <Receipt className="w-3.5 h-3.5 text-emerald-600" /> Transactions
             </span>
             <span
-              className={`text-[10px] font-black flex items-center gap-0.5 ${
-                stats.transactions.growth >= 0 ? 'text-emerald-600' : 'text-rose-600'
+              className={`text-[11px] font-bold font-mono tabular-nums flex items-center gap-0.5 ${
+                stats.transactions.growth >= 0 ? 'text-emerald-700' : 'text-rose-700'
               }`}
             >
               {stats.transactions.growth >= 0 ? (
@@ -347,11 +342,11 @@ export const SalesTrendVisualizer: React.FC<SalesTrendVisualizerProps> = ({
               {Math.abs(stats.transactions.growth).toFixed(1)}%
             </span>
           </div>
-          <div className="text-lg font-black text-slate-900 mt-1">
+          <div className="text-lg font-bold font-mono tabular-nums text-slate-900 mt-1">
             {stats.transactions.current.toLocaleString()} orders
           </div>
           {showComparison && (
-            <div className="text-[10px] text-slate-400 mt-0.5">
+            <div className="text-[11px] text-slate-500 font-mono tabular-nums mt-0.5">
               Prior: {stats.transactions.previous.toLocaleString()} orders
             </div>
           )}
@@ -363,17 +358,17 @@ export const SalesTrendVisualizer: React.FC<SalesTrendVisualizerProps> = ({
           onClick={() => setActiveMetric('avg_basket')}
           className={`p-3.5 rounded-xl border text-left transition cursor-pointer ${
             activeMetric === 'avg_basket'
-              ? 'bg-purple-50/60 border-purple-400 ring-2 ring-purple-500/20'
+              ? 'bg-purple-50/50 border-purple-500'
               : 'bg-slate-50/70 border-slate-200 hover:bg-slate-100/70'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
               <ShoppingCart className="w-3.5 h-3.5 text-purple-600" /> Avg Basket
             </span>
             <span
-              className={`text-[10px] font-black flex items-center gap-0.5 ${
-                stats.avg_basket.growth >= 0 ? 'text-emerald-600' : 'text-rose-600'
+              className={`text-[11px] font-bold font-mono tabular-nums flex items-center gap-0.5 ${
+                stats.avg_basket.growth >= 0 ? 'text-emerald-700' : 'text-rose-700'
               }`}
             >
               {stats.avg_basket.growth >= 0 ? (
@@ -384,11 +379,11 @@ export const SalesTrendVisualizer: React.FC<SalesTrendVisualizerProps> = ({
               {Math.abs(stats.avg_basket.growth).toFixed(1)}%
             </span>
           </div>
-          <div className="text-lg font-black text-slate-900 mt-1">
+          <div className="text-lg font-bold font-mono tabular-nums text-slate-900 mt-1">
             {currency} {Math.round(stats.avg_basket.current).toLocaleString()}
           </div>
           {showComparison && (
-            <div className="text-[10px] text-slate-400 mt-0.5">
+            <div className="text-[11px] text-slate-500 font-mono tabular-nums mt-0.5">
               Prior: {currency} {Math.round(stats.avg_basket.previous).toLocaleString()}
             </div>
           )}

@@ -372,6 +372,18 @@ export interface CartItem {
   taxRate: number;
 }
 
+export interface HeldOrder {
+  id: string;
+  heldAt: string;
+  cashierName: string;
+  customerId?: string | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
+  note?: string;
+  items: CartItem[];
+  total: number;
+}
+
 export interface RefundItem {
   productId: string;
   productName: string;

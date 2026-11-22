@@ -18,12 +18,14 @@ import {
   CreditCard,
   Wifi,
   WifiOff,
+  ShoppingBag,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { ScannerStatusBadge } from './ScannerStatusBadge';
 import { AppLogo } from './common/AppLogo';
 import { PWAInstallButton } from './PWAInstallButton';
 import { GoogleTranslateWidget } from './common/GoogleTranslateWidget';
+import { SellingModeExitModal } from './SellingModeExitModal';
 
 interface HeaderProps {
   currentTab?: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers' | 'settings' | 'super-admin';
@@ -60,6 +62,8 @@ export const Header: React.FC<HeaderProps> = ({
     showToast,
     isSubscriptionActive,
     openPricingPage,
+    isSellingMode,
+    enterSellingMode,
     t,
   } = usePos();
 
@@ -67,6 +71,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isUtilitiesExpanded, setIsUtilitiesExpanded] = useState(false);
   const [isScannerDiagOpen, setIsScannerDiagOpen] = useState(false);
+  const [isExitSellingModalOpen, setIsExitSellingModalOpen] = useState(false);
 
   const handleOpenScanner = () => {
     setIsUserMenuOpen(false);
@@ -75,7 +80,9 @@ export const Header: React.FC<HeaderProps> = ({
         'Scan Blocked: An active shift session is required before scanning items. Please open a shift first.',
         'error'
       );
-      openShiftManagement();
+      if (!isSellingMode) {
+        openShiftManagement();
+      }
       return;
     }
     openBarcodeScanner();
@@ -103,12 +110,13 @@ export const Header: React.FC<HeaderProps> = ({
           theme="light"
           size="md"
           onClick={() => {
+            if (isSellingMode) return;
             if (typeof window !== 'undefined') {
               window.history.pushState(null, '', '/');
               window.dispatchEvent(new PopStateEvent('popstate'));
             }
           }}
-          className="cursor-pointer hover:opacity-85 transition-opacity shrink-0"
+          className={`${isSellingMode ? 'cursor-default' : 'cursor-pointer hover:opacity-85'} transition-opacity shrink-0`}
         />
 
         {/* Branch Switcher (Desktop) */}
@@ -175,40 +183,92 @@ export const Header: React.FC<HeaderProps> = ({
                     );
                   })}
                 </div>
-                <div className="pt-1.5 mt-1 border-t border-slate-100">
-                  <button
-                    id="header-manage-branches-btn"
-                    type="button"
-                    onClick={() => {
-                      setIsLocationMenuOpen(false);
-                      openBusinessSettings('branches');
-                    }}
-                    className="w-full flex items-center gap-2 py-2 px-2.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150 cursor-pointer"
-                  >
-                    <Store className="w-3.5 h-3.5 shrink-0" />
-                    <span>Manage Branches &amp; Terminals</span>
-                  </button>
-                </div>
+                {!isSellingMode && (
+                  <div className="pt-1.5 mt-1 border-t border-slate-100">
+                    <button
+                      id="header-manage-branches-btn"
+                      type="button"
+                      onClick={() => {
+                        setIsLocationMenuOpen(false);
+                        openBusinessSettings('branches');
+                      }}
+                      className="w-full flex items-center gap-2 py-2 px-2.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150 cursor-pointer"
+                    >
+                      <Store className="w-3.5 h-3.5 shrink-0" />
+                      <span>Manage Branches &amp; Terminals</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </>
           )}
         </div>
       </div>
 
-      {/* Zone 2 & 3: Quiet Shift/Sync Status Cluster + Consolidated User & Utilities Menu */}
+      {/* Zone 2 & 3: Selling Mode Toggle + Quiet Shift/Sync Status Cluster + Consolidated User Menu */}
       <div className="flex items-center gap-2 shrink-0">
+        {/* Top Header Selling Mode Toggle (1-click ON; PIN required to exit) */}
+        <button
+          id="header-selling-mode-btn"
+          type="button"
+          aria-pressed={isSellingMode}
+          onClick={() => {
+            if (isSellingMode) {
+              setIsExitSellingModalOpen(true);
+            } else {
+              enterSellingMode();
+            }
+          }}
+          className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 min-h-[40px] rounded-lg text-xs font-semibold transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-blue-600 ${
+            isSellingMode
+              ? 'bg-blue-600 hover:bg-blue-700 text-white border border-blue-600'
+              : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/90'
+          }`}
+          title={
+            isSellingMode
+              ? 'Selling Mode active (All tabs hidden) — Click to enter PIN and exit'
+              : 'Turn on Selling Mode to hide all tabs and lock to checkout'
+          }
+        >
+          {isSellingMode ? (
+            <>
+              <Lock className="w-3.5 h-3.5 shrink-0" />
+              <span>Exit Selling Mode</span>
+            </>
+          ) : (
+            <>
+              <ShoppingBag className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+              <span>Selling Mode</span>
+            </>
+          )}
+        </button>
+
         {/* Quiet Unified Status Controls */}
         <div className="hidden sm:flex items-center bg-slate-50 border border-slate-200/80 rounded-lg p-0.5">
           <button
             id="header-shift-management-btn"
             type="button"
-            onClick={openShiftManagement}
-            className={`hidden md:inline-flex items-center gap-1.5 px-2.5 min-h-[36px] rounded-md text-xs font-semibold transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-blue-600 ${
+            onClick={() => {
+              if (!isSellingMode) {
+                openShiftManagement();
+              }
+            }}
+            className={`hidden md:inline-flex items-center gap-1.5 px-2.5 min-h-[36px] rounded-md text-xs font-semibold transition-colors duration-150 whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-blue-600 ${
+              isSellingMode ? 'cursor-default' : 'cursor-pointer'
+            } ${
               activeShift
-                ? 'text-emerald-800 hover:bg-white'
+                ? isSellingMode
+                  ? 'text-emerald-800'
+                  : 'text-emerald-800 hover:bg-white'
+                : isSellingMode
+                ? 'bg-amber-50 text-amber-800'
                 : 'bg-amber-50 text-amber-800 hover:bg-amber-100/70'
             }`}
-            title="Cash Drawer & Shift Session Status"
+            title={
+              isSellingMode
+                ? 'Active Shift Status (Exit Selling Mode to manage shifts)'
+                : 'Cash Drawer & Shift Session Status'
+            }
           >
             <Clock className={`w-3.5 h-3.5 shrink-0 ${activeShift ? 'text-emerald-600' : 'text-amber-600'}`} />
             <span className="tabular-nums">
@@ -304,25 +364,27 @@ export const Header: React.FC<HeaderProps> = ({
 
                 {/* Essential Account Actions */}
                 <div className="space-y-0.5 mb-1.5 pb-1.5 border-b border-slate-100">
-                  <button
-                    id="user-menu-business-settings-btn"
-                    type="button"
-                    onClick={() => {
-                      setIsUserMenuOpen(false);
-                      openBusinessSettings('profile');
-                    }}
-                    className="w-full min-h-[40px] flex items-center gap-2.5 px-3 py-2 rounded-lg text-left font-semibold text-slate-800 hover:bg-slate-100 transition-colors duration-150 cursor-pointer"
-                  >
-                    <Settings className="w-4 h-4 text-slate-500 shrink-0" />
-                    <div className="min-w-0">
-                      <div className="leading-tight">Store Settings</div>
-                      <div className="text-[11px] text-slate-400 font-normal">
-                        Profile, Taxes, Hardware &amp; PINs
+                  {!isSellingMode && (
+                    <button
+                      id="user-menu-business-settings-btn"
+                      type="button"
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        openBusinessSettings('profile');
+                      }}
+                      className="w-full min-h-[40px] flex items-center gap-2.5 px-3 py-2 rounded-lg text-left font-semibold text-slate-800 hover:bg-slate-100 transition-colors duration-150 cursor-pointer"
+                    >
+                      <Settings className="w-4 h-4 text-slate-500 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="leading-tight">Store Settings</div>
+                        <div className="text-[11px] text-slate-400 font-normal">
+                          Profile, Taxes, Hardware &amp; PINs
+                        </div>
                       </div>
-                    </div>
-                  </button>
+                    </button>
+                  )}
 
-                  {isSuperAdmin && (
+                  {!isSellingMode && isSuperAdmin && (
                     <button
                       id="user-menu-superadmin-console-btn"
                       type="button"
@@ -375,29 +437,31 @@ export const Header: React.FC<HeaderProps> = ({
 
                   {isUtilitiesExpanded && (
                     <div className="mt-1 space-y-0.5 pl-1">
-                      <button
-                        id="user-menu-pricing-plans-btn"
-                        type="button"
-                        onClick={() => {
-                          setIsUserMenuOpen(false);
-                          openPricingPage();
-                        }}
-                        className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-left font-medium text-slate-700 hover:bg-slate-100 transition-colors duration-150 cursor-pointer"
-                      >
-                        <span className="flex items-center gap-2.5 min-w-0">
-                          <CreditCard className="w-4 h-4 text-slate-500 shrink-0" />
-                          <span className="truncate">POS Packages &amp; Plan</span>
-                        </span>
-                        <span
-                          className={`text-[11px] font-semibold capitalize whitespace-nowrap shrink-0 ${
-                            !isSubscriptionActive && !isSuperAdmin ? 'text-amber-600' : 'text-slate-500'
-                          }`}
+                      {!isSellingMode && (
+                        <button
+                          id="user-menu-pricing-plans-btn"
+                          type="button"
+                          onClick={() => {
+                            setIsUserMenuOpen(false);
+                            openPricingPage();
+                          }}
+                          className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-left font-medium text-slate-700 hover:bg-slate-100 transition-colors duration-150 cursor-pointer"
                         >
-                          {!isSubscriptionActive && !isSuperAdmin
-                            ? 'Activate'
-                            : currentBusiness?.plan || 'Plans'}
-                        </span>
-                      </button>
+                          <span className="flex items-center gap-2.5 min-w-0">
+                            <CreditCard className="w-4 h-4 text-slate-500 shrink-0" />
+                            <span className="truncate">POS Packages &amp; Plan</span>
+                          </span>
+                          <span
+                            className={`text-[11px] font-semibold capitalize whitespace-nowrap shrink-0 ${
+                              !isSubscriptionActive && !isSuperAdmin ? 'text-amber-600' : 'text-slate-500'
+                            }`}
+                          >
+                            {!isSubscriptionActive && !isSuperAdmin
+                              ? 'Activate'
+                              : currentBusiness?.plan || 'Plans'}
+                          </span>
+                        </button>
+                      )}
 
                       <button
                         id="header-barcode-scanner-btn"
@@ -517,6 +581,12 @@ export const Header: React.FC<HeaderProps> = ({
         hideTrigger
         open={isScannerDiagOpen}
         onOpenChange={setIsScannerDiagOpen}
+      />
+
+      {/* PIN-Protected Exit Selling Mode Modal */}
+      <SellingModeExitModal
+        isOpen={isExitSellingModalOpen}
+        onClose={() => setIsExitSellingModalOpen(false)}
       />
     </header>
   );

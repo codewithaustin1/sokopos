@@ -31,7 +31,7 @@ const SupplierTableRow: React.FC<SupplierTableRowProps> = React.memo(
 
     return (
       <tr className="hover:bg-slate-50/90 transition-colors">
-        <td className="py-3 pl-5 pr-3 align-middle">
+        <td className="py-2.5 pl-5 pr-3 align-middle">
           <button
             type="button"
             onClick={() => onView(supplier)}
@@ -40,15 +40,15 @@ const SupplierTableRow: React.FC<SupplierTableRowProps> = React.memo(
             {supplier.name}
           </button>
           {supplier.contactPerson && (
-            <div className="text-xs text-slate-600 mt-0.5">Rep: {supplier.contactPerson}</div>
+            <div className="text-xs text-slate-500 mt-0.5">Rep: {supplier.contactPerson}</div>
           )}
         </td>
 
-        <td className="py-3 px-3 align-middle text-slate-700 font-medium">
+        <td className="py-2.5 px-3 align-middle text-slate-700 font-medium">
           {supplier.category || 'General'}
         </td>
 
-        <td className="py-3 px-3 align-middle">
+        <td className="py-2.5 px-3 align-middle">
           <a
             href={`tel:${supplier.phone}`}
             className="font-mono tabular-nums font-semibold text-slate-900 hover:text-blue-700 hover:underline focus-visible:outline-2 focus-visible:outline-blue-600 rounded"
@@ -56,38 +56,38 @@ const SupplierTableRow: React.FC<SupplierTableRowProps> = React.memo(
             {supplier.phone}
           </a>
           {supplier.email && (
-            <div className="text-xs text-slate-600 truncate max-w-[180px] mt-0.5">
+            <div className="text-xs text-slate-500 truncate max-w-[180px] mt-0.5">
               {supplier.email}
             </div>
           )}
         </td>
 
-        <td className="py-3 px-3 align-middle font-semibold text-slate-800 whitespace-nowrap">
+        <td className="py-2.5 px-3 align-middle font-semibold text-slate-800 whitespace-nowrap">
           {formatPaymentTermsLabel(supplier.paymentTerms)}
         </td>
 
-        <td className="py-3 px-3 align-middle">
+        <td className="py-2.5 px-3 align-middle">
           <button
             type="button"
             onClick={() => onLink(supplier)}
             aria-label={`Manage ${linkedCount} linked products for ${supplier.name}`}
-            className="min-h-[36px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-xs font-semibold transition cursor-pointer whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600"
+            className="min-h-[34px] inline-flex items-center gap-1.5 px-2 py-1 -mx-2 rounded-md text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800 text-xs font-semibold transition cursor-pointer whitespace-nowrap focus-visible:outline-2 focus-visible:outline-blue-600"
           >
-            <LinkIcon className="w-3.5 h-3.5 text-indigo-700" aria-hidden="true" />
+            <LinkIcon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
             <span className="font-mono tabular-nums">{linkedCount}</span>
             <span>items</span>
           </button>
         </td>
 
-        <td className="py-3 px-3 align-middle font-mono tabular-nums text-slate-700 whitespace-nowrap">
+        <td className="py-2.5 px-3 align-middle font-mono tabular-nums text-slate-700 whitespace-nowrap">
           {supplier.leadTimeDays ?? 2} days
         </td>
 
-        <td className="py-3 px-3 align-middle font-mono tabular-nums font-semibold text-slate-900 text-right whitespace-nowrap">
+        <td className="py-2.5 px-3 align-middle font-mono tabular-nums font-semibold text-slate-900 text-right whitespace-nowrap">
           {currency} {(supplier.totalInvoiced || 0).toLocaleString()}
         </td>
 
-        <td className="py-3 px-3 align-middle whitespace-nowrap">
+        <td className="py-2.5 px-3 align-middle whitespace-nowrap">
           <span
             className={`inline-flex items-center gap-1 text-xs font-semibold ${
               isActive ? 'text-emerald-700' : 'text-slate-600'
@@ -102,13 +102,13 @@ const SupplierTableRow: React.FC<SupplierTableRowProps> = React.memo(
           </span>
         </td>
 
-        <td className="py-3 pl-3 pr-5 align-middle text-right whitespace-nowrap">
-          <div className="inline-flex items-center justify-end gap-1.5">
+        <td className="py-2.5 pl-3 pr-5 align-middle text-right whitespace-nowrap">
+          <div className="inline-flex items-center justify-end gap-1">
             <button
               type="button"
               onClick={() => onView(supplier)}
               aria-label={`View details for ${supplier.name}`}
-              className="min-h-[38px] px-2.5 py-1.5 rounded-lg text-slate-700 hover:text-blue-700 hover:bg-slate-100 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition focus-visible:outline-2 focus-visible:outline-blue-600"
+              className="min-h-[36px] px-2.5 py-1 rounded-lg text-slate-700 hover:text-blue-700 hover:bg-slate-100 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition focus-visible:outline-2 focus-visible:outline-blue-600"
             >
               <Eye className="w-3.5 h-3.5" aria-hidden="true" />
               <span className="hidden lg:inline">View</span>
@@ -117,7 +117,7 @@ const SupplierTableRow: React.FC<SupplierTableRowProps> = React.memo(
               type="button"
               onClick={() => onEdit(supplier)}
               aria-label={`Edit ${supplier.name}`}
-              className="min-h-[38px] px-2.5 py-1.5 rounded-lg text-blue-700 hover:bg-blue-50 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition focus-visible:outline-2 focus-visible:outline-blue-600"
+              className="min-h-[36px] px-2.5 py-1 rounded-lg text-blue-700 hover:bg-blue-50 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition focus-visible:outline-2 focus-visible:outline-blue-600"
             >
               <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
               <span className="hidden lg:inline">Edit</span>

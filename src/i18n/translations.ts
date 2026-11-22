@@ -72,7 +72,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     reg_vat: 'VAT (16% Included)',
     reg_discount: 'Discount',
     reg_total: 'Total',
-    reg_pay_button: 'Collect',
+    reg_pay_button: 'Pay',
     reg_quick_keys: 'Quick Hotkeys',
     reg_item: 'item',
     reg_items: 'items',

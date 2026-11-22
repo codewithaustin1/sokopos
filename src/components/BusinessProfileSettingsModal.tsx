@@ -18,8 +18,6 @@ import {
   Save,
   CheckCircle2,
   Globe,
-  ChevronDown,
-  ChevronUp,
   Moon,
   Sun,
   Palette,
@@ -51,7 +49,7 @@ import {
   CreditCard,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
-import { Location, Cashier, BusinessSecuritySettings } from '../types';
+import { Location, BusinessSecuritySettings } from '../types';
 import { resizeImageToStandardAspectRatio, estimateAssetSizeKb } from '../utils/imageOptimizer';
 import { RETAIL_THEMES } from '../data/retailThemes';
 import { SUPER_ADMIN_EMAIL } from '../data/initialData';
@@ -61,6 +59,7 @@ import { LoyaltySettingsPanel } from './LoyaltySettingsPanel';
 import { PaystackSubaccountPanel } from './common/PaystackSubaccountPanel';
 import { BillingHistoryPanel } from './BillingHistoryPanel';
 import { SettingsSectionHeader } from './common/SettingsSectionHeader';
+import { StaffAndRolesTab } from './settings/StaffAndRolesTab';
 import {
   generateTotpSecret,
   generateOtpAuthUrl,
@@ -71,7 +70,6 @@ import {
   normalizePlanTier,
   formatTierDisplayName,
   getRequiredTierForBranchCount,
-  getRequiredTierForStaffCount,
   isQuotaAtOrAboveLimit,
 } from '../utils/subscriptionEntitlements';
 
@@ -223,9 +221,6 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
     updateLocation,
     deleteLocation,
     systemUsers,
-    createSystemUser,
-    updateSystemUser,
-    deleteSystemUser,
     currentUser,
     isSuperAdmin,
     setIsBusinessSettingsOpen,
@@ -263,23 +258,25 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
 
   const [isResetStoreModalOpen, setIsResetStoreModalOpen] = useState(false);
 
+  const requestedTab = initialTab || businessSettingsDefaultTab;
+  const prevRequestedTabRef = React.useRef<BusinessSettingsTabId | undefined>(requestedTab);
+  const onCloseRef = React.useRef(onClose);
+  const openPricingPageRef = React.useRef(openPricingPage);
+  onCloseRef.current = onClose;
+  openPricingPageRef.current = openPricingPage;
+
   React.useEffect(() => {
-    if (initialTab === 'pricing') {
-      onClose?.();
-      openPricingPage();
+    if (requestedTab === 'pricing') {
+      onCloseRef.current?.();
+      openPricingPageRef.current();
+      prevRequestedTabRef.current = requestedTab;
       return;
     }
-    if (initialTab) {
-      setActiveTab(initialTab);
-    } else if (businessSettingsDefaultTab) {
-      if (businessSettingsDefaultTab === 'pricing') {
-        onClose?.();
-        openPricingPage();
-        return;
-      }
-      setActiveTab(businessSettingsDefaultTab);
+    if (requestedTab && requestedTab !== prevRequestedTabRef.current) {
+      setActiveTab(requestedTab);
+      prevRequestedTabRef.current = requestedTab;
     }
-  }, [initialTab, businessSettingsDefaultTab, onClose, openPricingPage]);
+  }, [requestedTab]);
 
   // Profile Form State
   const [profileName, setProfileName] = useState(currentBusiness?.name || '');
@@ -303,16 +300,6 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
   const [branchPhone, setBranchPhone] = useState('');
   const [branchTerminal, setBranchTerminal] = useState('');
   const [branchSearch, setBranchSearch] = useState('');
-
-  // Account Management State
-  const [isAddingUser, setIsAddingUser] = useState(false);
-  const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const [userName, setUserName] = useState('');
-  const [userRole, setUserRole] = useState<Cashier['role']>('cashier');
-  const [userUsername, setUserUsername] = useState('');
-  const [userPin, setUserPin] = useState('');
-  const [userAssignedLocId, setUserAssignedLocId] = useState<string>('');
-  const [showRoleMatrix, setShowRoleMatrix] = useState(false);
 
   // Credential Settings State
   const [newTerminalPin, setNewTerminalPin] = useState('');
@@ -504,95 +491,6 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
     setBranchAddress('');
     setBranchPhone('');
     setBranchTerminal('');
-  };
-
-  // Handle User Create / Update
-  const handleSaveUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!userName.trim()) {
-      showToast('Account name is required', 'error');
-      return;
-    }
-
-    if (editingUserId) {
-      const initials = userName
-        .trim()
-        .split(' ')
-        .map((n) => n[0])
-        .join('')
-        .substring(0, 2)
-        .toUpperCase();
-
-      const updates: Partial<Cashier> = {
-        name: userName.trim(),
-        initials,
-        role: userRole,
-        username: userUsername.trim() || userName.trim().toLowerCase().replace(/\s+/g, '.'),
-        assignedLocationId: userAssignedLocId || undefined,
-      };
-      if (userPin.trim()) {
-        updates.pin = userPin.trim();
-      }
-      const ok = await updateSystemUser(editingUserId, updates);
-      if (ok) {
-        cancelUserForm();
-      }
-      return;
-    } else {
-      if (!userPin.trim() || userPin.trim().length < 4) {
-        showToast('PIN must be at least 4 digits', 'error');
-        return;
-      }
-      const initials = userName
-        .split(' ')
-        .map((n) => n[0])
-        .join('')
-        .substring(0, 2)
-        .toUpperCase();
-
-      const created = await createSystemUser({
-        name: userName.trim(),
-        initials,
-        code: `#${Math.floor(1000 + Math.random() * 9000)}`,
-        username: userUsername.trim() || userName.trim().toLowerCase().replace(/\s+/g, ''),
-        pin: userPin.trim(),
-        role: userRole,
-        avatarColor: 'bg-indigo-600',
-        shiftStartedAt: new Date().toISOString(),
-        assignedLocationId: userAssignedLocId || undefined,
-      });
-
-      if (!created) {
-        return;
-      }
-      setIsAddingUser(false);
-    }
-
-    setUserName('');
-    setUserRole('cashier');
-    setUserUsername('');
-    setUserPin('');
-    setUserAssignedLocId('');
-  };
-
-  const startEditUser = (u: Cashier) => {
-    setEditingUserId(u.id);
-    setUserName(u.name);
-    setUserRole(u.role);
-    setUserUsername(u.username);
-    setUserPin('');
-    setUserAssignedLocId(u.assignedLocationId || '');
-    setIsAddingUser(true);
-  };
-
-  const cancelUserForm = () => {
-    setIsAddingUser(false);
-    setEditingUserId(null);
-    setUserName('');
-    setUserRole('cashier');
-    setUserUsername('');
-    setUserPin('');
-    setUserAssignedLocId('');
   };
 
   // Handle Personal Credentials Update
@@ -1726,388 +1624,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
           {/* ========================================================= */}
           {/* TAB 3: ACCOUNTS & ROLE-BASED ACCESS CONTROL (RBAC) */}
           {/* ========================================================= */}
-          {activeTab === 'accounts' && (
-            <div className="space-y-6 max-w-4xl mx-auto">
-              {/* RBAC Overview & Permission Matrix */}
-              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-5">
-                <SettingsSectionHeader
-                  title="Role-Based Access Control (RBAC)"
-                  description="Enforce principle-of-least-privilege across store terminals, supervisors, and inventory clerks."
-                  actions={
-                    <button
-                      type="button"
-                      onClick={() => setShowRoleMatrix(!showRoleMatrix)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 transition cursor-pointer"
-                    >
-                      <span>{showRoleMatrix ? 'Hide Permission Matrix' : 'View Permission Matrix'}</span>
-                      {showRoleMatrix ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                    </button>
-                  }
-                />
-
-                {/* Clean 5-Column Role Summary Strip */}
-                <div className="grid grid-cols-2 sm:grid-cols-5 border border-slate-200 dark:border-slate-800 rounded-lg divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800 text-xs overflow-hidden">
-                  <div className="p-3">
-                    <span className="font-semibold text-slate-900 dark:text-slate-100 block">Owner</span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400">Full Tenant Control</span>
-                  </div>
-                  <div className="p-3">
-                    <span className="font-semibold text-slate-900 dark:text-slate-100 block">Manager</span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400">Inventory & Staff</span>
-                  </div>
-                  <div className="p-3">
-                    <span className="font-semibold text-slate-900 dark:text-slate-100 block">Supervisor</span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400">Voids & Shift Drops</span>
-                  </div>
-                  <div className="p-3">
-                    <span className="font-semibold text-slate-900 dark:text-slate-100 block">Cashier</span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400">Sales & Receipts</span>
-                  </div>
-                  <div className="p-3 col-span-2 sm:col-span-1">
-                    <span className="font-semibold text-slate-900 dark:text-slate-100 block">Inv. Clerk</span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400">Stock & Transfers</span>
-                  </div>
-                </div>
-
-                {/* Expanded Permission Matrix */}
-                {showRoleMatrix && (
-                  <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-lg">
-                    <table className="w-full text-xs text-left border-collapse">
-                      <thead>
-                        <tr className="bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800">
-                          <th className="p-2.5">Capability / Operation</th>
-                          <th className="p-2.5 text-center">Owner</th>
-                          <th className="p-2.5 text-center">Manager</th>
-                          <th className="p-2.5 text-center">Supervisor</th>
-                          <th className="p-2.5 text-center">Cashier</th>
-                          <th className="p-2.5 text-center">Inv. Clerk</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
-                        <tr>
-                          <td className="p-2.5 font-medium">POS Register Sales & Payments</td>
-                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
-                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
-                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
-                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
-                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
-                        </tr>
-                        <tr>
-                          <td className="p-2.5 font-medium">Inventory Adjustment & Stock Counting</td>
-                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
-                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
-                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
-                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
-                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
-                        </tr>
-                        <tr>
-                          <td className="p-2.5 font-medium">Branch Creation & Removal / Deletion</td>
-                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
-                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
-                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
-                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
-                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
-                        </tr>
-                        <tr>
-                          <td className="p-2.5 font-medium">Staff Account & PIN Provisioning</td>
-                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
-                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
-                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
-                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
-                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
-                        </tr>
-                        <tr>
-                          <td className="p-2.5 font-medium">Price Overrides & Transaction Voids</td>
-                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
-                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
-                          <td className="p-2.5 text-center text-emerald-600 dark:text-emerald-400 font-bold">✓</td>
-                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
-                          <td className="p-2.5 text-center text-slate-300 dark:text-slate-700">-</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              {/* User Accounts Roster */}
-              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-5">
-                <SettingsSectionHeader
-                  title="User Accounts Roster"
-                  description={`Accounts authorized to sign into terminals and registers for ${currentBusiness?.name || 'this store'}.`}
-                  meta={<span>{systemUsers.length} accounts</span>}
-                  actions={
-                    !isAddingUser ? (
-                      <button
-                        id="btn-provision-account"
-                        type="button"
-                        onClick={() => {
-                          const maxStaff = isSuperAdmin ? -1 : entitlements.limits.maxStaffUsers;
-                          if (isQuotaAtOrAboveLimit(systemUsers.length, maxStaff)) {
-                            openUpgradePrompt({
-                              title: 'Staff Account Limit Reached',
-                              description: `Your ${entitlements.tierName} plan supports up to ${maxStaff} staff ${
-                                maxStaff === 1 ? 'account' : 'accounts'
-                              }. Existing staff remain active, and upgrading adds more team seats.`,
-                              requiredTier: getRequiredTierForStaffCount(systemUsers.length + 1),
-                              featureLabel: 'Additional Staff Seats',
-                              quotaMetric: {
-                                label: 'Staff Accounts',
-                                used: systemUsers.length,
-                                limit: maxStaff,
-                              },
-                            });
-                            return;
-                          }
-                          cancelUserForm();
-                          setIsAddingUser(true);
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition cursor-pointer"
-                      >
-                        {!isSuperAdmin && isQuotaAtOrAboveLimit(systemUsers.length, entitlements.limits.maxStaffUsers) ? (
-                          <Lock className="w-3.5 h-3.5" />
-                        ) : (
-                          <Plus className="w-3.5 h-3.5" />
-                        )}
-                        <span>Provision Account</span>
-                      </button>
-                    ) : undefined
-                  }
-                />
-
-                {/* Account Add / Edit Form */}
-                {isAddingUser && (
-                  <div className="bg-slate-50 dark:bg-slate-950 rounded-xl border border-blue-500/40 p-5">
-                    <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-200 dark:border-slate-800">
-                      <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                        <h4 className="font-semibold text-sm text-slate-900 dark:text-slate-100">
-                          {editingUserId ? 'Edit Account Permissions' : 'Provision New System User'}
-                        </h4>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={cancelUserForm}
-                        className="text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 text-xs font-medium cursor-pointer"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-
-                    <form onSubmit={handleSaveUser} className="space-y-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                            Full Name *
-                          </label>
-                          <input
-                            id="user-input-name"
-                            type="text"
-                            value={userName}
-                            onChange={(e) => setUserName(e.target.value)}
-                            placeholder="e.g., Jane Wanjiku"
-                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            required
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                            Role *
-                          </label>
-                          <select
-                            id="user-select-role"
-                            value={userRole}
-                            onChange={(e) => setUserRole(e.target.value as Cashier['role'])}
-                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="cashier">Cashier</option>
-                            <option value="supervisor">Supervisor</option>
-                            <option value="manager">Store Manager</option>
-                            <option value="inventory_clerk">Inventory Clerk</option>
-                            {isSuperAdmin && <option value="business_owner">Business Owner</option>}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                            Login Username / ID
-                          </label>
-                          <input
-                            id="user-input-username"
-                            type="text"
-                            value={userUsername}
-                            onChange={(e) => setUserUsername(e.target.value)}
-                            placeholder="e.g., jwanjiku"
-                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 lowercase"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                            {editingUserId ? 'New PIN (Leave blank to keep)' : 'Terminal PIN (4+ digits) *'}
-                          </label>
-                          <input
-                            id="user-input-pin"
-                            type="password"
-                            maxLength={6}
-                            value={userPin}
-                            onChange={(e) => setUserPin(e.target.value.replace(/\D/g, ''))}
-                            placeholder="••••"
-                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg font-mono text-center tracking-widest text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            required={!editingUserId}
-                          />
-                        </div>
-
-                        <div className="sm:col-span-2">
-                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                            Branch Assignment
-                          </label>
-                          <select
-                            id="user-select-branch"
-                            value={userAssignedLocId}
-                            onChange={(e) => setUserAssignedLocId(e.target.value)}
-                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="">All Branches (Roaming Access)</option>
-                            {locations.map((loc) => (
-                              <option key={loc.id} value={loc.id}>
-                                {loc.name} ({loc.city})
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-                        <button
-                          type="button"
-                          onClick={cancelUserForm}
-                          className="px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800 rounded-lg transition cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          id="btn-submit-save-user"
-                          type="submit"
-                          className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition cursor-pointer"
-                        >
-                          {editingUserId ? 'Update Account' : 'Provision User'}
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                )}
-
-                {/* Accounts Table */}
-                <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto">
-                  <table className="w-full text-xs text-left">
-                    <thead className="bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 font-semibold border-b border-slate-200 dark:border-slate-800">
-                      <tr>
-                        <th className="p-3">User</th>
-                        <th className="p-3">Role</th>
-                        <th className="p-3">Username</th>
-                        <th className="p-3">Assigned Branch</th>
-                        <th className="p-3">PIN Security</th>
-                        <th className="p-3 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {systemUsers.map((u) => {
-                        const assignedLoc = locations.find((l) => l.id === u.assignedLocationId);
-                        const isSelf = currentUser?.id === u.id || currentUser?.username === u.username;
-
-                        return (
-                          <tr key={u.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition">
-                            <td className="p-3">
-                              <div className="flex items-center gap-2.5">
-                                <div
-                                  className={`w-8 h-8 rounded-lg text-white font-semibold flex items-center justify-center text-xs shrink-0 ${
-                                    u.avatarColor || 'bg-slate-700'
-                                  }`}
-                                >
-                                  {u.initials || u.name.substring(0, 2).toUpperCase()}
-                                </div>
-                                <div>
-                                  <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                                    <span>{u.name}</span>
-                                    {isSelf && (
-                                      <span className="text-[11px] text-blue-600 dark:text-blue-400 font-medium">
-                                        · You
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="text-[11px] text-slate-400 dark:text-slate-500 font-mono">
-                                    {u.code}
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="p-3">
-                              <span
-                                className={`text-xs font-medium capitalize ${
-                                  u.role === 'business_owner'
-                                    ? 'text-purple-700 dark:text-purple-400'
-                                    : u.role === 'manager'
-                                    ? 'text-blue-700 dark:text-blue-400'
-                                    : u.role === 'supervisor'
-                                    ? 'text-amber-700 dark:text-amber-400'
-                                    : 'text-emerald-700 dark:text-emerald-400'
-                                }`}
-                              >
-                                {u.role.replace('_', ' ')}
-                              </span>
-                            </td>
-                            <td className="p-3 font-mono text-slate-700 dark:text-slate-300">{u.username}</td>
-                            <td className="p-3 text-slate-600 dark:text-slate-400">
-                              {assignedLoc ? (
-                                <span className="font-medium text-slate-800 dark:text-slate-200">
-                                  {assignedLoc.name}
-                                </span>
-                              ) : (
-                                <span className="text-slate-400 dark:text-slate-500">All Branches</span>
-                              )}
-                            </td>
-                            <td className="p-3">
-                              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
-                                <Lock className="w-3 h-3" />
-                                Bcrypt Hashed
-                              </span>
-                            </td>
-                            <td className="p-3 text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => startEditUser(u)}
-                                  className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                                  title="Edit user"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => deleteSystemUser(u.id)}
-                                  disabled={isSelf}
-                                  className={`p-1.5 rounded-lg transition ${
-                                    isSelf
-                                      ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
-                                      : 'text-rose-500 hover:text-rose-700 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer'
-                                  }`}
-                                  title={isSelf ? 'Cannot delete your own account' : 'Delete user'}
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
+          {activeTab === 'accounts' && <StaffAndRolesTab />}
 
           {/* ========================================================= */}
           {/* TAB 4: CREDENTIAL & SECURITY SETTINGS */}

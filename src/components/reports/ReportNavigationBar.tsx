@@ -94,10 +94,10 @@ export const ReportNavigationBar: React.FC<ReportNavigationBarProps> = React.mem
                       onSelectPhase(CATEGORY_TABS[nextIdx].id);
                     })
                   }
-                  className={`min-h-[38px] px-3 py-1.5 rounded-md transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${
+                  className={`min-h-[40px] sm:min-h-[36px] px-3 py-1.5 rounded-md transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${
                     isSelected
-                      ? 'bg-white text-slate-900 border border-slate-200/80'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'bg-white text-slate-900 border border-slate-200'
+                      : 'text-slate-600 hover:text-slate-900 border border-transparent'
                   }`}
                 >
                   {tab.label}
@@ -144,23 +144,13 @@ export const ReportNavigationBar: React.FC<ReportNavigationBarProps> = React.mem
                 }`}
               >
                 <span>{report.title}</span>
-                {locked ? (
+                {locked && (
                   <Lock
                     className={`w-3.5 h-3.5 shrink-0 ${
                       isSelected ? 'text-white/90' : 'text-slate-500'
                     }`}
                     aria-label="Subscription upgrade required"
                   />
-                ) : (
-                  report.category === 'phase1' && (
-                    <span
-                      className={`text-[11px] font-medium ${
-                        isSelected ? 'text-blue-100' : 'text-slate-500'
-                      }`}
-                    >
-                      · Core
-                    </span>
-                  )
                 )}
               </button>
             );
