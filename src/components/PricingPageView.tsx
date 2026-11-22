@@ -248,12 +248,11 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
     onBackToLogin();
     setTimeout(() => {
       if (sectionId === 'home' || sectionId === 'top' || !sectionId) {
-        if (window.location.hash) {
-          try {
-            history.replaceState(null, '', window.location.pathname);
-          } catch {
-            window.location.hash = '';
-          }
+        try {
+          history.replaceState(null, '', '/');
+          window.dispatchEvent(new Event('sokopos-route-change'));
+        } catch {
+          window.location.hash = '';
         }
         scrollToTop(true);
         const root =
@@ -261,7 +260,12 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
           document.getElementById('pos-landing-viewport');
         root?.scrollTo({ top: 0, behavior: 'smooth' });
       } else {
-        window.location.hash = `#${sectionId}`;
+        try {
+          history.replaceState(null, '', `/#${sectionId}`);
+          window.dispatchEvent(new Event('sokopos-route-change'));
+        } catch {
+          window.location.hash = `#${sectionId}`;
+        }
         const el = document.getElementById(sectionId);
         el?.scrollIntoView({ behavior: 'smooth' });
       }
@@ -271,7 +275,10 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
   const navigateToLegal = (tab: string) => {
     onBackToLogin();
     setTimeout(() => {
-      window.location.hash = `#${tab}`;
+      if (typeof window !== 'undefined') {
+        window.history.pushState(null, '', `/${tab}`);
+        window.dispatchEvent(new Event('sokopos-route-change'));
+      }
     }, 60);
   };
 
@@ -604,8 +611,8 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
           <h1 className="sp-display text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-[#0e1a2b] mb-3 max-w-[16ch] leading-[1.05]">
             Pricing that grows with your shop
           </h1>
-          <p className="text-base sm:text-lg text-[#4c5a6b] max-w-[52ch] leading-relaxed mb-8">
-            Start free, add branches when you’re ready. All prices are in Kenyan shillings, with M-Pesa checkout built in.
+          <p className="text-base sm:text-lg text-[#4c5a6b] max-w-[58ch] leading-relaxed mb-8">
+            Start free, add branches across Kenya when you’re ready. Built for supermarkets, agrovets, hardware, wholesale, bars, and dukas—all priced in KES with M-Pesa and eTIMS ready.
           </p>
         </div>
 

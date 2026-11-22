@@ -20,6 +20,13 @@ import {
   DarajaSubscriptionPoller,
   PendingDarajaSubscriptionTask,
 } from './src/server/darajaPoller';
+import {
+  CANONICAL_ORIGIN,
+  injectRouteSeoIntoHtml,
+  isCanonicalProductionHost,
+  isPublicSeoPath,
+  normalizePathname,
+} from './src/utils/seoConfig';
 
 async function startServer() {
   const app = express();
@@ -108,33 +115,40 @@ async function startServer() {
     statusCode: 429,
   });
 
-  // Dynamic SEO Robots & XML Sitemap endpoints that automatically resolve to the incoming host/domain
+  // Authoritative SEO Robots & XML Sitemap endpoints pinned to canonical domain (https://sokopos.co.ke)
   app.get('/robots.txt', (req, res) => {
-    const host = req.get('host') || 'sokopos.co.ke';
-    const proto = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-    const origin = `${proto}://${host}`;
+    const isProdHost = isCanonicalProductionHost(req.get('host'));
     res.type('text/plain');
-    res.send(`# robots.txt for SokoPoS Point of Sale
+    if (!isProdHost) {
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    }
+    res.send(`# robots.txt for SokoPoS Point of Sale (${CANONICAL_ORIGIN})
 User-agent: *
 Allow: /
-Allow: /#industry-solutions
-Allow: /#kenya-payments
-Allow: /#hardware-guide
-Allow: /#pricing-comparison
+Allow: /pricing
+Allow: /faq
+Allow: /terms
+Allow: /privacy
+Allow: /ownership
+Allow: /compliance
 
-# Prevent crawling of administrative API endpoints
+# Exclude authenticated terminal workspaces and backend endpoints
 Disallow: /api/
 Disallow: /api/*
+Disallow: /pos
+Disallow: /pos/*
+Disallow: /app
+Disallow: /sitemap
 
-# Dynamic XML Sitemap matching incoming domain
-Sitemap: ${origin}/sitemap.xml
+Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
 `);
   });
 
   app.get('/sitemap.xml', (req, res) => {
-    const host = req.get('host') || 'sokopos.co.ke';
-    const proto = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-    const origin = `${proto}://${host}`;
+    const isProdHost = isCanonicalProductionHost(req.get('host'));
+    if (!isProdHost) {
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    }
     const today = new Date().toISOString().split('T')[0];
     res.type('application/xml');
     res.send(`<?xml version="1.0" encoding="UTF-8"?>
@@ -142,34 +156,46 @@ Sitemap: ${origin}/sitemap.xml
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
   <url>
-    <loc>${origin}/</loc>
+    <loc>${CANONICAL_ORIGIN}/</loc>
     <lastmod>${today}</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>${origin}/#industry-solutions</loc>
+    <loc>${CANONICAL_ORIGIN}/pricing</loc>
     <lastmod>${today}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>${origin}/#kenya-payments</loc>
-    <lastmod>${today}</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>${origin}/#hardware-guide</loc>
+    <loc>${CANONICAL_ORIGIN}/faq</loc>
     <lastmod>${today}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>${origin}/#pricing-comparison</loc>
+    <loc>${CANONICAL_ORIGIN}/terms</loc>
     <lastmod>${today}</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>${CANONICAL_ORIGIN}/privacy</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>${CANONICAL_ORIGIN}/ownership</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>${CANONICAL_ORIGIN}/compliance</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
   </url>
 </urlset>`);
   });
@@ -5611,7 +5637,7 @@ Extract:
     });
     app.use(vite.middlewares);
 
-    // Explicit fallback for client-side HTML routes in development
+    // Explicit fallback for client-side HTML routes in development with per-route SEO meta injection
     app.use('*', async (req, res, next) => {
       const url = req.originalUrl;
       try {
@@ -5620,6 +5646,12 @@ Extract:
         template = await vite.transformIndexHtml(url, template);
         // HMR is disabled; strip @vite/client so it does not attempt a WebSocket connection that closes without opening
         template = template.replace(/<script\s+type="module"\s+src="\/@vite\/client"><\/script>\s*/g, '');
+        const isProdHost = isCanonicalProductionHost(req.get('host'));
+        const reqPath = normalizePathname(req.path || '/');
+        if (!isProdHost || !isPublicSeoPath(reqPath) || reqPath === '/sitemap') {
+          res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+        }
+        template = injectRouteSeoIntoHtml(template, reqPath, isProdHost);
         res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
       } catch (e: any) {
         vite.ssrFixStacktrace(e);
@@ -5628,9 +5660,21 @@ Extract:
     });
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, { index: false }));
     app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      const distIndexPath = path.join(distPath, 'index.html');
+      try {
+        let html = fs.readFileSync(distIndexPath, 'utf-8');
+        const isProdHost = isCanonicalProductionHost(req.get('host'));
+        const reqPath = normalizePathname(req.path || '/');
+        if (!isProdHost || !isPublicSeoPath(reqPath) || reqPath === '/sitemap') {
+          res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+        }
+        html = injectRouteSeoIntoHtml(html, reqPath, isProdHost);
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+      } catch {
+        res.sendFile(distIndexPath);
+      }
     });
   }
 

@@ -204,9 +204,11 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
         scrollToTop(true);
       } else if (onNavigatePricing) {
         onNavigatePricing();
-      } else {
-        posContext?.openPricingPage();
-        window.location.hash = '#pricing';
+      } else if (posContext?.openPricingPage) {
+        posContext.openPricingPage();
+      } else if (typeof window !== 'undefined') {
+        window.history.pushState(null, '', '/pricing');
+        window.dispatchEvent(new Event('sokopos-route-change'));
       }
     });
   };

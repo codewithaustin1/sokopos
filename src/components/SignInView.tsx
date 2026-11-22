@@ -25,12 +25,16 @@ import { Cashier } from '../types';
 import { soundFx } from '../utils/audio';
 import { LegalTab } from './LegalAndFaqModal';
 import { LegalPageView } from './LegalPageView';
-import { PricingPageView } from './PricingPageView';
 import { WhatsAppFloatingButton } from './landing/WhatsAppFloatingButton';
 import { AppLogo } from './common/AppLogo';
 import { AppFooter } from './common/AppFooter';
 import { MobileHeaderNav } from './common/MobileHeaderNav';
 import { scrollToTop } from '../utils/scrollUtils';
+import {
+  getLegalTabFromPath,
+  normalizePathname,
+  resolveLegacyHashToPath,
+} from '../utils/seoConfig';
 import { SUPER_ADMIN_EMAIL } from '../data/initialData';
 import { PWAInstallButton } from './PWAInstallButton';
 import { AffiliatePortalModal } from './AffiliatePortalModal';
@@ -129,8 +133,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   } = usePos();
 
   const [activeTab, setActiveTab] = useState<'owner' | 'partner' | 'staff' | 'register'>('owner');
-  const [activeLegalPage, setActiveLegalPage] = useState<LegalTab | null>(null);
-  const [isPricingPageOpen, setIsPricingPageOpen] = useState(false);
+  const [activeLegalPage, setActiveLegalPage] = useState<LegalTab | null>(() => {
+    if (typeof window !== 'undefined') {
+      return getLegalTabFromPath(window.location.pathname);
+    }
+    return null;
+  });
   const [isDemoModeActive, setIsDemoModeActive] = useState<boolean>(false);
 
   // Staff credentials / ID and PIN login state
@@ -524,56 +532,63 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const [acceptedShopTerms, setAcceptedShopTerms] = useState<boolean>(false);
   const [acceptedPartnerTerms, setAcceptedPartnerTerms] = useState<boolean>(false);
 
-  // Synchronize URL hash with active legal or pricing page for browser history & direct links
+  // Synchronize clean pathname URLs (/terms, /privacy, /faq, /ownership, /compliance) and legacy hashes
   useEffect(() => {
-    const handleHash = () => {
-      const hash = window.location.hash.replace('#', '').toLowerCase();
-      if (hash === 'pricing' || hash === 'plans' || hash === 'price') {
-        setIsPricingPageOpen(true);
-        setActiveLegalPage(null);
-      } else if (hash === 'terms' || hash === 'tos') {
-        setIsPricingPageOpen(false);
-        setActiveLegalPage('terms');
-      } else if (hash === 'privacy') {
-        setIsPricingPageOpen(false);
-        setActiveLegalPage('privacy');
-      } else if (hash === 'faq') {
-        setIsPricingPageOpen(false);
-        setActiveLegalPage('faq');
-      } else if (hash === 'ownership' || hash === 'legal' || hash === 'ip') {
-        setIsPricingPageOpen(false);
-        setActiveLegalPage('ownership');
-      } else if (hash === 'compliance' || hash === 'gcp') {
-        setIsPricingPageOpen(false);
-        setActiveLegalPage('compliance');
-      } else if (!hash) {
-        setIsPricingPageOpen(false);
-        setActiveLegalPage(null);
+    const syncRoute = () => {
+      if (typeof window === 'undefined') return;
+      const legacyTarget = resolveLegacyHashToPath(window.location.hash);
+      if (legacyTarget) {
+        window.history.replaceState(null, '', legacyTarget);
+        if (legacyTarget === '/pricing') {
+          setActiveLegalPage(null);
+          openPricingPage();
+        } else {
+          setActiveLegalPage(getLegalTabFromPath(legacyTarget));
+        }
+        window.dispatchEvent(new Event('sokopos-route-change'));
+        return;
       }
+
+      const legalTab = getLegalTabFromPath(window.location.pathname);
+      setActiveLegalPage(legalTab);
     };
 
-    handleHash();
-    window.addEventListener('hashchange', handleHash);
-    return () => window.removeEventListener('hashchange', handleHash);
-  }, []);
+    syncRoute();
+    window.addEventListener('popstate', syncRoute);
+    window.addEventListener('hashchange', syncRoute);
+    window.addEventListener('sokopos-route-change', syncRoute);
+    return () => {
+      window.removeEventListener('popstate', syncRoute);
+      window.removeEventListener('hashchange', syncRoute);
+      window.removeEventListener('sokopos-route-change', syncRoute);
+    };
+  }, [openPricingPage]);
 
   const navigateToLegalPage = (tab: LegalTab) => {
-    setIsPricingPageOpen(false);
+    closePricingPage();
     setActiveLegalPage(tab);
-    window.location.hash = `#${tab}`;
+    if (typeof window !== 'undefined') {
+      const target = `/${tab}`;
+      if (normalizePathname(window.location.pathname) !== target) {
+        window.history.pushState(null, '', target);
+        window.dispatchEvent(new Event('sokopos-route-change'));
+      }
+    }
   };
 
   const navigateToPricing = () => {
     setActiveLegalPage(null);
-    setIsPricingPageOpen(true);
     openPricingPage();
     scrollToTop(false);
   };
 
   const returnToLogin = () => {
     setActiveLegalPage(null);
-    setIsPricingPageOpen(false);
     closePricingPage();
+    if (typeof window !== 'undefined' && normalizePathname(window.location.pathname) !== '/') {
+      window.history.pushState(null, '', '/');
+      window.dispatchEvent(new Event('sokopos-route-change'));
+    }
   };
 
   // Modal version of the Sign-In card
@@ -1212,21 +1227,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     }, 120);
   };
 
-  // Render Full-Page Dedicated Pricing view
-  if (isPricingPageOpen) {
-    return (
-      <PricingPageView
-        onBackToLogin={returnToLogin}
-        onSelectPlan={(planId) => {
-          returnToLogin();
-          if (planId === 'free') {
-            setTimeout(() => scrollToAuthCard('owner'), 100);
-          }
-        }}
-      />
-    );
-  }
-
   // Render Full-Page Legal, FAQ, or Compliance view as the Body of this SPA (Zero floating modals)
   if (activeLegalPage) {
     return (
@@ -1406,13 +1406,14 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           flex-wrap: wrap;
           justify-content: center;
           gap: 12px;
-          margin-bottom: 16px;
+          margin-bottom: 18px;
         }
         .sp-fine {
           font-size: 0.85rem;
           color: var(--muted);
           margin: 0 auto 36px;
           text-align: center;
+          line-height: 1.5;
         }
         .sp-stats {
           display: grid;
@@ -1896,11 +1897,25 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           color: var(--ink);
           font-weight: 800;
         }
-        .sp-final p {
+        .sp-final p.sp-final-lead {
           color: var(--muted);
           max-width: 50ch;
-          margin: 0 auto 26px;
+          margin: 0 auto 28px;
           font-size: 1.05rem;
+          line-height: 1.6;
+        }
+        .sp-final p.sp-final-fine {
+          color: #556375;
+          max-width: 52ch;
+          margin: 20px auto 0;
+          font-size: 0.8125rem;
+          line-height: 1.55;
+        }
+        @media (min-width: 640px) {
+          .sp-final p.sp-final-fine {
+            margin-top: 22px;
+            font-size: 0.875rem;
+          }
         }
         .sp-final .sp-cta {
           justify-content: center;
@@ -1955,6 +1970,16 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             className="hover:text-[#28a745] transition cursor-pointer whitespace-nowrap shrink-0"
           >
             Why Switch
+          </a>
+          <a
+            href="/pricing"
+            onClick={(e) => {
+              e.preventDefault();
+              navigateToPricing();
+            }}
+            className="hover:text-[#28a745] transition cursor-pointer whitespace-nowrap shrink-0"
+          >
+            Pricing
           </a>
         </nav>
 
@@ -2015,9 +2040,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 <h1 className="sp-h1 text-balance">
                   End-of-day totals done in minutes—<span className="sp-hl-money">with M-Pesa, cash, and receipts already matched.</span>
                 </h1>
-                <p className="sp-lead">
-                  M-Pesa messages, notebooks, and missing cash shouldn&apos;t eat up your evenings. Ring up sales fast on the phone or laptop you already have—even when the internet drops, sales save and sync when it’s back.
-                </p>
                 <div className="sp-cta">
                   <button
                     type="button"
@@ -2130,7 +2152,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               Fix what <span className="sp-hl-speed">slows down</span> your kind of shop.
             </h2>
             <p className="sp-sub">
-              Dukas, bars, supermarkets, and chemists lose cash in different ways. Pick your counter type below to see how you stay in control.
+              Supermarkets, minimarts, agrovets, hardware &amp; wholesale shops, pharmacies, bars, wines &amp; spirits, and restaurants lose cash in different ways. Pick your counter type below.
             </p>
 
             <SolutionsGallery
@@ -2224,7 +2246,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               What happens when you <span className="sp-hl-calm">stop guessing at closing time.</span>
             </h2>
             <p className="sp-sub">
-              How shop owners in Nairobi, Mombasa, and Nakuru fixed till shortages, survived fiber outages, and got their evenings back.
+              How shop owners across Nairobi, Mombasa, Kisumu, Nakuru, and Eldoret fixed till shortages, survived fiber outages, and got their evenings back.
             </p>
 
             <div className="sp-grid3 mb-10">
@@ -2291,10 +2313,10 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             <h2 className="text-balance">
               See <span className="sp-hl-action">how fast your till moves</span> before you change a thing.
             </h2>
-            <p className="text-base text-[#4c5a6b] mb-8 leading-relaxed">
+            <p className="sp-final-lead text-base text-[#4c5a6b] leading-relaxed">
               Open a sample shop in 5 seconds, ring up a test M-Pesa payment, and see how a shift closes cleanly—without entering a card or installing software.
             </p>
-            <div className="flex flex-wrap items-center justify-center gap-4">
+            <div className="flex flex-wrap items-center justify-center gap-3.5 sm:gap-4">
               <button
                 type="button"
                 className="sp-btn sp-btn-blue px-6 py-3.5 min-h-[48px] text-base shadow-lg shadow-blue-500/25 whitespace-nowrap shrink-0"
@@ -2313,7 +2335,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 <ArrowRight className="w-4 h-4 shrink-0" />
               </button>
             </div>
-            <p className="text-xs text-[#556375] mt-4 font-medium">
+            <p className="sp-final-fine font-medium px-2">
               Free to start &middot; Set up your shop in 2 minutes &middot; Works on your existing phone or PC
             </p>
           </div>

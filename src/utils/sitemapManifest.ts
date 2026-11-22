@@ -1,3 +1,5 @@
+import { CANONICAL_ORIGIN } from './seoConfig';
+
 export interface SitemapEntry {
   path: string;
   fullUrl?: string;
@@ -12,98 +14,85 @@ export interface SitemapEntry {
 }
 
 export const SYSTEM_SITEMAP_ENTRIES: SitemapEntry[] = [
-  // 1. Public Search-Indexed Landing Pages
+  // 1. Public Search-Indexed Landing & Commercial Pages
   {
     path: '/',
-    title: 'SokoPoS Point of Sale – Home & Feature Showcase',
+    title: 'SokoPoS Kenya – M-Pesa, eTIMS & Offline Retail POS',
     category: 'public_landing',
     priority: 1.0,
     changeFreq: 'daily',
     authRequired: false,
     robotsDirective: 'index, follow',
-    description: 'High-velocity Point of Sale landing page for Kenyan retailers, supermarkets, and pharmacies with live demo launcher.',
+    description:
+      'Cloud & offline Point of Sale for Kenyan supermarkets, agrovets, hardware, wholesale shops, bars, and restaurants across Nairobi, Mombasa, Kisumu, Nakuru, and Eldoret.',
   },
   {
-    path: '/#industry-solutions',
-    title: 'Industry Solutions Switcher (Supermarkets, Bars, Liquor, Agrovets)',
+    path: '/pricing',
+    title: 'SokoPoS Pricing Kenya – Plans from KES 599/mo',
     category: 'public_landing',
     priority: 0.9,
     changeFreq: 'weekly',
     authRequired: false,
     robotsDirective: 'index, follow',
-    description: 'Specialized POS workflows tailored for FMCG supermarkets, bars, liquor stores, and agrovet chemists.',
-  },
-  {
-    path: '/#kenya-payments',
-    title: 'Kenyan Payments & KRA eTIMS Tax Compliance',
-    category: 'public_landing',
-    priority: 0.9,
-    changeFreq: 'weekly',
-    authRequired: false,
-    robotsDirective: 'index, follow',
-    description: 'Safaricom M-Pesa STK Push, Dynamic QR codes, Buy Goods, and KRA eTIMS 16% VAT invoicing.',
-  },
-  {
-    path: '/#hardware-guide',
-    title: 'Hardware Compatibility Freedom Guide',
-    category: 'public_landing',
-    priority: 0.8,
-    changeFreq: 'weekly',
-    authRequired: false,
-    robotsDirective: 'index, follow',
-    description: 'ESC/POS 58mm/80mm thermal receipt printers, RJ11/RJ12 cash drawers, and USB/Bluetooth barcode scanners.',
-  },
-  {
-    path: '/#pricing-comparison',
-    title: 'Pricing & Transparent Commercial Tiers',
-    category: 'public_landing',
-    priority: 0.8,
-    changeFreq: 'weekly',
-    authRequired: false,
-    robotsDirective: 'index, follow',
-    description: 'Starter, Standard, and Enterprise cloud pricing with ROI savings calculator.',
+    description:
+      'Transparent KES subscriptions for Kenyan shops: Free (Advisory) KES 0/mo, Starter KES 599/mo, Business KES 1,299/mo, and Premium KES 2,999/mo.',
   },
 
-  // 2. Legal & Merchant Compliance Pages
-  {
-    path: '/terms',
-    title: 'Terms of Service & Merchant SLAs',
-    category: 'legal_compliance',
-    priority: 0.7,
-    changeFreq: 'monthly',
-    authRequired: false,
-    robotsDirective: 'index, follow',
-    description: 'Platform service level agreements, acceptable usage policies, and merchant licensing terms.',
-  },
-  {
-    path: '/privacy',
-    title: 'Privacy Policy & Kenya Data Protection Act Compliance',
-    category: 'legal_compliance',
-    priority: 0.7,
-    changeFreq: 'monthly',
-    authRequired: false,
-    robotsDirective: 'index, follow',
-    description: 'Customer data privacy protocols, local data residency, encryption standards, and POPIA alignment.',
-  },
+  // 2. Legal, FAQ & Merchant Compliance Pages
   {
     path: '/faq',
-    title: 'Frequently Asked Questions & Support Knowledgebase',
+    title: 'SokoPoS Kenya FAQs – M-Pesa, eTIMS & Offline POS',
     category: 'legal_compliance',
     priority: 0.8,
     changeFreq: 'weekly',
     authRequired: false,
     robotsDirective: 'index, follow',
-    description: 'Comprehensive answers to common hardware, M-Pesa, offline sync, and licensing questions.',
+    description:
+      'Comprehensive answers on M-Pesa STK Push, KRA eTIMS 16% VAT receipts, offline sync, 58mm/80mm thermal printers, and daftari credit.',
   },
   {
-    path: '/ownership',
-    title: 'Legal Notice, Intellectual Property & Architecture',
+    path: '/terms',
+    title: 'Terms of Service – SokoPoS Kenya (Sokoplus Horizon)',
     category: 'legal_compliance',
     priority: 0.6,
     changeFreq: 'monthly',
     authRequired: false,
     robotsDirective: 'index, follow',
-    description: 'Proprietary IP declarations, offline synchronization algorithms, and software authorship.',
+    description:
+      'Merchant terms of service, KES billing terms, and operational disclaimers for SokoPoS by Sokoplus Horizon.',
+  },
+  {
+    path: '/privacy',
+    title: 'Privacy Policy – Kenya Data Protection | SokoPoS',
+    category: 'legal_compliance',
+    priority: 0.6,
+    changeFreq: 'monthly',
+    authRequired: false,
+    robotsDirective: 'index, follow',
+    description:
+      'Data privacy protocols, encryption standards, and Kenya Data Protection Act 2019 compliance.',
+  },
+  {
+    path: '/ownership',
+    title: 'Legal Notice & IP Ownership – SokoPoS Kenya',
+    category: 'legal_compliance',
+    priority: 0.5,
+    changeFreq: 'monthly',
+    authRequired: false,
+    robotsDirective: 'index, follow',
+    description:
+      'Proprietary IP notice, SokoPoS™ trademark rights, and software ownership by Sokoplus Horizon.',
+  },
+  {
+    path: '/compliance',
+    title: 'KRA eTIMS & Security Compliance – SokoPoS Kenya',
+    category: 'legal_compliance',
+    priority: 0.6,
+    changeFreq: 'monthly',
+    authRequired: false,
+    robotsDirective: 'index, follow',
+    description:
+      'Cloud infrastructure security, audit logging, and KRA eTIMS compliance controls for Kenyan retailers.',
   },
 
   // 3. Operational POS Terminal Views (Protected Session Routing)
@@ -114,7 +103,7 @@ export const SYSTEM_SITEMAP_ENTRIES: SitemapEntry[] = [
     priority: 0.8,
     changeFreq: 'always',
     authRequired: true,
-    robotsDirective: 'noindex, follow',
+    robotsDirective: 'noindex, nofollow',
     description: 'Authenticated cashier point of sale terminal workspace.',
     targetRole: 'All authenticated staff',
   },
@@ -276,8 +265,7 @@ export const SYSTEM_SITEMAP_ENTRIES: SitemapEntry[] = [
  * Returns all sitemap entries mapped with full URLs based on the current origin
  */
 export function getSystemPaths(origin?: string): SitemapEntry[] {
-  const baseOrigin =
-    origin || (typeof window !== 'undefined' ? window.location.origin : 'https://sokopos.co.ke');
+  const baseOrigin = origin || CANONICAL_ORIGIN;
   return SYSTEM_SITEMAP_ENTRIES.map((entry) => ({
     ...entry,
     fullUrl: `${baseOrigin}${entry.path}`,
@@ -288,12 +276,14 @@ export function getSystemPaths(origin?: string): SitemapEntry[] {
  * Generates standard XML sitemap for search engine crawlers
  */
 export function generateSitemapXml(origin?: string): string {
-  const baseOrigin =
-    origin || (typeof window !== 'undefined' ? window.location.origin : 'https://sokopos.co.ke');
+  const baseOrigin = origin || CANONICAL_ORIGIN;
   const today = new Date().toISOString().split('T')[0];
 
   const publicEntries = SYSTEM_SITEMAP_ENTRIES.filter(
-    (e) => !e.authRequired && e.robotsDirective.includes('index')
+    (e) =>
+      !e.authRequired &&
+      (e.category === 'public_landing' || e.category === 'legal_compliance') &&
+      e.robotsDirective === 'index, follow'
   );
 
   const urlNodes = publicEntries
@@ -319,13 +309,19 @@ ${urlNodes}
  * Generates JSON route manifest for developers and programmatic inspection
  */
 export function generateSitemapJson(origin?: string) {
-  const entries = getSystemPaths(origin);
+  const baseOrigin = origin || CANONICAL_ORIGIN;
+  const entries = getSystemPaths(baseOrigin);
   return {
     platform: 'SokoPoS Point of Sale',
     generatedAt: new Date().toISOString(),
-    origin: origin || (typeof window !== 'undefined' ? window.location.origin : 'https://sokopos.co.ke'),
+    origin: baseOrigin,
     totalRoutes: entries.length,
-    publicIndexedRoutes: entries.filter((e) => !e.authRequired && e.robotsDirective.includes('index')).length,
+    publicIndexedRoutes: entries.filter(
+      (e) =>
+        !e.authRequired &&
+        (e.category === 'public_landing' || e.category === 'legal_compliance') &&
+        e.robotsDirective === 'index, follow'
+    ).length,
     protectedOperationalRoutes: entries.filter((e) => e.authRequired).length,
     routes: entries,
   };

@@ -38,6 +38,12 @@ import { InventoryQuickCheckHUD } from './components/InventoryQuickCheckHUD';
 import { DynamicSitemapModal } from './components/DynamicSitemapModal';
 import { PricingPageView } from './components/PricingPageView';
 import { getSystemPaths, generateSitemapJson } from './utils/sitemapManifest';
+import {
+  isPublicSeoPath,
+  normalizePathname,
+  resolveLegacyHashToPath,
+  syncDocumentHeadSeo,
+} from './utils/seoConfig';
 import { isSuperAdminEmail } from './data/initialData';
 import { MobileBentoMenuOverlay } from './components/common/MobileBentoMenuOverlay';
 import { ToastContainer } from './components/common/ToastContainer';
@@ -107,35 +113,62 @@ function PosAppContent() {
     requiresLegalConsent,
   } = usePos();
 
-  // URL Path Routing: Ensure root URL ('/') always routes to landing page, not logged-in dashboard
+  // URL Path Routing: Keep clean public paths indexable while protecting private /pos routes
   const [currentPath, setCurrentPath] = useState<string>(() => {
     if (typeof window !== 'undefined') {
-      return window.location.pathname || '/';
+      const legacyTarget = resolveLegacyHashToPath(window.location.hash);
+      if (legacyTarget) {
+        window.history.replaceState(null, '', legacyTarget);
+        return legacyTarget;
+      }
+      return normalizePathname(window.location.pathname || '/');
     }
     return '/';
   });
 
-  // Path-based routing: Root URL ('/') routes to Landing Page.
-  // POS terminal is accessible at '/pos' or '/app' when authenticated.
-  const isAtLandingPage = currentPath === '/' || !currentUser;
+  // Path-based routing: Public SEO routes render public views; authenticated sessions open /pos
+  const isAtLandingPage = isPublicSeoPath(currentPath) || !currentUser;
 
   useEffect(() => {
-    const handlePopState = () => {
-      setCurrentPath(window.location.pathname || '/');
+    const syncPath = () => {
+      const legacyTarget = resolveLegacyHashToPath(window.location.hash);
+      if (legacyTarget) {
+        window.history.replaceState(null, '', legacyTarget);
+        setCurrentPath(legacyTarget);
+        return;
+      }
+      setCurrentPath(normalizePathname(window.location.pathname || '/'));
     };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    window.addEventListener('popstate', syncPath);
+    window.addEventListener('hashchange', syncPath);
+    window.addEventListener('sokopos-route-change', syncPath);
+    return () => {
+      window.removeEventListener('popstate', syncPath);
+      window.removeEventListener('hashchange', syncPath);
+      window.removeEventListener('sokopos-route-change', syncPath);
+    };
   }, []);
 
-  // When unauthenticated, ensure URL stays at root '/'
+  // When unauthenticated, allow public SEO paths (/pricing, /faq, /terms, etc.) and redirect private /pos routes to '/'
   useEffect(() => {
-    if (!currentUser && currentPath !== '/') {
+    if (!currentUser && !isPublicSeoPath(currentPath)) {
       if (typeof window !== 'undefined') {
         window.history.replaceState(null, '', '/');
       }
       setCurrentPath('/');
     }
   }, [currentUser, currentPath]);
+
+  // Synchronize <title>, <meta description>, canonical, robots, and JSON-LD on route transitions
+  useEffect(() => {
+    if (isPricingPageOpen) {
+      syncDocumentHeadSeo('/pricing');
+    } else if (!isAtLandingPage) {
+      syncDocumentHeadSeo('/pos');
+    } else {
+      syncDocumentHeadSeo(currentPath);
+    }
+  }, [currentPath, isPricingPageOpen, isAtLandingPage]);
 
   // Automatic transition to terminal upon returning from Google OAuth redirect
   useEffect(() => {

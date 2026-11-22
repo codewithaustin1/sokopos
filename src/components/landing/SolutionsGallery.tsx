@@ -38,23 +38,23 @@ export interface RetailIndustryItem {
 export const RETAIL_INDUSTRIES: RetailIndustryItem[] = [
   {
     id: 'retail',
-    name: 'Retail',
-    sectorLabel: 'Dukas, Boutiques & Agrovets',
+    name: 'Retail & Agrovet',
+    sectorLabel: 'Dukas, Agrovets, Hardware & Wholesale',
     headline: 'Stop losing sales to stockouts and unrecorded credit tabs',
     summary:
       'Ring up items in seconds, break bulk sacks into single kilos, and keep every M-Pesa Till or customer credit tab recorded.',
     image: industryRetailShop,
     imageAlt:
-      'Kenyan retail shop cashier scanning packaged goods at a digital POS counter in Nairobi',
+      'Kenyan retail shop, agrovet, and hardware cashier scanning items at an M-Pesa POS counter in Nairobi',
     metricLabel: 'Barcode scan speed',
     metricValue: '< 2s / item',
     icon: Store,
     overview:
-      'Built for busy neighborhood dukas, agrovets, hardware stores, and boutiques across Kenya. Know before fast-moving staples run out, replace torn paper credit notebooks with digital balances, and match every Lipa na M-Pesa payment to its sale automatically.',
+      'Built for neighborhood dukas, agrovets, hardware stores, and wholesale depots across Nairobi, Mombasa, Kisumu, Nakuru, and Eldoret. Know before fast-moving staples or farm inputs run out, replace torn paper daftari books with digital balances, and match every Lipa na M-Pesa payment automatically.',
     capabilities: [
-      'Low-stock alerts before best-selling items run out mid-week',
-      'Digital customer credit book (Duka Tab) with SMS/WhatsApp reminders',
-      'Update prices once and push them to every counter right away',
+      'Low-stock alerts before best-selling hardware, feeds, or staples run out',
+      'Digital customer credit book (Daftari) with SMS & WhatsApp balance reminders',
+      'Wholesale carton-to-piece pricing updated across every counter right away',
       'M-Pesa STK Push and KRA eTIMS receipts printed through Digitax',
     ],
     hardwareSetup: 'Android tablet or browser terminal, USB barcode scanner, and 58mm thermal printer',
@@ -66,19 +66,19 @@ export const RETAIL_INDUSTRIES: RetailIndustryItem[] = [
   },
   {
     id: 'bars',
-    name: 'Bars',
-    sectorLabel: 'Bars, Lounges & Bistros',
+    name: 'Bars & Hospitality',
+    sectorLabel: 'Bars, Wines & Spirits, and Restaurants',
     headline: 'Catch missing tots and settle busy table tabs fast',
     summary:
       'Split table bills across M-Pesa and cash, send food tickets straight to the kitchen, and track every bottle down to the tot.',
     image: industryBarRestaurant,
     imageAlt:
-      'Contemporary Kenyan bar and lounge counter with touch POS terminal tracking open table tabs',
+      'Kenyan bar, wines and spirits counter, and restaurant using touch POS software for table bills and M-Pesa',
     metricLabel: 'Tab split & settle',
     metricValue: 'Instant STK',
     icon: Wine,
     overview:
-      'Keep evening rush orders organized across terraces, lounges, and sports bars. Waiters open tabs by table, send drink slips to the bar and food orders to the kitchen, and deduct 25ml or 50ml tot pours against full 750ml bottles so nothing walks out unaccounted.',
+      'Keep evening rush orders organized across wines and spirits shops, lounges, restaurants, and sports bars in Nairobi, Mombasa, Kisumu, Nakuru, and Eldoret. Staff open table tabs, route drink slips to the bar and kitchen orders cleanly, and track 25ml or 50ml tot pours against 750ml bottles.',
     capabilities: [
       'Open, merge, and split group bills across M-Pesa and cash',
       'Separate Kitchen Order Tickets (KOT) and counter bar drink slips',
@@ -95,23 +95,23 @@ export const RETAIL_INDUSTRIES: RetailIndustryItem[] = [
   {
     id: 'supermarkets',
     name: 'Supermarkets',
-    sectorLabel: 'Mini-Marts & Multi-Lane Stores',
+    sectorLabel: 'Supermarkets, Minimarts & Multi-Lane Stores',
     headline: 'Keep queues moving—and check every branch from your phone',
     summary:
       'Scan full grocery baskets fast even offline, catch cashier till shortages early, and compare branch totals anywhere.',
     image: industrySupermarket,
     imageAlt:
-      'Kenyan supermarket express checkout lane with cashier scanning groceries into a digital POS',
+      'Kenyan supermarket and minimart express lane cashier scanning groceries with offline POS software',
     metricLabel: 'Express lane pace',
     metricValue: '45+ tx / hr',
     icon: ShoppingCart,
     overview:
-      'Made for peak weekend queues and multi-aisle Kenyan supermarkets. Cashiers scan 50+ item baskets quickly with keyboard shortcuts, declare blind cash totals at shift close so shortages surface immediately, and keep ringing up sales even when fiber drops.',
+      'Made for peak weekend queues, minimarts, and multi-aisle Kenyan supermarkets in Nairobi, Mombasa, Kisumu, Nakuru, and Eldoret. Cashiers scan 50+ item baskets quickly with keyboard shortcuts, declare blind cash totals at shift close, and keep ringing up sales even when fiber drops.',
     capabilities: [
       'Fast barcode scanning for 50+ item grocery baskets',
       'Blind shift cash counts that reveal till variances before staff leave',
       'Keeps ringing up sales 100% offline and syncs when internet returns',
-      'Check live cash, M-Pesa, and stock across Nairobi and upcountry branches',
+      'Monitor live cash, M-Pesa, and stock across Nairobi, coastal & Rift Valley branches',
     ],
     hardwareSetup: 'Desktop/All-in-One terminal, dual-display counter, hands-free scanner, 80mm cutter printer',
     sampleItems: [
@@ -129,12 +129,12 @@ export const RETAIL_INDUSTRIES: RetailIndustryItem[] = [
       'Track medicine batch numbers, catch 30/60/90-day expiries before stock goes bad, and sell full boxes or blister strips accurately.',
     image: industryPharmacy,
     imageAlt:
-      'Clean Kenyan community pharmacy dispensary counter with POS terminal and organized medicine shelves',
+      'Kenyan community pharmacy and chemist counter running SokoPoS terminal with batch expiry tracking',
     metricLabel: 'Batch traceability',
     metricValue: '100% audit',
     icon: Pill,
     overview:
-      'Avoid throwing away expired stock and keep patient dispensing clean across community chemists. Track batch numbers from supplier delivery to the counter, get early 30/60/90-day expiry warnings, and break boxes into single blister strips without messing up inventory.',
+      'Avoid throwing away expired stock and keep patient dispensing clean across community chemists throughout Kenya. Track batch numbers from supplier delivery to the counter, get early 30/60/90-day expiry warnings, and break boxes into single blister strips without messing up inventory.',
     capabilities: [
       'Batch number and expiry alerts before a medicine sits past date',
       'Sell full boxes, single blister strips, or individual doses accurately',

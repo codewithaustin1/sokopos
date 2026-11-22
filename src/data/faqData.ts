@@ -51,7 +51,7 @@ export const FAQ_ITEMS: FaqItem[] = [
     category: 'Plans & Getting Started',
     question: 'What types of retail businesses can use SokoPoS?',
     answer:
-      'SokoPoS is built for supermarkets, mini-marts, pharmacies, agro-dealers, hardware stores, electronics outlets, fashion boutiques, bars, wholesale depots, and multi-branch retail chains across East Africa and beyond.',
+      'SokoPoS is built for supermarkets, minimarts, agrovets, hardware stores, wholesale depots, pharmacies, bars, wines and spirits outlets, restaurants, and multi-branch retail chains across Nairobi, Mombasa, Kisumu, Nakuru, Eldoret, and nationwide.',
   },
 
   // POS, Shifts & Checkout

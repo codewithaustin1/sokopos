@@ -137,23 +137,30 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
               onBackToLogin();
               setTimeout(() => {
                 if (sectionId === 'home' || sectionId === 'top' || !sectionId) {
-                  if (window.location.hash) {
-                    try {
-                      history.replaceState(null, '', window.location.pathname);
-                    } catch {
-                      window.location.hash = '';
-                    }
+                  try {
+                    history.replaceState(null, '', '/');
+                    window.dispatchEvent(new Event('sokopos-route-change'));
+                  } catch {
+                    window.location.hash = '';
                   }
                   scrollToTop(true);
                 } else {
-                  window.location.hash = `#${sectionId}`;
+                  try {
+                    history.replaceState(null, '', `/#${sectionId}`);
+                    window.dispatchEvent(new Event('sokopos-route-change'));
+                  } catch {
+                    window.location.hash = `#${sectionId}`;
+                  }
                   const el = document.getElementById(sectionId);
                   el?.scrollIntoView({ behavior: 'smooth' });
                 }
               }, 80);
             }}
             onNavigatePricing={() => {
-              window.location.hash = '#pricing';
+              if (typeof window !== 'undefined') {
+                window.history.pushState(null, '', '/pricing');
+                window.dispatchEvent(new Event('sokopos-route-change'));
+              }
             }}
             onAuthAction={onBackToLogin}
             isLoggedIn={false}
@@ -724,7 +731,10 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
       <AppFooter
         onBackToLogin={onBackToLogin}
         onNavigatePricing={() => {
-          window.location.hash = '#pricing';
+          if (typeof window !== 'undefined') {
+            window.history.pushState(null, '', '/pricing');
+            window.dispatchEvent(new Event('sokopos-route-change'));
+          }
         }}
         onNavigateLegal={onTabChange}
         activePage={currentTab}

@@ -1,14 +1,19 @@
-# robots.txt for SokoPoS Point of Sale
+# robots.txt for SokoPoS Point of Sale (https://sokopos.co.ke)
 User-agent: *
 Allow: /
-Allow: /#industry-solutions
-Allow: /#kenya-payments
-Allow: /#hardware-guide
-Allow: /#pricing-comparison
+Allow: /pricing
+Allow: /faq
+Allow: /terms
+Allow: /privacy
+Allow: /ownership
+Allow: /compliance
 
-# Prevent crawling of administrative API endpoints
+# Exclude authenticated terminal workspaces and backend endpoints
 Disallow: /api/
 Disallow: /api/*
+Disallow: /pos
+Disallow: /pos/*
+Disallow: /app
+Disallow: /sitemap
 
-# XML Sitemap location (fallback domain, dynamic resolution handled via server.ts)
 Sitemap: https://sokopos.co.ke/sitemap.xml

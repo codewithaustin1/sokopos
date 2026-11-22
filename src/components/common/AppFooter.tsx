@@ -26,7 +26,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
   loginBgGraphic: propLoginBgGraphic,
   theme = 'dark',
 }) => {
-  const { loginBgGraphic: contextLoginBgGraphic, language, setLanguage, t, setIsAffiliateModalOpen } = usePos();
+  const { loginBgGraphic: contextLoginBgGraphic, t, setIsAffiliateModalOpen } = usePos();
   const loginBgGraphic = propLoginBgGraphic ?? contextLoginBgGraphic;
 
   const handlePricingClick = () => {
@@ -35,7 +35,8 @@ export const AppFooter: React.FC<AppFooterProps> = ({
     } else if (onNavigatePricing) {
       onNavigatePricing();
     } else {
-      window.location.hash = '#pricing';
+      window.history.pushState(null, '', '/pricing');
+      window.dispatchEvent(new Event('sokopos-route-change'));
       scrollToTop(true);
     }
   };
@@ -44,7 +45,8 @@ export const AppFooter: React.FC<AppFooterProps> = ({
     if (onNavigateLegal) {
       onNavigateLegal(tab);
     } else {
-      window.location.hash = `#${tab}`;
+      window.history.pushState(null, '', `/${tab}`);
+      window.dispatchEvent(new Event('sokopos-route-change'));
       scrollToTop(true);
     }
   };
@@ -53,7 +55,8 @@ export const AppFooter: React.FC<AppFooterProps> = ({
     if (onBackToLogin) {
       onBackToLogin();
     } else {
-      window.location.hash = '';
+      window.history.pushState(null, '', '/');
+      window.dispatchEvent(new Event('sokopos-route-change'));
       scrollToTop(true);
     }
   };
@@ -78,12 +81,15 @@ export const AppFooter: React.FC<AppFooterProps> = ({
           <span>{t('footer_copyright', '© 2026 Sokoplus Horizon · SokoPoS™ · All rights reserved')}</span>
         </div>
 
-        {/* Legal & Pricing Navigation Links */}
+        {/* Legal & Pricing Navigation Links (Crawlable <a href> clean paths) */}
         <div className="flex items-center gap-2.5 sm:gap-4 flex-wrap justify-center font-medium">
-          <button
-            type="button"
+          <a
+            href="/pricing"
             id={`${idPrefix}-pricing-btn`}
-            onClick={handlePricingClick}
+            onClick={(e) => {
+              e.preventDefault();
+              handlePricingClick();
+            }}
             className={`transition cursor-pointer ${
               activePage === 'pricing'
                 ? isLight ? 'text-[#1565d8] font-bold' : 'text-[#4CC38A] font-bold'
@@ -91,7 +97,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
             }`}
           >
             {t('footer_pricing', 'Pricing')}
-          </button>
+          </a>
           <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
           <button
             type="button"
@@ -110,10 +116,13 @@ export const AppFooter: React.FC<AppFooterProps> = ({
             {t('footer_partners', 'Partner Program')}
           </button>
           <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
-          <button
-            type="button"
+          <a
+            href="/terms"
             id={`${idPrefix}-terms-btn`}
-            onClick={() => handleLegalClick('terms')}
+            onClick={(e) => {
+              e.preventDefault();
+              handleLegalClick('terms');
+            }}
             className={`transition cursor-pointer ${
               activePage === 'terms'
                 ? isLight ? 'text-[#1565d8] font-bold' : 'text-[#4CC38A] font-bold'
@@ -121,12 +130,15 @@ export const AppFooter: React.FC<AppFooterProps> = ({
             }`}
           >
             {t('footer_terms', 'Terms of Service')}
-          </button>
+          </a>
           <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
-          <button
-            type="button"
+          <a
+            href="/privacy"
             id={`${idPrefix}-privacy-btn`}
-            onClick={() => handleLegalClick('privacy')}
+            onClick={(e) => {
+              e.preventDefault();
+              handleLegalClick('privacy');
+            }}
             className={`transition cursor-pointer ${
               activePage === 'privacy'
                 ? isLight ? 'text-[#1565d8] font-bold' : 'text-[#4CC38A] font-bold'
@@ -134,12 +146,15 @@ export const AppFooter: React.FC<AppFooterProps> = ({
             }`}
           >
             {t('footer_privacy', 'Privacy Policy')}
-          </button>
+          </a>
           <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
-          <button
-            type="button"
+          <a
+            href="/faq"
             id={`${idPrefix}-faq-btn`}
-            onClick={() => handleLegalClick('faq')}
+            onClick={(e) => {
+              e.preventDefault();
+              handleLegalClick('faq');
+            }}
             className={`transition cursor-pointer ${
               activePage === 'faq'
                 ? isLight ? 'text-[#1565d8] font-bold' : 'text-[#4CC38A] font-bold'
@@ -147,12 +162,15 @@ export const AppFooter: React.FC<AppFooterProps> = ({
             }`}
           >
             {t('footer_faqs', 'FAQs')}
-          </button>
+          </a>
           <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
-          <button
-            type="button"
+          <a
+            href="/ownership"
             id={`${idPrefix}-legal-notice-btn`}
-            onClick={() => handleLegalClick('ownership')}
+            onClick={(e) => {
+              e.preventDefault();
+              handleLegalClick('ownership');
+            }}
             className={`transition cursor-pointer ${
               activePage === 'ownership'
                 ? isLight ? 'text-[#1565d8] font-bold' : 'text-[#4CC38A] font-bold'
@@ -160,7 +178,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
             }`}
           >
             {t('footer_legal_ip', 'Legal & IP')}
-          </button>
+          </a>
           <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
           <button
             type="button"
@@ -173,22 +191,6 @@ export const AppFooter: React.FC<AppFooterProps> = ({
           >
             {t('footer_scroll_top', 'Scroll to Top ↑')}
           </button>
-          <span className={isLight ? 'text-[#d9e1e6]' : 'text-[#2B3A32]'}>•</span>
-          <div className="inline-flex items-center">
-            <select
-              id={`${idPrefix}-language-select`}
-              value={language}
-              onChange={(e) => setLanguage(e.target.value as 'en' | 'fr' | 'sw')}
-              aria-label="Select Language"
-              className={`bg-transparent font-medium cursor-pointer focus:outline-none transition ${
-                isLight ? 'text-[#4c5a6b] hover:text-[#1565d8]' : 'text-[#9FB2A7] hover:text-[#4CC38A]'
-              }`}
-            >
-              <option value="en" className={isLight ? 'bg-white text-[#0e1a2b]' : 'bg-[#0F1613] text-[#9FB2A7]'}>English</option>
-              <option value="fr" className={isLight ? 'bg-white text-[#0e1a2b]' : 'bg-[#0F1613] text-[#9FB2A7]'}>Français</option>
-              <option value="sw" className={isLight ? 'bg-white text-[#0e1a2b]' : 'bg-[#0F1613] text-[#9FB2A7]'}>Kiswahili</option>
-            </select>
-          </div>
         </div>
       </div>
     </footer>

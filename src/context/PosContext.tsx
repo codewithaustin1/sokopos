@@ -62,6 +62,7 @@ import {
   TaxBreakdownEntry,
   DEFAULT_TAX_SETTINGS,
 } from '../utils/taxResolver';
+import { normalizePathname, resolveLegacyHashToPath } from '../utils/seoConfig';
 import {
   INITIAL_BUSINESSES,
   INITIAL_CATEGORIES,
@@ -10228,11 +10229,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [pricingTiers, pendingCheckoutIntent, setPendingCheckoutIntent]);
 
-  // Dedicated Full-Page Pricing State (Seamless access across logged-in and public views)
+  // Dedicated Full-Page Pricing State (Seamless clean /pricing URL + legacy #pricing support)
   const [isPricingPageOpen, setIsPricingPageOpen] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
-      const hash = window.location.hash.replace('#', '').toLowerCase();
-      return hash === 'pricing' || hash === 'plans' || hash === 'price';
+      const path = normalizePathname(window.location.pathname);
+      if (path === '/pricing') return true;
+      return resolveLegacyHashToPath(window.location.hash) === '/pricing';
     }
     return false;
   });
@@ -10241,31 +10243,48 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setIsBusinessSettingsOpen(false);
     setIsPricingPageOpen(true);
     if (typeof window !== 'undefined') {
-      window.location.hash = '#pricing';
+      if (normalizePathname(window.location.pathname) !== '/pricing' || window.location.hash) {
+        window.history.pushState(null, '', '/pricing');
+        window.dispatchEvent(new Event('sokopos-route-change'));
+      }
     }
   }, []);
 
   const closePricingPage = useCallback(() => {
     setIsPricingPageOpen(false);
     if (typeof window !== 'undefined') {
-      const hash = window.location.hash.replace('#', '').toLowerCase();
-      if (hash === 'pricing' || hash === 'plans' || hash === 'price') {
-        window.history.pushState(null, '', window.location.pathname);
+      const path = normalizePathname(window.location.pathname);
+      const isPricingHash = resolveLegacyHashToPath(window.location.hash) === '/pricing';
+      if (path === '/pricing' || isPricingHash) {
+        const target = currentUser ? '/pos' : '/';
+        window.history.pushState(null, '', target);
+        window.dispatchEvent(new Event('sokopos-route-change'));
       }
     }
-  }, []);
+  }, [currentUser]);
 
   useEffect(() => {
-    const handleHash = () => {
+    const syncPricingRoute = () => {
       if (typeof window === 'undefined') return;
-      const hash = window.location.hash.replace('#', '').toLowerCase();
-      if (hash === 'pricing' || hash === 'plans' || hash === 'price') {
+      const path = normalizePathname(window.location.pathname);
+      const legacyTarget = resolveLegacyHashToPath(window.location.hash);
+      if (legacyTarget === '/pricing') {
+        window.history.replaceState(null, '', '/pricing');
         setIsPricingPageOpen(true);
+        window.dispatchEvent(new Event('sokopos-route-change'));
+      } else {
+        setIsPricingPageOpen(path === '/pricing');
       }
     };
-    handleHash();
-    window.addEventListener('hashchange', handleHash);
-    return () => window.removeEventListener('hashchange', handleHash);
+    syncPricingRoute();
+    window.addEventListener('popstate', syncPricingRoute);
+    window.addEventListener('hashchange', syncPricingRoute);
+    window.addEventListener('sokopos-route-change', syncPricingRoute);
+    return () => {
+      window.removeEventListener('popstate', syncPricingRoute);
+      window.removeEventListener('hashchange', syncPricingRoute);
+      window.removeEventListener('sokopos-route-change', syncPricingRoute);
+    };
   }, []);
 
   const isSubscriptionActive = useMemo(() => {
