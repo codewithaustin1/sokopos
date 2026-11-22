@@ -8,7 +8,7 @@
         "uid": { "type": "string" },
         "email": { "type": "string" },
         "displayName": { "type": "string" },
-        "role": { "type": "string", "enum": ["super_admin", "business_owner", "manager", "cashier", "inventory_clerk"] },
+        "role": { "type": "string", "enum": ["super_admin", "business_owner", "manager", "supervisor", "cashier", "inventory_clerk", "accountant", "partner"] },
         "businessId": { "type": "string" },
         "updatedAt": { "type": "string" }
       },
@@ -333,7 +333,7 @@
         "email": { "type": "string" },
         "name": { "type": "string" },
         "code": { "type": "string" },
-        "accountType": { "type": "string", "enum": ["owner", "public_partner"] },
+        "accountType": { "type": "string", "enum": ["owner", "public_partner", "partner", "hybrid"] },
         "mpesaPhone": { "type": "string" },
         "commissionRate": { "type": "number" },
         "totalEarnedKes": { "type": "number" },

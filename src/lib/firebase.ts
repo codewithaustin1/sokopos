@@ -24,7 +24,6 @@ import {
   memoryLocalCache,
   doc,
   getDocFromServer,
-  getDoc,
   Firestore,
   setLogLevel,
 } from 'firebase/firestore';
@@ -157,10 +156,7 @@ export async function testFirebaseConnection(): Promise<boolean> {
       setTimeout(() => reject(new Error('Connection check timed out')), 6000)
     );
     await Promise.race([
-      getDocFromServer(doc(db, 'test', 'connection')).catch(() => {
-        // Fallback to getDoc
-        return getDoc(doc(db, 'test', 'connection'));
-      }),
+      getDocFromServer(doc(db, 'test', 'connection')),
       timeoutPromise,
     ]);
     return true;

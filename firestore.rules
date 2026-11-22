@@ -16,22 +16,32 @@ service cloud.firestore {
              id.matches('^[a-zA-Z0-9_.\\-]+$');
     }
 
+    function hasTokenEmail() {
+      return 'email' in request.auth.token && request.auth.token.email is string;
+    }
+
+    function isTokenEmailVerified() {
+      return 'email_verified' in request.auth.token && request.auth.token.email_verified == true;
+    }
+
     function isSuperAdmin() {
       return isSignedIn() && (
-        (request.auth.token.email == 'upfrontretaile@gmail.com' && request.auth.token.email_verified == true) ||
+        (isTokenEmailVerified() && hasTokenEmail() && request.auth.token.email.lower() == 'upfrontretaile@gmail.com') ||
         request.auth.uid == 'ulGLrKgcsrWyqcGRJ6DzvHoEYY12' ||
-        (request.auth.token.role != null && request.auth.token.role == 'super_admin')
+        ('role' in request.auth.token && request.auth.token.role == 'super_admin')
       );
     }
 
     function tokenBusinessId() {
-      return request.auth.token.businessId;
+      return ('businessId' in request.auth.token && request.auth.token.businessId is string)
+        ? request.auth.token.businessId
+        : null;
     }
 
     function isOwnerOf(bizId) {
       return bizId is string &&
-             request.auth.token.email_verified == true &&
-             request.auth.token.email is string &&
+             isTokenEmailVerified() &&
+             hasTokenEmail() &&
              exists(/databases/$(database)/documents/businesses/$(bizId)) &&
              get(/databases/$(database)/documents/businesses/$(bizId)).data.ownerEmail is string &&
              get(/databases/$(database)/documents/businesses/$(bizId)).data.ownerEmail.lower() == request.auth.token.email.lower();
@@ -45,17 +55,34 @@ service cloud.firestore {
 
     function isEmailVerified() {
       return isSignedIn() && (
-        request.auth.token.email_verified == true ||
+        isTokenEmailVerified() ||
         isSuperAdmin()
       );
     }
 
     function hasTenantAccess(bizId) {
-      return isEmailVerified() && (
+      return isEmailVerified() && bizId is string && bizId.size() > 0 && (
         isSuperAdmin() ||
-        (bizId != null && tokenBusinessId() != null && tokenBusinessId() == bizId) ||
-        (bizId != null && isOwnerOf(bizId)) ||
-        (bizId != null && isMemberOf(bizId))
+        (tokenBusinessId() != null && tokenBusinessId() == bizId) ||
+        isMemberOf(bizId) ||
+        isOwnerOf(bizId)
+      );
+    }
+
+    // List-safe tenant guard: avoids resource-dependent get()/exists() on businesses/$(resource.data.businessId)
+    function hasTenantListAccess(bizId) {
+      return isSignedIn() && (
+        isSuperAdmin() ||
+        (
+          isEmailVerified() &&
+          bizId is string &&
+          bizId.size() > 0 &&
+          bizId != 'biz-demo' &&
+          (
+            (tokenBusinessId() != null && tokenBusinessId() == bizId) ||
+            isMemberOf(bizId)
+          )
+        )
       );
     }
 
@@ -84,8 +111,8 @@ service cloud.firestore {
         isSuperAdmin() || (
           request.auth.uid == userId &&
           (!('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid) &&
-          (!('role' in request.resource.data) || request.resource.data.role in ['business_owner', 'manager', 'cashier', 'supervisor', 'accountant']) &&
-          (!('businessId' in request.resource.data) || (
+          (!('role' in request.resource.data) || request.resource.data.role in ['business_owner', 'manager', 'cashier', 'supervisor', 'accountant', 'inventory_clerk', 'partner']) &&
+          (!('businessId' in request.resource.data) || request.resource.data.businessId == null || (
             request.resource.data.businessId is string && (
               request.resource.data.businessId == 'biz-demo' ||
               isOwnerOf(request.resource.data.businessId) ||
@@ -98,8 +125,8 @@ service cloud.firestore {
         isSuperAdmin() || (
           request.auth.uid == userId &&
           (!('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid) &&
-          (!('role' in request.resource.data) || request.resource.data.role in ['business_owner', 'manager', 'cashier', 'supervisor', 'accountant']) &&
-          (!('businessId' in request.resource.data) || (
+          (!('role' in request.resource.data) || request.resource.data.role in ['business_owner', 'manager', 'cashier', 'supervisor', 'accountant', 'inventory_clerk', 'partner']) &&
+          (!('businessId' in request.resource.data) || request.resource.data.businessId == null || (
             resource != null && request.resource.data.businessId == resource.data.businessId
           ) || isOwnerOf(request.resource.data.businessId))
         )
@@ -146,12 +173,12 @@ service cloud.firestore {
     match /businesses/{businessId} {
       allow get: if isSignedIn() && isValidId(businessId) && (
         isSuperAdmin() ||
-        (resource != null && request.auth.token.email_verified == true && request.auth.token.email is string && resource.data.ownerEmail is string && resource.data.ownerEmail.lower() == request.auth.token.email.lower()) ||
+        (resource != null && isTokenEmailVerified() && hasTokenEmail() && resource.data.ownerEmail is string && resource.data.ownerEmail.lower() == request.auth.token.email.lower()) ||
         hasTenantAccess(businessId)
       );
       allow list: if isSignedIn() && (
         isSuperAdmin() ||
-        (request.auth.token.email_verified == true && request.auth.token.email is string && resource.data.ownerEmail is string && resource.data.ownerEmail.lower() == request.auth.token.email.lower())
+        (isTokenEmailVerified() && hasTokenEmail() && resource.data.ownerEmail == request.auth.token.email.lower())
       );
       allow create: if isEmailVerified() && isValidId(businessId) && (
         !('legalConsent' in request.resource.data) || isValidLegalConsent(request.resource.data.legalConsent)
@@ -160,7 +187,7 @@ service cloud.firestore {
         (
           businessId != 'biz-demo' &&
           request.resource.data.id != 'biz-demo' &&
-          request.auth.token.email is string &&
+          hasTokenEmail() &&
           request.resource.data.ownerEmail is string &&
           request.resource.data.ownerEmail.lower() == request.auth.token.email.lower() &&
           (!('plan' in request.resource.data) || request.resource.data.plan == 'free') &&
@@ -176,7 +203,7 @@ service cloud.firestore {
         isSuperAdmin() ||
         (
           (
-            (resource != null && request.auth.token.email is string && resource.data.ownerEmail is string && resource.data.ownerEmail.lower() == request.auth.token.email.lower()) ||
+            (resource != null && hasTokenEmail() && resource.data.ownerEmail is string && resource.data.ownerEmail.lower() == request.auth.token.email.lower()) ||
             hasTenantAccess(businessId)
           ) &&
           !request.resource.data.diff(resource.data).affectedKeys().hasAny([
@@ -199,7 +226,7 @@ service cloud.firestore {
         (
           businessId != 'biz-demo' &&
           resource != null &&
-          request.auth.token.email is string &&
+          hasTokenEmail() &&
           resource.data.ownerEmail is string &&
           resource.data.ownerEmail.lower() == request.auth.token.email.lower()
         )
@@ -212,10 +239,7 @@ service cloud.firestore {
         isSuperAdmin() ||
         (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
-      allow list: if isSignedIn() && (
-        isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
-      );
+      allow list: if hasTenantListAccess(resource.data.businessId);
       allow create: if isEmailVerified() && isValidId(productId) && (
         isSuperAdmin() ||
         (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
@@ -241,10 +265,7 @@ service cloud.firestore {
         isSuperAdmin() ||
         (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
-      allow list: if isSignedIn() && (
-        isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
-      );
+      allow list: if hasTenantListAccess(resource.data.businessId);
       allow create: if isEmailVerified() && isValidId(categoryId) && (
         isSuperAdmin() ||
         (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
@@ -270,10 +291,7 @@ service cloud.firestore {
         isSuperAdmin() ||
         (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
-      allow list: if isSignedIn() && (
-        isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
-      );
+      allow list: if hasTenantListAccess(resource.data.businessId);
       allow create: if isEmailVerified() && isValidId(locationId) && (
         isSuperAdmin() ||
         (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
@@ -299,10 +317,7 @@ service cloud.firestore {
         isSuperAdmin() ||
         (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
-      allow list: if isSignedIn() && (
-        isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
-      );
+      allow list: if hasTenantListAccess(resource.data.businessId);
       allow create: if isEmailVerified() && isValidId(cashierId) && (
         isSuperAdmin() ||
         (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
@@ -340,10 +355,7 @@ service cloud.firestore {
         isSuperAdmin() ||
         (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
-      allow list: if isSignedIn() && (
-        isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
-      );
+      allow list: if hasTenantListAccess(resource.data.businessId);
       allow create: if isEmailVerified() && isValidId(transactionId) && (
         isSuperAdmin() ||
         (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
@@ -369,10 +381,7 @@ service cloud.firestore {
         isSuperAdmin() ||
         (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
-      allow list: if isSignedIn() && (
-        isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
-      );
+      allow list: if hasTenantListAccess(resource.data.businessId);
       allow create: if isEmailVerified() && isValidId(customerId) && (
         isSuperAdmin() ||
         (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
@@ -398,10 +407,7 @@ service cloud.firestore {
         isSuperAdmin() ||
         (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
-      allow list: if isSignedIn() && (
-        isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
-      );
+      allow list: if hasTenantListAccess(resource.data.businessId);
       allow create: if isEmailVerified() && isValidId(supplierId) && (
         isSuperAdmin() ||
         (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
@@ -427,10 +433,7 @@ service cloud.firestore {
         isSuperAdmin() ||
         (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
-      allow list: if isSignedIn() && (
-        isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
-      );
+      allow list: if hasTenantListAccess(resource.data.businessId);
       allow create: if isEmailVerified() && isValidId(transferId) && (
         isSuperAdmin() ||
         (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
@@ -456,10 +459,7 @@ service cloud.firestore {
         isSuperAdmin() ||
         (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
-      allow list: if isSignedIn() && (
-        isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
-      );
+      allow list: if hasTenantListAccess(resource.data.businessId);
       allow create: if isEmailVerified() && isValidId(syncLogId) && (
         isSuperAdmin() ||
         (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
@@ -485,10 +485,7 @@ service cloud.firestore {
         isSuperAdmin() ||
         (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
-      allow list: if isSignedIn() && (
-        isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
-      );
+      allow list: if hasTenantListAccess(resource.data.businessId);
       allow create: if isEmailVerified() && isValidId(backupId) && (
         isSuperAdmin() ||
         (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
@@ -596,12 +593,12 @@ service cloud.firestore {
       allow get: if isValidPaymentRecordId(recordId) && (
         isSuperAdmin() ||
         (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId)) ||
-        (isEmailVerified() && resource != null && resource.data.ownerEmail is string && resource.data.ownerEmail.lower() == request.auth.token.email.lower())
+        (isEmailVerified() && hasTokenEmail() && resource != null && resource.data.ownerEmail is string && resource.data.ownerEmail.lower() == request.auth.token.email.lower())
       );
       allow list: if isSuperAdmin() || (
         isEmailVerified() &&
-        resource.data.ownerEmail is string &&
-        resource.data.ownerEmail.lower() == request.auth.token.email.lower()
+        hasTokenEmail() &&
+        resource.data.ownerEmail == request.auth.token.email.lower()
       );
       allow write: if false;
     }
@@ -652,10 +649,7 @@ service cloud.firestore {
         isSuperAdmin() ||
         (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
-      allow list: if isSignedIn() && (
-        isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
-      );
+      allow list: if hasTenantListAccess(resource.data.businessId);
       allow create: if isEmailVerified() && isValidId(rollupId) &&
         isValidAnalyticsRollup(request.resource.data, rollupId) && (
           isSuperAdmin() ||
@@ -706,10 +700,7 @@ service cloud.firestore {
         isSuperAdmin() ||
         (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
-      allow list: if isSignedIn() && (
-        isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
-      );
+      allow list: if hasTenantListAccess(resource.data.businessId);
       allow create: if isEmailVerified() && isValidId(targetId) &&
         isValidAnalyticsTarget(request.resource.data, targetId) && (
           isSuperAdmin() ||
@@ -763,10 +754,7 @@ service cloud.firestore {
         isSuperAdmin() ||
         (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
-      allow list: if isSignedIn() && (
-        isSuperAdmin() ||
-        (resource.data.businessId is string && resource.data.businessId.size() > 0 && resource.data.businessId != 'biz-demo' && hasTenantAccess(resource.data.businessId))
-      );
+      allow list: if hasTenantListAccess(resource.data.businessId);
       allow create: if isEmailVerified() && isValidId(viewId) &&
         isValidAnalyticsSavedView(request.resource.data, viewId) && (
           isSuperAdmin() ||

@@ -13,6 +13,7 @@ import {
   onSnapshot,
   writeBatch,
   Unsubscribe,
+  DocumentReference,
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import {
@@ -98,12 +99,12 @@ export function markFirestoreQuotaExceeded(): void {
   }
 }
 
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
-  if (isFirestoreQuotaError(error)) {
-    markFirestoreQuotaExceeded();
-    throw error instanceof Error ? error : new Error(String(error));
-  }
-  const errInfo: FirestoreErrorInfo = {
+function buildFirestoreErrorInfo(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null
+): FirestoreErrorInfo {
+  return {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
       userId: auth.currentUser?.uid || null,
@@ -120,6 +121,27 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path,
   };
+}
+
+export function logFirestoreErrorInfo(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null
+): void {
+  if (isFirestoreQuotaError(error)) {
+    markFirestoreQuotaExceeded();
+    return;
+  }
+  const errInfo = buildFirestoreErrorInfo(error, operationType, path);
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+  if (isFirestoreQuotaError(error)) {
+    markFirestoreQuotaExceeded();
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+  const errInfo = buildFirestoreErrorInfo(error, operationType, path);
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
@@ -177,11 +199,61 @@ export function isDemoRecordId(id?: string | null): boolean {
   );
 }
 
+const SUPER_ADMIN_EMAIL = 'upfrontretaile@gmail.com';
+const SUPER_ADMIN_UID = 'ulGLrKgcsrWyqcGRJ6DzvHoEYY12';
+const FIRESTORE_BATCH_LIMIT = 400;
+
+export function isCurrentUserSuperAdmin(): boolean {
+  const user = auth.currentUser;
+  if (!user) return false;
+  if (user.uid === SUPER_ADMIN_UID) return true;
+  const cleanEmail = (user.email || '').trim().toLowerCase();
+  return Boolean(user.emailVerified && cleanEmail === SUPER_ADMIN_EMAIL);
+}
+
+const PROTECTED_BUSINESS_FIELD_KEYS = [
+  'plan',
+  'status',
+  'subscription',
+  'referredByCode',
+  'referredAt',
+  'paystackSubaccountCode',
+  'paystackSettlementBank',
+  'paystackSettlementAccountMask',
+  'paystackSubaccountStatus',
+  'paystackSubaccountVerifiedAt',
+  'paystackFeeBearer',
+] as const;
+
+export function stripProtectedBusinessFields<T extends Record<string, any>>(payload: T): Partial<T> {
+  const clean: Record<string, any> = { ...payload };
+  for (const key of PROTECTED_BUSINESS_FIELD_KEYS) {
+    delete clean[key];
+  }
+  return clean as Partial<T>;
+}
+
+async function commitBatchDeletes(refs: DocumentReference[]): Promise<number> {
+  if (!db || !Array.isArray(refs) || refs.length === 0) return 0;
+  let deleted = 0;
+  for (let i = 0; i < refs.length; i += FIRESTORE_BATCH_LIMIT) {
+    const chunk = refs.slice(i, i + FIRESTORE_BATCH_LIMIT);
+    const batch = writeBatch(db);
+    chunk.forEach((ref) => batch.delete(ref));
+    await batch.commit();
+    deleted += chunk.length;
+  }
+  return deleted;
+}
+
 // -------------------------------------------------------------
 // Tenant Businesses Firestore API
 // -------------------------------------------------------------
 export async function getBusinessesFromFirestore(): Promise<Business[]> {
   if (!db || !auth.currentUser || isFirestoreQuotaCooldownActive()) return [];
+  if (!isCurrentUserSuperAdmin()) {
+    return getBusinessesByOwnerEmailFromFirestore(auth.currentUser.email || '');
+  }
   const path = 'businesses';
   try {
     const snap = await getDocs(collection(db, path));
@@ -205,11 +277,7 @@ export async function getBusinessByIdFromFirestore(businessId: string): Promise<
     const snap = await getDoc(doc(db, 'businesses', businessId));
     return snap.exists() ? (snap.data() as Business) : null;
   } catch (error) {
-    if (isFirestoreQuotaError(error)) {
-      markFirestoreQuotaExceeded();
-      return null;
-    }
-    console.warn(`Failed to get business ${businessId} from Firestore:`, error);
+    logFirestoreErrorInfo(error, OperationType.GET, path);
     return null;
   }
 }
@@ -224,7 +292,7 @@ export async function getBusinessesByOwnerEmailFromFirestore(email: string): Pro
     const snapLower = await getDocs(qLower);
     const results = snapLower.docs.map((d) => d.data() as Business);
 
-    if (results.length === 0 && cleanEmail !== lowerEmail) {
+    if (results.length === 0 && cleanEmail !== lowerEmail && isCurrentUserSuperAdmin()) {
       const qExact = query(collection(db, path), where('ownerEmail', '==', cleanEmail));
       const snapExact = await getDocs(qExact);
       return snapExact.docs.map((d) => d.data() as Business);
@@ -242,9 +310,20 @@ export async function getBusinessesByOwnerEmailFromFirestore(email: string): Pro
 
 export async function saveBusinessToFirestore(biz: Business): Promise<void> {
   if (!db || !auth.currentUser || isDemoBusinessId(biz.id)) return;
+  if (!isCurrentUserSuperAdmin()) {
+    const res = await ensureBusinessDocInFirestore(biz, biz.ownerEmail || auth.currentUser.email || '');
+    if (!res.ok) {
+      throw new Error(res.error || 'Could not save business document to Firestore.');
+    }
+    return;
+  }
   const path = `businesses/${biz.id}`;
+  const normalizedBiz: Business = {
+    ...biz,
+    ownerEmail: (biz.ownerEmail || '').trim().toLowerCase(),
+  };
   try {
-    await setDoc(doc(db, 'businesses', biz.id), sanitizeForFirestore(biz));
+    await setDoc(doc(db, 'businesses', biz.id), sanitizeForFirestore(normalizedBiz));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -256,8 +335,20 @@ export async function updateBusinessInFirestore(
 ): Promise<void> {
   if (!db || !auth.currentUser || isDemoBusinessId(businessId)) return;
   const path = `businesses/${businessId}`;
+  const sanitizedUpdates = isCurrentUserSuperAdmin()
+    ? {
+        ...updates,
+        ...(typeof updates.ownerEmail === 'string' ? { ownerEmail: updates.ownerEmail.trim().toLowerCase() } : {}),
+      }
+    : stripProtectedBusinessFields(
+        typeof updates.ownerEmail === 'string'
+          ? { ...updates, ownerEmail: updates.ownerEmail.trim().toLowerCase() }
+          : updates
+      );
+  const cleaned = sanitizeForFirestore(sanitizedUpdates);
+  if (!cleaned || Object.keys(cleaned).length === 0) return;
   try {
-    await setDoc(doc(db, 'businesses', businessId), sanitizeForFirestore(updates), { merge: true });
+    await setDoc(doc(db, 'businesses', businessId), cleaned, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -377,6 +468,7 @@ export async function ensureBusinessDocInFirestore(
     return { ok: true };
   } catch (error: any) {
     console.warn(`ensureBusinessDocInFirestore failed for ${biz.id}:`, error);
+    logFirestoreErrorInfo(error, OperationType.WRITE, `businesses/${biz.id}`);
     return {
       ok: false,
       error: error?.message || 'Could not sync store record to cloud database.',
@@ -390,7 +482,7 @@ export async function deleteBusinessFromFirestore(businessId: string): Promise<v
   try {
     await deleteDoc(doc(db, 'businesses', businessId));
   } catch (error) {
-    console.warn(`Failed to delete business ${businessId} from Firestore:`, error);
+    handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 
@@ -519,7 +611,9 @@ export async function deleteBusinessConflictsFromFirestore(
 export async function purgeTenantAllDataFromFirestore(businessId: string): Promise<{
   purgedRecords: number;
 }> {
-  if (!db) return { purgedRecords: 0 };
+  if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
+    return { purgedRecords: 0 };
+  }
   let purgedRecords = 0;
   const collectionsToPurge = [
     'products',
@@ -528,8 +622,13 @@ export async function purgeTenantAllDataFromFirestore(businessId: string): Promi
     'cashiers',
     'transactions',
     'customers',
+    'suppliers',
     'stock_transfers',
     'sync_logs',
+    'purged_sales_backups',
+    'analytics_daily_rollups',
+    'analytics_targets',
+    'analytics_saved_views',
   ];
 
   for (const collName of collectionsToPurge) {
@@ -537,13 +636,14 @@ export async function purgeTenantAllDataFromFirestore(businessId: string): Promi
       const q = query(collection(db, collName), where('businessId', '==', businessId));
       const snap = await getDocs(q);
       if (!snap.empty) {
-        const batch = writeBatch(db);
-        snap.docs.forEach((d) => batch.delete(d.ref));
-        await batch.commit();
-        purgedRecords += snap.docs.length;
+        purgedRecords += await commitBatchDeletes(snap.docs.map((d) => d.ref));
       }
     } catch (err) {
-      console.warn(`Purge ${collName} for tenant ${businessId} non-fatal:`, err);
+      if (isFirestoreQuotaError(err)) {
+        markFirestoreQuotaExceeded();
+        break;
+      }
+      logFirestoreErrorInfo(err, OperationType.DELETE, collName);
     }
   }
 
@@ -558,6 +658,7 @@ export async function saveUserProfileToFirestore(user: {
   displayName?: string;
 }): Promise<boolean> {
   if (!db || !auth.currentUser) return false;
+  const path = `users/${user.uid}`;
   try {
     await setDoc(
       doc(db, 'users', user.uid),
@@ -573,7 +674,7 @@ export async function saveUserProfileToFirestore(user: {
     );
     return true;
   } catch (error) {
-    console.warn('Failed to sync user profile in Firestore:', error);
+    logFirestoreErrorInfo(error, OperationType.WRITE, path);
     return false;
   }
 }
@@ -697,47 +798,64 @@ export async function deleteProductFromFirestore(productId: string): Promise<voi
 }
 
 export async function batchSaveProductsToFirestore(products: Product[]): Promise<void> {
-  if (!db || !auth.currentUser || !Array.isArray(products) || products.length === 0) return;
+  if (!db || !auth.currentUser || !Array.isArray(products) || products.length === 0 || isFirestoreQuotaCooldownActive()) return;
   const eligible = products.filter(
     (p) => p.id && !p.id.startsWith('prod-demo-') && p.businessId !== 'biz-demo'
   );
-  for (let i = 0; i < eligible.length; i += 400) {
-    const chunk = eligible.slice(i, i + 400);
+  for (let i = 0; i < eligible.length; i += FIRESTORE_BATCH_LIMIT) {
+    const chunk = eligible.slice(i, i + FIRESTORE_BATCH_LIMIT);
     const batch = writeBatch(db);
     chunk.forEach((product) => {
       batch.set(doc(db, 'products', product.id), sanitizeForFirestore(product));
     });
-    await batch.commit();
+    try {
+      await batch.commit();
+    } catch (error) {
+      if (isFirestoreQuotaError(error)) {
+        markFirestoreQuotaExceeded();
+        return;
+      }
+      handleFirestoreError(error, OperationType.WRITE, 'products');
+    }
   }
 }
 
 export async function batchUpdateProductsInFirestore(
   items: Array<{ id: string; updates: Partial<Product> }>
 ): Promise<void> {
-  if (!db || !auth.currentUser || !Array.isArray(items) || items.length === 0) return;
+  if (!db || !auth.currentUser || !Array.isArray(items) || items.length === 0 || isFirestoreQuotaCooldownActive()) return;
   const eligible = items.filter(
     (item) => item.id && !item.id.startsWith('prod-demo-') && item.updates.businessId !== 'biz-demo'
   );
-  for (let i = 0; i < eligible.length; i += 400) {
-    const chunk = eligible.slice(i, i + 400);
+  for (let i = 0; i < eligible.length; i += FIRESTORE_BATCH_LIMIT) {
+    const chunk = eligible.slice(i, i + FIRESTORE_BATCH_LIMIT);
     const batch = writeBatch(db);
     chunk.forEach(({ id, updates }) => {
       batch.set(doc(db, 'products', id), sanitizeForFirestore(updates), { merge: true });
     });
-    await batch.commit();
+    try {
+      await batch.commit();
+    } catch (error) {
+      if (isFirestoreQuotaError(error)) {
+        markFirestoreQuotaExceeded();
+        return;
+      }
+      handleFirestoreError(error, OperationType.UPDATE, 'products');
+    }
   }
 }
 
 export async function batchDeleteProductsFromFirestore(productIds: string[]): Promise<void> {
-  if (!db || !auth.currentUser || !Array.isArray(productIds) || productIds.length === 0) return;
+  if (!db || !auth.currentUser || !Array.isArray(productIds) || productIds.length === 0 || isFirestoreQuotaCooldownActive()) return;
   const eligible = productIds.filter((id) => id && !id.startsWith('prod-demo-'));
-  for (let i = 0; i < eligible.length; i += 400) {
-    const chunk = eligible.slice(i, i + 400);
-    const batch = writeBatch(db);
-    chunk.forEach((id) => {
-      batch.delete(doc(db, 'products', id));
-    });
-    await batch.commit();
+  try {
+    await commitBatchDeletes(eligible.map((id) => doc(db, 'products', id)));
+  } catch (error) {
+    if (isFirestoreQuotaError(error)) {
+      markFirestoreQuotaExceeded();
+      return;
+    }
+    handleFirestoreError(error, OperationType.DELETE, 'products');
   }
 }
 
@@ -929,30 +1047,37 @@ export async function getTenantCashiersFromFirestore(businessId: string): Promis
  */
 export async function findCashierInFirestoreByIdentity(
   username?: string,
-  code?: string
+  code?: string,
+  businessId?: string
 ): Promise<Cashier[]> {
   if (!db || !auth.currentUser || isFirestoreQuotaCooldownActive()) return [];
+  const superAdmin = isCurrentUserSuperAdmin();
+  if (!superAdmin && (!businessId || isDemoBusinessId(businessId))) {
+    return [];
+  }
   const path = 'cashiers';
   const foundMap = new Map<string, Cashier>();
   try {
     const cleanUser = (username || '').trim().toLowerCase();
     const rawCode = (code || '').trim();
     const cleanCode = rawCode.replace(/^#/, '');
+    const tenantFilters = businessId && !isDemoBusinessId(businessId) ? [where('businessId', '==', businessId)] : [];
 
     const queries = [];
     if (cleanUser) {
-      queries.push(query(collection(db, path), where('username', '==', cleanUser), limit(5)));
+      queries.push(query(collection(db, path), ...tenantFilters, where('username', '==', cleanUser), limit(5)));
     }
     if (rawCode) {
-      queries.push(query(collection(db, path), where('code', '==', rawCode), limit(5)));
+      queries.push(query(collection(db, path), ...tenantFilters, where('code', '==', rawCode), limit(5)));
       if (`#${cleanCode}` !== rawCode) {
-        queries.push(query(collection(db, path), where('code', '==', `#${cleanCode}`), limit(5)));
+        queries.push(query(collection(db, path), ...tenantFilters, where('code', '==', `#${cleanCode}`), limit(5)));
       }
       if (cleanCode && cleanCode !== rawCode) {
-        queries.push(query(collection(db, path), where('code', '==', cleanCode), limit(5)));
+        queries.push(query(collection(db, path), ...tenantFilters, where('code', '==', cleanCode), limit(5)));
       }
     }
 
+    if (queries.length === 0) return [];
     const snaps = await Promise.all(queries.map((q) => getDocs(q)));
     snaps.forEach((snap) => {
       snap.docs.forEach((d) => {
@@ -962,17 +1087,13 @@ export async function findCashierInFirestoreByIdentity(
     });
     return Array.from(foundMap.values());
   } catch (error) {
-    if (isFirestoreQuotaError(error)) {
-      markFirestoreQuotaExceeded();
-      return [];
-    }
-    console.warn('Targeted cashier identity lookup notice:', error);
+    logFirestoreErrorInfo(error, OperationType.LIST, path);
     return [];
   }
 }
 
 export async function getAllCashiersFromFirestore(): Promise<Cashier[]> {
-  if (!db || !auth.currentUser || isFirestoreQuotaCooldownActive()) return [];
+  if (!db || !auth.currentUser || !isCurrentUserSuperAdmin() || isFirestoreQuotaCooldownActive()) return [];
   const path = 'cashiers';
   try {
     const snap = await getDocs(collection(db, path));
@@ -1026,17 +1147,20 @@ export async function saveCashierToFirestore(cashier: Cashier): Promise<void> {
     };
     await setDoc(doc(db, 'cashiers', cashier.id), sanitizeForFirestore(publicDoc));
 
-    // If caller provided a real pin/hash, attempt storing in isolated private subcollection
-    if (cashier.pin && cashier.pin !== '••••••••' && !cashier.pin.startsWith('[PROTECTED')) {
-      const privatePath = `cashiers/${cashier.id}/private/credentials`;
-      setDoc(doc(db, 'cashiers', cashier.id, 'private', 'credentials'), {
+    // Only Super Admin can write directly to private credentials subcollection; staff PINs use server vault
+    if (
+      isCurrentUserSuperAdmin() &&
+      cashier.pin &&
+      cashier.pin !== '••••••••' &&
+      !cashier.pin.startsWith('[PROTECTED')
+    ) {
+      await setDoc(doc(db, 'cashiers', cashier.id, 'private', 'credentials'), {
         cashierId: cashier.id,
         businessId: cashier.businessId,
         hash: cashier.pin,
         updatedAt: new Date().toISOString(),
-      }).catch((e) => {
-        // Private subcollection is protected by security rules; non-super-admins use server endpoint
-        console.info('Client direct write to private credentials subcollection bypassed (handled by server vault).');
+      }).catch((err) => {
+        logFirestoreErrorInfo(err, OperationType.WRITE, `cashiers/${cashier.id}/private/credentials`);
       });
     }
   } catch (error) {
@@ -1057,13 +1181,22 @@ export async function updateCashierInFirestore(
     }
     await setDoc(doc(db, 'cashiers', cashierId), sanitizeForFirestore(publicUpdates), { merge: true });
 
-    if (updates.pin && updates.pin !== '••••••••' && !updates.pin.startsWith('[PROTECTED')) {
-      setDoc(doc(db, 'cashiers', cashierId, 'private', 'credentials'), {
-        cashierId,
-        hash: updates.pin,
-        updatedAt: new Date().toISOString(),
-      }, { merge: true }).catch(() => {
-        // Handled by server vault
+    if (
+      isCurrentUserSuperAdmin() &&
+      updates.pin &&
+      updates.pin !== '••••••••' &&
+      !updates.pin.startsWith('[PROTECTED')
+    ) {
+      await setDoc(
+        doc(db, 'cashiers', cashierId, 'private', 'credentials'),
+        {
+          cashierId,
+          hash: updates.pin,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      ).catch((err) => {
+        logFirestoreErrorInfo(err, OperationType.UPDATE, `cashiers/${cashierId}/private/credentials`);
       });
     }
   } catch (error) {
@@ -1086,17 +1219,46 @@ export async function deleteCashierFromFirestore(cashierId: string): Promise<voi
 // -------------------------------------------------------------
 let hasLoggedTxIndexHint = false;
 
+function sortTransactionsNewestFirst(txs: Transaction[]): Transaction[] {
+  return txs.sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
+}
+
 export async function getTenantTransactionsFromFirestore(businessId: string): Promise<Transaction[]> {
   if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) return [];
   const path = 'transactions';
   try {
-    const q = query(collection(db, path), where('businessId', '==', businessId), limit(500));
+    const q = query(
+      collection(db, path),
+      where('businessId', '==', businessId),
+      orderBy('timestamp', 'desc'),
+      limit(500)
+    );
     const snap = await getDocs(q);
     return snap.docs.map((d) => d.data() as Transaction);
-  } catch (error) {
+  } catch (error: any) {
     if (!auth.currentUser || isFirestoreQuotaError(error)) {
       if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
       return [];
+    }
+    const errMsg = String(error?.message || '').toLowerCase();
+    if (error?.code === 'failed-precondition' || errMsg.includes('index')) {
+      if (!hasLoggedTxIndexHint) {
+        hasLoggedTxIndexHint = true;
+        console.info(
+          '[Firestore Index Hint] Create composite index on transactions(businessId ASC, timestamp DESC) for ordered transaction queries. Falling back to bounded client sort.'
+        );
+      }
+      try {
+        const fallbackQ = query(collection(db, path), where('businessId', '==', businessId), limit(1500));
+        const fallbackSnap = await getDocs(fallbackQ);
+        return sortTransactionsNewestFirst(fallbackSnap.docs.map((d) => d.data() as Transaction)).slice(0, 500);
+      } catch (fallbackErr) {
+        if (!auth.currentUser || isFirestoreQuotaError(fallbackErr)) {
+          if (isFirestoreQuotaError(fallbackErr)) markFirestoreQuotaExceeded();
+          return [];
+        }
+        handleFirestoreError(fallbackErr, OperationType.LIST, path);
+      }
     }
     handleFirestoreError(error, OperationType.LIST, path);
   }
@@ -1137,11 +1299,17 @@ export async function getTenantTransactionsRangeFromFirestore(
         );
       }
       try {
-        const fallbackQ = query(collection(db, path), where('businessId', '==', businessId), limit(maxDocs));
+        const fallbackQ = query(
+          collection(db, path),
+          where('businessId', '==', businessId),
+          limit(Math.max(maxDocs, 2000))
+        );
         const fallbackSnap = await getDocs(fallbackQ);
-        return fallbackSnap.docs
-          .map((d) => d.data() as Transaction)
-          .filter((tx) => tx.timestamp >= startIso && tx.timestamp <= endIso);
+        return sortTransactionsNewestFirst(
+          fallbackSnap.docs
+            .map((d) => d.data() as Transaction)
+            .filter((tx) => tx.timestamp >= startIso && tx.timestamp <= endIso)
+        ).slice(0, maxDocs);
       } catch (fallbackErr) {
         if (isFirestoreQuotaError(fallbackErr)) {
           markFirestoreQuotaExceeded();
@@ -1174,14 +1342,16 @@ export function subscribeToTenantTransactions(
     const fallbackQ = query(
       collection(db, path),
       where('businessId', '==', businessId),
-      limit(maxDocs)
+      limit(Math.max(maxDocs, 2000))
     );
     activeUnsub = onSnapshot(
       fallbackQ,
       (snap) => {
-        const docs = snap.docs
-          .map((d) => d.data() as Transaction)
-          .filter((tx) => !tx.timestamp || tx.timestamp >= cutoffIso);
+        const docs = sortTransactionsNewestFirst(
+          snap.docs
+            .map((d) => d.data() as Transaction)
+            .filter((tx) => !tx.timestamp || tx.timestamp >= cutoffIso)
+        ).slice(0, maxDocs);
         onData(docs);
       },
       (error) => {
@@ -1317,27 +1487,24 @@ export async function savePurgedSalesBackupToFirestore(backup: StoreSalesBackup)
   try {
     await setDoc(doc(db, 'purged_sales_backups', backup.id), sanitizeForFirestore(backup));
   } catch (error) {
-    console.warn('Failed to save purged sales backup to Firestore:', error);
+    handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
 
 export async function purgeTenantTransactionsFromFirestore(businessId: string): Promise<number> {
-  if (!db || !auth.currentUser || isDemoBusinessId(businessId)) return 0;
+  if (!db || !businessId || !auth.currentUser || isDemoBusinessId(businessId) || isFirestoreQuotaCooldownActive()) return 0;
   const path = 'transactions';
   try {
     const q = query(collection(db, path), where('businessId', '==', businessId));
     const snap = await getDocs(q);
     if (snap.empty) return 0;
-    
-    const batch = writeBatch(db);
-    snap.docs.forEach((d) => {
-      batch.delete(d.ref);
-    });
-    await batch.commit();
-    return snap.docs.length;
+    return await commitBatchDeletes(snap.docs.map((d) => d.ref));
   } catch (error) {
-    console.warn('Failed to purge tenant transactions from Firestore:', error);
-    return 0;
+    if (isFirestoreQuotaError(error)) {
+      markFirestoreQuotaExceeded();
+      return 0;
+    }
+    handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 
@@ -1376,26 +1543,32 @@ export async function seedInitialTenantDataToFirestore(params: {
   transactions: Transaction[];
 }): Promise<{ seeded: boolean; counts: Record<string, number> }> {
   const counts = { businesses: 0, products: 0, categories: 0, locations: 0, cashiers: 0, transactions: 0 };
-  if (!db || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
+  if (!db || !auth.currentUser || !isCurrentUserSuperAdmin() || isFirestoreQuotaCooldownActive()) {
     return { seeded: false, counts };
   }
   try {
     // Point lookup on flagship doc instead of scanning the entire businesses collection
     const upfrontSnap = await getDoc(doc(db, 'businesses', 'biz-upfront'));
     if (!upfrontSnap.exists()) {
-      const batch = writeBatch(db);
+      const ops: Array<{ ref: DocumentReference; data: Record<string, any> }> = [];
 
       params.businesses
         .filter((b) => !isDemoBusinessId(b.id))
         .forEach((b) => {
-          batch.set(doc(db, 'businesses', b.id), sanitizeForFirestore(b));
+          ops.push({
+            ref: doc(db, 'businesses', b.id),
+            data: sanitizeForFirestore({
+              ...b,
+              ownerEmail: (b.ownerEmail || '').trim().toLowerCase(),
+            }),
+          });
           counts.businesses++;
         });
 
       params.products
         .filter((p) => !isDemoBusinessId(p.businessId))
         .forEach((p) => {
-          batch.set(doc(db, 'products', p.id), sanitizeForFirestore(p));
+          ops.push({ ref: doc(db, 'products', p.id), data: sanitizeForFirestore(p) });
           counts.products++;
         });
 
@@ -1403,7 +1576,7 @@ export async function seedInitialTenantDataToFirestore(params: {
         params.categories
           .filter((cat) => !isDemoBusinessId(cat.businessId))
           .forEach((cat) => {
-            batch.set(doc(db, 'categories', cat.id), sanitizeForFirestore(cat));
+            ops.push({ ref: doc(db, 'categories', cat.id), data: sanitizeForFirestore(cat) });
             counts.categories++;
           });
       }
@@ -1411,7 +1584,7 @@ export async function seedInitialTenantDataToFirestore(params: {
       params.locations
         .filter((l) => !isDemoBusinessId(l.businessId))
         .forEach((l) => {
-          batch.set(doc(db, 'locations', l.id), sanitizeForFirestore(l));
+          ops.push({ ref: doc(db, 'locations', l.id), data: sanitizeForFirestore(l) });
           counts.locations++;
         });
 
@@ -1419,23 +1592,28 @@ export async function seedInitialTenantDataToFirestore(params: {
         .filter((c) => !isDemoBusinessId(c.businessId))
         .forEach((c) => {
           const maskedCashier = { ...c, pin: '••••••••' };
-          batch.set(doc(db, 'cashiers', c.id), sanitizeForFirestore(maskedCashier));
+          ops.push({ ref: doc(db, 'cashiers', c.id), data: sanitizeForFirestore(maskedCashier) });
           counts.cashiers++;
         });
 
       params.transactions
         .filter((t) => !isDemoBusinessId(t.businessId))
         .forEach((t) => {
-          batch.set(doc(db, 'transactions', t.id), sanitizeForFirestore(t));
+          ops.push({ ref: doc(db, 'transactions', t.id), data: sanitizeForFirestore(t) });
           counts.transactions++;
         });
 
-      await batch.commit();
+      for (let i = 0; i < ops.length; i += FIRESTORE_BATCH_LIMIT) {
+        const chunk = ops.slice(i, i + FIRESTORE_BATCH_LIMIT);
+        const batch = writeBatch(db);
+        chunk.forEach(({ ref, data }) => batch.set(ref, data));
+        await batch.commit();
+      }
       return { seeded: true, counts };
     }
     return { seeded: false, counts: { existing: 1 } };
   } catch (error) {
-    console.warn('Tenant data initial seed check/write in Firestore:', error);
+    logFirestoreErrorInfo(error, OperationType.WRITE, 'seed_initial_tenant_data');
     return { seeded: false, counts };
   }
 }
@@ -1621,8 +1799,8 @@ export async function saveBrandingSlotToFirestore(
     }
     return { ok: true };
   } catch (error: any) {
+    logFirestoreErrorInfo(error, OperationType.WRITE, `platform_settings/${docId}`);
     const message = error?.message || 'Failed to persist branding slot asset to Firestore.';
-    console.warn(`Failed to save branding slot ${slotAsset.slotId} to Firestore:`, error);
     return { ok: false, error: message };
   }
 }
@@ -1682,8 +1860,8 @@ export async function clearAllBrandingSlotsInFirestore(
     }
     return { ok: true };
   } catch (error: any) {
+    logFirestoreErrorInfo(error, OperationType.WRITE, 'platform_settings');
     const message = error?.message || 'Failed to reset platform branding slots in Firestore.';
-    console.warn('Failed to clear all branding slots in Firestore:', error);
     return { ok: false, error: message };
   }
 }
@@ -1708,8 +1886,8 @@ export async function savePlatformSettingsToFirestore(
     }
     return { ok: true };
   } catch (error: any) {
+    logFirestoreErrorInfo(error, OperationType.WRITE, 'platform_settings/global');
     const message = error?.message || 'Failed to persist platform branding to Firestore.';
-    console.warn('Failed to save platform settings to Firestore:', error);
     return { ok: false, error: message };
   }
 }
@@ -1861,8 +2039,8 @@ export async function savePricingTiersToFirestore(
     );
     return { ok: true };
   } catch (error: any) {
+    logFirestoreErrorInfo(error, OperationType.WRITE, `platform_settings/${PRICING_TIERS_DOC_ID}`);
     const message = error?.message || 'Failed to persist global pricing tiers to Firestore.';
-    console.warn('Failed to save pricing tiers to Firestore:', error);
     return { ok: false, error: message };
   }
 }
@@ -1927,7 +2105,7 @@ export function subscribeToTenantCustomers(
         if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
         return;
       }
-      console.warn('Firestore customer real-time subscription error:', error);
+      logFirestoreErrorInfo(error, OperationType.LIST, 'customers');
     }
   );
 }
@@ -1941,12 +2119,11 @@ export async function getTenantCustomersFromFirestore(businessId: string): Promi
     snap.forEach((d) => customers.push(d.data() as Customer));
     return customers;
   } catch (error) {
-    if (isFirestoreQuotaError(error)) {
-      markFirestoreQuotaExceeded();
+    if (!auth.currentUser || isFirestoreQuotaError(error)) {
+      if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
       return [];
     }
-    console.warn('Failed to get tenant customers from Firestore:', error);
-    return [];
+    handleFirestoreError(error, OperationType.LIST, 'customers');
   }
 }
 
@@ -2010,7 +2187,7 @@ export function subscribeToTenantSuppliers(
         if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
         return;
       }
-      console.warn('Firestore supplier real-time subscription error:', error);
+      logFirestoreErrorInfo(error, OperationType.LIST, 'suppliers');
     }
   );
 }
@@ -2024,12 +2201,11 @@ export async function getTenantSuppliersFromFirestore(businessId: string): Promi
     snap.forEach((d) => suppliers.push(d.data() as Supplier));
     return suppliers;
   } catch (error) {
-    if (isFirestoreQuotaError(error)) {
-      markFirestoreQuotaExceeded();
+    if (!auth.currentUser || isFirestoreQuotaError(error)) {
+      if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
       return [];
     }
-    console.warn('Failed to get tenant suppliers from Firestore:', error);
-    return [];
+    handleFirestoreError(error, OperationType.LIST, 'suppliers');
   }
 }
 

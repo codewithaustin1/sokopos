@@ -548,7 +548,8 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
 
   let cachedAdcToken: { token: string; expiresAt: number } | null = null;
   let cachedServiceAccountToken: { token: string; expiresAt: number } | null = null;
-  let gcpTokenFirestoreDenied = false;
+  let gcpTokenFirestoreCooldownUntil = 0;
+  const GCP_FIRESTORE_DENIED_COOLDOWN_MS = 5 * 60 * 1000;
   let serviceAccountDenied = false;
   let lastFirestoreHydrationAt = 0;
 
@@ -882,7 +883,7 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
     if (saToken) {
       return { token: saToken, source: 'service_account' };
     }
-    if (!gcpTokenFirestoreDenied) {
+    if (Date.now() >= gcpTokenFirestoreCooldownUntil) {
       const adcToken = await getGcpAccessToken();
       if (adcToken) {
         return { token: adcToken, source: 'adc' };
@@ -975,7 +976,8 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
         });
         if (!resp.ok) {
           if ((resp.status === 401 || resp.status === 403) && admin.source === 'adc') {
-            gcpTokenFirestoreDenied = true;
+            cachedAdcToken = null;
+            gcpTokenFirestoreCooldownUntil = Date.now() + GCP_FIRESTORE_DENIED_COOLDOWN_MS;
           }
           break;
         }
@@ -1047,7 +1049,8 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
         });
         if (resp.ok) return true;
         if ((resp.status === 401 || resp.status === 403) && source === 'adc') {
-          gcpTokenFirestoreDenied = true;
+          cachedAdcToken = null;
+          gcpTokenFirestoreCooldownUntil = Date.now() + GCP_FIRESTORE_DENIED_COOLDOWN_MS;
         }
         const hasNext = i < candidates.length - 1;
         if (!hasNext) {
@@ -3847,7 +3850,8 @@ Extract:
         }
 
         if ((resp.status === 401 || resp.status === 403) && source === 'adc') {
-          gcpTokenFirestoreDenied = true;
+          cachedAdcToken = null;
+          gcpTokenFirestoreCooldownUntil = Date.now() + GCP_FIRESTORE_DENIED_COOLDOWN_MS;
           continue;
         }
 
@@ -3922,7 +3926,8 @@ Extract:
           return fromFirestoreDoc(doc);
         }
         if ((resp.status === 401 || resp.status === 403) && source === 'adc') {
-          gcpTokenFirestoreDenied = true;
+          cachedAdcToken = null;
+          gcpTokenFirestoreCooldownUntil = Date.now() + GCP_FIRESTORE_DENIED_COOLDOWN_MS;
           continue;
         }
         if (resp.status === 404) {
@@ -3956,7 +3961,8 @@ Extract:
           return docs.map((d: any) => fromFirestoreDoc(d)).filter(Boolean) as Record<string, any>[];
         }
         if ((resp.status === 401 || resp.status === 403) && source === 'adc') {
-          gcpTokenFirestoreDenied = true;
+          cachedAdcToken = null;
+          gcpTokenFirestoreCooldownUntil = Date.now() + GCP_FIRESTORE_DENIED_COOLDOWN_MS;
           continue;
         }
       } catch {
@@ -3998,7 +4004,8 @@ Extract:
       });
       if (!resp.ok) {
         if ((resp.status === 401 || resp.status === 403) && admin.source === 'adc') {
-          gcpTokenFirestoreDenied = true;
+          cachedAdcToken = null;
+          gcpTokenFirestoreCooldownUntil = Date.now() + GCP_FIRESTORE_DENIED_COOLDOWN_MS;
         }
         return [];
       }

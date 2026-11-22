@@ -9110,7 +9110,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           console.warn('Sync matched biz lastLoginAt note:', e)
         );
       } else {
-        saveBusinessToFirestore(matchedBiz).catch((e) => console.warn('Sync matched biz note:', e));
+        ensureBusinessDocInFirestore(matchedBiz, normalizedEmail).catch((e) =>
+          console.warn('Sync matched biz note:', e)
+        );
       }
       if (uniqueConflicts.length > 0) {
         deleteBusinessConflictsFromFirestore(uniqueConflicts).catch((e) =>
