@@ -95,7 +95,9 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     analyticsTargets,
     analyticsSavedViews,
     isBiSyncing,
+    isBiDataLoading,
     biLastSyncedAt,
+    refreshTenantBiData,
     syncAnalyticsRollups,
     saveAnalyticsTarget,
     saveAnalyticsSavedView,
@@ -181,12 +183,18 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     };
   }, [viewMode]);
 
-  // Hydrate older cloud history on demand if user chooses a window > 30d
+  // Load BI rollups, targets, and saved views on demand (15-min TTL cached)
   useEffect(() => {
     if (isDemoSession) return;
-    const thirtyDaysAgoMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    refreshTenantBiData(false).catch(() => {});
+  }, [isDemoSession, refreshTenantBiData]);
+
+  // Hydrate older cloud history on demand if user chooses a window > 7d
+  useEffect(() => {
+    if (isDemoSession) return;
+    const sevenDaysAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const needsOlder =
-      dateRange.preset === 'all' || dateRange.start.getTime() < thirtyDaysAgoMs;
+      dateRange.preset === 'all' || dateRange.start.getTime() < sevenDaysAgoMs;
     if (!needsOlder) return;
 
     const startIso = dateRange.start.toISOString();
@@ -562,12 +570,15 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
           {/* Cloud Rollup Sync Icon Button */}
           <button
             type="button"
-            onClick={() => syncAnalyticsRollups(false)}
-            disabled={isBiSyncing}
-            title="Sync daily P&L rollup snapshots to Firestore"
+            onClick={() => {
+              syncAnalyticsRollups(false);
+              refreshTenantBiData(true).catch(() => {});
+            }}
+            disabled={isBiSyncing || isBiDataLoading}
+            title="Sync & refresh daily P&L rollup snapshots from Firestore"
             className="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition cursor-pointer disabled:opacity-50"
           >
-            <RefreshCw className={`w-4 h-4 ${isBiSyncing ? 'animate-spin text-blue-600' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${isBiSyncing || isBiDataLoading ? 'animate-spin text-blue-600' : ''}`} />
           </button>
 
           {/* Grouped Tools Dropdown */}

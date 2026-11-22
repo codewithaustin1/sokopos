@@ -162,11 +162,11 @@ import {
   subscribeToBusinessDocument,
   subscribeToPaymentRecord,
   PaymentRecordSnapshot,
-  subscribeToAnalyticsRollups,
+  getTenantAnalyticsRollupsFromFirestore,
   upsertAnalyticsDailyRollupsBatch,
-  subscribeToAnalyticsTargets,
+  getTenantAnalyticsTargetsFromFirestore,
   saveAnalyticsTargetToFirestore,
-  subscribeToAnalyticsSavedViews,
+  getTenantAnalyticsSavedViewsFromFirestore,
   saveAnalyticsSavedViewToFirestore,
   deleteAnalyticsSavedViewFromFirestore,
   flushOutboxMutationToFirestore,
@@ -604,7 +604,9 @@ interface PosContextType {
   analyticsTargets: AnalyticsTarget[];
   analyticsSavedViews: AnalyticsSavedView[];
   isBiSyncing: boolean;
+  isBiDataLoading: boolean;
   biLastSyncedAt: string | null;
+  refreshTenantBiData: (force?: boolean) => Promise<void>;
   syncAnalyticsRollups: (silent?: boolean) => Promise<number>;
   saveAnalyticsTarget: (params: {
     locationId: string;
@@ -1349,6 +1351,60 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       INITIAL_BUSINESSES[0]
     );
   }, [businesses, activeBusinessId]);
+
+  // Primitive identity & memoized tenant authorization keys (prevents listener teardown on array/object updates)
+  const businessesRef = useRef<Business[]>(businesses);
+  businessesRef.current = businesses;
+
+  const firebaseUid = firebaseUser?.uid || null;
+  const firebaseEmail = (firebaseUser?.email || '').toLowerCase().trim();
+  const firebaseEmailVerified = Boolean(firebaseUser?.emailVerified);
+
+  const hasAuthenticatedUser = Boolean(currentUser);
+  const currentUserFirebaseUid = currentUser?.firebaseUid || null;
+  const currentUserProvider = currentUser?.authProvider || null;
+  const currentUserRole = currentUser?.role || null;
+  const currentUserBusinessId = currentUser?.businessId || null;
+
+  const hasActiveCloudSession = Boolean(
+    currentUser && firebaseUid && !isDemoBusinessId(activeBusinessId)
+  );
+
+  const activeTargetBusiness = useMemo(
+    () => (Array.isArray(businesses) ? businesses.find((b) => b.id === activeBusinessId) || null : null),
+    [businesses, activeBusinessId]
+  );
+  const activeTargetOwnerEmail = (activeTargetBusiness?.ownerEmail || '').toLowerCase().trim();
+  const hasActiveTargetBusiness = Boolean(activeTargetBusiness) && currentBusiness?.id === activeBusinessId;
+
+  const isActiveTenantSubscriptionAuthorized = useMemo(() => {
+    if (!firebaseUid || !hasAuthenticatedUser || !activeBusinessId || isDemoBusinessId(activeBusinessId)) {
+      return false;
+    }
+    const isSA =
+      firebaseEmail === SUPER_ADMIN_EMAIL.toLowerCase() || currentUserRole === 'super_admin';
+    if (isSA) return true;
+    if (!firebaseEmailVerified) return false;
+    if (activeBusinessId === 'biz-upfront') return false;
+    if (currentUserProvider !== 'firebase' || currentUserFirebaseUid !== firebaseUid) {
+      return false;
+    }
+    const ownsActiveBiz = Boolean(activeTargetOwnerEmail && activeTargetOwnerEmail === firebaseEmail);
+    if (currentUserBusinessId !== activeBusinessId && !ownsActiveBiz) return false;
+    if (activeTargetOwnerEmail && !ownsActiveBiz) return false;
+    return true;
+  }, [
+    firebaseUid,
+    firebaseEmail,
+    firebaseEmailVerified,
+    hasAuthenticatedUser,
+    activeBusinessId,
+    currentUserRole,
+    currentUserProvider,
+    currentUserFirebaseUid,
+    currentUserBusinessId,
+    activeTargetOwnerEmail,
+  ]);
 
   const setActiveBusinessId = (bizId: string) => {
     if (!isSuperAdmin && currentUser && currentUser.businessId !== bizId) {
@@ -4576,7 +4632,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [allAnalyticsTargets, setAllAnalyticsTargets] = useState<AnalyticsTarget[]>([]);
   const [allAnalyticsSavedViews, setAllAnalyticsSavedViews] = useState<AnalyticsSavedView[]>([]);
   const [isBiSyncing, setIsBiSyncing] = useState(false);
+  const [isBiDataLoading, setIsBiDataLoading] = useState(false);
   const [biLastSyncedAt, setBiLastSyncedAt] = useState<string | null>(null);
+  const lastBiFetchRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
     if (!isIdbHydratedRef.current) return;
@@ -7269,7 +7327,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Inactivity timeout handler (15 minutes) - Edge Case 4
   useEffect(() => {
-    if (!currentUser) return;
+    if (!hasAuthenticatedUser) return;
 
     let timeoutId: NodeJS.Timeout;
     const INACTIVITY_LIMIT_MS = 15 * 60 * 1000; // 15 minutes
@@ -7294,7 +7352,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       clearTimeout(timeoutId);
       events.forEach((evt) => window.removeEventListener(evt, throttledResetTimer));
     };
-  }, [currentUser, forceLogoutSession]);
+  }, [hasAuthenticatedUser, forceLogoutSession]);
 
   // Edge Case 4: Detect abnormal termination / system restart while a shift was open
   useEffect(() => {
@@ -7873,8 +7931,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Automated outbox retry loop: checks every 10 seconds for pending or due exponential-backoff mutations
   useEffect(() => {
-    const hasActiveSession = Boolean(currentUser && auth.currentUser && !isDemoBusinessId(activeBusinessId));
-    if (!isOnline || !hasActiveSession || !activeBusinessId || !isStorageHydrated) return;
+    if (!isOnline || !hasActiveCloudSession || !auth.currentUser || !activeBusinessId || !isStorageHydrated) return;
 
     const intervalId = setInterval(() => {
       triggerCloudSync(true).catch((err) =>
@@ -7883,7 +7940,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }, 10000);
 
     return () => clearInterval(intervalId);
-  }, [isOnline, currentUser, activeBusinessId, isStorageHydrated, triggerCloudSync]);
+  }, [isOnline, hasActiveCloudSession, activeBusinessId, isStorageHydrated, triggerCloudSync]);
 
   // Automated sync on network reconnect (online/offline) and tab focus/visibility
   useEffect(() => {
@@ -7905,8 +7962,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     const handleVisibilityOrFocus = () => {
-      const hasActiveSession = Boolean(currentUser && auth.currentUser && !isDemoBusinessId(activeBusinessId));
-      if (document.visibilityState === 'visible' && navigator.onLine && hasActiveSession && activeBusinessId) {
+      if (document.visibilityState === 'visible' && navigator.onLine && hasActiveCloudSession && auth.currentUser && activeBusinessId) {
         triggerCloudSync(true).catch((err) =>
           console.warn('Auto-sync on visibility/focus error:', err)
         );
@@ -7924,7 +7980,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('focus', handleVisibilityOrFocus);
     };
-  }, [triggerCloudSync, showToast, activeBusinessId, currentUser]);
+  }, [triggerCloudSync, showToast, activeBusinessId, hasActiveCloudSession]);
 
   // 13.b Firestore Row-Level Security State & Tenant Data Synchronization
   const [isFirestoreConnected, setIsFirestoreConnected] = useState<boolean>(false);
@@ -7945,11 +8001,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const refreshAllBusinessesForSuperAdmin = useCallback(
     async (force = false): Promise<Business[]> => {
-      if (!isOnline || !auth.currentUser) return businesses;
+      if (!isOnline || !auth.currentUser) return businessesRef.current;
       const email = (auth.currentUser.email || '').trim().toLowerCase();
-      if (email !== SUPER_ADMIN_EMAIL.toLowerCase()) return businesses;
+      if (email !== SUPER_ADMIN_EMAIL.toLowerCase()) return businessesRef.current;
       if (!force && Date.now() - lastBusinessesFetchRef.current < ON_DEMAND_CACHE_TTL_MS) {
-        return businesses;
+        return businessesRef.current;
       }
       try {
         const remoteBizs = await getBusinessesFromFirestore();
@@ -7973,9 +8029,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       } catch (err) {
         console.warn('Super Admin businesses refresh notice:', err);
       }
-      return businesses;
+      return businessesRef.current;
     },
-    [isOnline, businesses]
+    [isOnline]
   );
 
   const refreshTenantCategories = useCallback(
@@ -8079,9 +8135,73 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     [activeBusinessId, isOnline]
   );
 
-  // Test Firestore Connection once and load strictly the signed-in user's business profile (no full-collection scan)
+  const refreshTenantBiData = useCallback(
+    async (force = false) => {
+      if (
+        !isOnline ||
+        !auth.currentUser ||
+        !activeBusinessId ||
+        isDemoBusinessId(activeBusinessId) ||
+        isFirestoreQuotaCooldownActive()
+      ) {
+        return;
+      }
+      const lastFetched = lastBiFetchRef.current[activeBusinessId] || 0;
+      if (!force && Date.now() - lastFetched < ON_DEMAND_CACHE_TTL_MS) {
+        return;
+      }
+      setIsBiDataLoading(true);
+      try {
+        const [remoteRollups, remoteTargets, remoteViews] = await Promise.all([
+          getTenantAnalyticsRollupsFromFirestore(activeBusinessId),
+          getTenantAnalyticsTargetsFromFirestore(activeBusinessId),
+          getTenantAnalyticsSavedViewsFromFirestore(activeBusinessId),
+        ]);
+        lastBiFetchRef.current[activeBusinessId] = Date.now();
+
+        setAllAnalyticsRollups((prev) => {
+          const other = prev.filter((r) => r.businessId !== activeBusinessId);
+          const map = new Map<string, AnalyticsDailyRollup>();
+          prev
+            .filter((r) => r.businessId === activeBusinessId)
+            .forEach((r) => map.set(r.id, r));
+          remoteRollups.forEach((r) => map.set(r.id, r));
+          return [...Array.from(map.values()), ...other];
+        });
+
+        setAllAnalyticsTargets((prev) => {
+          const other = prev.filter((t) => t.businessId !== activeBusinessId);
+          const map = new Map<string, AnalyticsTarget>();
+          prev
+            .filter((t) => t.businessId === activeBusinessId)
+            .forEach((t) => map.set(t.id, t));
+          remoteTargets.forEach((t) => map.set(t.id, t));
+          return [...Array.from(map.values()), ...other];
+        });
+
+        setAllAnalyticsSavedViews((prev) => {
+          const other = prev.filter((v) => v.businessId !== activeBusinessId);
+          const map = new Map<string, AnalyticsSavedView>();
+          prev
+            .filter((v) => v.businessId === activeBusinessId)
+            .forEach((v) => map.set(v.id, v));
+          remoteViews.forEach((v) => map.set(v.id, v));
+          return [...Array.from(map.values()), ...other];
+        });
+
+        setBiLastSyncedAt(new Date().toISOString());
+      } catch (err) {
+        console.warn('On-demand BI fetch notice:', err);
+      } finally {
+        setIsBiDataLoading(false);
+      }
+    },
+    [activeBusinessId, isOnline]
+  );
+
+  // Test Firestore Connection once per signed-in user identity and load scoped business profile (no full-collection scan)
   useEffect(() => {
-    if (!firebaseUser || !auth.currentUser) {
+    if (!firebaseUid || !auth.currentUser) {
       return;
     }
     let cancelled = false;
@@ -8093,7 +8213,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setIsFirestoreConnected(connected);
 
       if (!connected || !auth.currentUser) return;
-      const userEmail = (auth.currentUser.email || '').toLowerCase().trim();
+      const userEmail = firebaseEmail || (auth.currentUser.email || '').toLowerCase().trim();
       if (!userEmail) return;
 
       try {
@@ -8143,39 +8263,26 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return () => {
       cancelled = true;
     };
-  }, [firebaseUser]);
+  }, [firebaseUid, firebaseEmail, firebaseEmailVerified]);
 
-  // Real-time Firestore Tenant Subscriptions (3 core live streams: products, locations, 30-day transactions)
-  // Categories, staff, customers, and suppliers load on demand with 15-min TTL session caching.
+  // Real-time Firestore Tenant Subscriptions (3 core live streams: products, locations, 7-day transactions)
+  // Categories, staff, customers, suppliers, and BI rollups/targets/views load on demand with 15-min TTL caching.
   useEffect(() => {
-    if (!isOnline || isFirebaseAuthLoading || !currentUser || !firebaseUser || !auth.currentUser) return;
-    if (!activeBusinessId || isDemoBusinessId(activeBusinessId)) return;
-
-    const signedInEmail = (auth.currentUser.email || '').toLowerCase().trim();
-    const isSA = signedInEmail === SUPER_ADMIN_EMAIL.toLowerCase() || currentUser.role === 'super_admin';
-
-    // Non-Super-Admin tenants require verified email & matching tenant scope before attaching listeners
-    if (!isSA && !auth.currentUser.emailVerified) return;
-    if (!isSA && activeBusinessId === 'biz-upfront') return;
-
-    const targetBizObj = businesses.find((b) => b.id === activeBusinessId);
-    const ownsActiveBiz = Boolean(
-      targetBizObj?.ownerEmail && targetBizObj.ownerEmail.toLowerCase().trim() === signedInEmail
-    );
-    if (!isSA) {
-      if (currentUser.authProvider !== 'firebase' || currentUser.firebaseUid !== auth.currentUser.uid) {
-        return;
-      }
-      if (currentUser.businessId !== activeBusinessId && !ownsActiveBiz) return;
-      if (targetBizObj?.ownerEmail && !ownsActiveBiz) return;
+    if (
+      !isOnline ||
+      isFirebaseAuthLoading ||
+      !firebaseUid ||
+      !auth.currentUser ||
+      !activeBusinessId ||
+      isDemoBusinessId(activeBusinessId) ||
+      !isActiveTenantSubscriptionAuthorized
+    ) {
+      return;
     }
 
     let unsubProducts: (() => void) | undefined;
     let unsubLocations: (() => void) | undefined;
     let unsubTransactions: (() => void) | undefined;
-    let unsubBiRollups: (() => void) | undefined;
-    let unsubBiTargets: (() => void) | undefined;
-    let unsubBiViews: (() => void) | undefined;
 
     // Session-cached 1x fetches for static metadata (categories & staff)
     refreshTenantCategories(false).catch(() => {});
@@ -8285,40 +8392,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             });
           }
         },
-        { windowDays: 30, maxDocs: 500 }
+        { windowDays: 7, maxDocs: 200 }
       );
-
-      unsubBiRollups = subscribeToAnalyticsRollups(activeBusinessId, (remoteRollups) => {
-        setAllAnalyticsRollups((prev) => {
-          const other = prev.filter((r) => r.businessId !== activeBusinessId);
-          const map = new Map<string, AnalyticsDailyRollup>();
-          prev
-            .filter((r) => r.businessId === activeBusinessId)
-            .forEach((r) => map.set(r.id, r));
-          remoteRollups.forEach((r) => map.set(r.id, r));
-          return [...Array.from(map.values()), ...other];
-        });
-        setBiLastSyncedAt(new Date().toISOString());
-      });
-
-      unsubBiTargets = subscribeToAnalyticsTargets(activeBusinessId, (remoteTargets) => {
-        setAllAnalyticsTargets((prev) => {
-          const other = prev.filter((t) => t.businessId !== activeBusinessId);
-          const map = new Map<string, AnalyticsTarget>();
-          prev
-            .filter((t) => t.businessId === activeBusinessId)
-            .forEach((t) => map.set(t.id, t));
-          remoteTargets.forEach((t) => map.set(t.id, t));
-          return [...Array.from(map.values()), ...other];
-        });
-      });
-
-      unsubBiViews = subscribeToAnalyticsSavedViews(activeBusinessId, (remoteViews) => {
-        setAllAnalyticsSavedViews((prev) => {
-          const other = prev.filter((v) => v.businessId !== activeBusinessId);
-          return [...remoteViews, ...other];
-        });
-      });
     } catch (subErr) {
       console.warn('Firestore subscription notice:', subErr);
     }
@@ -8327,17 +8402,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (unsubProducts) unsubProducts();
       if (unsubLocations) unsubLocations();
       if (unsubTransactions) unsubTransactions();
-      if (unsubBiRollups) unsubBiRollups();
-      if (unsubBiTargets) unsubBiTargets();
-      if (unsubBiViews) unsubBiViews();
     };
   }, [
     activeBusinessId,
     isOnline,
     isFirebaseAuthLoading,
-    firebaseUser,
-    currentUser,
-    businesses,
+    firebaseUid,
+    isActiveTenantSubscriptionAuthorized,
     refreshTenantCategories,
     refreshTenantStaff,
   ]);
@@ -10620,35 +10691,61 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setLivePaymentRecordSnapshot(null);
   }, []);
 
+  const isSubscriptionModalOpenRef = useRef<boolean>(isSubscriptionModalOpen);
+  isSubscriptionModalOpenRef.current = isSubscriptionModalOpen;
+
+  const pendingCheckoutRef = pendingSubscriptionCheckout?.reference || null;
+  const pendingCheckoutBizId = pendingSubscriptionCheckout?.businessId || null;
+  const pendingCheckoutPlanId = pendingSubscriptionCheckout?.planId || null;
+  const pendingTargetOwnerEmail = useMemo(() => {
+    const targetId = pendingCheckoutBizId || activeBusinessId;
+    const target = Array.isArray(businesses) ? businesses.find((b) => b.id === targetId) : null;
+    return (target?.ownerEmail || '').toLowerCase().trim();
+  }, [businesses, pendingCheckoutBizId, activeBusinessId]);
+
+  const isPendingPaymentAuthorized = useMemo(() => {
+    if (!firebaseUid || !hasAuthenticatedUser || !pendingCheckoutRef) return false;
+    const isSA =
+      firebaseEmail === SUPER_ADMIN_EMAIL.toLowerCase() || currentUserRole === 'super_admin';
+    if (isSA) return true;
+    if (!firebaseEmailVerified) return false;
+    if (currentUserProvider !== 'firebase' || currentUserFirebaseUid !== firebaseUid) {
+      return false;
+    }
+    if (pendingCheckoutBizId && pendingCheckoutBizId !== activeBusinessId) return false;
+    if (!pendingTargetOwnerEmail || pendingTargetOwnerEmail !== firebaseEmail) return false;
+    return true;
+  }, [
+    firebaseUid,
+    firebaseEmail,
+    firebaseEmailVerified,
+    hasAuthenticatedUser,
+    pendingCheckoutRef,
+    currentUserRole,
+    currentUserProvider,
+    currentUserFirebaseUid,
+    pendingCheckoutBizId,
+    activeBusinessId,
+    pendingTargetOwnerEmail,
+  ]);
+
   // Real-time Firestore listener on active business document so backend webhook/poller/callback
   // subscription updates (and late M-Pesa receipt codes) push straight into client UI immediately.
   useEffect(() => {
-    if (!isOnline || isFirebaseAuthLoading || !currentUser || !firebaseUser || !auth.currentUser) {
+    if (
+      !isOnline ||
+      isFirebaseAuthLoading ||
+      !firebaseUid ||
+      !auth.currentUser ||
+      !activeBusinessId ||
+      isDemoBusinessId(activeBusinessId) ||
+      !hasActiveTargetBusiness ||
+      !isActiveTenantSubscriptionAuthorized
+    ) {
       return;
     }
+
     const bizId = activeBusinessId;
-    if (!bizId || isDemoBusinessId(bizId) || currentBusiness?.id !== bizId) {
-      return;
-    }
-
-    const signedInEmail = (auth.currentUser.email || '').toLowerCase().trim();
-    const isSA = signedInEmail === SUPER_ADMIN_EMAIL.toLowerCase() || currentUser.role === 'super_admin';
-
-    if (!isSA && !auth.currentUser.emailVerified) return;
-    if (!isSA && bizId === 'biz-upfront') return;
-
-    const targetBizObj = businesses.find((b) => b.id === bizId);
-    if (!targetBizObj) return;
-
-    if (!isSA) {
-      if (currentUser.authProvider !== 'firebase' || currentUser.firebaseUid !== auth.currentUser.uid) {
-        return;
-      }
-      if (currentUser.businessId !== bizId) return;
-      const targetOwnerEmail = (targetBizObj.ownerEmail || '').toLowerCase().trim();
-      if (!targetOwnerEmail || targetOwnerEmail !== signedInEmail) return;
-    }
-
     const unsub = subscribeToBusinessDocument(bizId, (remoteBiz) => {
       setBusinesses((prev) => {
         let changed = false;
@@ -10687,60 +10784,33 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [
     isOnline,
     isFirebaseAuthLoading,
-    currentUser,
-    firebaseUser,
+    firebaseUid,
     activeBusinessId,
-    currentBusiness?.id,
-    businesses,
+    hasActiveTargetBusiness,
+    isActiveTenantSubscriptionAuthorized,
   ]);
 
   // Real-time Firestore listener on the active pending payment_records/{reference}
   // so modal-closed, cross-reload, or late M-Pesa receipt updates sync live without polling delay.
   useEffect(() => {
-    const pendingRef = pendingSubscriptionCheckout?.reference;
     if (
       !isOnline ||
       isFirebaseAuthLoading ||
-      !currentUser ||
-      !firebaseUser ||
+      !firebaseUid ||
       !auth.currentUser ||
-      !pendingRef
+      !pendingCheckoutRef ||
+      !isPendingPaymentAuthorized
     ) {
       setLivePaymentRecordSnapshot(null);
       return;
     }
 
-    const signedInEmail = (auth.currentUser.email || '').toLowerCase().trim();
-    const isSA = signedInEmail === SUPER_ADMIN_EMAIL.toLowerCase() || currentUser.role === 'super_admin';
-
-    if (!isSA && !auth.currentUser.emailVerified) {
-      setLivePaymentRecordSnapshot(null);
-      return;
-    }
-    if (!isSA) {
-      if (currentUser.authProvider !== 'firebase' || currentUser.firebaseUid !== auth.currentUser.uid) {
-        setLivePaymentRecordSnapshot(null);
-        return;
-      }
-      const pendingBizId = pendingSubscriptionCheckout?.businessId;
-      if (pendingBizId && pendingBizId !== activeBusinessId) {
-        setLivePaymentRecordSnapshot(null);
-        return;
-      }
-      const targetBizObj = businesses.find((b) => b.id === (pendingBizId || activeBusinessId));
-      const targetOwnerEmail = (targetBizObj?.ownerEmail || '').toLowerCase().trim();
-      if (!targetOwnerEmail || targetOwnerEmail !== signedInEmail) {
-        setLivePaymentRecordSnapshot(null);
-        return;
-      }
-    }
-
-    const unsub = subscribeToPaymentRecord(pendingRef, (record) => {
+    const unsub = subscribeToPaymentRecord(pendingCheckoutRef, (record) => {
       setLivePaymentRecordSnapshot(record);
 
       if (record.status === 'success') {
-        const targetId = record.businessId || pendingSubscriptionCheckout.businessId;
-        const resolvedTier = normalizePlanTier(record.planId || pendingSubscriptionCheckout.planId);
+        const targetId = record.businessId || pendingCheckoutBizId;
+        const resolvedTier = normalizePlanTier(record.planId || pendingCheckoutPlanId || 'free');
         if (targetId && !isDemoBusinessId(targetId)) {
           setBusinesses((prev) =>
             prev.map((b) => {
@@ -10776,7 +10846,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           );
         }
 
-        if (!isSubscriptionModalOpen && !notifiedPaymentRefsRef.current.has(record.reference)) {
+        if (!isSubscriptionModalOpenRef.current && !notifiedPaymentRefsRef.current.has(record.reference)) {
           notifiedPaymentRefsRef.current.add(record.reference);
           showToast(
             record.mpesaReceiptNumber
@@ -10787,7 +10857,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       } else if (
         (record.status === 'failed' || record.status === 'abandoned') &&
-        !isSubscriptionModalOpen &&
+        !isSubscriptionModalOpenRef.current &&
         !notifiedPaymentRefsRef.current.has(`${record.reference}-fail`)
       ) {
         notifiedPaymentRefsRef.current.add(`${record.reference}-fail`);
@@ -10802,14 +10872,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [
     isOnline,
     isFirebaseAuthLoading,
-    currentUser,
-    firebaseUser,
-    activeBusinessId,
-    businesses,
-    pendingSubscriptionCheckout?.reference,
-    pendingSubscriptionCheckout?.businessId,
-    pendingSubscriptionCheckout?.planId,
-    isSubscriptionModalOpen,
+    firebaseUid,
+    pendingCheckoutRef,
+    pendingCheckoutBizId,
+    pendingCheckoutPlanId,
+    isPendingPaymentAuthorized,
     showToast,
   ]);
 
@@ -11128,7 +11195,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         analyticsTargets,
         analyticsSavedViews,
         isBiSyncing,
+        isBiDataLoading,
         biLastSyncedAt,
+        refreshTenantBiData,
         syncAnalyticsRollups,
         saveAnalyticsTarget,
         saveAnalyticsSavedView,

@@ -1330,7 +1330,7 @@ export function subscribeToTenantTransactions(
   if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
     return () => {};
   }
-  const { windowDays = 30, maxDocs = 500 } = options;
+  const { windowDays = 7, maxDocs = 200 } = options;
   const cutoffIso = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
   const path = 'transactions';
 
@@ -2364,6 +2364,29 @@ export function subscribeToAnalyticsRollups(
   );
 }
 
+export async function getTenantAnalyticsRollupsFromFirestore(
+  businessId: string
+): Promise<AnalyticsDailyRollup[]> {
+  if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
+    return [];
+  }
+  const path = 'analytics_daily_rollups';
+  try {
+    const q = query(collection(db, path), where('businessId', '==', businessId), limit(400));
+    const snap = await getDocs(q);
+    const items: AnalyticsDailyRollup[] = [];
+    snap.forEach((d) => items.push(d.data() as AnalyticsDailyRollup));
+    items.sort((a, b) => (b.dateKey || '').localeCompare(a.dateKey || ''));
+    return items;
+  } catch (error) {
+    if (!auth.currentUser || isFirestoreQuotaError(error)) {
+      if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+      return [];
+    }
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
 export async function upsertAnalyticsDailyRollupsBatch(
   rollups: AnalyticsDailyRollup[]
 ): Promise<number> {
@@ -2436,6 +2459,28 @@ export function subscribeToAnalyticsTargets(
   );
 }
 
+export async function getTenantAnalyticsTargetsFromFirestore(
+  businessId: string
+): Promise<AnalyticsTarget[]> {
+  if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
+    return [];
+  }
+  const path = 'analytics_targets';
+  try {
+    const q = query(collection(db, path), where('businessId', '==', businessId), limit(100));
+    const snap = await getDocs(q);
+    const items: AnalyticsTarget[] = [];
+    snap.forEach((d) => items.push(d.data() as AnalyticsTarget));
+    return items;
+  } catch (error) {
+    if (!auth.currentUser || isFirestoreQuotaError(error)) {
+      if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+      return [];
+    }
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
 export async function saveAnalyticsTargetToFirestore(target: AnalyticsTarget): Promise<void> {
   if (!db || !auth.currentUser || isDemoBusinessId(target.businessId) || isDemoRecordId(target.id)) {
     return;
@@ -2489,6 +2534,33 @@ export function subscribeToAnalyticsSavedViews(
       }
     }
   );
+}
+
+export async function getTenantAnalyticsSavedViewsFromFirestore(
+  businessId: string
+): Promise<AnalyticsSavedView[]> {
+  if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
+    return [];
+  }
+  const path = 'analytics_saved_views';
+  try {
+    const q = query(collection(db, path), where('businessId', '==', businessId), limit(100));
+    const snap = await getDocs(q);
+    const items: AnalyticsSavedView[] = [];
+    snap.forEach((d) => items.push(d.data() as AnalyticsSavedView));
+    items.sort(
+      (a, b) =>
+        Number(b.isPinned) - Number(a.isPinned) ||
+        (b.updatedAt || '').localeCompare(a.updatedAt || '')
+    );
+    return items;
+  } catch (error) {
+    if (!auth.currentUser || isFirestoreQuotaError(error)) {
+      if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+      return [];
+    }
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
 }
 
 export async function saveAnalyticsSavedViewToFirestore(view: AnalyticsSavedView): Promise<void> {

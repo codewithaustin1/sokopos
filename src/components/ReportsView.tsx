@@ -6,7 +6,7 @@ import { calculateDateRange } from '../utils/dateRangeUtils';
 import { GlobalTimeRangeSelector } from './reports/GlobalTimeRangeSelector';
 import { ReportViewContainer } from './reports/ReportViewContainer';
 
-const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 export const ReportsView: React.FC = () => {
   const {
@@ -38,9 +38,9 @@ export const ReportsView: React.FC = () => {
 
   useEffect(() => {
     if (isDemoSession) return;
-    const thirtyDaysAgoMs = Date.now() - THIRTY_DAYS_MS;
+    const sevenDaysAgoMs = Date.now() - SEVEN_DAYS_MS;
     const needsOlderHistory =
-      dateRange.preset === 'all' || dateRange.start.getTime() < thirtyDaysAgoMs;
+      dateRange.preset === 'all' || dateRange.start.getTime() < sevenDaysAgoMs;
 
     if (!needsOlderHistory) return;
 
@@ -125,10 +125,10 @@ export const ReportsView: React.FC = () => {
               <History className="w-3.5 h-3.5 text-slate-500 shrink-0" aria-hidden="true" />
               <span>
                 {olderTransactionsLoadedFrom
-                  ? `Showing live 30-day receipts plus archived history from ${new Date(
+                  ? `Showing live 7-day receipts plus archived history from ${new Date(
                       olderTransactionsLoadedFrom
                     ).toLocaleDateString()}.`
-                  : 'Syncing last 30 days live to minimize cloud reads.'}
+                  : 'Syncing last 7 days live (up to 200 receipts) to minimize cloud reads.'}
               </span>
             </div>
             <button
