@@ -45,7 +45,6 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
     products,
     categories,
     currentLocation,
-    currentUser,
     cart,
     addToCart,
     updateCartQuantity,

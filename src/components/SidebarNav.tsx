@@ -38,6 +38,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
     pendingOfflineCount,
     currentUser,
     isSuperAdmin,
+    isDemoSession,
     openReturnsModal,
     setIsAffiliateModalOpen,
     can,
@@ -176,11 +177,11 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
     {
       id: 'superadmin',
       tab: 'super-admin' as const,
-      label: t('nav_super_admin', 'Super-Admin'),
+      label: t('nav_platform_support', 'Platform Support'),
       icon: ShieldAlert,
       badge: null,
       badgeTone: 'neutral' as const,
-      allowed: isSuperAdmin,
+      allowed: isSuperAdmin && !isDemoSession,
       tierLocked: false,
     },
   ].filter((it) => it.allowed);

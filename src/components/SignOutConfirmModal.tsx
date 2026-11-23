@@ -1,6 +1,7 @@
 import React from 'react';
-import { LogOut, AlertTriangle, X, ShieldAlert, ShoppingBag, Clock, Lock } from 'lucide-react';
+import { LogOut, AlertTriangle, X, ShieldAlert, ShoppingBag } from 'lucide-react';
 import { usePos } from '../context/PosContext';
+import { isSuperAdminEmail } from '../data/initialData';
 
 interface SignOutConfirmModalProps {
   isOpen: boolean;
@@ -19,7 +20,7 @@ export const SignOutConfirmModal: React.FC<SignOutConfirmModalProps> = ({
     cartTotal,
     logout,
     activeShift,
-    openShiftManagement,
+    isDemoSession,
   } = usePos();
 
   if (!isOpen || !currentUser) return null;
@@ -66,7 +67,7 @@ export const SignOutConfirmModal: React.FC<SignOutConfirmModalProps> = ({
           <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 flex items-center gap-3">
             <div
               className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
-                currentUser.role === 'super_admin'
+                currentUser.role === 'super_admin' && !isDemoSession
                   ? 'bg-amber-500 text-slate-950'
                   : 'bg-blue-600 text-white'
               }`}
@@ -79,10 +80,17 @@ export const SignOutConfirmModal: React.FC<SignOutConfirmModalProps> = ({
                   {currentUser.name}
                 </span>
                 <span className="text-[11px] capitalize font-medium text-slate-500">
-                  · {currentUser.role.replace('_', ' ')}
+                  ·{' '}
+                  {currentUser.role === 'super_admin'
+                    ? isDemoSession
+                      ? 'Store Manager'
+                      : 'Platform Support'
+                    : currentUser.role.replace('_', ' ')}
                 </span>
               </div>
-              <div className="text-[11px] text-slate-500 truncate">{currentUser.email}</div>
+              <div className="text-[11px] text-slate-500 truncate">
+                {isSuperAdminEmail(currentUser.email) ? 'support@sokopos.co.ke' : currentUser.email}
+              </div>
               <div className="text-[11px] text-slate-500 mt-0.5 truncate">
                 {currentBusiness.name} · {currentLocation.name}
               </div>

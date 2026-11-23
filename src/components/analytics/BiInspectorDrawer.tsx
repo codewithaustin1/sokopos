@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
 import {
   X,
-  Receipt,
   Package,
   Layers,
   RotateCcw,

@@ -109,7 +109,14 @@
         "unit": { "type": "string" },
         "taxRate": { "type": "number" },
         "reorderPoint": { "type": "number" },
-        "description": { "type": "string" }
+        "description": { "type": "string" },
+        "digitaxItemId": { "type": "string", "maxLength": 128 },
+        "etimsItemCode": { "type": "string", "maxLength": 64 },
+        "taxTypeCode": { "type": "string", "enum": ["A", "B", "C", "D", "E"] },
+        "itemClassCode": { "type": "string", "maxLength": 64 },
+        "digitaxSyncedAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string" },
+        "isDeleted": { "type": "boolean" }
       },
       "required": ["id", "businessId", "name", "sku", "sellingPrice"]
     },
@@ -148,7 +155,25 @@
         "paymentMethod": { "type": "string" },
         "status": { "type": "string" },
         "syncedToCloud": { "type": "boolean" },
-        "totalRefunded": { "type": "number" }
+        "totalRefunded": { "type": "number" },
+        "etimsData": {
+          "type": "object",
+          "properties": {
+            "saleId": { "type": "string" },
+            "traderInvoiceNumber": { "type": "string" },
+            "cuSerialNumber": { "type": "string" },
+            "cuInvoiceNumber": { "type": "string" },
+            "receiptNumber": { "type": "string" },
+            "internalData": { "type": "string" },
+            "receiptSignature": { "type": "string" },
+            "etimsUrl": { "type": "string" },
+            "offlineUrl": { "type": "string" },
+            "status": { "type": "string", "enum": ["PENDING", "COMPLETED", "FAILED"] },
+            "taxPin": { "type": "string" },
+            "customerTin": { "type": "string" },
+            "lastError": { "type": "string" }
+          }
+        }
       },
       "required": ["id", "businessId", "receiptNumber", "total", "paymentMethod", "status"]
     },

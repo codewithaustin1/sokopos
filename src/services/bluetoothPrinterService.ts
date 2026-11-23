@@ -4,7 +4,7 @@
  * Direct ESC/POS thermal printing via Web Bluetooth API
  */
 
-import { Transaction, Location, CartItem } from '../types';
+import { Transaction, Location } from '../types';
 import { getItemDiscountedUnitPrice } from '../utils/discountUtils';
 
 // Common Web Bluetooth UUIDs for Thermal Printers

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Lock, ShieldAlert } from 'lucide-react';
+import { Lock } from 'lucide-react';
 import { usePos } from '../../context/PosContext';
 
 interface ShiftSessionClosedCardProps {
@@ -14,10 +14,10 @@ export const ShiftSessionClosedCard: React.FC<ShiftSessionClosedCardProps> = ({
   const { currentLocation, currentUser, currentCashier } = usePos();
 
   // Resolve operator name and formatted role
-  const operatorName = currentUser?.name || currentCashier?.name || 'M. Austin';
-  const rawRole = currentUser?.role || currentCashier?.role || 'super_admin';
+  const operatorName = currentUser?.name || currentCashier?.name || 'Store Manager';
+  const rawRole = currentUser?.role || currentCashier?.role || 'cashier';
   const formattedRole = (() => {
-    if (rawRole === 'super_admin') return 'Super Admin';
+    if (rawRole === 'super_admin') return 'Store Manager';
     if (rawRole === 'business_owner') return 'Business Owner';
     if (rawRole === 'manager') return 'Store Manager';
     if (rawRole === 'supervisor') return 'Shift Supervisor';

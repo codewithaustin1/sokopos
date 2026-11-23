@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, ArrowRightLeft, Building2, Package, CheckCircle2 } from 'lucide-react';
+import { X, ArrowRightLeft, CheckCircle2 } from 'lucide-react';
 import { Product } from '../types';
 import { usePos } from '../context/PosContext';
 

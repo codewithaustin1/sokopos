@@ -44,7 +44,7 @@ export const ShiftInitializationCard: React.FC<ShiftInitializationCardProps> = (
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Display operator details
-  const operatorName = currentCashier?.name || currentUser?.name || 'Platform Administrator / Cashier';
+  const operatorName = currentCashier?.name || currentUser?.name || 'Store Manager / Cashier';
   const operatorInitials =
     currentCashier?.initials ||
     operatorName
@@ -53,7 +53,7 @@ export const ShiftInitializationCard: React.FC<ShiftInitializationCardProps> = (
       .join('')
       .slice(0, 2)
       .toUpperCase() ||
-    'PA';
+    'SM';
   const operatorCode = currentCashier?.code || '1001';
 
   const terminalLocation = currentLocation?.name || 'Garden City';

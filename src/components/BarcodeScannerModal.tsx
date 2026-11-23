@@ -10,7 +10,6 @@ import {
   Flashlight,
   FlashlightOff,
   SwitchCamera,
-  SlidersHorizontal,
   Barcode as BarcodeIcon,
   ShoppingCart,
   History,

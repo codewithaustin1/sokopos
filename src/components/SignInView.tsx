@@ -6,7 +6,6 @@ import {
   Zap,
   Check,
   X,
-  User,
   Delete,
   Eye,
   EyeOff,
@@ -14,28 +13,26 @@ import {
   Mail,
   AlertCircle,
   Loader2,
-  Gift,
   Phone,
-  Share2,
   ShieldCheck,
 } from 'lucide-react';
 import { DEFAULT_PRICING_TIERS } from '../types/pricing';
 import { usePos } from '../context/PosContext';
 import { Cashier } from '../types';
 import { soundFx } from '../utils/audio';
-import { LegalTab } from './LegalAndFaqModal';
+import { LegalTab } from '../data/legalContent';
 import { LegalPageView } from './LegalPageView';
 import { WhatsAppFloatingButton } from './landing/WhatsAppFloatingButton';
 import { AppLogo } from './common/AppLogo';
 import { AppFooter } from './common/AppFooter';
 import { MobileHeaderNav } from './common/MobileHeaderNav';
+import { InteractiveGradientMesh } from './common/InteractiveGradientMesh';
 import { scrollToTop } from '../utils/scrollUtils';
 import {
   getLegalTabFromPath,
   normalizePathname,
   resolveLegacyHashToPath,
 } from '../utils/seoConfig';
-import { SUPER_ADMIN_EMAIL } from '../data/initialData';
 import { PWAInstallButton } from './PWAInstallButton';
 import { AffiliatePortalModal } from './AffiliatePortalModal';
 import {
@@ -101,9 +98,6 @@ interface SignInViewProps {
 export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const {
     currentUser,
-    currentBusiness,
-    loginWithGoogle,
-    loginWithFirebaseGoogle,
     loginWithFirebaseEmailPassword,
     loginWithFirebaseEmailOtp,
     sendPasswordResetEmailAction,
@@ -112,7 +106,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     checkEmailVerificationStatus,
     cancelEmailVerification,
     loginWithCredentials,
-    systemUsers,
     allSystemUsers,
     businesses,
     showToast,
@@ -125,7 +118,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     checkoutAuthRequested,
     setCheckoutAuthRequested,
     appointedDemoCashier,
-    appointedDemoCashierId,
     pricingTiers,
     isAffiliateModalOpen,
     setIsAffiliateModalOpen,
@@ -650,10 +642,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     }, 50);
   };
 
-  const scrollToAuthCard = (targetTab?: 'owner' | 'partner' | 'staff' | 'register') => {
-    openAuthModal(targetTab || 'owner');
-  };
-
   useEffect(() => {
     if (checkoutAuthRequested && !currentUser) {
       setCheckoutAuthRequested(false);
@@ -938,29 +926,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  const handleTerminalSubmit = () => {
-    submitStaffLogin();
-  };
-
-  const handleGoogleSignIn = async () => {
-    trackPlatformEvent('signin_start', {
-      channel: 'google',
-      dedupeKey: 'signin-start',
-      dedupeTtlMs: 15_000,
-    });
-    try {
-      const ok = await loginWithFirebaseGoogle();
-      if (ok) {
-        setIsAuthModalOpen(false);
-        onLoginSuccess?.();
-      }
-    } catch {
-      loginWithGoogle(SUPER_ADMIN_EMAIL, 'Platform Administrator');
-      setIsAuthModalOpen(false);
-      onLoginSuccess?.();
-    }
-  };
-
   const handleEmailFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const email = ownerEmailInput.trim();
@@ -1238,25 +1203,17 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     );
   }
 
-  // Determine staff profiles to show in staff list
-  const displayStaff =
-    systemUsers.length > 0
-      ? systemUsers.slice(0, 4)
-      : [
-          { id: 'staff-101', name: 'John Mutua', code: 'C-101 · Cashier', initials: 'JM', bg: '#28a745' },
-          { id: 'staff-102', name: 'Amina Wanjiru', code: 'C-102 · Manager', initials: 'AW', bg: '#28a745' },
-        ];
-
   return (
     <div
       id="pos-landing-root"
-      className="min-h-full w-full flex flex-col justify-between selection:bg-[#28a745] selection:text-white relative"
+      className="min-h-full w-full flex flex-col justify-between selection:bg-[#28a745] selection:text-white relative overflow-hidden"
       style={{
         backgroundColor: '#f8fafc',
         color: '#090d16',
         fontFamily: '"Bricolage Grotesque", system-ui, -apple-system, "Segoe UI", sans-serif',
       }}
     >
+      <InteractiveGradientMesh />
       {/* Strict Light Mode CSS & Reset matching the design HTML */}
       <style>{`
         #pos-landing-root {
@@ -1313,7 +1270,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           gap: 8px;
           text-decoration: none;
           cursor: pointer;
-          transition: transform 0.12s, background 0.12s, filter 0.12s;
+          transition: transform 0.16s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
         }
         .sp-btn:active {
           transform: scale(0.98);
@@ -1323,7 +1280,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           color: var(--blue-ink);
         }
         .sp-btn-blue:hover {
-          filter: brightness(1.08);
+          filter: brightness(1.06);
+          transform: translateY(-1px);
+          box-shadow: 0 10px 20px -12px rgba(40, 167, 69, 0.55);
+        }
+        .sp-btn-blue:active {
+          transform: scale(0.98);
         }
         .sp-btn-red {
           background: var(--red);
@@ -1339,6 +1301,17 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         }
         .sp-btn-ghost:hover {
           border-color: var(--ink);
+          background-color: rgba(255, 255, 255, 0.9);
+          transform: translateY(-1px);
+        }
+        .sp-btn-ghost:active {
+          transform: scale(0.98);
+        }
+        .sp-btn-ghost svg {
+          transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .sp-btn-ghost:hover svg {
+          transform: translateX(3px);
         }
         .sp-btn-sm {
           padding: 8px 16px;
@@ -1687,38 +1660,66 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           width: 100%;
           margin-top: 10px;
         }
-        /* Reveal Animations & Transitions */
-        .sp-reveal {
-          opacity: 0;
-          transform: translateY(22px);
-          transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-          will-change: opacity, transform;
-        }
-        .sp-reveal.active {
-          opacity: 1;
-          transform: translateY(0);
-        }
-        @keyframes spFadeSlide {
+        /* Reveal Animations & Crisp Fintech Motion */
+        @keyframes spHeroEnter {
           from {
             opacity: 0;
-            transform: translateY(8px);
+            transform: translateY(10px);
           }
           to {
             opacity: 1;
             transform: translateY(0);
           }
         }
-        .animate-sp-fade-slide {
-          animation: spFadeSlide 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        .sp-hero-enter {
+          animation: spHeroEnter 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+          animation-delay: calc(var(--hero-delay, 0) * 55ms);
+        }
+        .sp-reveal {
+          opacity: 0;
+          transform: translateY(18px);
+          transition: opacity 0.54s cubic-bezier(0.16, 1, 0.3, 1), transform 0.54s cubic-bezier(0.16, 1, 0.3, 1);
+          will-change: opacity, transform;
+        }
+        .sp-reveal.active {
+          opacity: 1;
+          transform: translateY(0);
+        }
+        .sp-stagger-item {
+          opacity: 0;
+          transform: translateY(14px);
+          transition:
+            opacity 0.48s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--stagger-index, 0) * 60ms),
+            transform 0.48s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--stagger-index, 0) * 60ms),
+            border-color 0.18s ease,
+            box-shadow 0.18s ease,
+            background-color 0.18s ease,
+            color 0.18s ease;
+        }
+        .sp-reveal.active .sp-stagger-item {
+          opacity: 1;
+          transform: translateY(0);
+        }
+        .sp-reveal.active .sp-stagger-item:hover {
+          transition-delay: 0ms;
+          transition-duration: 0.18s;
         }
         @media (prefers-reduced-motion: reduce) {
-          .sp-reveal {
+          .sp-hero-enter {
+            animation: none;
+            opacity: 1;
+            transform: none;
+          }
+          .sp-reveal,
+          .sp-stagger-item {
             opacity: 1;
             transform: none;
             transition: none;
           }
-          .animate-sp-fade-slide {
-            animation: none;
+          .sp-btn,
+          .sp-btn-ghost svg,
+          .sp-card {
+            transition: none;
           }
         }
         /* Sections */
@@ -1755,6 +1756,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           border: 1px solid var(--line);
           border-radius: 16px;
           padding: 22px;
+        }
+        .sp-card:hover {
+          border-color: #cbd5e1;
+          transform: translateY(-2px);
+          box-shadow: 0 12px 24px -18px rgba(9, 13, 22, 0.22);
         }
         .sp-card h3 {
           margin: 0 0 6px;
@@ -2037,10 +2043,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             <div className="sp-hero-grid">
               {/* Left Column: Value Proposition & Stats */}
               <div className="sp-hero-left flex flex-col items-center lg:items-start text-center lg:text-left">
-                <h1 className="sp-h1 text-balance">
-                  End-of-day totals done in minutes—<span className="sp-hl-money">with M-Pesa, cash, and receipts already matched.</span>
+                <h1 className="sp-h1 text-balance sp-hero-enter" style={{ '--hero-delay': 0 } as React.CSSProperties}>
+                  The fastest way to <span className="sp-hl-money">close your till</span> in Kenya.
                 </h1>
-                <div className="sp-cta">
+                <p className="sp-lead text-balance sp-hero-enter" style={{ '--hero-delay': 1 } as React.CSSProperties}>
+                  Seamlessly match M-Pesa, cash, and receipts on hardware you already own.
+                </p>
+                <div className="sp-cta sp-hero-enter" style={{ '--hero-delay': 2 } as React.CSSProperties}>
                   <button
                     type="button"
                     className="sp-btn sp-btn-blue min-h-[44px] whitespace-nowrap shrink-0"
@@ -2048,7 +2057,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     onClick={handleLaunchDemoSandbox}
                   >
                     <Zap className="w-4 h-4 fill-white shrink-0" />
-                    <span>Test the live till</span>
+                    <span>Switch to Test Mode</span>
                   </button>
                   <button
                     type="button"
@@ -2059,9 +2068,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     <ArrowRight className="w-4 h-4 shrink-0" />
                   </button>
                 </div>
-                <p className="sp-fine">Opens in 5 seconds · Sample stock loaded · No card needed</p>
+                <p className="sp-fine sp-hero-enter" style={{ '--hero-delay': 3 } as React.CSSProperties}>
+                  Opens in 5 seconds · Sample stock loaded · No card needed
+                </p>
 
-                <div className="sp-stats">
+                <div className="sp-stats sp-hero-enter" style={{ '--hero-delay': 4 } as React.CSSProperties}>
                   <div>
                     <b className="font-mono tabular-nums">KES <AnimatedMetricCounter target={25} />M+</b>
                     <span>Rung up monthly</span>
@@ -2082,8 +2093,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               </div>
 
               {/* Right Column: High-Resolution Kenyan POS Showcase Frame */}
-              <div className="w-full">
-                <div className="relative rounded-2xl md:rounded-3xl border border-[#e2e8f0] bg-white shadow-xl shadow-slate-950/5 overflow-hidden transition-all duration-300 hover:shadow-2xl hover:shadow-emerald-950/10">
+              <div className="w-full sp-hero-enter" style={{ '--hero-delay': 2 } as React.CSSProperties}>
+                <div className="relative rounded-2xl md:rounded-3xl border border-[#e2e8f0] bg-white shadow-xl shadow-slate-950/5 overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-emerald-950/10">
                   {/* Top Header Strip */}
                   <div className="px-4 py-2.5 bg-[#f8fafc] border-b border-[#e2e8f0] flex items-center justify-between text-xs">
                     <span className="font-semibold text-[#090d16]">
@@ -2100,15 +2111,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       src={loginBgGraphic || heroKenyanPos}
                       alt="Shop cashier completing an M-Pesa and barcode sale on a tablet POS counter"
                       referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
                     />
-                  </div>
-
-                  {/* Bottom Trust Metadata Strip */}
-                  <div className="px-4 py-3 bg-white border-t border-[#e2e8f0] flex flex-wrap items-center justify-between gap-2 text-xs text-[#475569]">
-                    <span className="font-semibold text-[#090d16]">M-Pesa matched to every sale</span>
-                    <span aria-hidden="true" className="hidden sm:inline text-slate-300">·</span>
-                    <span className="font-semibold text-[#090d16]">KRA eTIMS receipts built in</span>
                   </div>
                 </div>
               </div>
@@ -2126,17 +2130,17 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               Every shilling your customer sends or hands over is tied to its exact receipt—and stays safe in your records even if your internet cuts out.
             </p>
             <div className="sp-grid3">
-              <div className="sp-card">
+              <div className="sp-card sp-stagger-item" style={{ '--stagger-index': 0 } as React.CSSProperties}>
                 <span className="sp-tag sp-hl-money">M-Pesa</span>
                 <h3>Match M-Pesa to the sale</h3>
                 <p>Stop scrolling through confirmation SMS messages at closing time. Confirm Till or STK payments right at the counter.</p>
               </div>
-              <div className="sp-card">
+              <div className="sp-card sp-stagger-item" style={{ '--stagger-index': 1 } as React.CSSProperties}>
                 <span className="sp-tag sp-hl-calm">eTIMS</span>
                 <h3>Print tax-ready receipts</h3>
                 <p>Send eTIMS-ready receipts with KRA verification QR codes through Digitax without re-typing sales at night.</p>
               </div>
-              <div className="sp-card">
+              <div className="sp-card sp-stagger-item" style={{ '--stagger-index': 2 } as React.CSSProperties}>
                 <span className="sp-tag sp-hl-speed">Offline</span>
                 <h3>Never stall a busy queue</h3>
                 <p>When Wi-Fi or fiber drops, your cashier keeps scanning items and printing receipts. Every sale syncs when signal returns.</p>
@@ -2172,19 +2176,19 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               Start on the phone, tablet, or laptop already on your counter. Add a scanner or thermal printer only when your shop needs one.
             </p>
             <div className="sp-hw">
-              <div className="sp-card">
+              <div className="sp-card sp-stagger-item" style={{ '--stagger-index': 0 } as React.CSSProperties}>
                 <h3>Plug in any scanner</h3>
                 <p>Standard USB and Bluetooth barcode scanners ring up items right out of the box.</p>
               </div>
-              <div className="sp-card">
+              <div className="sp-card sp-stagger-item" style={{ '--stagger-index': 1 } as React.CSSProperties}>
                 <h3>Standard receipt printers</h3>
                 <p>Prints cleanly on everyday 58mm and 80mm thermal paper—no proprietary rolls.</p>
               </div>
-              <div className="sp-card">
+              <div className="sp-card sp-stagger-item" style={{ '--stagger-index': 2 } as React.CSSProperties}>
                 <h3>Phones &amp; tablets you own</h3>
                 <p>Open your till in any modern browser without buying locked-in terminals.</p>
               </div>
-              <div className="sp-card">
+              <div className="sp-card sp-stagger-item" style={{ '--stagger-index': 3 } as React.CSSProperties}>
                 <h3>Fast laptop shortcuts</h3>
                 <p>Check out long baskets with keyboard keys when queues build up at peak hours.</p>
               </div>
@@ -2208,27 +2212,27 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
+                  <tr className="sp-stagger-item" style={{ '--stagger-index': 0 } as React.CSSProperties}>
                     <td>Runs on the phone or tablet you already own</td>
                     <td className="y">Yes</td>
                     <td className="n">Costly hardware bundle</td>
                   </tr>
-                  <tr>
+                  <tr className="sp-stagger-item" style={{ '--stagger-index': 1 } as React.CSSProperties}>
                     <td>Matches M-Pesa payments to each receipt</td>
                     <td className="y">Built in</td>
                     <td className="n">Manual SMS check</td>
                   </tr>
-                  <tr>
+                  <tr className="sp-stagger-item" style={{ '--stagger-index': 2 } as React.CSSProperties}>
                     <td>Prints KRA eTIMS verification receipts</td>
                     <td className="y">Built in</td>
                     <td className="n">Extra fees or manual</td>
                   </tr>
-                  <tr>
+                  <tr className="sp-stagger-item" style={{ '--stagger-index': 3 } as React.CSSProperties}>
                     <td>Keeps checking out customers offline</td>
                     <td className="y">Yes</td>
                     <td className="n">Local machine only</td>
                   </tr>
-                  <tr>
+                  <tr className="sp-stagger-item" style={{ '--stagger-index': 4 } as React.CSSProperties}>
                     <td>See live cash &amp; stock away from the shop</td>
                     <td className="y">From anywhere</td>
                     <td className="n">Only at the counter</td>
@@ -2250,7 +2254,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             </p>
 
             <div className="sp-grid3 mb-10">
-              <div className="sp-card flex flex-col justify-between">
+              <div className="sp-card sp-stagger-item flex flex-col justify-between" style={{ '--stagger-index': 0 } as React.CSSProperties}>
                 <div>
                   <div className="flex items-center gap-1 text-amber-500 mb-3 font-bold">
                     ★★★★★
@@ -2268,7 +2272,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 </div>
               </div>
 
-              <div className="sp-card flex flex-col justify-between">
+              <div className="sp-card sp-stagger-item flex flex-col justify-between" style={{ '--stagger-index': 1 } as React.CSSProperties}>
                 <div>
                   <div className="flex items-center gap-1 text-amber-500 mb-3 font-bold">
                     ★★★★★
@@ -2286,7 +2290,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 </div>
               </div>
 
-              <div className="sp-card flex flex-col justify-between">
+              <div className="sp-card sp-stagger-item flex flex-col justify-between" style={{ '--stagger-index': 2 } as React.CSSProperties}>
                 <div>
                   <div className="flex items-center gap-1 text-amber-500 mb-3 font-bold">
                     ★★★★★
@@ -2324,7 +2328,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 onClick={handleLaunchDemoSandbox}
               >
                 <Zap className="w-5 h-5 fill-white shrink-0" />
-                <span>Test the live till</span>
+                <span>Switch to Test Mode</span>
               </button>
               <button
                 type="button"

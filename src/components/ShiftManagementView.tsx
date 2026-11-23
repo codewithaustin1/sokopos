@@ -15,7 +15,7 @@ import {
   Search,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
-import { ShiftSession, ShiftExpense, CashDrop, ExpenseCategory } from '../types';
+import { ShiftSession, ExpenseCategory } from '../types';
 import { ShiftReconciliationSlipModal } from './ShiftReconciliationSlipModal';
 import { ShiftInitializationCard } from './shift/ShiftInitializationCard';
 import { ShiftSessionClosedCard } from './shift/ShiftSessionClosedCard';
@@ -41,7 +41,6 @@ export const ShiftManagementView: React.FC = () => {
     activeShift,
     interruptedSession,
     shiftHistory,
-    openShift,
     resumeInterruptedShift,
     recordCashDrop,
     recordShiftExpense,
@@ -57,12 +56,6 @@ export const ShiftManagementView: React.FC = () => {
   // Sub-tabs: 'active' | 'history'
   const [activeTab, setActiveTab] = useState<'current' | 'history'>('current');
   const [closedViewMode, setClosedViewMode] = useState<'init' | 'status'>('init');
-
-  // Open Shift Form State
-  const [openingFloatInput, setOpeningFloatInput] = useState<string>('5000');
-  const [openingNotes, setOpeningNotes] = useState<string>('');
-  const [isDenomDrawerOpen, setIsDenomDrawerOpen] = useState<boolean>(false);
-  const [openDenoms, setOpenDenoms] = useState<Record<string, number>>({});
 
   // Mid-Shift Cash Drop Modal State
   const [isDropModalOpen, setIsDropModalOpen] = useState<boolean>(false);
@@ -206,37 +199,11 @@ export const ShiftManagementView: React.FC = () => {
     }, 0);
   };
 
-  const handleOpenDenomChange = (valStr: string, count: number) => {
-    const updated = { ...openDenoms, [valStr]: Math.max(0, count) };
-    setOpenDenoms(updated);
-    const total = calculateDenomTotal(updated);
-    setOpeningFloatInput(String(total));
-  };
-
   const handleCloseDenomChange = (valStr: string, count: number) => {
     const updated = { ...closeDenoms, [valStr]: Math.max(0, count) };
     setCloseDenoms(updated);
     const total = calculateDenomTotal(updated);
     setCountedCashInput(String(total));
-  };
-
-  // Submit Open Shift
-  const handleOpenShiftSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const floatAmount = parseFloat(openingFloatInput);
-    if (isNaN(floatAmount) || floatAmount < 0) {
-      showToast('Please enter a valid opening float amount.', 'error');
-      return;
-    }
-
-    openShift(
-      floatAmount,
-      openingNotes.trim() || undefined,
-      Object.keys(openDenoms).length > 0 ? openDenoms : undefined
-    );
-    setOpeningNotes('');
-    setOpenDenoms({});
-    setIsDenomDrawerOpen(false);
   };
 
   // Submit Cash Drop

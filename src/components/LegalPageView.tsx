@@ -16,15 +16,14 @@ import {
   ShieldCheck,
   Server,
   FileCheck,
-  ArrowRight,
 } from 'lucide-react';
-import { LegalTab } from './LegalAndFaqModal';
 import { AppLogo } from './common/AppLogo';
 import { AppFooter } from './common/AppFooter';
 import { MobileHeaderNav } from './common/MobileHeaderNav';
 import { scrollToTop } from '../utils/scrollUtils';
 import { FAQ_ITEMS, FAQ_CATEGORIES } from '../data/faqData';
 import {
+  LegalTab,
   LEGAL_ENTITY,
   TERMS_SECTIONS,
   PRIVACY_SECTIONS,

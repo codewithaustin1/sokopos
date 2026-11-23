@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Lock, ArrowUpRight, Check, X, ShieldCheck } from 'lucide-react';
 import { usePos } from '../../context/PosContext';
 import { DEFAULT_PRICING_TIERS } from '../../types/pricing';
@@ -10,6 +10,7 @@ export const UpgradePromptModal: React.FC = () => {
     closeUpgradePrompt,
     entitlements,
     pricingTiers,
+    refreshPricingTiers,
     selectCheckoutPackage,
     setIsSubscriptionModalOpen,
     openPricingPage,
@@ -17,6 +18,12 @@ export const UpgradePromptModal: React.FC = () => {
     isSuperAdmin,
     updateBusinessPlan,
   } = usePos();
+
+  useEffect(() => {
+    if (upgradePrompt) {
+      refreshPricingTiers(false).catch(() => {});
+    }
+  }, [upgradePrompt, refreshPricingTiers]);
 
   if (!upgradePrompt) return null;
 

@@ -26,6 +26,7 @@ import { AppLogo } from './common/AppLogo';
 import { PWAInstallButton } from './PWAInstallButton';
 import { GoogleTranslateWidget } from './common/GoogleTranslateWidget';
 import { SellingModeExitModal } from './SellingModeExitModal';
+import { isSuperAdminEmail } from '../data/initialData';
 
 interface HeaderProps {
   currentTab?: 'register' | 'inventory' | 'suppliers' | 'analytics' | 'reports' | 'cloud-sync' | 'staff' | 'shifts' | 'customers' | 'settings' | 'super-admin';
@@ -63,6 +64,7 @@ export const Header: React.FC<HeaderProps> = ({
     isSubscriptionActive,
     openPricingPage,
     isSellingMode,
+    isDemoSession,
     enterSellingMode,
     t,
   } = usePos();
@@ -329,12 +331,16 @@ export const Header: React.FC<HeaderProps> = ({
                 {currentUser?.name || 'Authorized User'}
               </div>
               <div className="text-[11px] text-slate-400 font-normal truncate max-w-[140px]">
-                {isSuperAdmin ? 'Super Admin' : currentBusiness?.name || 'Authorized Staff'}
+                {isSuperAdmin
+                  ? isDemoSession
+                    ? 'Store Manager'
+                    : 'Platform Support'
+                  : currentBusiness?.name || 'Authorized Staff'}
               </div>
             </div>
             <div
               className={`w-8 h-8 ${
-                isSuperAdmin ? 'bg-slate-900 text-white' : 'bg-blue-600 text-white'
+                isSuperAdmin && !isDemoSession ? 'bg-slate-900 text-white' : 'bg-blue-600 text-white'
               } rounded-lg flex items-center justify-center text-xs font-bold shrink-0`}
             >
               {currentUser?.initials || 'U'}
@@ -355,9 +361,16 @@ export const Header: React.FC<HeaderProps> = ({
                 {/* User Summary */}
                 <div className="px-3 py-2.5 bg-slate-50 rounded-lg mb-1.5">
                   <div className="font-bold text-slate-900 truncate">{currentUser.name}</div>
-                  <div className="text-[11px] text-slate-500 break-all">{currentUser.email}</div>
+                  <div className="text-[11px] text-slate-500 break-all">
+                    {isSuperAdminEmail(currentUser.email) ? 'support@sokopos.co.ke' : currentUser.email}
+                  </div>
                   <div className="mt-1 text-[11px] text-slate-500 capitalize">
-                    {currentUser.role.replace('_', ' ')} · {currentBusiness?.name}
+                    {currentUser.role === 'super_admin'
+                      ? isDemoSession
+                        ? 'Store Manager'
+                        : 'Platform Support'
+                      : currentUser.role.replace('_', ' ')}{' '}
+                    · {currentBusiness?.name}
                     {currentUser.firebaseUid ? ' · Verified' : ''}
                   </div>
                 </div>
@@ -384,7 +397,7 @@ export const Header: React.FC<HeaderProps> = ({
                     </button>
                   )}
 
-                  {!isSellingMode && isSuperAdmin && (
+                  {!isSellingMode && isSuperAdmin && !isDemoSession && (
                     <button
                       id="user-menu-superadmin-console-btn"
                       type="button"
@@ -395,7 +408,7 @@ export const Header: React.FC<HeaderProps> = ({
                       className="w-full min-h-[40px] flex items-center gap-2.5 px-3 py-2 rounded-lg text-left font-medium text-slate-700 hover:bg-slate-100 transition-colors duration-150 cursor-pointer"
                     >
                       <Shield className="w-4 h-4 text-slate-500 shrink-0" />
-                      <span>Super-Admin Console</span>
+                      <span>Platform Console</span>
                     </button>
                   )}
 

@@ -1,22 +1,8 @@
-import { calculatePaymentGuardrails, roundCashHalfUp, hasCents } from '../src/utils/cashRounding';
-import {
-  getItemDiscountedUnitPrice,
-  getItemUnitDiscount,
-  getItemLineTotal,
-  hasDirectDiscountPermission,
-} from '../src/utils/discountUtils';
-import {
-  calculateSalesReport,
-  calculateShiftTillReport,
-  calculateStockReport,
-  calculateTaxVatReport,
-  calculateProfitMarginReport,
-  calculateRefundVoidReport,
-  exportToCsv,
-} from '../src/utils/reportCalculations';
+import { calculatePaymentGuardrails } from '../src/utils/cashRounding';
+import { getItemDiscountedUnitPrice } from '../src/utils/discountUtils';
+import { calculateSalesReport } from '../src/utils/reportCalculations';
 import { calculateDateRange } from '../src/utils/dateRangeUtils';
-import { INITIAL_PRODUCTS, INITIAL_LOCATIONS, INITIAL_SYSTEM_USERS, INITIAL_BUSINESSES } from '../src/data/initialData';
-import { Transaction, Product, ShiftSession, Cashier } from '../src/types';
+import { Transaction, Product } from '../src/types';
 
 interface TestResult {
   category: string;
@@ -97,28 +83,6 @@ console.log('================================================================\n'
     discountType: 'flat',
   });
   assert(cat, 'Non-negative price protection', excessiveDiscount === 0, `Discounted price: ${excessiveDiscount}`);
-
-  // Authority check
-  const cashierUser: Cashier = {
-    id: 'u-1',
-    name: 'Cashier John',
-    initials: 'CJ',
-    pin: '1234',
-    avatarColor: 'bg-blue-500',
-    shiftStartedAt: '',
-    role: 'cashier',
-    code: 'C01',
-    businessId: 'biz-1',
-    assignedLocationId: 'loc-1',
-    canApplyDiscount: false,
-  };
-  assert(cat, 'Cashier without flag blocked from direct discount', hasDirectDiscountPermission(cashierUser, 'cashier') === false, 'Blocked correctly');
-
-  const cashierWithFlag: Cashier = { ...cashierUser, canApplyDiscount: true };
-  assert(cat, 'Cashier with flag allowed direct discount', hasDirectDiscountPermission(cashierWithFlag, 'cashier') === true, 'Allowed correctly');
-
-  const supervisorUser: Cashier = { ...cashierUser, role: 'supervisor', canApplyDiscount: false };
-  assert(cat, 'Supervisor always allowed direct discount', hasDirectDiscountPermission(supervisorUser, 'supervisor') === true, 'Supervisor authorized');
 }
 
 // -----------------------------------------------------------------------------

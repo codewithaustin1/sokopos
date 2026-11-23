@@ -3,6 +3,11 @@
  * Serves as the Worker "main" entry point for /api/* routes alongside static assets.
  */
 import bcrypt from 'bcryptjs';
+import {
+  VALID_KRA_TAX_CODES,
+  verifyDigitaxCreditNotePayloadServerSide,
+  verifyDigitaxSalePayloadServerSide,
+} from '../../src/utils/etimsFiscalMapper';
 
 const DIGITAX_BASE_URL = 'https://api.digitax.tech/ke/v2';
 
@@ -303,7 +308,7 @@ export async function handleApiRequest(request: Request, env: WorkerEnv = {}): P
     }
   }
 
-  // 5. Digitax KRA eTIMS Proxy Endpoints (requires verified caller & allowlisted paths)
+  // 5. Digitax KRA eTIMS Validation & Proxy Endpoints (requires verified caller & allowlisted paths)
   if (pathname.startsWith('/api/digitax/')) {
     const caller = await verifyEdgeCaller(request, env);
     if (!caller) {
@@ -314,16 +319,21 @@ export async function handleApiRequest(request: Request, env: WorkerEnv = {}): P
       subpath === 'etims-info' ||
       subpath === 'items' ||
       subpath === 'sales' ||
-      /^sales\/[a-zA-Z0-9_-]{1,64}$/.test(subpath);
+      /^sales\/[a-zA-Z0-9_-]{1,64}$/.test(subpath) ||
+      subpath === 'credit-notes' ||
+      /^credit-notes\/[a-zA-Z0-9_-]{1,64}$/.test(subpath);
     if (!isAllowedSubpath) {
       return jsonResponse({ error: 'Unsupported Digitax endpoint.' }, 400, request, env);
     }
 
-    const headerKey = (request.headers.get('x-api-key') || '').trim();
     const envKey = typeof env.DIGITAX_API_KEY === 'string' ? env.DIGITAX_API_KEY.trim() : '';
-    const apiKey = headerKey || envKey;
-    if (!apiKey) {
-      return jsonResponse({ error: 'DIGITAX_API_KEY is not configured.' }, 503, request, env);
+    if (!envKey) {
+      return jsonResponse(
+        { error: 'DIGITAX_API_KEY is not configured on the server.', code: 'DIGITAX_NOT_CONFIGURED' },
+        503,
+        request,
+        env
+      );
     }
 
     const targetUrl = `${DIGITAX_BASE_URL}/${subpath}`;
@@ -331,7 +341,7 @@ export async function handleApiRequest(request: Request, env: WorkerEnv = {}): P
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        'X-Api-Key': apiKey,
+        'X-Api-Key': envKey,
       };
 
       const fetchOptions: RequestInit = {
@@ -340,12 +350,47 @@ export async function handleApiRequest(request: Request, env: WorkerEnv = {}): P
       };
 
       if (request.method === 'POST' || request.method === 'PUT') {
-        const bodyText = await request.text();
-        fetchOptions.body = bodyText;
+        const parsedBody = await request.json().catch(() => null);
+        if (subpath === 'items') {
+          if (
+            !parsedBody ||
+            typeof parsedBody.item_name !== 'string' ||
+            !parsedBody.item_name.trim() ||
+            !VALID_KRA_TAX_CODES.includes(parsedBody.tax_type_code)
+          ) {
+            return jsonResponse(
+              { error: 'Invalid Digitax item registration payload.', code: 'FISCAL_VALIDATION_FAILED' },
+              422,
+              request,
+              env
+            );
+          }
+        } else if (subpath === 'sales') {
+          const check = verifyDigitaxSalePayloadServerSide(parsedBody);
+          if (!check.valid) {
+            return jsonResponse(
+              { error: check.errors.join('; '), code: 'FISCAL_VALIDATION_FAILED', errors: check.errors },
+              422,
+              request,
+              env
+            );
+          }
+        } else if (subpath === 'credit-notes') {
+          const check = verifyDigitaxCreditNotePayloadServerSide(parsedBody);
+          if (!check.valid) {
+            return jsonResponse(
+              { error: check.errors.join('; '), code: 'FISCAL_VALIDATION_FAILED', errors: check.errors },
+              422,
+              request,
+              env
+            );
+          }
+        }
+        fetchOptions.body = JSON.stringify(parsedBody);
       }
 
       const response = await fetch(targetUrl, fetchOptions);
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       return jsonResponse(data, response.status, request, env);
     } catch (err: any) {
       return jsonResponse({ error: err?.message || 'Digitax proxy request failed' }, 500, request, env);

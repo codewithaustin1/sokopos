@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react';
 import {
-  ShieldAlert,
   AlertTriangle,
   CheckCircle2,
   Download,
@@ -10,12 +9,10 @@ import {
   Check,
   X,
   Lock,
-  FileText,
-  Clock,
-  Building2,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { StoreSalesBackup } from '../types';
+import { isSuperAdminEmail } from '../data/initialData';
 
 interface ResetStoreModalProps {
   isOpen: boolean;
@@ -37,6 +34,7 @@ export const ResetStoreModal: React.FC<ResetStoreModalProps> = ({
     canResetStore,
     currentUser,
     isSuperAdmin,
+    isDemoSession,
   } = usePos();
 
   const targetBizId = businessId || currentBusiness?.id || '';
@@ -214,7 +212,7 @@ export const ResetStoreModal: React.FC<ResetStoreModalProps> = ({
               <h4 className="text-lg font-bold text-slate-900">Restricted Authorization</h4>
               <p className="text-sm text-slate-600 max-w-sm mx-auto">
                 {authStatus.reason ||
-                  'Only the registered Business Owner of this store or a Platform Super-Admin has permission to reset store sales.'}
+                  'Only the registered Business Owner of this store or Authorized Platform Support has permission to reset store sales.'}
               </p>
               <button
                 onClick={handleClose}
@@ -330,9 +328,18 @@ export const ResetStoreModal: React.FC<ResetStoreModalProps> = ({
                   </div>
                 </div>
                 <div className="text-[11px] text-slate-500 flex items-center justify-between">
-                  <span>Authorized Operator: {currentUser?.name || currentUser?.email}</span>
+                  <span>
+                    Authorized Operator:{' '}
+                    {currentUser?.name ||
+                      (isSuperAdminEmail(currentUser?.email) ? 'support@sokopos.co.ke' : currentUser?.email)}
+                  </span>
                   <span className="font-medium text-slate-400">
-                    Role: {isSuperAdmin ? 'Platform Super-Admin' : currentUser?.role}
+                    Role:{' '}
+                    {isSuperAdmin
+                      ? isDemoSession
+                        ? 'Store Manager'
+                        : 'Platform Support'
+                      : currentUser?.role}
                   </span>
                 </div>
               </div>

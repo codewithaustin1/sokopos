@@ -576,7 +576,7 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
                           <th className="py-2.5 px-4 font-semibold text-right">Amount</th>
                           <th className="py-2.5 px-4 font-semibold">M-Pesa Number</th>
                           <th className="py-2.5 px-4 font-semibold">Status</th>
-                          <th className="py-2.5 px-4 font-semibold">Super Admin Notes</th>
+                          <th className="py-2.5 px-4 font-semibold">Review Notes</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -639,7 +639,7 @@ export const AffiliatePortalModal: React.FC<AffiliatePortalModalProps> = ({
                                 ) : (
                                   <span className="text-slate-400 italic">
                                     {p.status === 'pending'
-                                      ? 'Awaiting Super Admin review'
+                                      ? 'Awaiting platform review'
                                       : p.status === 'approved'
                                       ? 'Approved for M-Pesa disbursement'
                                       : 'No notes provided'}

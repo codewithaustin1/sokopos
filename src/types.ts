@@ -128,6 +128,8 @@ export interface TaxRule {
   description?: string;
 }
 
+export type KraTaxTypeCode = 'A' | 'B' | 'C' | 'D' | 'E';
+
 export interface BusinessTaxSettings {
   taxLabel: string; // "VAT", "GST", "Sales Tax"
   defaultTaxRate: number; // e.g. 0.16
@@ -136,6 +138,8 @@ export interface BusinessTaxSettings {
   enableDynamicCategoryTax: boolean;
   enableDynamicRegionalTax: boolean;
   rules: TaxRule[];
+  digitaxEnvironment?: 'sandbox' | 'production';
+  autoTransmitEtims?: boolean;
   updatedAt?: string;
   updatedBy?: string;
 }
@@ -348,6 +352,13 @@ export interface Product {
   description?: string;
   supplierId?: string | null; // Linked supplier reference
   supplierName?: string | null; // Denormalized supplier company name
+  digitaxItemId?: string;
+  etimsItemCode?: string;
+  taxTypeCode?: KraTaxTypeCode;
+  itemClassCode?: string;
+  digitaxSyncedAt?: string;
+  updatedAt?: string;
+  isDeleted?: boolean;
   isPendingCloudSync?: boolean;
 }
 
@@ -370,6 +381,8 @@ export interface CartItem {
   performingOperatorName?: string;
   unitCost?: number; // Snapshot of product.buyingPrice at time of sale
   taxRate: number;
+  taxTypeCode?: KraTaxTypeCode;
+  digitaxItemId?: string;
 }
 
 export interface HeldOrder {
@@ -424,6 +437,7 @@ export interface RefundRecord {
   totalRefund: number;
   customerName?: string;
   customerPhone?: string;
+  etimsCreditNote?: DigitaxCreditNoteData;
 }
 
 export interface SplitPaymentTender {
@@ -500,6 +514,7 @@ export interface Transaction {
 
 export interface DigitaxEtimsData {
   saleId?: string;
+  traderInvoiceNumber?: string;
   cuSerialNumber?: string; // KRA Control Unit Serial (e.g. KRARVS000000005)
   cuInvoiceNumber?: number | string; // KRA CU Invoice # (e.g. 1181464)
   receiptNumber?: number | string; // Fiscal Receipt #
@@ -508,11 +523,34 @@ export interface DigitaxEtimsData {
   etimsUrl?: string; // Direct KRA QR verification link
   offlineUrl?: string; // Digitax fallback offline verification link
   status?: 'PENDING' | 'COMPLETED' | 'FAILED';
-  taxPin?: string; // Business KRA PIN (e.g. A011001890C)
+  taxPin?: string; // Business KRA PIN
   customerTin?: string; // Buyer KRA PIN
   customerName?: string; // Buyer Name
   verifiedAt?: string;
+  attemptCount?: number;
+  lastAttemptAt?: string;
+  lastError?: string;
   isPartnerVerified?: boolean;
+}
+
+export interface DigitaxCreditNoteData {
+  creditNoteId?: string;
+  saleId?: string;
+  originalTraderInvoiceNumber?: string;
+  traderInvoiceNumber?: string;
+  cuSerialNumber?: string;
+  cuInvoiceNumber?: number | string;
+  receiptNumber?: number | string;
+  receiptSignature?: string;
+  internalData?: string;
+  etimsUrl?: string;
+  offlineUrl?: string;
+  reasonCode?: '01' | '02' | '03' | '04' | '05' | '06';
+  status: 'PENDING' | 'COMPLETED' | 'FAILED';
+  verifiedAt?: string;
+  attemptCount?: number;
+  lastAttemptAt?: string;
+  lastError?: string;
 }
 
 export interface Cashier {

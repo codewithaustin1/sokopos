@@ -7,16 +7,13 @@ import {
   ShieldCheck,
   ShieldAlert,
   Lock,
-  Unlock,
   Check,
   RotateCcw,
-  Sparkles,
   AlertCircle,
-  UserCheck,
   KeyRound,
   ArrowRight,
 } from 'lucide-react';
-import { CartItem, Cashier } from '../types';
+import { CartItem } from '../types';
 import { usePos } from '../context/PosContext';
 import { soundFx } from '../utils/audio';
 

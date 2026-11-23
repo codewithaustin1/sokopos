@@ -3,20 +3,12 @@ import {
   X,
   Search,
   RotateCcw,
-  CheckCircle,
   AlertCircle,
-  Clock,
   ArrowLeft,
-  ShoppingBag,
   Plus,
   Minus,
   Check,
-  Building2,
   Receipt,
-  Scan,
-  User,
-  Phone,
-  HelpCircle,
   KeyRound,
   ShieldCheck,
   AlertTriangle,
@@ -101,8 +93,6 @@ export const ReturnsModal: React.FC = () => {
     });
 
     tx.items.forEach((it) => {
-      const alreadyRefunded = previouslyRefundedMap[it.productId] || 0;
-      const eligible = it.quantity - alreadyRefunded;
       initialQty[it.productId] = 0; // Default to 0 selected
       initialRestock[it.productId] = true; // Default to restock
       initialReasons[it.productId] = generalReason;

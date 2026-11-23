@@ -4,7 +4,6 @@ import {
   Search,
   ArrowRightLeft,
   Barcode,
-  Edit2,
   AlertTriangle,
   Building2,
   Trash2,

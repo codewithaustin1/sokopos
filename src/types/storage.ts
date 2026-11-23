@@ -57,7 +57,9 @@ export type OutboxCollectionName =
   | 'stock_transfers'
   | 'analytics_daily_rollups'
   | 'analytics_targets'
-  | 'analytics_saved_views';
+  | 'analytics_saved_views'
+  | 'etims_sales'
+  | 'etims_credit_notes';
 
 export type OutboxStatus = 'pending' | 'in_flight' | 'retry_scheduled' | 'dead_letter';
 

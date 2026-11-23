@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { PosProvider, usePos } from './context/PosContext';
 import { Header } from './components/Header';
 import { SuperAdminBanner } from './components/SuperAdminBanner';
@@ -72,12 +72,7 @@ function PosAppContent() {
     openUnknownBarcodeModal,
     closeUnknownBarcodeModal,
     isDarkMode,
-    loginBgGraphic,
     products,
-    cart,
-    cartTotal,
-    settleExactCash,
-    updateCartQuantity,
     activeReceipt,
     setActiveReceipt,
     activeRefundReceipt,
@@ -103,7 +98,6 @@ function PosAppContent() {
     activateBusinessSubscription,
     trackPendingSubscription,
     isPricingPageOpen,
-    openPricingPage,
     closePricingPage,
     isAffiliateModalOpen,
     setIsAffiliateModalOpen,
@@ -385,6 +379,7 @@ function PosAppContent() {
   const handleSetCurrentTab = (tab: AppTab) => {
     if (requiresLegalConsent) return;
     if (isSellingMode && tab !== 'register') return;
+    if (tab === 'super-admin' && (!isSuperAdmin || isDemoSession)) return;
     if (tab === 'suppliers' && !requireCapability('suppliers')) return;
     if (tab === 'analytics' && !requireCapability('analytics')) return;
     setCurrentTab(tab);
@@ -393,6 +388,12 @@ function PosAppContent() {
   const handleCloseSettings = useCallback(() => {
     setCurrentTab('register');
   }, []);
+
+  useEffect(() => {
+    if (isDemoSession && currentTab === 'super-admin') {
+      setCurrentTab('register');
+    }
+  }, [isDemoSession, currentTab]);
 
   useEffect(() => {
     if (isSellingMode) {
@@ -430,7 +431,7 @@ function PosAppContent() {
   const [superAdminModalDefaultTab, setSuperAdminModalDefaultTab] = useState<'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding' | 'traffic'>('tenants');
 
   const handleOpenSuperAdmin = (tab?: 'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding' | 'traffic') => {
-    if (isSellingMode) return;
+    if (isSellingMode || isDemoSession || !isSuperAdmin) return;
     const targetTab = (tab === 'subscriptions' || tab === 'traffic') && !isSuperAdminEmail(currentUser?.email) ? 'tenants' : (tab || 'tenants');
     setSuperAdminModalDefaultTab(targetTab);
     setCurrentTab('super-admin');
@@ -690,12 +691,14 @@ function PosAppContent() {
       {/* Framer Motion Toast Notification Stack */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} topOffsetClass="top-20" />
 
-      {/* Persistent Super-Admin Safeguard Warning Banner (Required Safeguard) */}
-      <SuperAdminBanner
-        onOpenAuditLog={() => handleOpenSuperAdmin('audit')}
-        onOpenProvisionModal={() => handleOpenSuperAdmin('provision')}
-        onOpenBrandingModal={() => handleOpenSuperAdmin('branding')}
-      />
+      {/* Persistent Platform Support Banner (Hidden in Demo Sessions) */}
+      {!isDemoSession && (
+        <SuperAdminBanner
+          onOpenAuditLog={() => handleOpenSuperAdmin('audit')}
+          onOpenProvisionModal={() => handleOpenSuperAdmin('provision')}
+          onOpenBrandingModal={() => handleOpenSuperAdmin('branding')}
+        />
+      )}
 
       {/* Main Top Header */}
       <Header
@@ -707,13 +710,13 @@ function PosAppContent() {
       {/* Recoverable Pending / Verified Subscription Banner */}
       <PendingSubscriptionBanner />
 
-      {/* Super Admin Alert Banner if current tenant is suspended */}
-      {currentBusiness?.status === 'suspended' && isSuperAdmin && (
+      {/* Alert Banner if current tenant is suspended (Authenticated Sessions Only) */}
+      {!isDemoSession && currentBusiness?.status === 'suspended' && isSuperAdmin && (
         <div className="bg-rose-900 text-white px-4 py-2 text-xs flex items-center justify-between border-b border-rose-800 shrink-0 z-30">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-rose-300 shrink-0" />
             <span>
-              <strong>TENANT POS ACCESS IS SUSPENDED:</strong> Access is toggled OFF for <em>{currentBusiness.name}</em> ({currentBusiness.code}) due to missed subscription payment. Store cashiers & staff cannot trade.
+              <strong>TENANT POS ACCESS IS SUSPENDED:</strong> Access is toggled OFF for <em>{currentBusiness.name}</em> ({currentBusiness.code}) due to missed subscription payment. Store cashiers &amp; staff cannot trade.
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -794,7 +797,7 @@ function PosAppContent() {
 
               <div className="mt-6 flex flex-col gap-2.5">
                 <p className="text-[11px] text-slate-400">
-                  Please complete your subscription payment or contact the platform administrator to reactivate your store POS terminal access.
+                  Please complete your subscription payment or contact Platform Support to reactivate your store POS terminal access.
                 </p>
                 <button
                   onClick={() => setIsSignOutModalOpen(true)}
@@ -844,7 +847,7 @@ function PosAppContent() {
                 onClose={handleCloseSettings}
               />
             )}
-            {!isSellingMode && currentTab === 'super-admin' && isSuperAdmin && (
+            {!isSellingMode && !isDemoSession && currentTab === 'super-admin' && isSuperAdmin && (
               <SuperAdminDashboardModal
                 defaultTab={superAdminModalDefaultTab}
                 onClose={() => setCurrentTab('register')}

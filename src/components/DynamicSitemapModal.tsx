@@ -10,14 +10,10 @@ import {
   FileCode,
   ShieldCheck,
   Lock,
-  Layers,
-  Sparkles,
   Terminal,
-  Activity,
   Compass,
 } from 'lucide-react';
 import {
-  SitemapEntry,
   getSystemPaths,
   generateSitemapXml,
   generateSitemapJson,

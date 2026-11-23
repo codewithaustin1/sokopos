@@ -20,6 +20,7 @@ export const SuperAdminBanner: React.FC<SuperAdminBannerProps> = ({
 }) => {
   const {
     isSuperAdmin,
+    isDemoSession,
     businesses,
     activeBusinessId,
     setActiveBusinessId,
@@ -27,7 +28,7 @@ export const SuperAdminBanner: React.FC<SuperAdminBannerProps> = ({
     loginBgGraphic,
   } = usePos();
 
-  if (!isSuperAdmin) return null;
+  if (!isSuperAdmin || isDemoSession) return null;
 
   return (
     <div className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 px-3 sm:px-6 py-2 text-xs flex flex-wrap items-center justify-between gap-2.5 border-b border-slate-200 dark:border-slate-800 shrink-0 z-40">

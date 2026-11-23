@@ -5,11 +5,6 @@ import {
   Copy,
   CheckCircle2,
   AlertTriangle,
-  Clock,
-  ShieldCheck,
-  TrendingDown,
-  TrendingUp,
-  Banknote,
   FileSpreadsheet,
 } from 'lucide-react';
 import { ShiftSession } from '../types';

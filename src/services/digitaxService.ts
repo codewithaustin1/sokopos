@@ -1,12 +1,30 @@
 /**
  * Digitax KRA eTIMS Integration Service
- * 
- * Provides automated electronic tax register (eTIMS) invoicing,
- * certified Control Unit (CU) sequences, digital tax signatures,
- * and KRA verification QR codes in partnership with Digitax Technologies.
+ *
+ * Provides authenticated, server-validated electronic tax register (eTIMS)
+ * SKU registration, itemized invoicing, automated Credit Notes on refunds,
+ * and certified Control Unit (CU) polling in partnership with Digitax Technologies.
  */
 import { auth } from '../lib/firebase';
 import { resolveApiUrl } from '../lib/apiConfig';
+import type {
+  BusinessTaxSettings,
+  CartItem,
+  KraTaxTypeCode,
+  PaymentMethod,
+  Product,
+  RefundRecord,
+  SplitPaymentTender,
+} from '../types';
+import {
+  buildDigitaxCreditNotePayload,
+  buildDigitaxSalePayload,
+  DigitaxCreditNotePayload,
+  DigitaxSalePayload,
+  resolveKraTaxTypeCode,
+  roundCurrency2,
+} from '../utils/etimsFiscalMapper';
+import { resolveDynamicTaxRate } from '../utils/taxResolver';
 
 export interface DigitaxEtimsInfo {
   tax_pin: string;
@@ -22,6 +40,7 @@ export interface DigitaxEtimsInfo {
   manager_email?: string;
   is_head_office: boolean;
   business_id: string;
+  environment?: 'sandbox' | 'production';
 }
 
 export interface DigitaxItem {
@@ -32,7 +51,7 @@ export interface DigitaxItem {
   origin_nation_code: string;
   package_unit_code: string;
   quantity_unit_code: string;
-  tax_type_code: 'A' | 'B' | 'C' | 'D' | 'E';
+  tax_type_code: KraTaxTypeCode;
   default_unit_price: number;
   etims_item_code: string;
   is_stock_item: boolean;
@@ -41,21 +60,17 @@ export interface DigitaxItem {
   status: string;
 }
 
-export interface DigitaxSaleItem {
-  id: string; // Digitax item id
-  quantity: number;
-  unit_price: number;
-  total_amount: number;
-}
-
-export interface CreateSaleParams {
-  sale_date: string; // YYYY-MM-DD
-  trader_invoice_number: string;
-  payment_type_code: '01' | '02' | '03' | '04'; // 01=Cash, 02=Card, 04=Mobile/M-Pesa
-  invoice_status_code?: string; // 02=Normal
-  customer_tin?: string;
-  customer_name?: string;
-  items: DigitaxSaleItem[];
+export interface CreateDigitaxItemParams {
+  item_name: string;
+  item_class_code?: string;
+  item_type_code?: '1' | '2' | '3';
+  tax_type_code: KraTaxTypeCode;
+  origin_nation_code?: string;
+  package_unit_code?: string;
+  quantity_unit_code?: string;
+  default_unit_price: number;
+  is_stock_item?: boolean;
+  sku?: string;
 }
 
 export interface DigitaxSaleResponse {
@@ -71,6 +86,7 @@ export interface DigitaxSaleResponse {
   customer_id?: string;
   customer_name?: string;
   customer_tin?: string;
+  customer_pin?: string;
   internal_data: string;
   receipt_signature: string;
   etims_url: string;
@@ -95,62 +111,42 @@ export interface DigitaxSaleResponse {
   };
 }
 
-export interface DigitaxEtimsRecord {
-  saleId: string;
-  cuSerialNumber: string;
-  cuInvoiceNumber: number | string;
-  receiptNumber: number | string;
-  internalData: string;
-  receiptSignature: string;
-  etimsUrl: string;
-  offlineUrl: string;
-  status: 'PENDING' | 'COMPLETED' | 'FAILED';
-  taxPin: string;
-  customerTin?: string;
-  customerName?: string;
-  verifiedAt: string;
+export interface DigitaxCreditNoteResponse extends DigitaxSaleResponse {
+  sale_id?: string;
+  original_trader_invoice_number?: string;
 }
 
-export const DIGITAX_TEST_API_KEY = 'KEN_TEST_api_key_0HBmI6qU0WOhnkjcVgf8cleoFR1yIWsk';
-export const DIGITAX_BASE_URL = 'https://api.digitax.tech/ke/v2';
+export class DigitaxApiError extends Error {
+  public readonly status: number;
+  public readonly code: string;
+  public readonly retryable: boolean;
 
-// Known pre-registered Digitax items in test account:
-// 1. item_01M4WCY79237JRVADVKFB0SMNW -> 16% Standard VAT (Class B, non-stock)
-// 2. item_01M4WCNT8YSR2KY1Z0K8AFJ2HE -> 0% Exempt (Class A, non-stock)
-export const DEFAULT_VAT16_ITEM_ID = 'item_01M4WCY79237JRVADVKFB0SMNW';
-export const DEFAULT_EXEMPT_ITEM_ID = 'item_01M4WCNT8YSR2KY1Z0K8AFJ2HE';
+  constructor(message: string, status = 500, code = 'DIGITAX_ERROR') {
+    super(message);
+    this.name = 'DigitaxApiError';
+    this.status = status;
+    this.code = code;
+    this.retryable = status === 0 || status >= 500 || status === 429 || status === 408;
+  }
+}
 
 class DigitaxService {
-  private apiKey: string;
-  private baseUrl: string;
+  private cachedItemsByKey = new Map<string, DigitaxItem>();
 
-  constructor() {
-    this.apiKey = localStorage.getItem('sokopos_digitax_api_key') || DIGITAX_TEST_API_KEY;
-    this.baseUrl = DIGITAX_BASE_URL;
-  }
-
-  public getApiKey(): string {
-    return this.apiKey;
-  }
-
-  public setApiKey(key: string) {
-    this.apiKey = key.trim() || DIGITAX_TEST_API_KEY;
-    localStorage.setItem('sokopos_digitax_api_key', this.apiKey);
-  }
-
-  private getHeaders(): Record<string, string> {
-    return {
-      'Content-Type': 'application/json',
-      'X-Api-Key': this.apiKey,
-    };
-  }
-
-  private async getProxyHeaders(includeJson = false): Promise<Record<string, string>> {
-    const headers: Record<string, string> = {
-      'X-Api-Key': this.apiKey,
-    };
-    if (includeJson) {
+  private async getProxyHeaders(options: {
+    includeJson?: boolean;
+    environment?: 'sandbox' | 'production';
+    expectedTaxPin?: string;
+  } = {}): Promise<Record<string, string>> {
+    const headers: Record<string, string> = {};
+    if (options.includeJson) {
       headers['Content-Type'] = 'application/json';
+    }
+    if (options.environment) {
+      headers['X-Digitax-Env'] = options.environment;
+    }
+    if (options.expectedTaxPin) {
+      headers['X-Tenant-Tax-Pin'] = options.expectedTaxPin;
     }
     const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
     if (idToken) {
@@ -159,273 +155,452 @@ class DigitaxService {
     return headers;
   }
 
-  /**
-   * Fetch merchant eTIMS info from Digitax
-   */
-  async getEtimsInfo(): Promise<DigitaxEtimsInfo> {
-    // Try backend proxy first for optimal reliability, then fallback to direct API if proxy is unavailable
+  private async requestJson<T>(
+    path: string,
+    init: RequestInit = {},
+    headerOptions: {
+      includeJson?: boolean;
+      environment?: 'sandbox' | 'production';
+      expectedTaxPin?: string;
+    } = {}
+  ): Promise<T> {
+    let res: Response;
     try {
-      const res = await fetch(resolveApiUrl('/api/digitax/etims-info'), {
-        headers: await this.getProxyHeaders(false),
+      res = await fetch(resolveApiUrl(path), {
+        ...init,
+        headers: {
+          ...(await this.getProxyHeaders(headerOptions)),
+          ...(init.headers as Record<string, string> | undefined),
+        },
       });
-      if (res.ok) {
-        return await res.json();
-      }
-      if (res.status === 401 || res.status === 403) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody.error || 'Authentication required for Digitax eTIMS API.');
-      }
-    } catch (err: any) {
-      if (err?.message?.includes('Authentication required')) throw err;
-      // Fallback to direct client call
+    } catch (networkErr: any) {
+      throw new DigitaxApiError(
+        networkErr?.message || 'Network unavailable while reaching SokoPoS Fiscal Gateway',
+        0,
+        'NETWORK_OFFLINE'
+      );
     }
 
-    const response = await fetch(`${this.baseUrl}/etims-info`, {
-      method: 'GET',
-      headers: this.getHeaders(),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Digitax eTIMS info failed (${response.status}): ${errText}`);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const errMsg =
+        body?.error ||
+        body?.message ||
+        (Array.isArray(body?.errors) ? body.errors.join('; ') : '') ||
+        `Digitax eTIMS request failed (${res.status})`;
+      const code = body?.code || (res.status === 422 ? 'FISCAL_VALIDATION_FAILED' : 'DIGITAX_HTTP_ERROR');
+      throw new DigitaxApiError(errMsg, res.status, code);
     }
 
-    return await response.json();
+    return body as T;
+  }
+
+  /**
+   * Fetch merchant eTIMS info from Digitax via authenticated backend proxy
+   */
+  async getEtimsInfo(environment?: 'sandbox' | 'production'): Promise<DigitaxEtimsInfo> {
+    return this.requestJson<DigitaxEtimsInfo>(
+      '/api/digitax/etims-info',
+      { method: 'GET' },
+      { environment }
+    );
   }
 
   /**
    * Fetch registered items from Digitax
    */
-  async getItems(): Promise<DigitaxItem[]> {
-    try {
-      const res = await fetch(resolveApiUrl('/api/digitax/items'), {
-        headers: await this.getProxyHeaders(false),
+  async getItems(environment?: 'sandbox' | 'production'): Promise<DigitaxItem[]> {
+    const body = await this.requestJson<{ data?: DigitaxItem[] } | DigitaxItem[]>(
+      '/api/digitax/items',
+      { method: 'GET' },
+      { environment }
+    );
+    const list = Array.isArray(body) ? body : body?.data || [];
+    for (const item of list) {
+      if (item?.item_name && item?.tax_type_code) {
+        this.cachedItemsByKey.set(
+          `${item.item_name.trim().toLowerCase()}::${item.tax_type_code}`,
+          item
+        );
+      }
+    }
+    return list;
+  }
+
+  /**
+   * Register a POS SKU in Digitax eTIMS catalog
+   */
+  async registerItem(
+    params: CreateDigitaxItemParams,
+    environment?: 'sandbox' | 'production'
+  ): Promise<DigitaxItem> {
+    const payload: CreateDigitaxItemParams = {
+      item_name: params.item_name.trim().slice(0, 180),
+      item_class_code: params.item_class_code || '50202300', // General consumer retail goods UNSPSC fallback
+      item_type_code: params.item_type_code || '2', // Finished product
+      tax_type_code: params.tax_type_code,
+      origin_nation_code: params.origin_nation_code || 'KE',
+      package_unit_code: params.package_unit_code || 'CT',
+      quantity_unit_code: params.quantity_unit_code || 'U',
+      default_unit_price: roundCurrency2(Math.max(0, params.default_unit_price)),
+      is_stock_item: params.is_stock_item ?? true,
+      sku: params.sku,
+    };
+
+    const created = await this.requestJson<DigitaxItem>(
+      '/api/digitax/items',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+      { includeJson: true, environment }
+    );
+
+    if (created?.item_name && created?.tax_type_code) {
+      this.cachedItemsByKey.set(
+        `${created.item_name.trim().toLowerCase()}::${created.tax_type_code}`,
+        created
+      );
+    }
+    return created;
+  }
+
+  /**
+   * Ensures every SKU in a checkout or refund has a valid registered Digitax item ID
+   * aligned with its resolved KRA tax_type_code. Returns both mapping and product updates.
+   */
+  async ensureProductsRegisteredForSale(params: {
+    items: Array<Pick<CartItem, 'productId' | 'productName' | 'sku' | 'unitPrice' | 'taxRate' | 'taxTypeCode' | 'digitaxItemId'>>;
+    productsCatalog: Product[];
+    locationId: string;
+    taxSettings?: BusinessTaxSettings;
+    environment?: 'sandbox' | 'production';
+  }): Promise<{
+    resolvedItemIdsByProductId: Record<string, string>;
+    registeredProducts: Array<{
+      productId: string;
+      digitaxItemId: string;
+      etimsItemCode?: string;
+      taxTypeCode: KraTaxTypeCode;
+      itemClassCode?: string;
+      digitaxSyncedAt: string;
+    }>;
+  }> {
+    const resolvedItemIdsByProductId: Record<string, string> = {};
+    const registeredProducts: Array<{
+      productId: string;
+      digitaxItemId: string;
+      etimsItemCode?: string;
+      taxTypeCode: KraTaxTypeCode;
+      itemClassCode?: string;
+      digitaxSyncedAt: string;
+    }> = [];
+
+    const needsLookup: Array<{
+      productId: string;
+      name: string;
+      sku: string;
+      unitPrice: number;
+      taxTypeCode: KraTaxTypeCode;
+      itemClassCode?: string;
+    }> = [];
+
+    for (const item of params.items) {
+      const prod = params.productsCatalog.find((p) => p.id === item.productId);
+      const resolvedTax = resolveDynamicTaxRate(
+        { category: prod?.category, taxRate: item.taxRate ?? prod?.taxRate, id: item.productId },
+        params.locationId,
+        params.taxSettings
+      );
+      const taxTypeCode = resolveKraTaxTypeCode({
+        taxRate: resolvedTax.rate,
+        ruleCode: resolvedTax.code,
+        ruleName: resolvedTax.ruleName,
+        explicitTaxTypeCode: item.taxTypeCode || prod?.taxTypeCode,
       });
-      if (res.ok) {
-        const body = await res.json();
-        return body.data || [];
+
+      // Reuse cached product Digitax ID if tax class still matches
+      const existingId = prod?.digitaxItemId || item.digitaxItemId;
+      const storedClass = prod?.taxTypeCode || item.taxTypeCode;
+      if (existingId && (!storedClass || storedClass === taxTypeCode)) {
+        resolvedItemIdsByProductId[item.productId] = existingId;
+        continue;
       }
-      if (res.status === 401 || res.status === 403) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody.error || 'Authentication required for Digitax eTIMS API.');
+
+      const displayName = prod?.name || item.productName;
+      const cacheKey = `${displayName.trim().toLowerCase()}::${taxTypeCode}`;
+      const memMatch = this.cachedItemsByKey.get(cacheKey);
+      if (memMatch?.id) {
+        resolvedItemIdsByProductId[item.productId] = memMatch.id;
+        registeredProducts.push({
+          productId: item.productId,
+          digitaxItemId: memMatch.id,
+          etimsItemCode: memMatch.etims_item_code,
+          taxTypeCode,
+          itemClassCode: memMatch.item_class_code,
+          digitaxSyncedAt: new Date().toISOString(),
+        });
+        continue;
       }
-    } catch (err: any) {
-      if (err?.message?.includes('Authentication required')) throw err;
-      // Fallback to direct client call
+
+      needsLookup.push({
+        productId: item.productId,
+        name: displayName,
+        sku: prod?.sku || item.sku,
+        unitPrice: prod?.sellingPrice ?? item.unitPrice,
+        taxTypeCode,
+        itemClassCode: prod?.itemClassCode,
+      });
     }
 
-    const response = await fetch(`${this.baseUrl}/items`, {
-      method: 'GET',
-      headers: this.getHeaders(),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Failed to fetch Digitax items (${response.status}): ${errText}`);
+    if (needsLookup.length === 0) {
+      return { resolvedItemIdsByProductId, registeredProducts };
     }
 
-    const data = await response.json();
-    return data.data || [];
+    // Fetch existing Digitax items once to avoid duplicate registrations
+    let remoteItems: DigitaxItem[] = [];
+    try {
+      remoteItems = await this.getItems(params.environment);
+    } catch {
+      remoteItems = [];
+    }
+
+    for (const entry of needsLookup) {
+      const remoteMatch = remoteItems.find(
+        (ri) =>
+          ri.active !== false &&
+          ri.tax_type_code === entry.taxTypeCode &&
+          (ri.item_name.trim().toLowerCase() === entry.name.trim().toLowerCase() ||
+            (entry.sku && ri.etims_item_code === entry.sku))
+      );
+
+      if (remoteMatch?.id) {
+        resolvedItemIdsByProductId[entry.productId] = remoteMatch.id;
+        registeredProducts.push({
+          productId: entry.productId,
+          digitaxItemId: remoteMatch.id,
+          etimsItemCode: remoteMatch.etims_item_code,
+          taxTypeCode: entry.taxTypeCode,
+          itemClassCode: remoteMatch.item_class_code,
+          digitaxSyncedAt: new Date().toISOString(),
+        });
+        continue;
+      }
+
+      const created = await this.registerItem(
+        {
+          item_name: entry.name,
+          item_class_code: entry.itemClassCode,
+          tax_type_code: entry.taxTypeCode,
+          default_unit_price: entry.unitPrice,
+          is_stock_item: true,
+          sku: entry.sku,
+        },
+        params.environment
+      );
+
+      if (!created?.id) {
+        throw new DigitaxApiError(
+          `Digitax did not return an item ID when registering "${entry.name}".`,
+          502,
+          'DIGITAX_ITEM_REGISTRATION_ERROR'
+        );
+      }
+
+      resolvedItemIdsByProductId[entry.productId] = created.id;
+      registeredProducts.push({
+        productId: entry.productId,
+        digitaxItemId: created.id,
+        etimsItemCode: created.etims_item_code,
+        taxTypeCode: entry.taxTypeCode,
+        itemClassCode: created.item_class_code,
+        digitaxSyncedAt: new Date().toISOString(),
+      });
+    }
+
+    return { resolvedItemIdsByProductId, registeredProducts };
   }
 
   /**
    * Fetch sales from Digitax
    */
-  async getSales(): Promise<DigitaxSaleResponse[]> {
-    try {
-      const res = await fetch(resolveApiUrl('/api/digitax/sales'), {
-        headers: await this.getProxyHeaders(false),
-      });
-      if (res.ok) {
-        const body = await res.json();
-        return body.data || [];
-      }
-      if (res.status === 401 || res.status === 403) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody.error || 'Authentication required for Digitax eTIMS API.');
-      }
-    } catch (err: any) {
-      if (err?.message?.includes('Authentication required')) throw err;
-      // Fallback to direct client call
-    }
-
-    const response = await fetch(`${this.baseUrl}/sales`, {
-      method: 'GET',
-      headers: this.getHeaders(),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Failed to fetch Digitax sales (${response.status}): ${errText}`);
-    }
-
-    const data = await response.json();
-    return data.data || [];
+  async getSales(environment?: 'sandbox' | 'production'): Promise<DigitaxSaleResponse[]> {
+    const body = await this.requestJson<{ data?: DigitaxSaleResponse[] } | DigitaxSaleResponse[]>(
+      '/api/digitax/sales',
+      { method: 'GET' },
+      { environment }
+    );
+    return Array.isArray(body) ? body : body?.data || [];
   }
 
   /**
-   * Create an eTIMS compliant invoice in Digitax
+   * Create a server-validated eTIMS compliant invoice in Digitax
    */
-  async createSale(params: CreateSaleParams): Promise<DigitaxSaleResponse> {
-    try {
-      const res = await fetch(resolveApiUrl('/api/digitax/sales'), {
+  async createSale(
+    params: DigitaxSalePayload,
+    options: { environment?: 'sandbox' | 'production'; expectedTaxPin?: string } = {}
+  ): Promise<DigitaxSaleResponse> {
+    return this.requestJson<DigitaxSaleResponse>(
+      '/api/digitax/sales',
+      {
         method: 'POST',
-        headers: await this.getProxyHeaders(true),
-        body: JSON.stringify(params),
-      });
-      if (res.ok) {
-        return await res.json();
+        body: JSON.stringify({
+          ...params,
+          invoice_status_code: params.invoice_status_code || '02',
+        }),
+      },
+      {
+        includeJson: true,
+        environment: options.environment,
+        expectedTaxPin: options.expectedTaxPin,
       }
-      if (res.status === 401 || res.status === 403) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody.error || 'Authentication required for Digitax eTIMS API.');
-      }
-    } catch (err: any) {
-      if (err?.message?.includes('Authentication required')) throw err;
-      // Fallback to direct client call
-    }
-
-    const response = await fetch(`${this.baseUrl}/sales`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify({
-        ...params,
-        invoice_status_code: params.invoice_status_code || '02',
-      }),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Digitax eTIMS invoice generation failed (${response.status}): ${errText}`);
-    }
-
-    return await response.json();
+    );
   }
 
   /**
    * Poll sale until status is COMPLETED (Digitax signs asynchronously)
    */
-  async pollSaleCompletion(saleId: string, maxAttempts = 6, delayMs = 1200): Promise<DigitaxSaleResponse> {
+  async pollSaleCompletion(
+    saleId: string,
+    maxAttempts = 6,
+    delayMs = 1200,
+    environment?: 'sandbox' | 'production'
+  ): Promise<DigitaxSaleResponse> {
+    let latest: DigitaxSaleResponse | null = null;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, delayMs));
-
       try {
-        let sale: DigitaxSaleResponse | null = null;
-        try {
-          const res = await fetch(resolveApiUrl(`/api/digitax/sales/${encodeURIComponent(saleId)}`), {
-            headers: await this.getProxyHeaders(false),
-          });
-          if (res.ok) {
-            sale = await res.json();
-          } else if (res.status === 401 || res.status === 403) {
-            throw new Error('Authentication required for Digitax eTIMS API.');
-          }
-        } catch (err: any) {
-          if (err?.message?.includes('Authentication required')) throw err;
-          // Fallback
+        latest = await this.requestJson<DigitaxSaleResponse>(
+          `/api/digitax/sales/${encodeURIComponent(saleId)}`,
+          { method: 'GET' },
+          { environment }
+        );
+        if (latest && latest.status === 'COMPLETED' && latest.receipt_signature) {
+          return latest;
         }
-
-        if (!sale) {
-          const response = await fetch(`${this.baseUrl}/sales/${encodeURIComponent(saleId)}`, {
-            headers: this.getHeaders(),
-          });
-          if (response.ok) {
-            sale = await response.json();
-          }
-        }
-
-        if (sale && sale.status === 'COMPLETED' && sale.receipt_signature) {
-          return sale;
+        if (latest && latest.status === 'FAILED') {
+          return latest;
         }
       } catch (err) {
         console.warn(`Polling Digitax sale ${saleId} attempt ${attempt + 1}:`, err);
       }
     }
 
-    // Return the latest known state even if still pending
-    const fallbackResponse = await fetch(`${this.baseUrl}/sales/${encodeURIComponent(saleId)}`, {
-      headers: this.getHeaders(),
-    });
-    return await fallbackResponse.json();
+    if (latest) return latest;
+    return this.requestJson<DigitaxSaleResponse>(
+      `/api/digitax/sales/${encodeURIComponent(saleId)}`,
+      { method: 'GET' },
+      { environment }
+    );
   }
 
   /**
-   * Helper to format a POS transaction into an eTIMS invoice payload
+   * Issue a KRA eTIMS Credit Note via Digitax for returns & refunds
    */
-  mapTransactionToEtims(
+  async createCreditNote(
+    params: DigitaxCreditNotePayload,
+    options: { environment?: 'sandbox' | 'production'; expectedTaxPin?: string } = {}
+  ): Promise<DigitaxCreditNoteResponse> {
+    return this.requestJson<DigitaxCreditNoteResponse>(
+      '/api/digitax/credit-notes',
+      {
+        method: 'POST',
+        body: JSON.stringify(params),
+      },
+      {
+        includeJson: true,
+        environment: options.environment,
+        expectedTaxPin: options.expectedTaxPin,
+      }
+    );
+  }
+
+  /**
+   * Poll credit note until KRA signature is confirmed
+   */
+  async pollCreditNoteCompletion(
+    creditNoteId: string,
+    maxAttempts = 5,
+    delayMs = 1200,
+    environment?: 'sandbox' | 'production'
+  ): Promise<DigitaxCreditNoteResponse> {
+    let latest: DigitaxCreditNoteResponse | null = null;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      try {
+        latest = await this.requestJson<DigitaxCreditNoteResponse>(
+          `/api/digitax/credit-notes/${encodeURIComponent(creditNoteId)}`,
+          { method: 'GET' },
+          { environment }
+        );
+        if (latest && latest.status === 'COMPLETED' && latest.receipt_signature) {
+          return latest;
+        }
+        if (latest && latest.status === 'FAILED') {
+          return latest;
+        }
+      } catch (err) {
+        console.warn(`Polling Digitax credit note ${creditNoteId} attempt ${attempt + 1}:`, err);
+      }
+    }
+    if (latest) return latest;
+    return this.requestJson<DigitaxCreditNoteResponse>(
+      `/api/digitax/credit-notes/${encodeURIComponent(creditNoteId)}`,
+      { method: 'GET' },
+      { environment }
+    );
+  }
+
+  /**
+   * Formats a POS transaction into an itemized Digitax eTIMS invoice payload
+   */
+  mapTransactionToEtims(params: {
     tx: {
       receiptNumber: string;
+      timestamp?: string;
+      locationId: string;
       total: number;
       subtotal: number;
       taxAmount: number;
-      paymentMethod: string;
-      customerName?: string;
-      customerPhone?: string;
-      items: Array<{
-        name: string;
-        quantity: number;
-        price: number;
-        taxRate?: number;
-      }>;
-    },
-    buyerPin?: string
-  ): CreateSaleParams {
-    const today = new Date().toISOString().split('T')[0];
-
-    // Map payment method to KRA payment_type_code
-    // 01 = Cash, 02 = Card, 04 = Mobile (M-Pesa)
-    let payment_type_code: '01' | '02' | '03' | '04' = '01';
-    if (tx.paymentMethod === 'mpesa') {
-      payment_type_code = '04';
-    } else if (tx.paymentMethod === 'card') {
-      payment_type_code = '02';
-    }
-
-    // Separate items by VAT rate: 16% (Class B) vs 0% (Class A / Exempt)
-    let totalTaxableB = 0;
-    let totalTaxableA = 0;
-
-    tx.items.forEach((item) => {
-      const lineTotal = item.price * item.quantity;
-      if (item.taxRate && item.taxRate > 0) {
-        totalTaxableB += lineTotal;
-      } else {
-        totalTaxableA += lineTotal;
-      }
-    });
-
-    const items: DigitaxSaleItem[] = [];
-
-    if (totalTaxableB > 0) {
-      items.push({
-        id: DEFAULT_VAT16_ITEM_ID,
-        quantity: 1,
-        unit_price: Number(totalTaxableB.toFixed(2)),
-        total_amount: Number(totalTaxableB.toFixed(2)),
-      });
-    }
-
-    if (totalTaxableA > 0 || items.length === 0) {
-      const exemptAmount = totalTaxableA > 0 ? totalTaxableA : tx.total;
-      items.push({
-        id: DEFAULT_EXEMPT_ITEM_ID,
-        quantity: 1,
-        unit_price: Number(exemptAmount.toFixed(2)),
-        total_amount: Number(exemptAmount.toFixed(2)),
-      });
-    }
-
-    return {
-      sale_date: today,
-      trader_invoice_number: tx.receiptNumber.startsWith('SOKO')
-        ? tx.receiptNumber
-        : `SOKO-${tx.receiptNumber}`,
-      payment_type_code,
-      invoice_status_code: '02',
-      customer_tin: buyerPin || undefined,
-      customer_name: tx.customerName || undefined,
-      items,
+      roundingAmount?: number;
+      pricingType?: 'inclusive' | 'exclusive';
+      paymentMethod: PaymentMethod | string;
+      paymentDetails?: { splitBreakdown?: SplitPaymentTender[] };
+      customerName?: string | null;
+      items: CartItem[];
     };
+    productsCatalog: Product[];
+    resolvedItemIdsByProductId: Record<string, string>;
+    taxSettings?: BusinessTaxSettings;
+    buyerPin?: string;
+  }): DigitaxSalePayload {
+    return buildDigitaxSalePayload(params);
+  }
+
+  /**
+   * Formats a POS RefundRecord into a KRA Credit Note payload linked to the original sale
+   */
+  mapRefundToCreditNote(params: {
+    refund: RefundRecord;
+    originalTx: {
+      receiptNumber: string;
+      locationId: string;
+      pricingType?: 'inclusive' | 'exclusive';
+      customerName?: string | null;
+      items: CartItem[];
+      etimsData?: {
+        saleId?: string;
+        traderInvoiceNumber?: string;
+        cuInvoiceNumber?: number | string;
+        customerTin?: string;
+        customerName?: string;
+      };
+    };
+    productsCatalog: Product[];
+    resolvedItemIdsByProductId: Record<string, string>;
+    taxSettings?: BusinessTaxSettings;
+  }): DigitaxCreditNotePayload {
+    return buildDigitaxCreditNotePayload(params);
   }
 }
 

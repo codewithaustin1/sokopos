@@ -36,7 +36,7 @@ export const DestructiveConfirmModal: React.FC = () => {
                 {isSuperAdmin ? 'Destructive Action Confirmation' : 'Confirm Account Removal'}
               </h3>
               <p className="text-[11px] text-red-100 mt-0.5">
-                {isSuperAdmin ? 'Super-Admin Safeguard Protocol' : 'Tenant Account Management Safeguard'}
+                {isSuperAdmin ? 'Platform Support Safeguard Protocol' : 'Tenant Account Management Safeguard'}
               </p>
             </div>
           </div>

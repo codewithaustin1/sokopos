@@ -193,7 +193,7 @@ export const SYSTEM_SITEMAP_ENTRIES: SitemapEntry[] = [
     authRequired: true,
     robotsDirective: 'noindex, follow',
     description: 'Tax rate preferences, receipt header notes, branch profiles, and staff PIN assignments.',
-    targetRole: 'Business Owners & Super Admins',
+    targetRole: 'Business Owners & Store Managers',
   },
   {
     path: '/pos?tab=cloud-sync',
@@ -208,14 +208,14 @@ export const SYSTEM_SITEMAP_ENTRIES: SitemapEntry[] = [
   },
   {
     path: '/pos?tab=super-admin',
-    title: 'Super Admin Multi-Tenant Platform Console',
+    title: 'Multi-Tenant Platform Console',
     category: 'pos_operational',
     priority: 0.4,
     changeFreq: 'monthly',
     authRequired: true,
     robotsDirective: 'noindex, nofollow',
     description: 'Multi-business tenant management, white-label branding, subscription upgrades, and audit logs.',
-    targetRole: 'Platform Super Administrators',
+    targetRole: 'Authorized Platform Support',
   },
 
   // 4. System & Search Engine Endpoints

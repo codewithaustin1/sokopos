@@ -1,5 +1,3 @@
-import { PaymentMethod } from '../types';
-
 export type TimeRangePreset =
   | 'today'
   | 'last_24h'

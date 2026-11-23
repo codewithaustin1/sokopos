@@ -3,17 +3,14 @@ import {
   Users,
   UserPlus,
   Shield,
-  Key,
   Building2,
   Trash2,
   Edit2,
   Lock,
-  CheckCircle2,
   AlertCircle,
   X,
   Loader2,
   Star,
-  Sparkles,
   RefreshCw,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
@@ -23,6 +20,7 @@ import {
   isQuotaAtOrAboveLimit,
   getRequiredTierForStaffCount,
 } from '../utils/subscriptionEntitlements';
+import { isSuperAdminEmail } from '../data/initialData';
 
 export const StaffManagementView: React.FC = () => {
   const {
@@ -349,7 +347,7 @@ export const StaffManagementView: React.FC = () => {
                     Public Demo Appointed Profile
                   </h4>
                   <span className="bg-amber-200/80 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
-                    Super Admin Managed
+                    Platform Managed
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
@@ -380,7 +378,12 @@ export const StaffManagementView: React.FC = () => {
               Active System Users ({systemUsers.length})
             </h3>
             <span className="text-xs text-slate-400">
-              Owner: <span className="font-bold text-slate-700">{currentBusiness.ownerEmail}</span>
+              Owner:{' '}
+              <span className="font-bold text-slate-700">
+                {isSuperAdminEmail(currentBusiness.ownerEmail)
+                  ? 'support@sokopos.co.ke'
+                  : currentBusiness.ownerEmail}
+              </span>
             </span>
           </div>
 

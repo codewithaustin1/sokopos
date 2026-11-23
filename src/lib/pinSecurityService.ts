@@ -160,34 +160,6 @@ export async function saveStaffCredentialOnServer(params: {
 }
 
 /**
- * Bulk sync existing staff credentials into server vault (e.g., on initialization)
- */
-export async function syncStaffCredentialsOnServer(cashiers: any[]): Promise<number> {
-  try {
-    const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (idToken) {
-      headers['Authorization'] = `Bearer ${idToken}`;
-    }
-
-    const response = await fetch(resolveApiUrl('/api/auth/sync-credentials'), {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ cashiers }),
-    });
-    if (response.ok) {
-      const data = await response.json();
-      return data.count || 0;
-    }
-  } catch (err) {
-    console.warn('Staff credentials bulk sync notice:', err);
-  }
-  return 0;
-}
-
-/**
  * Handle staff PIN validation through the protected /api/auth/verify-pin server route.
  * Never requires client to possess or expose the underlying PIN hash.
  */

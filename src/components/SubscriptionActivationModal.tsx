@@ -65,6 +65,7 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
     currentUser,
     currentLocation,
     pricingTiers,
+    refreshPricingTiers,
     selectedCheckoutPlan,
     selectedCheckoutBilling,
     openPricingPage,
@@ -74,6 +75,12 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
     livePaymentRecordSnapshot,
     openBusinessSettings,
   } = usePos();
+
+  useEffect(() => {
+    if (isOpen) {
+      refreshPricingTiers(false).catch(() => {});
+    }
+  }, [isOpen, refreshPricingTiers]);
 
   const [selectedPlanId, setSelectedPlanId] = useState<'free' | 'starter' | 'business' | 'premium'>(
     selectedCheckoutPlan || 'business'

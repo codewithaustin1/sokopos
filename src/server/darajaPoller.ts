@@ -42,6 +42,7 @@ export interface DarajaPollerOptions {
   initialGraceMs?: number;
   maxPendingAgeMs?: number;
   firestoreSweepIntervalMs?: number;
+  idleSweepIntervalMs?: number;
   maxAttemptsPerTxn?: number;
 }
 
@@ -67,6 +68,7 @@ export class DarajaSubscriptionPoller {
   private readonly initialGraceMs: number;
   private readonly maxPendingAgeMs: number;
   private readonly firestoreSweepIntervalMs: number;
+  private readonly idleSweepIntervalMs: number;
   private readonly maxAttemptsPerTxn: number;
 
   private readonly activeTasks = new Map<string, PendingDarajaSubscriptionTask>();
@@ -91,7 +93,8 @@ export class DarajaSubscriptionPoller {
     this.minItemPollIntervalMs = Math.max(2_000, options.minItemPollIntervalMs ?? 5_000);
     this.initialGraceMs = Math.max(0, options.initialGraceMs ?? 6_000);
     this.maxPendingAgeMs = Math.max(30_000, options.maxPendingAgeMs ?? 5 * 60_000);
-    this.firestoreSweepIntervalMs = Math.max(5_000, options.firestoreSweepIntervalMs ?? 20_000);
+    this.firestoreSweepIntervalMs = Math.max(5_000, options.firestoreSweepIntervalMs ?? 30_000);
+    this.idleSweepIntervalMs = Math.max(60_000, options.idleSweepIntervalMs ?? 10 * 60_000);
     this.maxAttemptsPerTxn = Math.max(1, options.maxAttemptsPerTxn ?? 45);
   }
 
@@ -175,7 +178,9 @@ export class DarajaSubscriptionPoller {
 
     try {
       const now = Date.now();
-      if (forceSweep || now - this.lastSweepAtMs >= this.firestoreSweepIntervalMs) {
+      const effectiveSweepInterval =
+        this.activeTasks.size > 0 ? this.firestoreSweepIntervalMs : this.idleSweepIntervalMs;
+      if (forceSweep || now - this.lastSweepAtMs >= effectiveSweepInterval) {
         this.lastSweepAtMs = now;
         this.lastSweepAtIso = new Date(now).toISOString();
         swept = true;

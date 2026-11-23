@@ -9,8 +9,6 @@ import {
   RefreshCw,
   ArrowRight,
   Package,
-  Layers,
-  Tag,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { ParsedProductPackage } from '../types/aiVision';
@@ -34,7 +32,6 @@ export const PackageScannerModal: React.FC<PackageScannerModalProps> = ({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisStatus, setAnalysisStatus] = useState('');
   const [parsedResult, setParsedResult] = useState<ParsedProductPackage | null>(null);
-  const [cameraActive, setCameraActive] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -47,7 +44,6 @@ export const PackageScannerModal: React.FC<PackageScannerModalProps> = ({
   const handleStartCamera = async () => {
     try {
       setActiveTab('camera');
-      setCameraActive(true);
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment' },
       });
@@ -58,7 +54,6 @@ export const PackageScannerModal: React.FC<PackageScannerModalProps> = ({
     } catch (err: any) {
       console.warn('Camera access error:', err);
       showToast('Could not access device camera. Please upload an image or choose a demo sample.', 'error');
-      setCameraActive(false);
       setActiveTab('samples');
     }
   };
@@ -69,7 +64,6 @@ export const PackageScannerModal: React.FC<PackageScannerModalProps> = ({
       stream.getTracks().forEach((track) => track.stop());
       videoRef.current.srcObject = null;
     }
-    setCameraActive(false);
   };
 
   const handleCaptureFromCamera = () => {

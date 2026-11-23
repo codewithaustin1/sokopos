@@ -5,15 +5,11 @@ import {
   X,
   ArrowRight,
   Send,
-  MessageSquare,
-  Bot,
   User,
-  RotateCcw,
   Minimize2,
   ExternalLink,
   CheckCheck,
   ShieldCheck,
-  ChevronDown,
 } from 'lucide-react';
 import { soundFx } from '../../utils/audio';
 

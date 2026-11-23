@@ -8,7 +8,6 @@ import {
   X,
   Play,
   Keyboard,
-  Info,
 } from 'lucide-react';
 import { useBackgroundScanner } from '../hooks/useBackgroundScanner';
 import { usePos } from '../context/PosContext';

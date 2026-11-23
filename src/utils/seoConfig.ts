@@ -15,16 +15,6 @@ export interface RouteSeoMeta {
   breadcrumbName: string;
 }
 
-export const PUBLIC_INDEXABLE_PATHS = [
-  '/',
-  '/pricing',
-  '/faq',
-  '/terms',
-  '/privacy',
-  '/ownership',
-  '/compliance',
-] as const;
-
 export const ROUTE_SEO_MAP: Record<string, RouteSeoMeta> = {
   '/': {
     path: '/',

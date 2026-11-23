@@ -1,18 +1,14 @@
 import React, { useRef, useEffect, useState } from 'react';
 import {
   Printer,
-  MessageSquare,
   ArrowRight,
   Check,
   Share2,
   RotateCcw,
   AlertTriangle,
-  CheckCircle2,
   Download,
   Star,
   ExternalLink,
-  ShieldCheck,
-  QrCode as QrIcon,
   Bluetooth,
 } from 'lucide-react';
 import QRCode from 'qrcode';
@@ -34,7 +30,6 @@ export const ReceiptModal: React.FC = () => {
     toggleAutoPrintReceipt,
     receiptFormat,
     printerType,
-    bluetoothPrinterId,
     isSellingMode,
   } = usePos();
   const receiptRef = useRef<HTMLDivElement | null>(null);
@@ -169,10 +164,6 @@ export const ReceiptModal: React.FC = () => {
   }, [activeReceipt, setActiveReceipt]);
 
   if (!activeReceipt) return null;
-
-  const handlePrint = () => {
-    handlePrintReceipt();
-  };
 
   const handleDownloadPdf = () => {
     if (!activeReceipt) return;

@@ -33,11 +33,11 @@ export const DEFAULT_SECURITY_SETTINGS: BusinessSecuritySettings = {
 export const INITIAL_SUPER_ADMIN_USER: AuthUser = {
   id: 'usr-superadmin-01',
   email: SUPER_ADMIN_EMAIL,
-  name: 'Platform Administrator',
-  initials: 'PA',
+  name: 'Platform Support',
+  initials: 'PS',
   authProvider: 'google',
   role: 'super_admin',
-  businessId: 'biz-upfront', // Dedicated business tenant for upfrontretaile@gmail.com
+  businessId: 'biz-upfront',
   createdAt: '2026-01-01T00:00:00.000Z',
 };
 
@@ -85,7 +85,7 @@ export const INITIAL_BUSINESSES: Business[] = [
     name: 'Upfront Retail Solutions',
     code: 'UPFRONT',
     ownerEmail: SUPER_ADMIN_EMAIL,
-    ownerName: 'Platform Administrator',
+    ownerName: 'Store Manager',
     createdAt: '2026-01-01T08:00:00.000Z',
     plan: 'enterprise',
     status: 'active',
@@ -758,7 +758,7 @@ export const INITIAL_SUPER_ADMIN_AUDIT_LOGS: SuperAdminAuditEntry[] = [
     action: "provision_business",
     recordType: "business",
     recordId: "biz-upfront",
-    description: "Platform Administrator verified tenant Upfront Retail Solutions with Google Account upfrontretaile@gmail.com",
+    description: "Platform Support verified tenant Upfront Retail Solutions account configuration",
     beforeValue: null,
     afterValue: { name: "Upfront Retail Solutions", ownerEmail: SUPER_ADMIN_EMAIL },
   },

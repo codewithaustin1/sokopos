@@ -1,20 +1,16 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   X,
   Printer,
   QrCode,
   Barcode as BarcodeIcon,
-  Tag,
   Download,
   Copy,
   Check,
   Plus,
   Minus,
   Trash2,
-  Sliders,
-  Sparkles,
   Layers,
-  Store,
   Eye,
   RefreshCw,
   Info,

@@ -27,6 +27,11 @@ import {
   isPublicSeoPath,
   normalizePathname,
 } from './src/utils/seoConfig';
+import {
+  VALID_KRA_TAX_CODES,
+  verifyDigitaxCreditNotePayloadServerSide,
+  verifyDigitaxSalePayloadServerSide,
+} from './src/utils/etimsFiscalMapper';
 
 async function startServer() {
   const app = express();
@@ -957,7 +962,7 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
 
   async function hydrateStaffCredentialsFromFirestore(force = false): Promise<Record<string, StoredStaffCredential>> {
     const creds = loadStaffCredentials();
-    if (!force && Date.now() - lastFirestoreHydrationAt < 30_000 && lastFirestoreHydrationAt > 0) {
+    if (!force && Date.now() - lastFirestoreHydrationAt < 10 * 60_000 && lastFirestoreHydrationAt > 0) {
       return creds;
     }
 
@@ -1047,7 +1052,10 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
           },
           body: JSON.stringify({ fields }),
         });
-        if (resp.ok) return true;
+        if (resp.ok) {
+          lastFirestoreHydrationAt = 0;
+          return true;
+        }
         if ((resp.status === 401 || resp.status === 403) && source === 'adc') {
           cachedAdcToken = null;
           gcpTokenFirestoreCooldownUntil = Date.now() + GCP_FIRESTORE_DENIED_COOLDOWN_MS;
@@ -2147,25 +2155,80 @@ Extract:
   });
 
   // -------------------------------------------------------------
-  // Digitax KRA eTIMS Proxy API (In Partnership with Digitax)
+  // Digitax KRA eTIMS Fiscal Validation & Proxy API (In Partnership with Digitax)
   // -------------------------------------------------------------
-  const DIGITAX_DEFAULT_API_KEY = process.env.DIGITAX_API_KEY || 'KEN_TEST_api_key_0HBmI6qU0WOhnkjcVgf8cleoFR1yIWsk';
   const DIGITAX_BASE_URL = 'https://api.digitax.tech/ke/v2';
+  const digitaxPinCache = new Map<string, { taxPin: string; expiresAt: number }>();
+
+  function resolveServerDigitaxKey(req: express.Request): {
+    apiKey: string | null;
+    environment: 'sandbox' | 'production';
+  } {
+    const requestedEnv = String(req.headers['x-digitax-env'] || process.env.DIGITAX_ENV || 'sandbox')
+      .trim()
+      .toLowerCase();
+    const environment: 'sandbox' | 'production' =
+      requestedEnv === 'production' ? 'production' : 'sandbox';
+    const key =
+      environment === 'production'
+        ? (process.env.DIGITAX_PRODUCTION_API_KEY || process.env.DIGITAX_API_KEY || '').trim()
+        : (process.env.DIGITAX_SANDBOX_API_KEY || process.env.DIGITAX_API_KEY || '').trim();
+    return { apiKey: key || null, environment };
+  }
+
+  async function resolveVerifiedDigitaxTaxPin(apiKey: string): Promise<string | null> {
+    const cached = digitaxPinCache.get(apiKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.taxPin;
+    }
+    try {
+      const resp = await fetch(`${DIGITAX_BASE_URL}/etims-info`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': apiKey,
+        },
+      });
+      if (!resp.ok) return null;
+      const data: any = await resp.json().catch(() => null);
+      const pin = typeof data?.tax_pin === 'string' ? data.tax_pin.trim().toUpperCase() : '';
+      if (pin) {
+        digitaxPinCache.set(apiKey, { taxPin: pin, expiresAt: Date.now() + 5 * 60 * 1000 });
+        return pin;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
 
   app.get('/api/digitax/etims-info', async (req, res) => {
     try {
       const caller = await requireVerifiedCaller(req, res);
       if (!caller) return;
 
-      const apiKey = (req.headers['x-api-key'] as string) || DIGITAX_DEFAULT_API_KEY;
+      const { apiKey, environment } = resolveServerDigitaxKey(req);
+      if (!apiKey) {
+        return res.status(503).json({
+          error: 'DIGITAX_API_KEY is not configured in server environment variables.',
+          code: 'DIGITAX_NOT_CONFIGURED',
+          environment,
+        });
+      }
+
       const response = await fetch(`${DIGITAX_BASE_URL}/etims-info`, {
         headers: {
           'Content-Type': 'application/json',
           'X-Api-Key': apiKey,
         },
       });
-      const data = await response.json();
-      return res.status(response.status).json(data);
+      const data: any = await response.json().catch(() => ({}));
+      if (response.ok && typeof data?.tax_pin === 'string') {
+        digitaxPinCache.set(apiKey, {
+          taxPin: data.tax_pin.trim().toUpperCase(),
+          expiresAt: Date.now() + 5 * 60 * 1000,
+        });
+      }
+      return res.status(response.status).json({ ...data, environment });
     } catch (err: any) {
       console.error('Error proxying Digitax etims-info:', err);
       return res.status(500).json({ error: err.message || 'Digitax etims-info proxy failed' });
@@ -2177,18 +2240,92 @@ Extract:
       const caller = await requireVerifiedCaller(req, res);
       if (!caller) return;
 
-      const apiKey = (req.headers['x-api-key'] as string) || DIGITAX_DEFAULT_API_KEY;
+      const { apiKey } = resolveServerDigitaxKey(req);
+      if (!apiKey) {
+        return res.status(503).json({
+          error: 'DIGITAX_API_KEY is not configured in server environment variables.',
+          code: 'DIGITAX_NOT_CONFIGURED',
+        });
+      }
+
       const response = await fetch(`${DIGITAX_BASE_URL}/items`, {
         headers: {
           'Content-Type': 'application/json',
           'X-Api-Key': apiKey,
         },
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       return res.status(response.status).json(data);
     } catch (err: any) {
       console.error('Error proxying Digitax items:', err);
       return res.status(500).json({ error: err.message || 'Digitax items proxy failed' });
+    }
+  });
+
+  app.post('/api/digitax/items', async (req, res) => {
+    try {
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
+      const { apiKey } = resolveServerDigitaxKey(req);
+      if (!apiKey) {
+        return res.status(503).json({
+          error: 'DIGITAX_API_KEY is not configured in server environment variables.',
+          code: 'DIGITAX_NOT_CONFIGURED',
+        });
+      }
+
+      const body = req.body || {};
+      const itemName = typeof body.item_name === 'string' ? body.item_name.trim() : '';
+      const taxTypeCode = body.tax_type_code;
+      const defaultUnitPrice = Number(body.default_unit_price ?? 0);
+
+      if (!itemName || itemName.length > 200) {
+        return res.status(422).json({
+          error: 'Valid item_name (1-200 chars) is required for Digitax SKU registration.',
+          code: 'FISCAL_VALIDATION_FAILED',
+        });
+      }
+      if (!VALID_KRA_TAX_CODES.includes(taxTypeCode)) {
+        return res.status(422).json({
+          error: 'Invalid KRA tax_type_code. Expected one of A, B, C, D, or E.',
+          code: 'FISCAL_VALIDATION_FAILED',
+        });
+      }
+      if (!Number.isFinite(defaultUnitPrice) || defaultUnitPrice < 0) {
+        return res.status(422).json({
+          error: 'default_unit_price must be a non-negative number.',
+          code: 'FISCAL_VALIDATION_FAILED',
+        });
+      }
+
+      const cleanPayload = {
+        item_name: itemName,
+        item_class_code: String(body.item_class_code || '50202300'),
+        item_type_code: ['1', '2', '3'].includes(String(body.item_type_code))
+          ? String(body.item_type_code)
+          : '2',
+        tax_type_code: taxTypeCode,
+        origin_nation_code: String(body.origin_nation_code || 'KE').toUpperCase().slice(0, 4),
+        package_unit_code: String(body.package_unit_code || 'CT').slice(0, 8),
+        quantity_unit_code: String(body.quantity_unit_code || 'U').slice(0, 8),
+        default_unit_price: Math.round((defaultUnitPrice + Number.EPSILON) * 100) / 100,
+        is_stock_item: body.is_stock_item !== false,
+      };
+
+      const response = await fetch(`${DIGITAX_BASE_URL}/items`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': apiKey,
+        },
+        body: JSON.stringify(cleanPayload),
+      });
+      const data = await response.json().catch(() => ({}));
+      return res.status(response.status).json(data);
+    } catch (err: any) {
+      console.error('Error registering Digitax item:', err);
+      return res.status(500).json({ error: err.message || 'Digitax item registration failed' });
     }
   });
 
@@ -2197,14 +2334,21 @@ Extract:
       const caller = await requireVerifiedCaller(req, res);
       if (!caller) return;
 
-      const apiKey = (req.headers['x-api-key'] as string) || DIGITAX_DEFAULT_API_KEY;
+      const { apiKey } = resolveServerDigitaxKey(req);
+      if (!apiKey) {
+        return res.status(503).json({
+          error: 'DIGITAX_API_KEY is not configured in server environment variables.',
+          code: 'DIGITAX_NOT_CONFIGURED',
+        });
+      }
+
       const response = await fetch(`${DIGITAX_BASE_URL}/sales`, {
         headers: {
           'Content-Type': 'application/json',
           'X-Api-Key': apiKey,
         },
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       return res.status(response.status).json(data);
     } catch (err: any) {
       console.error('Error proxying Digitax sales:', err);
@@ -2217,16 +2361,72 @@ Extract:
       const caller = await requireVerifiedCaller(req, res);
       if (!caller) return;
 
-      const apiKey = (req.headers['x-api-key'] as string) || DIGITAX_DEFAULT_API_KEY;
+      const { apiKey, environment } = resolveServerDigitaxKey(req);
+      if (!apiKey) {
+        return res.status(503).json({
+          error: 'DIGITAX_API_KEY is not configured in server environment variables.',
+          code: 'DIGITAX_NOT_CONFIGURED',
+          environment,
+        });
+      }
+
+      const validation = verifyDigitaxSalePayloadServerSide(req.body);
+      if (!validation.valid) {
+        return res.status(422).json({
+          error: validation.errors.join('; '),
+          code: 'FISCAL_VALIDATION_FAILED',
+          errors: validation.errors,
+        });
+      }
+
+      // Verify tenant KRA PIN alignment if merchant configured a non-placeholder live PIN
+      const tenantTaxPin = String(req.headers['x-tenant-tax-pin'] || '')
+        .trim()
+        .toUpperCase();
+      if (
+        environment === 'production' &&
+        tenantTaxPin &&
+        tenantTaxPin !== 'P051234567Z' &&
+        tenantTaxPin !== 'P000000000X'
+      ) {
+        const remotePin = await resolveVerifiedDigitaxTaxPin(apiKey);
+        if (remotePin && remotePin !== tenantTaxPin) {
+          return res.status(422).json({
+            error: `Tenant KRA PIN (${tenantTaxPin}) does not match active Digitax CU Tax PIN (${remotePin}).`,
+            code: 'TAX_PIN_MISMATCH',
+          });
+        }
+      }
+
+      const cleanSalePayload = {
+        sale_date: req.body.sale_date,
+        trader_invoice_number: req.body.trader_invoice_number,
+        payment_type_code: req.body.payment_type_code || '01',
+        invoice_status_code: req.body.invoice_status_code || '02',
+        customer_pin: req.body.customer_pin || req.body.customer_tin || undefined,
+        customer_name: req.body.customer_name || undefined,
+        items: req.body.items.map((item: any) => ({
+          id: item.id,
+          quantity: Number(item.quantity),
+          unit_price: Number(item.unit_price),
+          total_amount: Number(item.total_amount),
+          tax_type_code: item.tax_type_code,
+          taxable_amount: item.taxable_amount,
+          tax_amount: item.tax_amount,
+          discount_rate: Number(item.discount_rate ?? 0),
+          discount_amount: Number(item.discount_amount ?? 0),
+        })),
+      };
+
       const response = await fetch(`${DIGITAX_BASE_URL}/sales`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Api-Key': apiKey,
         },
-        body: JSON.stringify(req.body),
+        body: JSON.stringify(cleanSalePayload),
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       return res.status(response.status).json(data);
     } catch (err: any) {
       console.error('Error proxying Digitax create sale:', err);
@@ -2244,18 +2444,118 @@ Extract:
         return res.status(400).json({ error: 'Invalid Digitax sale ID format' });
       }
 
-      const apiKey = (req.headers['x-api-key'] as string) || DIGITAX_DEFAULT_API_KEY;
+      const { apiKey } = resolveServerDigitaxKey(req);
+      if (!apiKey) {
+        return res.status(503).json({
+          error: 'DIGITAX_API_KEY is not configured in server environment variables.',
+          code: 'DIGITAX_NOT_CONFIGURED',
+        });
+      }
+
       const response = await fetch(`${DIGITAX_BASE_URL}/sales/${encodeURIComponent(saleId)}`, {
         headers: {
           'Content-Type': 'application/json',
           'X-Api-Key': apiKey,
         },
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       return res.status(response.status).json(data);
     } catch (err: any) {
       console.error('Error proxying Digitax sale details:', err);
       return res.status(500).json({ error: err.message || 'Digitax sale details proxy failed' });
+    }
+  });
+
+  app.post('/api/digitax/credit-notes', async (req, res) => {
+    try {
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
+      const { apiKey } = resolveServerDigitaxKey(req);
+      if (!apiKey) {
+        return res.status(503).json({
+          error: 'DIGITAX_API_KEY is not configured in server environment variables.',
+          code: 'DIGITAX_NOT_CONFIGURED',
+        });
+      }
+
+      const validation = verifyDigitaxCreditNotePayloadServerSide(req.body);
+      if (!validation.valid) {
+        return res.status(422).json({
+          error: validation.errors.join('; '),
+          code: 'FISCAL_VALIDATION_FAILED',
+          errors: validation.errors,
+        });
+      }
+
+      const cleanCreditPayload = {
+        return_date: req.body.return_date,
+        trader_invoice_number: req.body.trader_invoice_number,
+        original_trader_invoice_number: req.body.original_trader_invoice_number,
+        sale_id: req.body.sale_id || undefined,
+        original_invoice_number: req.body.original_invoice_number || undefined,
+        credit_note_reason: req.body.credit_note_reason || '06',
+        receipt_type_code: 'R',
+        customer_pin: req.body.customer_pin || req.body.customer_tin || undefined,
+        customer_name: req.body.customer_name || undefined,
+        items: req.body.items.map((item: any) => ({
+          id: item.id,
+          quantity: Number(item.quantity),
+          unit_price: Number(item.unit_price),
+          total_amount: Number(item.total_amount),
+          tax_type_code: item.tax_type_code,
+          taxable_amount: item.taxable_amount,
+          tax_amount: item.tax_amount,
+          discount_rate: Number(item.discount_rate ?? 0),
+          discount_amount: Number(item.discount_amount ?? 0),
+        })),
+      };
+
+      const response = await fetch(`${DIGITAX_BASE_URL}/credit-notes`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': apiKey,
+        },
+        body: JSON.stringify(cleanCreditPayload),
+      });
+      const data = await response.json().catch(() => ({}));
+      return res.status(response.status).json(data);
+    } catch (err: any) {
+      console.error('Error proxying Digitax credit note:', err);
+      return res.status(500).json({ error: err.message || 'Digitax credit note proxy failed' });
+    }
+  });
+
+  app.get('/api/digitax/credit-notes/:id', async (req, res) => {
+    try {
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
+      const creditNoteId = String(req.params.id || '').trim();
+      if (!/^[a-zA-Z0-9_-]{1,64}$/.test(creditNoteId)) {
+        return res.status(400).json({ error: 'Invalid Digitax credit note ID format' });
+      }
+
+      const { apiKey } = resolveServerDigitaxKey(req);
+      if (!apiKey) {
+        return res.status(503).json({
+          error: 'DIGITAX_API_KEY is not configured in server environment variables.',
+          code: 'DIGITAX_NOT_CONFIGURED',
+        });
+      }
+
+      const response = await fetch(`${DIGITAX_BASE_URL}/credit-notes/${encodeURIComponent(creditNoteId)}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': apiKey,
+        },
+      });
+      const data = await response.json().catch(() => ({}));
+      return res.status(response.status).json(data);
+    } catch (err: any) {
+      console.error('Error proxying Digitax credit note details:', err);
+      return res.status(500).json({ error: err.message || 'Digitax credit note details proxy failed' });
     }
   });
 
@@ -4363,11 +4663,18 @@ Extract:
     }
   });
 
+  let cachedAffiliateOverview: { data: any; fetchedAt: number } | null = null;
+
   // Super Admin: Affiliates & Payouts Overview
   app.get('/api/affiliates/admin/overview', async (req, res) => {
     try {
       const caller = await requireSuperAdminCaller(req, res);
       if (!caller) return;
+
+      const force = req.query.force === 'true';
+      if (!force && cachedAffiliateOverview && Date.now() - cachedAffiliateOverview.fetchedAt < 60_000) {
+        return res.json(cachedAffiliateOverview.data);
+      }
 
       const [affiliates, commissions, payouts] = await Promise.all([
         listFirestoreDocs('affiliates'),
@@ -4375,11 +4682,13 @@ Extract:
         listFirestoreDocs('affiliate_payouts'),
       ]);
 
-      return res.json({
+      const data = {
         affiliates: affiliates.sort((a, b) => Number(b.totalEarnedKes || 0) - Number(a.totalEarnedKes || 0)),
         commissions: commissions.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))),
         payouts: payouts.sort((a, b) => String(b.requestedAt || '').localeCompare(String(a.requestedAt || ''))),
-      });
+      };
+      cachedAffiliateOverview = { data, fetchedAt: Date.now() };
+      return res.json(data);
     } catch (err: any) {
       console.error('Error in /api/affiliates/admin/overview:', err);
       return res.status(500).json({ error: 'Failed to load admin affiliate overview.' });
@@ -4459,6 +4768,7 @@ Extract:
         }
       }
 
+      cachedAffiliateOverview = null;
       return res.json({ success: true });
     } catch (err: any) {
       console.error('Error in /api/affiliates/admin/payout-review:', err);
@@ -5340,10 +5650,18 @@ Extract:
     };
   }
 
+  let cachedTelemetryRemote: {
+    dailyDocs: any[];
+    events: any[];
+    businesses: any[];
+    fetchedAt: number;
+  } | null = null;
+
   app.get('/api/telemetry/overview', async (req, res) => {
     const rawDays = Number(req.query.days) || 30;
     const rangeDays: 7 | 30 | 90 = rawDays === 7 ? 7 : rawDays === 90 ? 90 : 30;
     const excludeDemo = String(req.query.excludeDemo ?? 'true') !== 'false';
+    const force = req.query.force === 'true';
     const dateKeys = buildTrafficDateKeys(rangeDays);
 
     try {
@@ -5354,16 +5672,32 @@ Extract:
         return res.status(403).json({ error: 'Super Admin authentication required for platform traffic telemetry.' });
       }
 
-      // Fetch Firestore daily rollups, milestone feed, and businesses in parallel; fall back to [] if empty or unreachable
-      const [remoteDailyDocs, remoteEvents, remoteBusinesses] = await Promise.all([
-        listFirestoreDocs('platform_traffic_daily', 120, bearerToken).catch(() => []),
-        listFirestoreDocs('platform_traffic_events', 150, bearerToken).catch(() => []),
-        listFirestoreDocs('businesses', 500, bearerToken).catch(() => []),
-      ]);
+      let safeDailyDocs: any[] = [];
+      let safeEvents: any[] = [];
+      let safeBusinesses: any[] = [];
 
-      const safeDailyDocs = Array.isArray(remoteDailyDocs) ? remoteDailyDocs : [];
-      const safeEvents = Array.isArray(remoteEvents) ? remoteEvents : [];
-      const safeBusinesses = Array.isArray(remoteBusinesses) ? remoteBusinesses : [];
+      if (!force && cachedTelemetryRemote && Date.now() - cachedTelemetryRemote.fetchedAt < 60_000) {
+        safeDailyDocs = cachedTelemetryRemote.dailyDocs;
+        safeEvents = cachedTelemetryRemote.events;
+        safeBusinesses = cachedTelemetryRemote.businesses;
+      } else {
+        // Fetch Firestore daily rollups, milestone feed, and businesses in parallel; fall back to [] if empty or unreachable
+        const [remoteDailyDocs, remoteEvents, remoteBusinesses] = await Promise.all([
+          listFirestoreDocs('platform_traffic_daily', 120, bearerToken).catch(() => []),
+          listFirestoreDocs('platform_traffic_events', 150, bearerToken).catch(() => []),
+          listFirestoreDocs('businesses', 500, bearerToken).catch(() => []),
+        ]);
+
+        safeDailyDocs = Array.isArray(remoteDailyDocs) ? remoteDailyDocs : [];
+        safeEvents = Array.isArray(remoteEvents) ? remoteEvents : [];
+        safeBusinesses = Array.isArray(remoteBusinesses) ? remoteBusinesses : [];
+        cachedTelemetryRemote = {
+          dailyDocs: safeDailyDocs,
+          events: safeEvents,
+          businesses: safeBusinesses,
+          fetchedAt: Date.now(),
+        };
+      }
 
       const remoteDailyMap = new Map<string, Record<string, any>>();
       for (const doc of safeDailyDocs) {

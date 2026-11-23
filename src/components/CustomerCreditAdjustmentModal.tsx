@@ -2,10 +2,8 @@ import React, { useState } from 'react';
 import {
   X,
   CreditCard,
-  DollarSign,
   ArrowDownLeft,
   ArrowUpRight,
-  FileText,
   CheckCircle,
   AlertCircle,
   Wallet,
@@ -24,7 +22,7 @@ export const CustomerCreditAdjustmentModal: React.FC<CustomerCreditAdjustmentMod
   onClose,
   customer,
 }) => {
-  const { adjustCustomerCredit, currentLocation, showToast } = usePos();
+  const { adjustCustomerCredit, currentLocation } = usePos();
 
   const [operationType, setOperationType] = useState<'repayment' | 'deposit' | 'charge'>('repayment');
   const [amount, setAmount] = useState('');

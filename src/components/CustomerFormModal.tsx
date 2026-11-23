@@ -10,7 +10,6 @@ import {
   FileText,
   CheckCircle,
   AlertCircle,
-  Sparkles,
   BookOpen,
 } from 'lucide-react';
 import { Customer } from '../types';

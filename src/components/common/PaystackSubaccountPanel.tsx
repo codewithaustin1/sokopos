@@ -127,7 +127,7 @@ export const PaystackSubaccountPanel: React.FC<PaystackSubaccountPanelProps> = (
 
     const token = await getFirebaseBearerToken();
     if (!token) {
-      setErrorMsg('Please sign in with a verified Business Owner or Super Admin Google account to link a subaccount.');
+      setErrorMsg('Please sign in with a verified Business Owner or Platform Support Google account to link a subaccount.');
       return;
     }
 
@@ -178,7 +178,7 @@ export const PaystackSubaccountPanel: React.FC<PaystackSubaccountPanelProps> = (
 
     const token = await getFirebaseBearerToken();
     if (!token) {
-      setErrorMsg('Please sign in with a verified Business Owner or Super Admin Google account to create a subaccount.');
+      setErrorMsg('Please sign in with a verified Business Owner or Platform Support Google account to create a subaccount.');
       return;
     }
 
@@ -221,7 +221,7 @@ export const PaystackSubaccountPanel: React.FC<PaystackSubaccountPanelProps> = (
 
     const token = await getFirebaseBearerToken();
     if (!token) {
-      setErrorMsg('Please sign in with a verified Business Owner or Super Admin Google account to unlink.');
+      setErrorMsg('Please sign in with a verified Business Owner or Platform Support Google account to unlink.');
       return;
     }
 

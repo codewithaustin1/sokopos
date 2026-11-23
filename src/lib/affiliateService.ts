@@ -68,18 +68,6 @@ export function clearCapturedReferralCode(): void {
   }
 }
 
-export async function validateReferralCode(
-  code: string
-): Promise<{ valid: boolean; code?: string; partnerName?: string }> {
-  try {
-    const resp = await fetch(resolveApiUrl(`/api/affiliates/validate/${encodeURIComponent(code.trim())}`));
-    if (!resp.ok) return { valid: false };
-    return await resp.json();
-  } catch {
-    return { valid: false };
-  }
-}
-
 export async function enrollAffiliate(params: {
   uid: string;
   email: string;

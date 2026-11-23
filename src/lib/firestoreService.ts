@@ -5,6 +5,7 @@ import {
   getDocsFromServer,
   getDoc,
   setDoc,
+  updateDoc,
   deleteDoc,
   query,
   where,
@@ -27,7 +28,6 @@ import {
   Supplier,
   Transaction,
   SyncLogEvent,
-  StockTransfer,
   StoreSalesBackup,
   PlatformSettings,
   PlatformPricingConfig,
@@ -682,21 +682,12 @@ export async function saveUserProfileToFirestore(user: {
 // -------------------------------------------------------------
 // Tenant Products Firestore API (Row-Level Security Scoped)
 // -------------------------------------------------------------
-export async function getTenantProductsFromFirestore(businessId: string): Promise<Product[]> {
-  if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) return [];
-  const path = 'products';
-  try {
-    const q = query(collection(db, path), where('businessId', '==', businessId));
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => d.data() as Product);
-  } catch (error) {
-    if (!auth.currentUser || isFirestoreQuotaError(error)) {
-      if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
-      return [];
-    }
-    handleFirestoreError(error, OperationType.LIST, path);
-    return [];
-  }
+export interface ProductDeltaEvent {
+  upserts: Product[];
+  deletedIds: string[];
+  isFullSync: boolean;
+  isFromCache?: boolean;
+  maxUpdatedAt?: string;
 }
 
 /**
@@ -709,7 +700,7 @@ export async function getFreshTenantProductsFromFirestore(businessId: string): P
   try {
     const q = query(collection(db, path), where('businessId', '==', businessId));
     const snap = await getDocsFromServer(q);
-    return snap.docs.map((d) => d.data() as Product);
+    return snap.docs.map((d) => d.data() as Product).filter((p) => !p.isDeleted);
   } catch (error) {
     if (!auth.currentUser) {
       return [];
@@ -721,7 +712,7 @@ export async function getFreshTenantProductsFromFirestore(businessId: string): P
     console.warn('Direct server fetch from Firestore failed, falling back:', error);
     try {
       const fallbackSnap = await getDocs(query(collection(db, path), where('businessId', '==', businessId)));
-      return fallbackSnap.docs.map((d) => d.data() as Product);
+      return fallbackSnap.docs.map((d) => d.data() as Product).filter((p) => !p.isDeleted);
     } catch (fallbackErr) {
       if (!auth.currentUser || isFirestoreQuotaError(fallbackErr)) {
         if (isFirestoreQuotaError(fallbackErr)) markFirestoreQuotaExceeded();
@@ -733,67 +724,124 @@ export async function getFreshTenantProductsFromFirestore(businessId: string): P
   }
 }
 
-export function subscribeToTenantProducts(
+/**
+ * Cursor-based incremental product listener.
+ * When `sinceIso` is provided, listens only to documents updated after `(sinceIso - 60s)`
+ * to eliminate full catalog re-reads across reloads. Gracefully falls back to full tenant
+ * subscription if the composite index (`businessId` + `updatedAt`) is not yet deployed.
+ */
+export function subscribeToTenantProductsDelta(
   businessId: string,
-  onData: (products: Product[], isFromCache?: boolean) => void
+  sinceIso: string | null | undefined,
+  onDelta: (event: ProductDeltaEvent) => void
 ): Unsubscribe {
   if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
     return () => {};
   }
-  const path = 'products';
-  const q = query(collection(db, path), where('businessId', '==', businessId));
-  return onSnapshot(
-    q,
-    { includeMetadataChanges: true },
-    (snap) => {
-      const isFromCache = snap.metadata.fromCache;
-      const prods = snap.docs.map((d) => d.data() as Product);
-      onData(prods, isFromCache);
-    },
-    (error) => {
-      if (!auth.currentUser || isFirestoreQuotaError(error)) {
-        if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
-        return;
+
+  let activeUnsub: Unsubscribe | null = null;
+  let disposed = false;
+
+  const attach = (useDeltaQuery: boolean) => {
+    if (disposed || !db || !auth.currentUser || isFirestoreQuotaCooldownActive()) return;
+
+    const path = 'products';
+    const sinceMs = sinceIso ? new Date(sinceIso).getTime() : NaN;
+    const canUseDelta = useDeltaQuery && Number.isFinite(sinceMs) && sinceMs > 0;
+    const effectiveSinceIso = canUseDelta
+      ? new Date(Math.max(0, sinceMs - 60_000)).toISOString()
+      : null;
+
+    const q = effectiveSinceIso
+      ? query(
+          collection(db, path),
+          where('businessId', '==', businessId),
+          where('updatedAt', '>', effectiveSinceIso)
+        )
+      : query(collection(db, path), where('businessId', '==', businessId));
+
+    activeUnsub = onSnapshot(
+      q,
+      { includeMetadataChanges: true },
+      (snap) => {
+        const isFromCache = snap.metadata.fromCache;
+        const upserts: Product[] = [];
+        const deletedIds: string[] = [];
+        let maxUpdatedAt = '';
+
+        for (const docSnap of snap.docs) {
+          const prod = docSnap.data() as Product;
+          if (prod.updatedAt && prod.updatedAt > maxUpdatedAt) {
+            maxUpdatedAt = prod.updatedAt;
+          }
+          if (prod.isDeleted) {
+            deletedIds.push(prod.id || docSnap.id);
+          } else {
+            upserts.push(prod);
+          }
+        }
+
+        if (!maxUpdatedAt && !isFromCache) {
+          maxUpdatedAt = new Date().toISOString();
+        }
+
+        onDelta({
+          upserts,
+          deletedIds,
+          isFullSync: !effectiveSinceIso,
+          isFromCache,
+          maxUpdatedAt: maxUpdatedAt || undefined,
+        });
+      },
+      (error: any) => {
+        if (!auth.currentUser || isFirestoreQuotaError(error)) {
+          if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
+          return;
+        }
+        if (
+          effectiveSinceIso &&
+          (error?.code === 'failed-precondition' || String(error?.message || '').includes('index'))
+        ) {
+          console.warn('Products delta index missing; falling back to standard tenant products stream.');
+          if (activeUnsub) {
+            activeUnsub();
+            activeUnsub = null;
+          }
+          attach(false);
+          return;
+        }
+        try {
+          handleFirestoreError(error, OperationType.GET, path);
+        } catch (err) {
+          console.warn(`Firestore products delta subscription notice on "${path}":`, err);
+        }
       }
-      try {
-        handleFirestoreError(error, OperationType.GET, path);
-      } catch (err) {
-        console.warn(`Firestore products subscription notice on "${path}":`, err);
-      }
+    );
+  };
+
+  attach(Boolean(sinceIso));
+
+  return () => {
+    disposed = true;
+    if (activeUnsub) {
+      activeUnsub();
+      activeUnsub = null;
     }
-  );
+  };
 }
 
 export async function saveProductToFirestore(product: Product): Promise<void> {
   if (!db || !auth.currentUser || product.businessId === 'biz-demo' || product.id.startsWith('prod-demo-')) return;
   const path = `products/${product.id}`;
+  const payload: Product = {
+    ...product,
+    updatedAt: product.updatedAt || new Date().toISOString(),
+    isDeleted: false,
+  };
   try {
-    await setDoc(doc(db, 'products', product.id), sanitizeForFirestore(product));
+    await setDoc(doc(db, 'products', product.id), sanitizeForFirestore(payload));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
-  }
-}
-
-export async function updateProductInFirestore(
-  productId: string,
-  updates: Partial<Product>
-): Promise<void> {
-  if (!db || !auth.currentUser || productId.startsWith('prod-demo-') || updates.businessId === 'biz-demo') return;
-  const path = `products/${productId}`;
-  try {
-    await setDoc(doc(db, 'products', productId), sanitizeForFirestore(updates), { merge: true });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
-}
-
-export async function deleteProductFromFirestore(productId: string): Promise<void> {
-  if (!db || !auth.currentUser || productId.startsWith('prod-demo-')) return;
-  const path = `products/${productId}`;
-  try {
-    await deleteDoc(doc(db, 'products', productId));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 
@@ -802,11 +850,19 @@ export async function batchSaveProductsToFirestore(products: Product[]): Promise
   const eligible = products.filter(
     (p) => p.id && !p.id.startsWith('prod-demo-') && p.businessId !== 'biz-demo'
   );
+  const nowIso = new Date().toISOString();
   for (let i = 0; i < eligible.length; i += FIRESTORE_BATCH_LIMIT) {
     const chunk = eligible.slice(i, i + FIRESTORE_BATCH_LIMIT);
     const batch = writeBatch(db);
     chunk.forEach((product) => {
-      batch.set(doc(db, 'products', product.id), sanitizeForFirestore(product));
+      batch.set(
+        doc(db, 'products', product.id),
+        sanitizeForFirestore({
+          ...product,
+          updatedAt: product.updatedAt || nowIso,
+          isDeleted: false,
+        })
+      );
     });
     try {
       await batch.commit();
@@ -827,11 +883,19 @@ export async function batchUpdateProductsInFirestore(
   const eligible = items.filter(
     (item) => item.id && !item.id.startsWith('prod-demo-') && item.updates.businessId !== 'biz-demo'
   );
+  const nowIso = new Date().toISOString();
   for (let i = 0; i < eligible.length; i += FIRESTORE_BATCH_LIMIT) {
     const chunk = eligible.slice(i, i + FIRESTORE_BATCH_LIMIT);
     const batch = writeBatch(db);
     chunk.forEach(({ id, updates }) => {
-      batch.set(doc(db, 'products', id), sanitizeForFirestore(updates), { merge: true });
+      batch.set(
+        doc(db, 'products', id),
+        sanitizeForFirestore({
+          ...updates,
+          updatedAt: updates.updatedAt || nowIso,
+        }),
+        { merge: true }
+      );
     });
     try {
       await batch.commit();
@@ -848,8 +912,31 @@ export async function batchUpdateProductsInFirestore(
 export async function batchDeleteProductsFromFirestore(productIds: string[]): Promise<void> {
   if (!db || !auth.currentUser || !Array.isArray(productIds) || productIds.length === 0 || isFirestoreQuotaCooldownActive()) return;
   const eligible = productIds.filter((id) => id && !id.startsWith('prod-demo-'));
+  const nowIso = new Date().toISOString();
   try {
-    await commitBatchDeletes(eligible.map((id) => doc(db, 'products', id)));
+    for (let i = 0; i < eligible.length; i += FIRESTORE_BATCH_LIMIT) {
+      const chunk = eligible.slice(i, i + FIRESTORE_BATCH_LIMIT);
+      const batch = writeBatch(db);
+      chunk.forEach((id) => {
+        batch.update(doc(db, 'products', id), { isDeleted: true, updatedAt: nowIso });
+      });
+      try {
+        await batch.commit();
+      } catch (batchErr: any) {
+        if (batchErr?.code === 'not-found') {
+          await Promise.all(
+            chunk.map((id) =>
+              updateDoc(doc(db, 'products', id), { isDeleted: true, updatedAt: nowIso }).catch((err: any) => {
+                if (err?.code === 'not-found') return;
+                throw err;
+              })
+            )
+          );
+        } else {
+          throw batchErr;
+        }
+      }
+    }
   } catch (error) {
     if (isFirestoreQuotaError(error)) {
       markFirestoreQuotaExceeded();
@@ -879,87 +966,9 @@ export async function getTenantCategoriesFromFirestore(businessId: string): Prom
   }
 }
 
-export function subscribeToTenantCategories(
-  businessId: string,
-  onData: (categories: Category[]) => void
-): Unsubscribe {
-  if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
-    return () => {};
-  }
-  const path = 'categories';
-  const q = query(collection(db, path), where('businessId', '==', businessId));
-  return onSnapshot(
-    q,
-    (snap) => {
-      onData(snap.docs.map((d) => d.data() as Category));
-    },
-    (error) => {
-      if (!auth.currentUser || isFirestoreQuotaError(error)) {
-        if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
-        return;
-      }
-      try {
-        handleFirestoreError(error, OperationType.GET, path);
-      } catch (err) {
-        console.warn(`Firestore categories subscription notice on "${path}":`, err);
-      }
-    }
-  );
-}
-
-export async function saveCategoryToFirestore(category: Category): Promise<void> {
-  if (!db || !auth.currentUser || isDemoBusinessId(category.businessId) || isDemoRecordId(category.id)) return;
-  const path = `categories/${category.id}`;
-  try {
-    await setDoc(doc(db, 'categories', category.id), sanitizeForFirestore(category));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
-  }
-}
-
-export async function updateCategoryInFirestore(
-  categoryId: string,
-  updates: Partial<Category>
-): Promise<void> {
-  if (!db || !auth.currentUser || isDemoBusinessId(updates.businessId) || isDemoRecordId(categoryId)) return;
-  const path = `categories/${categoryId}`;
-  try {
-    await setDoc(doc(db, 'categories', categoryId), sanitizeForFirestore(updates), { merge: true });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
-}
-
-export async function deleteCategoryFromFirestore(categoryId: string): Promise<void> {
-  if (!db || !auth.currentUser || isDemoRecordId(categoryId)) return;
-  const path = `categories/${categoryId}`;
-  try {
-    await deleteDoc(doc(db, 'categories', categoryId));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
-  }
-}
-
 // -------------------------------------------------------------
 // Tenant Locations Firestore API
 // -------------------------------------------------------------
-export async function getTenantLocationsFromFirestore(businessId: string): Promise<Location[]> {
-  if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) return [];
-  const path = 'locations';
-  try {
-    const q = query(collection(db, path), where('businessId', '==', businessId));
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => d.data() as Location);
-  } catch (error) {
-    if (!auth.currentUser || isFirestoreQuotaError(error)) {
-      if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
-      return [];
-    }
-    handleFirestoreError(error, OperationType.LIST, path);
-    return [];
-  }
-}
-
 export function subscribeToTenantLocations(
   businessId: string,
   onData: (locations: Location[]) => void
@@ -998,29 +1007,6 @@ export async function saveLocationToFirestore(loc: Location): Promise<void> {
   }
 }
 
-export async function updateLocationInFirestore(
-  locationId: string,
-  updates: Partial<Location>
-): Promise<void> {
-  if (!db || !auth.currentUser || isDemoBusinessId(updates.businessId) || isDemoRecordId(locationId)) return;
-  const path = `locations/${locationId}`;
-  try {
-    await setDoc(doc(db, 'locations', locationId), sanitizeForFirestore(updates), { merge: true });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
-}
-
-export async function deleteLocationFromFirestore(locationId: string): Promise<void> {
-  if (!db || !auth.currentUser || isDemoRecordId(locationId)) return;
-  const path = `locations/${locationId}`;
-  try {
-    await deleteDoc(doc(db, 'locations', locationId));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
-  }
-}
-
 // -------------------------------------------------------------
 // Tenant Cashiers / Staff Firestore API
 // -------------------------------------------------------------
@@ -1039,101 +1025,6 @@ export async function getTenantCashiersFromFirestore(businessId: string): Promis
     handleFirestoreError(error, OperationType.LIST, path);
     return [];
   }
-}
-
-/**
- * Targeted indexed lookup of cashiers by username and/or staff code across SokoPoS.
- * Replaces expensive full-collection `getAllCashiersFromFirestore()` scans.
- */
-export async function findCashierInFirestoreByIdentity(
-  username?: string,
-  code?: string,
-  businessId?: string
-): Promise<Cashier[]> {
-  if (!db || !auth.currentUser || isFirestoreQuotaCooldownActive()) return [];
-  const superAdmin = isCurrentUserSuperAdmin();
-  if (!superAdmin && (!businessId || isDemoBusinessId(businessId))) {
-    return [];
-  }
-  const path = 'cashiers';
-  const foundMap = new Map<string, Cashier>();
-  try {
-    const cleanUser = (username || '').trim().toLowerCase();
-    const rawCode = (code || '').trim();
-    const cleanCode = rawCode.replace(/^#/, '');
-    const tenantFilters = businessId && !isDemoBusinessId(businessId) ? [where('businessId', '==', businessId)] : [];
-
-    const queries = [];
-    if (cleanUser) {
-      queries.push(query(collection(db, path), ...tenantFilters, where('username', '==', cleanUser), limit(5)));
-    }
-    if (rawCode) {
-      queries.push(query(collection(db, path), ...tenantFilters, where('code', '==', rawCode), limit(5)));
-      if (`#${cleanCode}` !== rawCode) {
-        queries.push(query(collection(db, path), ...tenantFilters, where('code', '==', `#${cleanCode}`), limit(5)));
-      }
-      if (cleanCode && cleanCode !== rawCode) {
-        queries.push(query(collection(db, path), ...tenantFilters, where('code', '==', cleanCode), limit(5)));
-      }
-    }
-
-    if (queries.length === 0) return [];
-    const snaps = await Promise.all(queries.map((q) => getDocs(q)));
-    snaps.forEach((snap) => {
-      snap.docs.forEach((d) => {
-        const c = d.data() as Cashier;
-        if (c?.id) foundMap.set(c.id, c);
-      });
-    });
-    return Array.from(foundMap.values());
-  } catch (error) {
-    logFirestoreErrorInfo(error, OperationType.LIST, path);
-    return [];
-  }
-}
-
-export async function getAllCashiersFromFirestore(): Promise<Cashier[]> {
-  if (!db || !auth.currentUser || !isCurrentUserSuperAdmin() || isFirestoreQuotaCooldownActive()) return [];
-  const path = 'cashiers';
-  try {
-    const snap = await getDocs(collection(db, path));
-    return snap.docs.map((d) => d.data() as Cashier);
-  } catch (error) {
-    if (isFirestoreQuotaError(error)) {
-      markFirestoreQuotaExceeded();
-      return [];
-    }
-    handleFirestoreError(error, OperationType.LIST, path);
-    return [];
-  }
-}
-
-export function subscribeToTenantCashiers(
-  businessId: string,
-  onData: (cashiers: Cashier[]) => void
-): Unsubscribe {
-  if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
-    return () => {};
-  }
-  const path = 'cashiers';
-  const q = query(collection(db, path), where('businessId', '==', businessId));
-  return onSnapshot(
-    q,
-    (snap) => {
-      onData(snap.docs.map((d) => d.data() as Cashier));
-    },
-    (error) => {
-      if (!auth.currentUser || isFirestoreQuotaError(error)) {
-        if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
-        return;
-      }
-      try {
-        handleFirestoreError(error, OperationType.GET, path);
-      } catch (err) {
-        console.warn(`Firestore cashiers subscription notice on "${path}":`, err);
-      }
-    }
-  );
 }
 
 export async function saveCashierToFirestore(cashier: Cashier): Promise<void> {
@@ -1168,52 +1059,6 @@ export async function saveCashierToFirestore(cashier: Cashier): Promise<void> {
   }
 }
 
-export async function updateCashierInFirestore(
-  cashierId: string,
-  updates: Partial<Cashier>
-): Promise<void> {
-  if (!db || !auth.currentUser || updates.businessId === 'biz-demo') return;
-  const path = `cashiers/${cashierId}`;
-  try {
-    const publicUpdates: Partial<Cashier> = { ...updates };
-    if (publicUpdates.pin) {
-      publicUpdates.pin = '••••••••';
-    }
-    await setDoc(doc(db, 'cashiers', cashierId), sanitizeForFirestore(publicUpdates), { merge: true });
-
-    if (
-      isCurrentUserSuperAdmin() &&
-      updates.pin &&
-      updates.pin !== '••••••••' &&
-      !updates.pin.startsWith('[PROTECTED')
-    ) {
-      await setDoc(
-        doc(db, 'cashiers', cashierId, 'private', 'credentials'),
-        {
-          cashierId,
-          hash: updates.pin,
-          updatedAt: new Date().toISOString(),
-        },
-        { merge: true }
-      ).catch((err) => {
-        logFirestoreErrorInfo(err, OperationType.UPDATE, `cashiers/${cashierId}/private/credentials`);
-      });
-    }
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
-}
-
-export async function deleteCashierFromFirestore(cashierId: string): Promise<void> {
-  if (!db || !auth.currentUser) return;
-  const path = `cashiers/${cashierId}`;
-  try {
-    await deleteDoc(doc(db, 'cashiers', cashierId));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
-  }
-}
-
 // -------------------------------------------------------------
 // Tenant Transactions Firestore API (30-Day Live Window + On-Demand Range)
 // -------------------------------------------------------------
@@ -1221,47 +1066,6 @@ let hasLoggedTxIndexHint = false;
 
 function sortTransactionsNewestFirst(txs: Transaction[]): Transaction[] {
   return txs.sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
-}
-
-export async function getTenantTransactionsFromFirestore(businessId: string): Promise<Transaction[]> {
-  if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) return [];
-  const path = 'transactions';
-  try {
-    const q = query(
-      collection(db, path),
-      where('businessId', '==', businessId),
-      orderBy('timestamp', 'desc'),
-      limit(500)
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => d.data() as Transaction);
-  } catch (error: any) {
-    if (!auth.currentUser || isFirestoreQuotaError(error)) {
-      if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
-      return [];
-    }
-    const errMsg = String(error?.message || '').toLowerCase();
-    if (error?.code === 'failed-precondition' || errMsg.includes('index')) {
-      if (!hasLoggedTxIndexHint) {
-        hasLoggedTxIndexHint = true;
-        console.info(
-          '[Firestore Index Hint] Create composite index on transactions(businessId ASC, timestamp DESC) for ordered transaction queries. Falling back to bounded client sort.'
-        );
-      }
-      try {
-        const fallbackQ = query(collection(db, path), where('businessId', '==', businessId), limit(1500));
-        const fallbackSnap = await getDocs(fallbackQ);
-        return sortTransactionsNewestFirst(fallbackSnap.docs.map((d) => d.data() as Transaction)).slice(0, 500);
-      } catch (fallbackErr) {
-        if (!auth.currentUser || isFirestoreQuotaError(fallbackErr)) {
-          if (isFirestoreQuotaError(fallbackErr)) markFirestoreQuotaExceeded();
-          return [];
-        }
-        handleFirestoreError(fallbackErr, OperationType.LIST, path);
-      }
-    }
-    handleFirestoreError(error, OperationType.LIST, path);
-  }
 }
 
 export async function getTenantTransactionsRangeFromFirestore(
@@ -1412,29 +1216,6 @@ export function subscribeToTenantTransactions(
   };
 }
 
-export async function saveTransactionToFirestore(tx: Transaction): Promise<void> {
-  if (!db || !auth.currentUser || isDemoBusinessId(tx.businessId) || isDemoRecordId(tx.id)) return;
-  const path = `transactions/${tx.id}`;
-  try {
-    await setDoc(doc(db, 'transactions', tx.id), sanitizeForFirestore(tx));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
-  }
-}
-
-export async function updateTransactionInFirestore(
-  txId: string,
-  partialTx: Partial<Transaction>
-): Promise<void> {
-  if (!db || !auth.currentUser || isDemoBusinessId(partialTx.businessId) || isDemoRecordId(txId)) return;
-  const path = `transactions/${txId}`;
-  try {
-    await setDoc(doc(db, 'transactions', txId), sanitizeForFirestore(partialTx), { merge: true });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
-}
-
 /**
  * Atomic writeBatch flusher for pending offline queue items (transactions, products, locations, cashiers).
  * Groups up to 450 documents per commit to reduce write latency and overhead.
@@ -1464,6 +1245,8 @@ export async function flushPendingDocsBatch(
       const payload =
         item.collectionName === 'cashiers'
           ? { ...item.data, pin: '••••••••' }
+          : item.collectionName === 'products'
+          ? { ...item.data, updatedAt: item.data.updatedAt || new Date().toISOString(), isDeleted: Boolean(item.data.isDeleted) }
           : item.data;
       batch.set(doc(db, item.collectionName, item.id), sanitizeForFirestore(payload), { merge: true });
     }
@@ -1509,18 +1292,8 @@ export async function purgeTenantTransactionsFromFirestore(businessId: string): 
 }
 
 // -------------------------------------------------------------
-// Tenant Stock Transfers & Sync Logs Firestore API
+// Tenant Sync Logs Firestore API
 // -------------------------------------------------------------
-export async function saveStockTransferToFirestore(transfer: StockTransfer): Promise<void> {
-  if (!db || !auth.currentUser || isDemoBusinessId(transfer.businessId)) return;
-  const path = `stock_transfers/${transfer.id}`;
-  try {
-    await setDoc(doc(db, 'stock_transfers', transfer.id), sanitizeForFirestore(transfer));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
-  }
-}
-
 export async function saveSyncLogToFirestore(log: SyncLogEvent): Promise<void> {
   if (!db || !auth.currentUser || isDemoBusinessId(log.businessId)) return;
   const path = `sync_logs/${log.id}`;
@@ -1619,10 +1392,11 @@ export async function seedInitialTenantDataToFirestore(params: {
 }
 
 // -------------------------------------------------------------
-// Platform Global Settings & Per-Slot Branding (Super Admin, 30-min TTL Cache)
+// Platform Global Settings & Per-Slot Branding (Super Admin, 24h TTL Cache)
 // -------------------------------------------------------------
 const PLATFORM_SETTINGS_CACHE_KEY = 'sokopos_platform_settings_cache_v2';
-const PLATFORM_SETTINGS_TTL_MS = 30 * 60 * 1000;
+const PLATFORM_SETTINGS_TTL_MS = 24 * 60 * 60 * 1000;
+let inFlightPlatformSettingsPromise: Promise<PlatformSettings | null> | null = null;
 
 const BRANDING_SLOT_DOC_MAP: Record<BrandingSlotId, string> = {
   logo: 'branding_logo',
@@ -1670,76 +1444,89 @@ export async function getPlatformSettingsFromFirestore(forceRefresh = false): Pr
   }
 
   if (!db || isFirestoreQuotaCooldownActive()) return null;
-  try {
-    const [globalSnap, ...slotDocs] = await Promise.all([
-      getDoc(doc(db, 'platform_settings', 'global')).catch(() => null),
-      ...ALL_BRANDING_SLOTS.map((slotId) => getBrandingSlotDoc(slotId)),
-    ]);
-
-    const globalData = globalSnap && globalSnap.exists() ? (globalSnap.data() as PlatformSettings) : null;
-    const slotMap = new Map<BrandingSlotId, BrandingSlotAsset>();
-    ALL_BRANDING_SLOTS.forEach((slotId, index) => {
-      const docData = slotDocs[index];
-      if (docData) slotMap.set(slotId, docData);
-    });
-
-    const hasAnyDoc = Boolean(globalData || slotMap.size > 0);
-    if (!hasAnyDoc) return null;
-
-    const logoSlot = slotMap.get('logo');
-    const faviconSlot = slotMap.get('favicon');
-    const heroSlot = slotMap.get('hero');
-
-    const industryEntries: Array<[IndustrySolutionId, BrandingSlotId]> = [
-      ['retail', 'industry_retail'],
-      ['bars', 'industry_bars'],
-      ['supermarkets', 'industry_supermarkets'],
-      ['pharmacies', 'industry_pharmacies'],
-    ];
-
-    const industryImages: Partial<Record<IndustrySolutionId, { url: string | null; name?: string }>> = {};
-    for (const [indId, slotId] of industryEntries) {
-      const slot = slotMap.get(slotId);
-      if (slot !== undefined) {
-        industryImages[indId] = {
-          url: slot.assetUrl ?? null,
-          name: slot.assetName || undefined,
-        };
-      } else if (globalData?.industryImages?.[indId]) {
-        industryImages[indId] = globalData.industryImages[indId];
-      }
-    }
-
-    const merged: PlatformSettings = {
-      ...(globalData || {}),
-      platformLogo: logoSlot !== undefined ? (logoSlot.assetUrl ?? null) : (globalData?.platformLogo ?? undefined),
-      platformLogoName: logoSlot !== undefined ? (logoSlot.assetName || '') : (globalData?.platformLogoName ?? undefined),
-      platformFavicon: faviconSlot !== undefined ? (faviconSlot.assetUrl ?? null) : (globalData?.platformFavicon ?? undefined),
-      platformFaviconName: faviconSlot !== undefined ? (faviconSlot.assetName || '') : (globalData?.platformFaviconName ?? undefined),
-      loginBgGraphic: heroSlot !== undefined ? (heroSlot.assetUrl ?? null) : (globalData?.loginBgGraphic ?? undefined),
-      loginBgGraphicName: heroSlot !== undefined ? (heroSlot.assetName || '') : (globalData?.loginBgGraphicName ?? undefined),
-      industryImages,
-    };
-
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem(
-          PLATFORM_SETTINGS_CACHE_KEY,
-          JSON.stringify({ data: merged, fetchedAt: Date.now() })
-        );
-      } catch {
-        // ignore quota error
-      }
-    }
-    return merged;
-  } catch (error) {
-    if (isFirestoreQuotaError(error)) {
-      markFirestoreQuotaExceeded();
-      return null;
-    }
-    console.warn('Failed to load platform settings from Firestore:', error);
-    return null;
+  if (!forceRefresh && inFlightPlatformSettingsPromise) {
+    return inFlightPlatformSettingsPromise;
   }
+
+  const fetchPromise = (async (): Promise<PlatformSettings | null> => {
+    try {
+      const [globalSnap, ...slotDocs] = await Promise.all([
+        getDoc(doc(db, 'platform_settings', 'global')).catch(() => null),
+        ...ALL_BRANDING_SLOTS.map((slotId) => getBrandingSlotDoc(slotId)),
+      ]);
+
+      const globalData = globalSnap && globalSnap.exists() ? (globalSnap.data() as PlatformSettings) : null;
+      const slotMap = new Map<BrandingSlotId, BrandingSlotAsset>();
+      ALL_BRANDING_SLOTS.forEach((slotId, index) => {
+        const docData = slotDocs[index];
+        if (docData) slotMap.set(slotId, docData);
+      });
+
+      const hasAnyDoc = Boolean(globalData || slotMap.size > 0);
+      if (!hasAnyDoc) return null;
+
+      const logoSlot = slotMap.get('logo');
+      const faviconSlot = slotMap.get('favicon');
+      const heroSlot = slotMap.get('hero');
+
+      const industryEntries: Array<[IndustrySolutionId, BrandingSlotId]> = [
+        ['retail', 'industry_retail'],
+        ['bars', 'industry_bars'],
+        ['supermarkets', 'industry_supermarkets'],
+        ['pharmacies', 'industry_pharmacies'],
+      ];
+
+      const industryImages: Partial<Record<IndustrySolutionId, { url: string | null; name?: string }>> = {};
+      for (const [indId, slotId] of industryEntries) {
+        const slot = slotMap.get(slotId);
+        if (slot !== undefined) {
+          industryImages[indId] = {
+            url: slot.assetUrl ?? null,
+            name: slot.assetName || undefined,
+          };
+        } else if (globalData?.industryImages?.[indId]) {
+          industryImages[indId] = globalData.industryImages[indId];
+        }
+      }
+
+      const merged: PlatformSettings = {
+        ...(globalData || {}),
+        platformLogo: logoSlot !== undefined ? (logoSlot.assetUrl ?? null) : (globalData?.platformLogo ?? undefined),
+        platformLogoName: logoSlot !== undefined ? (logoSlot.assetName || '') : (globalData?.platformLogoName ?? undefined),
+        platformFavicon: faviconSlot !== undefined ? (faviconSlot.assetUrl ?? null) : (globalData?.platformFavicon ?? undefined),
+        platformFaviconName: faviconSlot !== undefined ? (faviconSlot.assetName || '') : (globalData?.platformFaviconName ?? undefined),
+        loginBgGraphic: heroSlot !== undefined ? (heroSlot.assetUrl ?? null) : (globalData?.loginBgGraphic ?? undefined),
+        loginBgGraphicName: heroSlot !== undefined ? (heroSlot.assetName || '') : (globalData?.loginBgGraphicName ?? undefined),
+        industryImages,
+      };
+
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(
+            PLATFORM_SETTINGS_CACHE_KEY,
+            JSON.stringify({ data: merged, fetchedAt: Date.now() })
+          );
+        } catch {
+          // ignore quota error
+        }
+      }
+      return merged;
+    } catch (error) {
+      if (isFirestoreQuotaError(error)) {
+        markFirestoreQuotaExceeded();
+        return null;
+      }
+      console.warn('Failed to load platform settings from Firestore:', error);
+      return null;
+    } finally {
+      inFlightPlatformSettingsPromise = null;
+    }
+  })();
+
+  if (!forceRefresh) {
+    inFlightPlatformSettingsPromise = fetchPromise;
+  }
+  return fetchPromise;
 }
 
 export async function saveBrandingSlotToFirestore(
@@ -1749,7 +1536,7 @@ export async function saveBrandingSlotToFirestore(
     return { ok: false, error: 'Database client is not initialized.' };
   }
   if (!auth.currentUser) {
-    return { ok: false, error: 'Sign in with a verified Super Admin Google account to sync branding to cloud.' };
+    return { ok: false, error: 'Sign in with a verified Platform Support Google account to sync branding to cloud.' };
   }
 
   const docId = BRANDING_SLOT_DOC_MAP[slotAsset.slotId];
@@ -1812,7 +1599,7 @@ export async function clearAllBrandingSlotsInFirestore(
     return { ok: false, error: 'Database client is not initialized.' };
   }
   if (!auth.currentUser) {
-    return { ok: false, error: 'Sign in with a verified Super Admin Google account to reset cloud branding.' };
+    return { ok: false, error: 'Sign in with a verified Platform Support Google account to reset cloud branding.' };
   }
 
   const nowIso = new Date().toISOString();
@@ -1866,36 +1653,17 @@ export async function clearAllBrandingSlotsInFirestore(
   }
 }
 
-export async function savePlatformSettingsToFirestore(
-  settings: PlatformSettings
-): Promise<{ ok: boolean; error?: string }> {
-  if (!db) {
-    return { ok: false, error: 'Database client is not initialized.' };
-  }
-  if (!auth.currentUser) {
-    return { ok: false, error: 'Sign in with a verified Super Admin Google account to sync branding to cloud.' };
-  }
-  try {
-    await setDoc(doc(db, 'platform_settings', 'global'), sanitizeForFirestore(settings), { merge: true });
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.removeItem(PLATFORM_SETTINGS_CACHE_KEY);
-      } catch {
-        // ignore storage errors
-      }
-    }
-    return { ok: true };
-  } catch (error: any) {
-    logFirestoreErrorInfo(error, OperationType.WRITE, 'platform_settings/global');
-    const message = error?.message || 'Failed to persist platform branding to Firestore.';
-    return { ok: false, error: message };
-  }
-}
-
 // -------------------------------------------------------------
-// Global Pricing Tiers (platform_settings/pricing_tiers)
+// Global Pricing Tiers (platform_settings/pricing_tiers, 24h On-Demand Cache)
 // -------------------------------------------------------------
 const PRICING_TIERS_DOC_ID = 'pricing_tiers';
+const PRICING_TIERS_CACHE_KEY = 'sokopos_pricing_tiers_cache_v1';
+const PRICING_TIERS_TTL_MS = 24 * 60 * 60 * 1000;
+let inFlightPricingTiersPromise: Promise<{
+  tiers: PricingTier[];
+  updatedAt?: string;
+  updatedBy?: string;
+} | null> | null = null;
 
 function normalizePricingTiersArray(rawTiers: unknown): PricingTier[] | null {
   if (!Array.isArray(rawTiers) || rawTiers.length === 0) return null;
@@ -1953,65 +1721,76 @@ function normalizePricingTiersArray(rawTiers: unknown): PricingTier[] | null {
   return merged;
 }
 
-export async function getPricingTiersFromFirestore(): Promise<{
+export async function getPricingTiersFromFirestore(forceRefresh = false): Promise<{
   tiers: PricingTier[];
   updatedAt?: string;
   updatedBy?: string;
 } | null> {
-  if (!db || isFirestoreQuotaCooldownActive()) return null;
-  try {
-    const snap = await getDoc(doc(db, 'platform_settings', PRICING_TIERS_DOC_ID));
-    if (!snap.exists()) return null;
-    const data = snap.data() as Partial<PlatformPricingConfig>;
-    const normalized = normalizePricingTiersArray(data?.tiers);
-    if (!normalized) return null;
-    return {
-      tiers: normalized,
-      updatedAt: data?.updatedAt,
-      updatedBy: data?.updatedBy,
-    };
-  } catch (error) {
-    if (isFirestoreQuotaError(error)) {
-      markFirestoreQuotaExceeded();
-      return null;
-    }
-    console.warn('Failed to fetch global pricing tiers from Firestore:', error);
-    return null;
-  }
-}
-
-export function subscribeToPricingTiers(
-  onUpdate: (payload: { tiers: PricingTier[]; updatedAt?: string; updatedBy?: string }) => void,
-  onError?: (errMsg: string) => void
-): Unsubscribe {
-  if (!db || isFirestoreQuotaCooldownActive()) {
-    return () => {};
-  }
-  const pricingDocRef = doc(db, 'platform_settings', PRICING_TIERS_DOC_ID);
-  return onSnapshot(
-    pricingDocRef,
-    (snapshot) => {
-      if (!snapshot.exists()) return;
-      const data = snapshot.data() as Partial<PlatformPricingConfig>;
-      const normalized = normalizePricingTiersArray(data?.tiers);
-      if (normalized) {
-        onUpdate({
-          tiers: normalized,
-          updatedAt: data?.updatedAt,
-          updatedBy: data?.updatedBy,
-        });
+  if (typeof window !== 'undefined' && !forceRefresh) {
+    try {
+      const raw = localStorage.getItem(PRICING_TIERS_CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as {
+          payload: { tiers: PricingTier[]; updatedAt?: string; updatedBy?: string };
+          fetchedAt: number;
+        };
+        if (
+          parsed?.payload?.tiers &&
+          typeof parsed.fetchedAt === 'number' &&
+          Date.now() - parsed.fetchedAt < PRICING_TIERS_TTL_MS
+        ) {
+          return parsed.payload;
+        }
       }
-    },
-    (error: any) => {
+    } catch {
+      // ignore storage cache parse error
+    }
+  }
+
+  if (!db || isFirestoreQuotaCooldownActive()) return null;
+  if (!forceRefresh && inFlightPricingTiersPromise) {
+    return inFlightPricingTiersPromise;
+  }
+
+  const fetchPromise = (async () => {
+    try {
+      const snap = await getDoc(doc(db, 'platform_settings', PRICING_TIERS_DOC_ID));
+      if (!snap.exists()) return null;
+      const data = snap.data() as Partial<PlatformPricingConfig>;
+      const normalized = normalizePricingTiersArray(data?.tiers);
+      if (!normalized) return null;
+      const payload = {
+        tiers: normalized,
+        updatedAt: data?.updatedAt,
+        updatedBy: data?.updatedBy,
+      };
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(
+            PRICING_TIERS_CACHE_KEY,
+            JSON.stringify({ payload, fetchedAt: Date.now() })
+          );
+        } catch {
+          // ignore storage quota errors
+        }
+      }
+      return payload;
+    } catch (error) {
       if (isFirestoreQuotaError(error)) {
         markFirestoreQuotaExceeded();
-        onError?.('Firestore quota temporarily exceeded.');
-        return;
+        return null;
       }
-      console.warn('Firestore pricing_tiers real-time listener notice:', error);
-      onError?.(error?.message || 'Unable to listen for live pricing updates.');
+      console.warn('Failed to fetch global pricing tiers from Firestore:', error);
+      return null;
+    } finally {
+      inFlightPricingTiersPromise = null;
     }
-  );
+  })();
+
+  if (!forceRefresh) {
+    inFlightPricingTiersPromise = fetchPromise;
+  }
+  return fetchPromise;
 }
 
 export async function savePricingTiersToFirestore(
@@ -2022,10 +1801,11 @@ export async function savePricingTiersToFirestore(
     return { ok: false, error: 'Database client is not initialized.' };
   }
   if (!auth.currentUser) {
-    return { ok: false, error: 'Sign in with a verified Super Admin Google account to sync pricing globally.' };
+    return { ok: false, error: 'Sign in with a verified Platform Support Google account to sync pricing globally.' };
   }
 
   const nowIso = new Date().toISOString();
+  const actor = updatedBy || auth.currentUser.email || 'super_admin';
   try {
     await setDoc(
       doc(db, 'platform_settings', PRICING_TIERS_DOC_ID),
@@ -2033,10 +1813,23 @@ export async function savePricingTiersToFirestore(
         id: PRICING_TIERS_DOC_ID,
         tiers,
         updatedAt: nowIso,
-        updatedBy: updatedBy || auth.currentUser.email || 'super_admin',
+        updatedBy: actor,
       }),
       { merge: true }
     );
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(
+          PRICING_TIERS_CACHE_KEY,
+          JSON.stringify({
+            payload: { tiers, updatedAt: nowIso, updatedBy: actor },
+            fetchedAt: Date.now(),
+          })
+        );
+      } catch {
+        // ignore storage errors
+      }
+    }
     return { ok: true };
   } catch (error: any) {
     logFirestoreErrorInfo(error, OperationType.WRITE, `platform_settings/${PRICING_TIERS_DOC_ID}`);
@@ -2048,68 +1841,6 @@ export async function savePricingTiersToFirestore(
 // -------------------------------------------------------------
 // Customers & Store Credit Directory (Tenant Scoped)
 // -------------------------------------------------------------
-export async function saveCustomerToFirestore(customer: Customer): Promise<void> {
-  if (!db || !auth.currentUser || isDemoBusinessId(customer.businessId) || isDemoRecordId(customer.id)) return;
-  const path = `customers/${customer.id}`;
-  try {
-    await setDoc(doc(db, 'customers', customer.id), sanitizeForFirestore(customer));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
-  }
-}
-
-export async function updateCustomerInFirestore(customerId: string, updates: Partial<Customer>): Promise<void> {
-  if (!db || !auth.currentUser || isDemoRecordId(customerId) || isDemoBusinessId(updates.businessId)) return;
-  const path = `customers/${customerId}`;
-  try {
-    await setDoc(
-      doc(db, 'customers', customerId),
-      sanitizeForFirestore({
-        ...updates,
-        updatedAt: new Date().toISOString(),
-      }),
-      { merge: true }
-    );
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
-}
-
-export async function deleteCustomerFromFirestore(customerId: string): Promise<void> {
-  if (!db || !auth.currentUser || isDemoRecordId(customerId)) return;
-  const path = `customers/${customerId}`;
-  try {
-    await deleteDoc(doc(db, 'customers', customerId));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
-  }
-}
-
-export function subscribeToTenantCustomers(
-  businessId: string,
-  onUpdate: (customers: Customer[]) => void
-): Unsubscribe {
-  if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
-    return () => {};
-  }
-  const q = query(collection(db, 'customers'), where('businessId', '==', businessId));
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const customers: Customer[] = [];
-      snapshot.forEach((d) => customers.push(d.data() as Customer));
-      onUpdate(customers);
-    },
-    (error) => {
-      if (!auth.currentUser || isFirestoreQuotaError(error)) {
-        if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
-        return;
-      }
-      logFirestoreErrorInfo(error, OperationType.LIST, 'customers');
-    }
-  );
-}
-
 export async function getTenantCustomersFromFirestore(businessId: string): Promise<Customer[]> {
   if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) return [];
   try {
@@ -2130,68 +1861,6 @@ export async function getTenantCustomersFromFirestore(businessId: string): Promi
 // -------------------------------------------------------------
 // Suppliers Management (Tenant Scoped)
 // -------------------------------------------------------------
-export async function saveSupplierToFirestore(supplier: Supplier): Promise<void> {
-  if (!db || !auth.currentUser || isDemoBusinessId(supplier.businessId) || isDemoRecordId(supplier.id)) return;
-  const path = `suppliers/${supplier.id}`;
-  try {
-    await setDoc(doc(db, 'suppliers', supplier.id), sanitizeForFirestore(supplier));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
-  }
-}
-
-export async function updateSupplierInFirestore(supplierId: string, updates: Partial<Supplier>): Promise<void> {
-  if (!db || !auth.currentUser || isDemoRecordId(supplierId) || isDemoBusinessId(updates.businessId)) return;
-  const path = `suppliers/${supplierId}`;
-  try {
-    await setDoc(
-      doc(db, 'suppliers', supplierId),
-      sanitizeForFirestore({
-        ...updates,
-        updatedAt: new Date().toISOString(),
-      }),
-      { merge: true }
-    );
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
-}
-
-export async function deleteSupplierFromFirestore(supplierId: string): Promise<void> {
-  if (!db || !auth.currentUser || isDemoRecordId(supplierId)) return;
-  const path = `suppliers/${supplierId}`;
-  try {
-    await deleteDoc(doc(db, 'suppliers', supplierId));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
-  }
-}
-
-export function subscribeToTenantSuppliers(
-  businessId: string,
-  onUpdate: (suppliers: Supplier[]) => void
-): Unsubscribe {
-  if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
-    return () => {};
-  }
-  const q = query(collection(db, 'suppliers'), where('businessId', '==', businessId));
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const suppliers: Supplier[] = [];
-      snapshot.forEach((d) => suppliers.push(d.data() as Supplier));
-      onUpdate(suppliers);
-    },
-    (error) => {
-      if (!auth.currentUser || isFirestoreQuotaError(error)) {
-        if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
-        return;
-      }
-      logFirestoreErrorInfo(error, OperationType.LIST, 'suppliers');
-    }
-  );
-}
-
 export async function getTenantSuppliersFromFirestore(businessId: string): Promise<Supplier[]> {
   if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) return [];
   try {
@@ -2329,41 +1998,6 @@ function pickRollupDoc(r: AnalyticsDailyRollup): AnalyticsDailyRollup {
   };
 }
 
-export function subscribeToAnalyticsRollups(
-  businessId: string,
-  onUpdate: (rollups: AnalyticsDailyRollup[]) => void
-): Unsubscribe {
-  if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
-    return () => {};
-  }
-  const path = 'analytics_daily_rollups';
-  const q = query(
-    collection(db, path),
-    where('businessId', '==', businessId),
-    limit(400)
-  );
-  return onSnapshot(
-    q,
-    (snap) => {
-      const items: AnalyticsDailyRollup[] = [];
-      snap.forEach((d) => items.push(d.data() as AnalyticsDailyRollup));
-      items.sort((a, b) => (b.dateKey || '').localeCompare(a.dateKey || ''));
-      onUpdate(items);
-    },
-    (error) => {
-      if (!auth.currentUser || isFirestoreQuotaError(error)) {
-        if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
-        return;
-      }
-      try {
-        handleFirestoreError(error, OperationType.LIST, path);
-      } catch (err) {
-        console.warn(`Firestore analytics rollups subscription notice on "${path}":`, err);
-      }
-    }
-  );
-}
-
 export async function getTenantAnalyticsRollupsFromFirestore(
   businessId: string
 ): Promise<AnalyticsDailyRollup[]> {
@@ -2429,36 +2063,6 @@ export async function upsertAnalyticsDailyRollupsBatch(
   return committed;
 }
 
-export function subscribeToAnalyticsTargets(
-  businessId: string,
-  onUpdate: (targets: AnalyticsTarget[]) => void
-): Unsubscribe {
-  if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
-    return () => {};
-  }
-  const path = 'analytics_targets';
-  const q = query(collection(db, path), where('businessId', '==', businessId), limit(100));
-  return onSnapshot(
-    q,
-    (snap) => {
-      const items: AnalyticsTarget[] = [];
-      snap.forEach((d) => items.push(d.data() as AnalyticsTarget));
-      onUpdate(items);
-    },
-    (error) => {
-      if (!auth.currentUser || isFirestoreQuotaError(error)) {
-        if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
-        return;
-      }
-      try {
-        handleFirestoreError(error, OperationType.LIST, path);
-      } catch (err) {
-        console.warn(`Firestore analytics targets subscription notice on "${path}":`, err);
-      }
-    }
-  );
-}
-
 export async function getTenantAnalyticsTargetsFromFirestore(
   businessId: string
 ): Promise<AnalyticsTarget[]> {
@@ -2479,61 +2083,6 @@ export async function getTenantAnalyticsTargetsFromFirestore(
     }
     handleFirestoreError(error, OperationType.LIST, path);
   }
-}
-
-export async function saveAnalyticsTargetToFirestore(target: AnalyticsTarget): Promise<void> {
-  if (!db || !auth.currentUser || isDemoBusinessId(target.businessId) || isDemoRecordId(target.id)) {
-    return;
-  }
-  const path = `analytics_targets/${target.id}`;
-  const payload = sanitizeForFirestore({
-    id: target.id,
-    businessId: target.businessId,
-    locationId: target.locationId,
-    periodKey: target.periodKey,
-    revenueTarget: Math.max(0, Number(target.revenueTarget || 0)),
-    grossMarginTargetPct: Math.min(100, Math.max(0, Number(target.grossMarginTargetPct || 0))),
-    maxDiscountPct: Math.min(100, Math.max(0, Number(target.maxDiscountPct || 0))),
-    updatedAt: target.updatedAt || new Date().toISOString(),
-    updatedByUid: target.updatedByUid,
-    updatedByEmail: target.updatedByEmail,
-  });
-  try {
-    await setDoc(doc(db, 'analytics_targets', target.id), payload);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
-  }
-}
-
-export function subscribeToAnalyticsSavedViews(
-  businessId: string,
-  onUpdate: (views: AnalyticsSavedView[]) => void
-): Unsubscribe {
-  if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
-    return () => {};
-  }
-  const path = 'analytics_saved_views';
-  const q = query(collection(db, path), where('businessId', '==', businessId), limit(100));
-  return onSnapshot(
-    q,
-    (snap) => {
-      const items: AnalyticsSavedView[] = [];
-      snap.forEach((d) => items.push(d.data() as AnalyticsSavedView));
-      items.sort((a, b) => Number(b.isPinned) - Number(a.isPinned) || (b.updatedAt || '').localeCompare(a.updatedAt || ''));
-      onUpdate(items);
-    },
-    (error) => {
-      if (!auth.currentUser || isFirestoreQuotaError(error)) {
-        if (isFirestoreQuotaError(error)) markFirestoreQuotaExceeded();
-        return;
-      }
-      try {
-        handleFirestoreError(error, OperationType.LIST, path);
-      } catch (err) {
-        console.warn(`Firestore analytics saved views subscription notice on "${path}":`, err);
-      }
-    }
-  );
 }
 
 export async function getTenantAnalyticsSavedViewsFromFirestore(
@@ -2560,43 +2109,6 @@ export async function getTenantAnalyticsSavedViewsFromFirestore(
       return [];
     }
     handleFirestoreError(error, OperationType.LIST, path);
-  }
-}
-
-export async function saveAnalyticsSavedViewToFirestore(view: AnalyticsSavedView): Promise<void> {
-  if (!db || !auth.currentUser || isDemoBusinessId(view.businessId) || isDemoRecordId(view.id)) {
-    return;
-  }
-  const path = `analytics_saved_views/${view.id}`;
-  const payload = sanitizeForFirestore({
-    id: view.id,
-    businessId: view.businessId,
-    name: view.name.trim().slice(0, 80),
-    locationId: view.locationId,
-    preset: view.preset,
-    customStartIso: view.customStartIso,
-    customEndIso: view.customEndIso,
-    focusTab: view.focusTab,
-    chartMetric: view.chartMetric,
-    createdByUid: view.createdByUid,
-    isPinned: Boolean(view.isPinned),
-    createdAt: view.createdAt,
-    updatedAt: view.updatedAt || new Date().toISOString(),
-  });
-  try {
-    await setDoc(doc(db, 'analytics_saved_views', view.id), payload);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
-  }
-}
-
-export async function deleteAnalyticsSavedViewFromFirestore(viewId: string): Promise<void> {
-  if (!db || !auth.currentUser || isDemoRecordId(viewId)) return;
-  const path = `analytics_saved_views/${viewId}`;
-  try {
-    await deleteDoc(doc(db, 'analytics_saved_views', viewId));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 
@@ -2632,6 +2144,17 @@ export async function flushOutboxMutationToFirestore(entry: {
   const path = `${entry.collectionName}/${entry.docId}`;
   try {
     if (entry.operation === 'delete') {
+      if (entry.collectionName === 'products') {
+        try {
+          await updateDoc(doc(db, 'products', entry.docId), {
+            isDeleted: true,
+            updatedAt: new Date().toISOString(),
+          });
+        } catch (delErr: any) {
+          if (delErr?.code !== 'not-found') throw delErr;
+        }
+        return { status: 'acked' };
+      }
       await deleteDoc(doc(db, entry.collectionName, entry.docId));
       return { status: 'acked' };
     }
@@ -2646,6 +2169,10 @@ export async function flushOutboxMutationToFirestore(entry: {
       entry.collectionName === 'cashiers'
     ) {
       rawPayload.isPendingCloudSync = false;
+      if (entry.collectionName === 'products') {
+        rawPayload.updatedAt = rawPayload.updatedAt || new Date().toISOString();
+        rawPayload.isDeleted = Boolean(rawPayload.isDeleted);
+      }
     }
 
     if (entry.collectionName === 'cashiers') {

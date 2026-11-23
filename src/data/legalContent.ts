@@ -1,3 +1,5 @@
+export type LegalTab = 'terms' | 'privacy' | 'compliance' | 'ownership' | 'faq';
+
 export interface LegalClauseSection {
   number: string;
   title: string;

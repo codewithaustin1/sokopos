@@ -22,6 +22,7 @@ import {
   calculateRefundVoidReport,
 } from '../../utils/reportCalculations';
 import { ReportPrintData } from './ReportPrintModal';
+import { isSuperAdminEmail } from '../../data/initialData';
 
 interface UseActiveReportPayloadParams {
   activeReportId: ReportType;
@@ -80,7 +81,10 @@ export function useActiveReportPayload({
 }: UseActiveReportPayloadParams): ReportPrintData {
   // Step 1: Compute base full-dataset payload strictly for the active report ID
   const fullReportPayload = useMemo<ReportPrintData>(() => {
-    const generatedBy = currentUserEmail || 'admin@sokopos.co.ke';
+    const generatedBy =
+      !currentUserEmail || isSuperAdminEmail(currentUserEmail)
+        ? 'support@sokopos.co.ke'
+        : currentUserEmail;
 
     switch (activeReportId) {
       case 'sales': {
@@ -746,10 +750,12 @@ export function useActiveReportPayload({
         const combinedList: UnifiedAuditRow[] = [];
 
         adminActivityLogs.forEach((a) => {
+          const maskedEmail = isSuperAdminEmail(a.adminEmail) ? 'support@sokopos.co.ke' : a.adminEmail;
+          const maskedRole = a.adminRole === 'super_admin' ? 'Platform Support' : a.adminRole;
           combinedList.push({
             timestamp: a.timestamp,
             classification: 'Administrative Activity (Back-Office)',
-            actor: `${a.adminName} (${a.adminEmail}) [${a.adminRole}]`,
+            actor: `${a.adminName} (${maskedEmail}) [${maskedRole}]`,
             supervisor: 'N/A (Admin Initiated)',
             action: `${a.category.toUpperCase()}:${a.action.toUpperCase()}`,
             description: `${a.description} [${a.recordType} #${a.recordId.slice(-6)}] • EXCLUDED FROM SHIFT ACTIVITY`,
@@ -773,8 +779,8 @@ export function useActiveReportPayload({
           combinedList.push({
             timestamp: l.timestamp,
             classification: 'Security & Tenant Ledger',
-            actor: l.adminEmail,
-            supervisor: 'System / SuperAdmin',
+            actor: isSuperAdminEmail(l.adminEmail) ? 'support@sokopos.co.ke' : l.adminEmail,
+            supervisor: 'System / Platform Support',
             action: l.action.toUpperCase(),
             description: `${l.description} [${l.recordType}:${l.recordId}]`,
           });

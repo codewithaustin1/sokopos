@@ -6,20 +6,13 @@ import {
   Camera,
   FileText,
   CheckCircle2,
-  AlertTriangle,
   ArrowRight,
-  TrendingUp,
   Building2,
   RefreshCw,
   Plus,
-  HelpCircle,
-  Eye,
   Check,
   PackageCheck,
   Boxes,
-  Barcode,
-  Layers,
-  ArrowUpRight,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { soundFx as directSoundFx } from '../utils/audio';
@@ -72,14 +65,11 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
   const audio = soundFx || directSoundFx;
 
   const [activeTab, setActiveTab] = useState<'upload' | 'camera' | 'samples'>('upload');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisStep, setAnalysisStep] = useState<string>('');
   const [parsedInvoice, setParsedInvoice] = useState<ParsedSupplierInvoice | null>(null);
   const [targetLocationId, setTargetLocationId] = useState<string>(currentLocation?.id || locations[0]?.id || '');
   const [isApplying, setIsApplying] = useState(false);
-  const [cameraActive, setCameraActive] = useState(false);
   const [completionFeedback, setCompletionFeedback] = useState<OnboardFeedbackSummary | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -93,7 +83,6 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
   const handleStartCamera = async () => {
     try {
       setActiveTab('camera');
-      setCameraActive(true);
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment' },
       });
@@ -104,7 +93,6 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
     } catch (err: any) {
       console.warn('Camera access error:', err);
       showToast('Could not access device camera. Please upload an image or PDF document.', 'error');
-      setCameraActive(false);
       setActiveTab('upload');
     }
   };
@@ -115,15 +103,12 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
       stream.getTracks().forEach((track) => track.stop());
       videoRef.current.srcObject = null;
     }
-    setCameraActive(false);
   };
 
   const handleModalClose = () => {
     handleStopCamera();
     setCompletionFeedback(null);
     setParsedInvoice(null);
-    setSelectedFile(null);
-    setImagePreview(null);
     onClose();
   };
 
@@ -131,8 +116,6 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
     handleStopCamera();
     setCompletionFeedback(null);
     setParsedInvoice(null);
-    setSelectedFile(null);
-    setImagePreview(null);
     setActiveTab('upload');
   };
 
@@ -146,7 +129,6 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
     if (ctx) {
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-      setImagePreview(dataUrl);
       handleStopCamera();
       triggerAiAnalysis(dataUrl, 'image/jpeg');
     }
@@ -155,19 +137,16 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setSelectedFile(file);
 
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      setImagePreview(result);
       triggerAiAnalysis(result, file.type || 'image/jpeg');
     };
     reader.readAsDataURL(file);
   };
 
   const handleSelectSample = (preset: SampleInvoicePreset) => {
-    setImagePreview(preset.previewImageUrl);
     setIsAnalyzing(true);
     setAnalysisStep('Initiating Gemini Multimodal Optical Document Intelligence...');
 

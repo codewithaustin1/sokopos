@@ -5,6 +5,7 @@ import { DateRange } from '../types/reporting';
 import { calculateDateRange } from '../utils/dateRangeUtils';
 import { GlobalTimeRangeSelector } from './reports/GlobalTimeRangeSelector';
 import { ReportViewContainer } from './reports/ReportViewContainer';
+import { isSuperAdminEmail } from '../data/initialData';
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -160,7 +161,11 @@ export const ReportsView: React.FC = () => {
           cashiers={systemUsers}
           currentBusiness={currentBusiness}
           currentLocation={currentLocation}
-          currentUserEmail={currentUser?.email || 'admin@sokopos.co.ke'}
+          currentUserEmail={
+            !currentUser?.email || isSuperAdminEmail(currentUser.email)
+              ? 'support@sokopos.co.ke'
+              : currentUser.email
+          }
           auditLogs={superAdminAuditLogs}
           dateRange={dateRange}
           selectedLocationId={selectedLocationId}

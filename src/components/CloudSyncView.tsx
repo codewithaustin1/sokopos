@@ -22,6 +22,7 @@ import {
 import { usePos } from '../context/PosContext';
 import { OutboxMutationEntry } from '../types/storage';
 import { OutboxPayloadDrawer } from './cloud-sync/OutboxPayloadDrawer';
+import { isSuperAdminEmail } from '../data/initialData';
 
 type OutboxFilterTab = 'all' | 'pending' | 'dead_letter';
 
@@ -55,6 +56,7 @@ export const CloudSyncView: React.FC = () => {
     seedTenantDataToFirestoreAction,
     currentBusiness,
     isSuperAdmin,
+    isDemoSession,
     currentUser,
     outboxItems,
     pendingOutboxCount,
@@ -811,11 +813,21 @@ export const CloudSyncView: React.FC = () => {
               </span>
               <div className="text-xs font-semibold text-slate-900 dark:text-white mt-1 flex items-center gap-1.5">
                 <KeyRound className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                <span className="truncate">{currentUser ? currentUser.email : 'Local Staff Terminal'}</span>
+                <span className="truncate">
+                  {currentUser
+                    ? isSuperAdminEmail(currentUser.email)
+                      ? 'support@sokopos.co.ke'
+                      : currentUser.email
+                    : 'Local Staff Terminal'}
+                </span>
               </div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                Role: {currentUser?.role || 'cashier'}
-                {isSuperAdmin ? ' · Super Admin' : ''}
+                Role:{' '}
+                {currentUser?.role === 'super_admin' || isSuperAdmin
+                  ? isDemoSession
+                    ? 'Store Manager'
+                    : 'Platform Support'
+                  : currentUser?.role || 'cashier'}
               </div>
             </div>
           </div>

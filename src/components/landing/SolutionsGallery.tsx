@@ -211,7 +211,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
     <div className="w-full">
       {/* 2x2 Editorial Industry Gallery Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {RETAIL_INDUSTRIES.map((industry) => {
+        {RETAIL_INDUSTRIES.map((industry, idx) => {
           const Icon = industry.icon;
           const isFailed = Boolean(failedImages[industry.id]);
           const isSelected = selectedIndustryId === industry.id;
@@ -220,9 +220,10 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
           return (
             <article
               key={industry.id}
-              className={`group bg-white rounded-2xl border overflow-hidden flex flex-col transition-all duration-200 ${
+              style={{ '--stagger-index': idx } as React.CSSProperties}
+              className={`sp-stagger-item group bg-white rounded-2xl border overflow-hidden flex flex-col hover:-translate-y-0.5 hover:shadow-lg hover:shadow-slate-900/5 ${
                 isSelected
-                  ? 'border-[#28a745] ring-1 ring-[#28a745]/30'
+                  ? 'border-[#28a745] ring-2 ring-[#28a745]/25'
                   : 'border-[#e2e8f0] hover:border-slate-300'
               }`}
             >
@@ -463,7 +464,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
                           className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[42px] rounded-xl bg-[#28a745] hover:bg-[#218838] text-white text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0"
                         >
                           <Zap className="w-3.5 h-3.5 fill-white" />
-                          <span>Test the live till</span>
+                          <span>Switch to Test Mode</span>
                         </button>
                       )}
                       {onCreateAccount && (

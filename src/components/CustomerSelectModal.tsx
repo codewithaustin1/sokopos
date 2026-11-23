@@ -6,11 +6,7 @@ import {
   UserPlus,
   Phone,
   Star,
-  CreditCard,
   Check,
-  Building2,
-  AlertCircle,
-  Tag,
 } from 'lucide-react';
 import { Customer } from '../types';
 import { usePos } from '../context/PosContext';

@@ -5,10 +5,6 @@ import {
   FileSpreadsheet,
   X,
   FileText,
-  Calendar,
-  Building2,
-  CheckCircle2,
-  Sparkles,
 } from 'lucide-react';
 import { Business, Location } from '../../types';
 import { DateRange, ReportMeta } from '../../types/reporting';

@@ -52,7 +52,7 @@ import { usePos } from '../context/PosContext';
 import { Location, BusinessSecuritySettings } from '../types';
 import { resizeImageToStandardAspectRatio, estimateAssetSizeKb } from '../utils/imageOptimizer';
 import { RETAIL_THEMES } from '../data/retailThemes';
-import { SUPER_ADMIN_EMAIL } from '../data/initialData';
+import { SUPER_ADMIN_EMAIL, isSuperAdminEmail } from '../data/initialData';
 import { ResetStoreModal } from './ResetStoreModal';
 import { TaxManagementPanel } from './TaxManagementPanel';
 import { LoyaltySettingsPanel } from './LoyaltySettingsPanel';
@@ -223,6 +223,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
     systemUsers,
     currentUser,
     isSuperAdmin,
+    isDemoSession,
     setIsBusinessSettingsOpen,
     businessSettingsDefaultTab,
     updateActiveUserCredentials,
@@ -664,6 +665,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
 
   const isSuperAdminInspectingMerchant = Boolean(
     isSuperAdmin &&
+      !isDemoSession &&
       currentBusiness &&
       currentBusiness.ownerEmail &&
       currentBusiness.ownerEmail.toLowerCase().trim() !== (currentUser?.email || SUPER_ADMIN_EMAIL).toLowerCase().trim()
@@ -753,10 +755,10 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                 </span>
                 <ArrowUpRight className="w-3.5 h-3.5" />
               </button>
-              {isSuperAdmin && (
+              {isSuperAdmin && !isDemoSession && (
                 <>
                   <span className="text-slate-300 dark:text-slate-700">·</span>
-                  <span className="text-xs font-medium text-amber-600 dark:text-amber-400">Super-Admin</span>
+                  <span className="text-xs font-medium text-amber-600 dark:text-amber-400">Platform Support</span>
                 </>
               )}
             </div>
@@ -782,7 +784,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
         </div>
       </header>
 
-      {/* Super Admin Tenant Inspection Alert Bar */}
+      {/* Tenant Inspection Alert Bar */}
       {isSuperAdminInspectingMerchant && (
         <div
           id="superadmin-merchant-inspection-bar"
@@ -793,8 +795,12 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
             <div>
               <span className="font-semibold">Tenant Inspection Mode:</span> Viewing merchant store{' '}
               <span className="font-semibold underline">{currentBusiness?.name}</span> (Owned by{' '}
-              {currentBusiness?.ownerName || 'Merchant'} &lt;{currentBusiness?.ownerEmail}&gt;) as Super Admin{' '}
-              <span className="font-medium">&lt;{currentUser?.email || SUPER_ADMIN_EMAIL}&gt;</span>.
+              {currentBusiness?.ownerName || 'Merchant'}{' '}
+              &lt;
+              {isSuperAdminEmail(currentBusiness?.ownerEmail)
+                ? 'support@sokopos.co.ke'
+                : currentBusiness?.ownerEmail}
+              &gt;) as Platform Support.
             </div>
           </div>
           <button
@@ -1035,10 +1041,12 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                         </div>
                         <div>
                           <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                            {currentBusiness?.ownerName || 'Business Administrator'}
+                            {currentBusiness?.ownerName || 'Store Manager'}
                           </div>
                           <div className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-                            {currentBusiness?.ownerEmail || 'upfrontretaile@gmail.com'}
+                            {!currentBusiness?.ownerEmail || isSuperAdminEmail(currentBusiness.ownerEmail)
+                              ? 'support@sokopos.co.ke'
+                              : currentBusiness.ownerEmail}
                           </div>
                         </div>
                       </div>
@@ -1051,7 +1059,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                     {isSuperAdminInspectingMerchant && (
                       <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 flex flex-wrap items-center justify-between gap-2 text-xs">
                         <span className="text-amber-900 dark:text-amber-200 font-medium">
-                          Active Super-Admin Session: <strong>{currentUser?.email || SUPER_ADMIN_EMAIL}</strong>
+                          Active Platform Support Session
                         </span>
                         <button
                           type="button"
@@ -2042,7 +2050,7 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                   <div className="flex items-center justify-between py-2.5">
                     <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 font-medium">
                       <Globe className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                      <span>Super-Admin Audit Trail</span>
+                      <span>Platform Audit Trail</span>
                     </div>
                     <span className="text-slate-600 dark:text-slate-400 font-medium">
                       Logged on every branch &amp; user mutation
@@ -2925,15 +2933,22 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                       </div>
                       <div className="space-y-1">
                         <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                          Restricted Access: Store Owner or Super-Admin Only
+                          Restricted Access: Store Owner or Authorized Manager Only
                         </h3>
                         <p className="text-xs text-slate-600 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
                           {authStatus.reason ||
-                            'Resetting store sales to clean zero is restricted to the verified Business Owner or a Platform Super-Admin.'}
+                            'Resetting store sales to clean zero is restricted to the verified Business Owner or Platform Support.'}
                         </p>
                       </div>
                       <div className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-                        {currentUser?.name} ({currentUser?.email}) · Role: {currentUser?.role}
+                        {currentUser?.name} (
+                        {isSuperAdminEmail(currentUser?.email) ? 'support@sokopos.co.ke' : currentUser?.email}
+                        ) · Role:{' '}
+                        {currentUser?.role === 'super_admin'
+                          ? isDemoSession
+                            ? 'Store Manager'
+                            : 'Platform Support'
+                          : currentUser?.role}
                       </div>
                     </div>
                   ) : (

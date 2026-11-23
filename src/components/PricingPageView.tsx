@@ -144,18 +144,20 @@ const fmt = new Intl.NumberFormat('en-KE');
 export const PricingPageView: React.FC<PricingPageViewProps> = ({
   onBackToLogin,
   onSelectPlan,
-  loginBgGraphic: propLoginBgGraphic,
 }) => {
   const {
     currentUser,
     pricingTiers,
-    loginBgGraphic: contextLoginBgGraphic,
+    refreshPricingTiers,
     setIsSubscriptionModalOpen,
     selectCheckoutPackage,
     requestCheckoutAuth,
     showToast,
   } = usePos();
-  const loginBgGraphic = propLoginBgGraphic ?? contextLoginBgGraphic;
+
+  useEffect(() => {
+    refreshPricingTiers(false).catch(() => {});
+  }, [refreshPricingTiers]);
 
   const [billing, setBilling] = useState<'monthly' | 'annual'>('monthly');
   const [selectedBranches, setSelectedBranches] = useState<number | null>(null);

@@ -1,4 +1,4 @@
-import { CartItem, Cashier, UserRole } from '../types';
+import { CartItem } from '../types';
 
 /**
  * Calculates the discounted unit price for an item after applying either
@@ -28,25 +28,6 @@ export function getItemDiscountedUnitPrice(
 }
 
 /**
- * Calculates the total discount saving for a single unit of an item.
- */
-export function getItemUnitDiscount(
-  item: Pick<CartItem, 'unitPrice' | 'discountPercent' | 'discountAmount' | 'discountType'>
-): number {
-  const discounted = getItemDiscountedUnitPrice(item);
-  return Math.max(0, item.unitPrice - discounted);
-}
-
-/**
- * Calculates the total discount savings across all units of the cart item.
- */
-export function getItemTotalDiscount(
-  item: Pick<CartItem, 'unitPrice' | 'quantity' | 'discountPercent' | 'discountAmount' | 'discountType'>
-): number {
-  return getItemUnitDiscount(item) * item.quantity;
-}
-
-/**
  * Calculates the final line total (gross price for the quantity).
  */
 export function getItemLineTotal(
@@ -72,36 +53,4 @@ export function formatDiscountBadge(
     return `-${currency} ${(item.discountAmount ?? 0).toFixed(0)}`;
   }
   return null;
-}
-
-/**
- * Checks if the current operator or cashier has permission to apply discounts
- * without requiring a manager override PIN.
- */
-export function hasDirectDiscountPermission(
-  cashier?: Cashier | null,
-  userRole?: UserRole | string
-): boolean {
-  // Super Admins and Business Owners always have full permission
-  if (userRole === 'super_admin' || userRole === 'business_owner') {
-    return true;
-  }
-
-  if (!cashier) return false;
-
-  // Managers and Supervisors have discount authority
-  if (
-    cashier.role === 'manager' ||
-    cashier.role === 'supervisor' ||
-    cashier.role === 'business_owner'
-  ) {
-    return true;
-  }
-
-  // Standard Cashiers must have the explicit permission flag enabled
-  if (cashier.role === 'cashier') {
-    return Boolean(cashier.canApplyDiscount);
-  }
-
-  return false;
 }

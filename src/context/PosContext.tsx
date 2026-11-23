@@ -35,9 +35,7 @@ import {
   SupervisorOverrideAuditEntry,
   AdminActivityEntry,
   AdminActivityCategory,
-  BusinessTaxSettings,
   BusinessLoyaltySettings,
-  TaxRule,
   Customer,
   CustomerCreditLedgerEntry,
   SplitPaymentTender,
@@ -61,7 +59,6 @@ import {
   resolveDynamicTaxRate,
   calculateCartTaxBreakdown,
   TaxBreakdownEntry,
-  DEFAULT_TAX_SETTINGS,
 } from '../utils/taxResolver';
 import { normalizePathname, resolveLegacyHashToPath } from '../utils/seoConfig';
 import {
@@ -80,7 +77,6 @@ import {
   DEFAULT_LOYALTY_SETTINGS,
   SUPER_ADMIN_EMAIL,
   DEFAULT_APPOINTED_DEMO_CASHIER_ID,
-  INITIAL_DEMO_BUSINESS,
 } from '../data/initialData';
 import { LEGAL_ENTITY, hasValidBusinessLegalConsent } from '../data/legalContent';
 import { soundFx } from '../utils/audio';
@@ -104,24 +100,13 @@ import {
 } from '../lib/firebase';
 import {
   saveProductToFirestore,
-  updateProductInFirestore,
-  deleteProductFromFirestore,
   batchSaveProductsToFirestore,
   batchUpdateProductsInFirestore,
   batchDeleteProductsFromFirestore,
-  saveCategoryToFirestore,
-  updateCategoryInFirestore,
-  deleteCategoryFromFirestore,
   getTenantCategoriesFromFirestore,
   saveLocationToFirestore,
-  updateLocationInFirestore,
-  deleteLocationFromFirestore,
   saveCashierToFirestore,
-  updateCashierInFirestore,
-  deleteCashierFromFirestore,
   getTenantCashiersFromFirestore,
-  saveTransactionToFirestore,
-  saveStockTransferToFirestore,
   saveSyncLogToFirestore,
   savePurgedSalesBackupToFirestore,
   purgeTenantTransactionsFromFirestore,
@@ -138,7 +123,7 @@ import {
   deleteBusinessConflictsFromFirestore,
   saveUserProfileToFirestore,
   getFreshTenantProductsFromFirestore,
-  subscribeToTenantProducts,
+  subscribeToTenantProductsDelta,
   subscribeToTenantLocations,
   subscribeToTenantTransactions,
   getTenantTransactionsRangeFromFirestore,
@@ -146,18 +131,11 @@ import {
   isDemoBusinessId,
   seedInitialTenantDataToFirestore,
   getPlatformSettingsFromFirestore,
-  savePlatformSettingsToFirestore,
   saveBrandingSlotToFirestore,
   clearAllBrandingSlotsInFirestore,
-  subscribeToPricingTiers,
+  getPricingTiersFromFirestore,
   savePricingTiersToFirestore,
-  saveCustomerToFirestore,
-  updateCustomerInFirestore,
-  deleteCustomerFromFirestore,
   getTenantCustomersFromFirestore,
-  saveSupplierToFirestore,
-  updateSupplierInFirestore,
-  deleteSupplierFromFirestore,
   getTenantSuppliersFromFirestore,
   subscribeToBusinessDocument,
   subscribeToPaymentRecord,
@@ -165,10 +143,7 @@ import {
   getTenantAnalyticsRollupsFromFirestore,
   upsertAnalyticsDailyRollupsBatch,
   getTenantAnalyticsTargetsFromFirestore,
-  saveAnalyticsTargetToFirestore,
   getTenantAnalyticsSavedViewsFromFirestore,
-  saveAnalyticsSavedViewToFirestore,
-  deleteAnalyticsSavedViewFromFirestore,
   flushOutboxMutationToFirestore,
   isFirestoreQuotaCooldownActive,
 } from '../lib/firestoreService';
@@ -199,6 +174,8 @@ import {
   getAllOutboxEntries,
   buildOutboxEntry,
   estimateBrowserStorageQuota,
+  getTerminalMeta,
+  setTerminalMeta,
 } from '../lib/localTerminalDb';
 import {
   flushSyncOutbox,
@@ -218,7 +195,6 @@ import {
   verifyStaffPinViaServer,
   verifyManagerOverrideViaServer,
   saveStaffCredentialOnServer,
-  syncStaffCredentialsOnServer,
   checkStaffIdentityAvailabilityOnServer,
   PROTECTED_PIN_MASK,
   isProtectedPin,
@@ -226,10 +202,8 @@ import {
 } from '../lib/pinSecurityService';
 import {
   getItemDiscountedUnitPrice,
-  hasDirectDiscountPermission,
 } from '../utils/discountUtils';
 import {
-  CanonicalTierId,
   SubscriptionCapabilityKey,
   SubscriptionEntitlements,
   UpgradePromptRequest,
@@ -255,9 +229,6 @@ import firebaseConfig from '../../firebase-applet-config.json';
 interface PosContextType {
   // Authentication & Multi-tenancy
   currentUser: AuthUser | null;
-  setCurrentUser: (user: AuthUser | null) => void;
-  isAuthenticated: boolean;
-  isFirebaseAuthLoading: boolean;
   pendingVerificationEmail: string | null;
   loginWithFirebaseGoogle: (customStoreName?: string) => Promise<boolean>;
   loginWithFirebaseEmailPassword: (
@@ -273,7 +244,6 @@ interface PosContextType {
   resendVerificationEmail: () => Promise<{ success: boolean; message?: string; error?: string }>;
   checkEmailVerificationStatus: () => Promise<{ verified: boolean; error?: string }>;
   cancelEmailVerification: () => Promise<void>;
-  exchangeOAuthTokenForSession: (idToken: string, user: { email: string; name?: string; uid?: string }) => Promise<boolean>;
   businesses: Business[];
   currentBusiness: Business;
   activeBusinessId: string;
@@ -308,6 +278,7 @@ interface PosContextType {
   pricingTiers: PricingTier[];
   pricingSyncStatus: 'idle' | 'saving' | 'synced' | 'error';
   pricingSyncError: string | null;
+  refreshPricingTiers: (forceRefresh?: boolean) => Promise<PricingTier[]>;
   updatePricingTier: (tierId: string, updates: Partial<PricingTier>) => void;
   resetPricingTiersToDefault: () => void;
   updateBusinessPlan: (businessId: string, plan: BusinessPlanTier) => Promise<void>;
@@ -345,7 +316,6 @@ interface PosContextType {
     error?: string;
   }>;
   isPricingPageOpen: boolean;
-  setIsPricingPageOpen: React.Dispatch<React.SetStateAction<boolean>>;
   openPricingPage: () => void;
   closePricingPage: () => void;
   isAffiliateModalOpen: boolean;
@@ -381,7 +351,6 @@ interface PosContextType {
 
   // Display & Dark Theme for Dim Retail Environments
   isDarkMode: boolean;
-  setIsDarkMode: React.Dispatch<React.SetStateAction<boolean>>;
   toggleDarkMode: () => void;
 
   // Retail Domain Accent Palettes
@@ -401,22 +370,10 @@ interface PosContextType {
   rolePermissions: RolePermissionsMap;
   updateRolePermissions: (newPermissions: RolePermissionsMap) => Promise<boolean>;
   can: (permission: PermissionKey, roleOverride?: UserRole | Cashier['role']) => boolean;
-  hasPermission: (permission: PermissionKey, roleOverride?: UserRole | Cashier['role']) => boolean;
-  resetRolePermissionsToDefault: () => Promise<boolean>;
 
   // Super-Admin Audit & Safeguards
   superAdminAuditLogs: SuperAdminAuditEntry[];
-  logSuperAdminAction: (
-    businessId: string,
-    recordType: 'product' | 'transaction' | 'user' | 'location' | 'business' | 'stock',
-    recordId: string,
-    action: 'create' | 'update' | 'delete' | 'switch_tenant' | 'provision_business',
-    description: string,
-    beforeValue: unknown,
-    afterValue: unknown
-  ) => void;
   pendingDestructiveAction: DestructiveActionRequest | null;
-  requestDestructiveAction: (req: Omit<DestructiveActionRequest, 'id'>) => void;
   confirmDestructiveAction: () => void;
   cancelDestructiveAction: () => void;
 
@@ -491,7 +448,6 @@ interface PosContextType {
   addCategory: (category: Omit<Category, 'id' | 'businessId' | 'createdAt'>) => Promise<Category>;
   updateCategory: (id: string, updates: Partial<Category>) => Promise<void>;
   deleteCategory: (id: string) => Promise<boolean>;
-  refreshTenantCategories: (force?: boolean) => Promise<void>;
   addProduct: (product: Omit<Product, 'id' | 'businessId'> & { id?: string }) => Product | null;
   updateProduct: (id: string, updates: Partial<Product>) => void;
   deleteProduct: (id: string) => void;
@@ -507,8 +463,6 @@ interface PosContextType {
 
   // Supplier Management & Supply Chain Oversight
   suppliers: Supplier[];
-  selectedSupplier: Supplier | null;
-  setSelectedSupplier: (supplier: Supplier | null) => void;
   addSupplier: (supplier: Omit<Supplier, 'id' | 'businessId' | 'createdAt'>) => Promise<Supplier>;
   bulkAddSuppliers: (suppliers: Array<Omit<Supplier, 'id' | 'businessId' | 'createdAt'>>) => Promise<number>;
   bulkUpdateSuppliers: (
@@ -517,13 +471,11 @@ interface PosContextType {
   ) => Promise<number>;
   updateSupplier: (id: string, updates: Partial<Supplier>) => Promise<void>;
   deleteSupplier: (id: string) => Promise<boolean>;
-  getProductsForSupplier: (supplierId: string) => Product[];
   refreshTenantSuppliers: (force?: boolean) => Promise<void>;
   isSuppliersLoading: boolean;
 
   // Fresh Inventory from Firestore Server (Bypassing Local Cache)
   fetchFreshInventoryFromServer: (businessIdOverride?: string, showFeedback?: boolean) => Promise<Product[]>;
-  isInventoryFreshFromServer: boolean;
   isInventoryLoading: boolean;
   inventoryLastFetchedAt: string | null;
 
@@ -680,7 +632,6 @@ interface PosContextType {
 
   // Supervisor Overrides & Attributions (Edge Case 1)
   supervisorOverrideLogs: SupervisorOverrideAuditEntry[];
-  logSupervisorOverride: (params: Omit<SupervisorOverrideAuditEntry, 'id' | 'timestamp' | 'businessId'>) => void;
   voidRecords: VoidRecord[];
   recordVoid: (params: {
     voidType: 'line_item' | 'cart_void';
@@ -722,7 +673,6 @@ interface PosContextType {
   syncLogs: SyncLogEvent[];
   pendingOfflineCount: number;
   triggerCloudSync: (isSilent?: boolean | unknown) => Promise<void>;
-  isStorageHydrated: boolean;
   outboxItems: OutboxMutationEntry[];
   pendingOutboxCount: number;
   deadLetterCount: number;
@@ -742,9 +692,7 @@ interface PosContextType {
   exportFullLocalStore: () => Promise<void>;
 
   // Firestore Row-Level Security Scoped Database
-  isFirestoreConnected: boolean;
   firestoreDbId: string;
-  firestoreRlsStatus: string;
   seedTenantDataToFirestoreAction: () => Promise<void>;
 
   // Shift Management & Cash Drawer Reconciliation
@@ -774,7 +722,6 @@ interface PosContextType {
   openShiftManagement: () => void;
 
   // Toast
-  toastMessage: { text: string; type: 'success' | 'error' | 'info' | 'warning' } | null;
   toasts: ToastItem[];
   showToast: (text: string, type?: 'success' | 'error' | 'info' | 'warning', duration?: number) => void;
   dismissToast: (id: string) => void;
@@ -783,8 +730,6 @@ interface PosContextType {
   soundFx: typeof soundFx;
 
   // Internationalization / Localization
-  language: string;
-  setLanguage: (lang: string) => void;
   t: (key: string, fallback?: string) => string;
 }
 
@@ -872,8 +817,7 @@ export function getStableBusinessIdForEmail(email: string): string {
 }
 
 export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Localization & Language
-  const [language, setLanguage] = useState<string>('en');
+  // Localization
   const t = useCallback((key: string, fallback?: string) => {
     return fallback || key;
   }, []);
@@ -1246,8 +1190,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           id: fbUser.uid,
           firebaseUid: fbUser.uid,
           email: fbUser.email,
-          name: fbUser.displayName || (isSuperAdminEmail ? 'Platform Administrator' : 'Google User'),
-          initials: (fbUser.displayName || (isSuperAdminEmail ? 'PA' : fbUser.email.substring(0, 2))).substring(0, 2).toUpperCase(),
+          name: fbUser.displayName || (isSuperAdminEmail ? 'Platform Support' : 'Google User'),
+          initials: (fbUser.displayName || (isSuperAdminEmail ? 'PS' : fbUser.email.substring(0, 2))).substring(0, 2).toUpperCase(),
           avatarUrl: fbUser.photoURL || undefined,
           authProvider: 'firebase',
           role,
@@ -1284,7 +1228,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, []);
 
   const isSuperAdmin = currentUser?.role === 'super_admin';
-  const isAuthenticated = Boolean(currentUser);
 
   // 3. Active Business Scoping
   const [activeBusinessIdState, setActiveBusinessIdState] = useState<string>(() => {
@@ -1466,8 +1409,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     []
   );
 
-  const toastMessage = toasts.length > 0 ? toasts[toasts.length - 1] : null;
-
   // 4b. Appointed Public Demo Cashier State (Configured by Super Admin)
   const [appointedDemoCashierId, setAppointedDemoCashierId] = useState<string>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.APPOINTED_DEMO_CASHIER_ID);
@@ -1510,27 +1451,30 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
   }, [pricingTiers]);
 
-  // Live Firestore real-time subscription so Super Admin price edits propagate instantly to all devices
-  useEffect(() => {
-    const unsubscribe = subscribeToPricingTiers(
-      ({ tiers, updatedAt }) => {
-        if (pricingSaveTimerRef.current) {
-          // Local debounce save is still in flight; skip overwriting active edits
-          return;
+  // On-demand pricing tiers fetcher (respects 24h client cache; avoids continuous idle Firestore listeners)
+  const refreshPricingTiers = useCallback(
+    async (forceRefresh = false): Promise<PricingTier[]> => {
+      try {
+        const remote = await getPricingTiersFromFirestore(forceRefresh);
+        if (remote?.tiers && remote.tiers.length > 0) {
+          if (!pricingSaveTimerRef.current) {
+            pricingTiersRef.current = remote.tiers;
+            setPricingTiers(remote.tiers);
+            setPricingSyncStatus('synced');
+            setPricingSyncError(null);
+          }
+          return remote.tiers;
         }
-        pricingTiersRef.current = tiers;
-        setPricingTiers(tiers);
-        if (updatedAt) {
-          setPricingSyncStatus('synced');
-          setPricingSyncError(null);
-        }
-      },
-      (errMsg) => {
-        setPricingSyncError(errMsg);
+      } catch (err: any) {
+        console.warn('On-demand pricing tiers fetch notice:', err);
       }
-    );
+      return pricingTiersRef.current;
+    },
+    []
+  );
+
+  useEffect(() => {
     return () => {
-      unsubscribe();
       if (pricingSaveTimerRef.current) {
         clearTimeout(pricingSaveTimerRef.current);
         pricingSaveTimerRef.current = null;
@@ -1556,12 +1500,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       } else {
         setPricingSyncStatus('error');
-        setPricingSyncError(res.error || 'Cloud sync requires verified Super Admin Google sign-in.');
+        setPricingSyncError(res.error || 'Cloud sync requires verified Platform Support Google sign-in.');
         const now = Date.now();
         if (now - lastPricingToastAtRef.current > 4000) {
           lastPricingToastAtRef.current = now;
           showToast(
-            `Saved locally, but cloud pricing sync failed: ${res.error || 'Verify Super Admin sign-in.'}`,
+            `Saved locally, but cloud pricing sync failed: ${res.error || 'Verify Platform Support sign-in.'}`,
             'warning'
           );
         }
@@ -1940,7 +1884,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       if (!cloudResult.ok) {
         showToast(
-          `Applied locally, but cloud sync could not complete: ${cloudResult.error || 'Verify Super Admin Google sign-in.'}`,
+          `Applied locally, but cloud sync could not complete: ${cloudResult.error || 'Verify Platform Support Google sign-in.'}`,
           'warning'
         );
         return;
@@ -1998,7 +1942,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       if (!cloudResult.ok) {
         showToast(
-          `Logo applied locally, but cloud sync could not complete: ${cloudResult.error || 'Verify Super Admin Google sign-in.'}`,
+          `Logo applied locally, but cloud sync could not complete: ${cloudResult.error || 'Verify Platform Support Google sign-in.'}`,
           'warning'
         );
         return;
@@ -2056,7 +2000,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       if (!cloudResult.ok) {
         showToast(
-          `Favicon applied locally, but cloud sync could not complete: ${cloudResult.error || 'Verify Super Admin Google sign-in.'}`,
+          `Favicon applied locally, but cloud sync could not complete: ${cloudResult.error || 'Verify Platform Support Google sign-in.'}`,
           'warning'
         );
         return;
@@ -2131,7 +2075,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       if (!cloudResult.ok) {
         showToast(
-          `Applied locally, but cloud sync could not complete: ${cloudResult.error || 'Verify Super Admin Google sign-in.'}`,
+          `Applied locally, but cloud sync could not complete: ${cloudResult.error || 'Verify Platform Support Google sign-in.'}`,
           'warning'
         );
         return;
@@ -2203,7 +2147,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     if (!cloudResult.ok) {
       showToast(
-        `Defaults restored locally, but cloud sync could not complete: ${cloudResult.error || 'Verify Super Admin Google sign-in.'}`,
+        `Defaults restored locally, but cloud sync could not complete: ${cloudResult.error || 'Verify Platform Support Google sign-in.'}`,
         'warning'
       );
       return;
@@ -3306,7 +3250,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // Direct Firestore Server Inventory States
-  const [isInventoryFreshFromServer, setIsInventoryFreshFromServer] = useState<boolean>(false);
   const [isInventoryLoading, setIsInventoryLoading] = useState<boolean>(false);
   const [inventoryLastFetchedAt, setInventoryLastFetchedAt] = useState<string | null>(null);
 
@@ -3337,9 +3280,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               }));
               return [...freshMapped, ...otherTenants];
             });
-            setIsInventoryFreshFromServer(true);
             const nowIso = new Date().toISOString();
             setInventoryLastFetchedAt(nowIso);
+            void setTerminalMeta(`productDeltaCursor:${targetBizId}`, nowIso);
             if (showFeedback) {
               showToast('Inventory catalog updated live from Firestore server.', 'success');
             }
@@ -3358,7 +3301,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                   const otherTenants = prev.filter((p) => p.businessId !== targetBizId);
                   return [...reFresh.map((p) => ({ ...p, isPendingCloudSync: false })), ...otherTenants];
                 });
-                setIsInventoryFreshFromServer(true);
                 setInventoryLastFetchedAt(new Date().toISOString());
                 return reFresh;
               }
@@ -4250,12 +4192,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return allSuppliers.filter((s) => s.businessId === activeBusinessId);
   }, [allSuppliers, activeBusinessId]);
 
-  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
-
-  useEffect(() => {
-    setSelectedSupplier(null);
-  }, [activeBusinessId]);
-
   // On-demand, session-cached (15-min TTL) supplier directory fetcher
   const lastSuppliersFetchRef = useRef<Record<string, number>>({});
   const [isSuppliersLoading, setIsSuppliersLoading] = useState(false);
@@ -4352,10 +4288,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     setAllSuppliers((prev) => prev.map((s) => (s.id === id ? updatedSupp : s)));
-
-    if (selectedSupplier?.id === id) {
-      setSelectedSupplier(updatedSupp);
-    }
 
     // If name changed, synchronize supplierName on all linked products
     if (updates.name && updates.name !== target.name) {
@@ -4532,10 +4464,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setAllSuppliers((prev) => prev.filter((s) => s.id !== id));
 
-    if (selectedSupplier?.id === id) {
-      setSelectedSupplier(null);
-    }
-
     // Unlink products
     if (linkedCount > 0) {
       const unlinkedProds = allProducts
@@ -4576,10 +4504,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     showToast(`Supplier "${target.name}" removed`, 'info');
     return true;
-  };
-
-  const getProductsForSupplier = (supplierId: string): Product[] => {
-    return products.filter((p) => p.supplierId === supplierId);
   };
 
   // 11. Multi-Tenant Transactions Store (persisted in IndexedDB)
@@ -5072,7 +4996,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       return {
         allowed: false,
-        reason: `Restricted: Store sales reset is reserved exclusively for the verified Business Owner or Super Admin. Your current role is '${currentUser.role}'.`,
+        reason: `Restricted: Store sales reset is reserved exclusively for the verified Business Owner or Authorized Platform Support. Your current role is '${currentUser.role === 'super_admin' ? 'Platform Support' : currentUser.role}'.`,
       };
     },
     [currentUser, isSuperAdmin, businesses]
@@ -5681,8 +5605,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     [currentUser?.role, currentCashier?.role, isSuperAdmin, rolePermissions]
   );
 
-  const hasPermission = can;
-
   const updateRolePermissions = useCallback(
     async (newPermissions: RolePermissionsMap): Promise<boolean> => {
       if (!currentBusiness) return false;
@@ -5709,10 +5631,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     },
     [currentBusiness, activeBusinessId, isOnline, showToast, isSuperAdmin, requireCapability]
   );
-
-  const resetRolePermissionsToDefault = useCallback(async (): Promise<boolean> => {
-    return updateRolePermissions(DEFAULT_ROLE_PERMISSIONS);
-  }, [updateRolePermissions]);
 
   const hasDiscountPermission = (cashier?: Cashier): boolean => {
     if (isSuperAdmin || currentUser?.role === 'business_owner' || currentUser?.role === 'super_admin') {
@@ -7983,9 +7901,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [triggerCloudSync, showToast, activeBusinessId, hasActiveCloudSession]);
 
   // 13.b Firestore Row-Level Security State & Tenant Data Synchronization
-  const [isFirestoreConnected, setIsFirestoreConnected] = useState<boolean>(false);
   const firestoreDbId = (firebaseConfig as any).firestoreDatabaseId || 'ai-studio-sokopospointofsa-5314257a-dae6-432a-bde0-81ab935cc7ad';
-  const firestoreRlsStatus = 'Row-Level Security Active: request.auth.token.businessId == resource.data.businessId';
 
   const hasVerifiedConnectionRef = useRef<boolean>(false);
   const lastBusinessesFetchRef = useRef<number>(0);
@@ -8210,7 +8126,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const connected = hasVerifiedConnectionRef.current ? true : await testFirebaseConnection();
       if (cancelled) return;
       hasVerifiedConnectionRef.current = connected;
-      setIsFirestoreConnected(connected);
 
       if (!connected || !auth.currentUser) return;
       const userEmail = firebaseEmail || (auth.currentUser.email || '').toLowerCase().trim();
@@ -8280,6 +8195,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return;
     }
 
+    let isDisposed = false;
     let unsubProducts: (() => void) | undefined;
     let unsubLocations: (() => void) | undefined;
     let unsubTransactions: (() => void) | undefined;
@@ -8289,42 +8205,56 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     refreshTenantStaff(false).catch(() => {});
 
     try {
-      unsubProducts = subscribeToTenantProducts(activeBusinessId, (remoteProds, isFromCache) => {
-        if (!isFromCache) {
-          setIsInventoryFreshFromServer(true);
-          setInventoryLastFetchedAt(new Date().toISOString());
-        }
-        if (Array.isArray(remoteProds)) {
-          setAllProducts((prev) => {
-            const currentTenantLocal = prev.filter((p) => p.businessId === activeBusinessId);
-            const otherTenants = prev.filter((p) => p.businessId !== activeBusinessId);
-
-            const pendingOffline = currentTenantLocal.filter((p) => p.isPendingCloudSync);
-            if (pendingOffline.length > 0) {
-              flushPendingDocsBatch(
-                pendingOffline.map((p) => ({
-                  collectionName: 'products' as const,
-                  id: p.id,
-                  data: { ...p, isPendingCloudSync: false },
-                }))
-              ).catch((err) => console.warn('Auto-sync offline products batch:', err));
+      const cursorKey = `productDeltaCursor:${activeBusinessId}`;
+      void getTerminalMeta<string>(cursorKey).then((storedCursor) => {
+        if (isDisposed) return;
+        unsubProducts = subscribeToTenantProductsDelta(
+          activeBusinessId,
+          storedCursor || null,
+          (delta) => {
+            if (isDisposed) return;
+            if (!delta.isFromCache) {
+              setInventoryLastFetchedAt(new Date().toISOString());
+            }
+            if (delta.maxUpdatedAt) {
+              void setTerminalMeta(cursorKey, delta.maxUpdatedAt);
             }
 
-            const map = new Map<string, Product>();
-            remoteProds.forEach((r) => map.set(r.id, { ...r, isPendingCloudSync: false }));
-            pendingOffline.forEach((p) => {
-              if (!map.has(p.id)) {
-                map.set(p.id, p);
+            setAllProducts((prev) => {
+              const currentTenantLocal = prev.filter((p) => p.businessId === activeBusinessId);
+              const otherTenants = prev.filter((p) => p.businessId !== activeBusinessId);
+
+              const pendingOffline = currentTenantLocal.filter((p) => p.isPendingCloudSync);
+              if (pendingOffline.length > 0) {
+                flushPendingDocsBatch(
+                  pendingOffline.map((p) => ({
+                    collectionName: 'products' as const,
+                    id: p.id,
+                    data: { ...p, isPendingCloudSync: false },
+                  }))
+                ).catch((err) => console.warn('Auto-sync offline products batch:', err));
               }
+
+              const map = new Map<string, Product>();
+              if (!delta.isFullSync) {
+                currentTenantLocal.forEach((p) => map.set(p.id, p));
+              }
+              delta.upserts.forEach((r) => map.set(r.id, { ...r, isPendingCloudSync: false }));
+              delta.deletedIds.forEach((id) => map.delete(id));
+              pendingOffline.forEach((p) => {
+                if (!map.has(p.id)) {
+                  map.set(p.id, p);
+                }
+              });
+
+              const tenantResult = (map.size > 0 || pendingOffline.length > 0)
+                ? Array.from(map.values())
+                : currentTenantLocal;
+
+              return [...tenantResult, ...otherTenants];
             });
-
-            const tenantResult = (remoteProds.length > 0 || pendingOffline.length > 0)
-              ? Array.from(map.values())
-              : currentTenantLocal;
-
-            return [...tenantResult, ...otherTenants];
-          });
-        }
+          }
+        );
       });
 
       unsubLocations = subscribeToTenantLocations(activeBusinessId, (remoteLocs) => {
@@ -8399,6 +8329,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     return () => {
+      isDisposed = true;
       if (unsubProducts) unsubProducts();
       if (unsubLocations) unsubLocations();
       if (unsubTransactions) unsubTransactions();
@@ -8488,8 +8419,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         id: firebaseUser.uid,
         firebaseUid: firebaseUser.uid,
         email: firebaseUser.email,
-        name: firebaseUser.displayName || (isSuperAdminEmail ? 'Platform Administrator' : 'Google User'),
-        initials: (firebaseUser.displayName || (isSuperAdminEmail ? 'PA' : firebaseUser.email.substring(0, 2))).substring(0, 2).toUpperCase(),
+        name: firebaseUser.displayName || (isSuperAdminEmail ? 'Platform Support' : 'Google User'),
+        initials: (firebaseUser.displayName || (isSuperAdminEmail ? 'PS' : firebaseUser.email.substring(0, 2))).substring(0, 2).toUpperCase(),
         avatarUrl: firebaseUser.photoURL || undefined,
         authProvider: 'firebase',
         role,
@@ -8671,8 +8602,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         id: firebaseUser.uid,
         firebaseUid: firebaseUser.uid,
         email: firebaseUser.email,
-        name: firebaseUser.displayName || (isSuperAdminEmail ? 'Platform Administrator' : firebaseUser.email.split('@')[0]),
-        initials: (firebaseUser.displayName || (isSuperAdminEmail ? 'PA' : firebaseUser.email.substring(0, 2))).substring(0, 2).toUpperCase(),
+        name: firebaseUser.displayName || (isSuperAdminEmail ? 'Platform Support' : firebaseUser.email.split('@')[0]),
+        initials: (firebaseUser.displayName || (isSuperAdminEmail ? 'PS' : firebaseUser.email.substring(0, 2))).substring(0, 2).toUpperCase(),
         avatarUrl: firebaseUser.photoURL || undefined,
         authProvider: 'firebase',
         role,
@@ -8808,9 +8739,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         email: firebaseUser.email,
         name:
           firebaseUser.displayName ||
-          (isSuperAdminEmail ? 'Platform Administrator' : firebaseUser.email.split('@')[0]),
+          (isSuperAdminEmail ? 'Platform Support' : firebaseUser.email.split('@')[0]),
         initials: (
-          firebaseUser.displayName || (isSuperAdminEmail ? 'PA' : firebaseUser.email.substring(0, 2))
+          firebaseUser.displayName || (isSuperAdminEmail ? 'PS' : firebaseUser.email.substring(0, 2))
         )
           .substring(0, 2)
           .toUpperCase(),
@@ -8965,8 +8896,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         id: refreshedUser.uid,
         firebaseUid: refreshedUser.uid,
         email: refreshedUser.email!,
-        name: refreshedUser.displayName || (isSuperAdminEmail ? 'Platform Administrator' : refreshedUser.email!.split('@')[0]),
-        initials: (refreshedUser.displayName || (isSuperAdminEmail ? 'PA' : refreshedUser.email!.substring(0, 2))).substring(0, 2).toUpperCase(),
+        name: refreshedUser.displayName || (isSuperAdminEmail ? 'Platform Support' : refreshedUser.email!.split('@')[0]),
+        initials: (refreshedUser.displayName || (isSuperAdminEmail ? 'PS' : refreshedUser.email!.substring(0, 2))).substring(0, 2).toUpperCase(),
         avatarUrl: refreshedUser.photoURL || undefined,
         authProvider: 'firebase',
         role,
@@ -9018,65 +8949,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const exchangeOAuthTokenForSession = async (
-    idToken: string,
-    userInfo: { email: string; name?: string; uid?: string }
-  ): Promise<boolean> => {
-    try {
-      const normalizedEmail = userInfo.email.trim().toLowerCase();
-      const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
-
-      // Enforce uniqueness: prioritize account last logged into & delete conflicts at Firestore level
-      const { winner: matchedBiz } = await prioritizeAccountAndPurgeConflicts(
-        normalizedEmail,
-        userInfo.name || undefined
-      );
-
-      const targetBizId = isSuperAdminEmail ? 'biz-upfront' : matchedBiz.id;
-
-      const role: UserRole = isSuperAdminEmail
-        ? 'super_admin'
-        : matchedBiz
-        ? 'business_owner'
-        : 'manager';
-
-      const authUser: AuthUser = {
-        id: userInfo.uid || `oauth-${Date.now()}`,
-        firebaseUid: userInfo.uid,
-        email: userInfo.email,
-        name: userInfo.name || (isSuperAdminEmail ? 'Platform Administrator' : 'OAuth User'),
-        initials: (userInfo.name || (isSuperAdminEmail ? 'PA' : userInfo.email.substring(0, 2))).substring(0, 2).toUpperCase(),
-        authProvider: 'firebase',
-        role,
-        businessId: targetBizId,
-        businessName: matchedBiz?.name || (isSuperAdminEmail ? 'Upfront Retail Solutions' : 'Business Account'),
-        createdAt: new Date().toISOString(),
-        idToken,
-        tokenExpiresAt: Date.now() + 3600 * 1000,
-        sessionStatus: 'verified',
-      };
-
-      setCurrentUser(authUser);
-      setActiveBusinessIdState(targetBizId);
-
-      saveUserProfileToFirestore({
-        uid: authUser.id,
-        email: authUser.email,
-        role,
-        businessId: targetBizId,
-        displayName: authUser.name,
-      });
-
-      soundFx.playSuccess();
-      showToast(`OAuth token validated & verified for ${authUser.email}`, 'success');
-      return true;
-    } catch (e: any) {
-      soundFx.playError();
-      showToast(`OAuth Token Exchange failed: ${e.message}`, 'error');
-      return false;
-    }
-  };
-
   const loginWithGoogle = (email: string, name?: string, newBusinessName?: string): boolean => {
     localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
     const normalizedEmail = email.trim().toLowerCase();
@@ -9091,13 +8963,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const superAdminUser: AuthUser = {
         ...INITIAL_SUPER_ADMIN_USER,
         email: SUPER_ADMIN_EMAIL,
-        name: name || 'Platform Administrator',
+        name: name || 'Platform Support',
         businessId: 'biz-upfront',
         businessName: 'Upfront Retail Solutions',
       };
       setCurrentUser(superAdminUser);
       setActiveBusinessIdState('biz-upfront');
-      showToast(`Authenticated as Platform Super-Admin (${SUPER_ADMIN_EMAIL})`, 'success');
+      showToast('Authenticated as Platform Support', 'success');
       return true;
     }
 
@@ -9520,8 +9392,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       console.warn('Firebase signout exception:', err);
     }
 
-    // 4. Reset server freshness status and timestamp for next login
-    setIsInventoryFreshFromServer(false);
+    // 4. Reset server freshness timestamp for next login
     setInventoryLastFetchedAt(null);
 
     // 5. Clear user session completely
@@ -9550,7 +9421,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     plan: BusinessPlanTier
   ): Business => {
     if (!isSuperAdmin) {
-      throw new Error('Unauthorized: Only Super-Admin can provision business tenants.');
+      throw new Error('Unauthorized: Only Authorized Platform Support can provision business tenants.');
     }
 
     const canonicalPlan = normalizePlanTier(plan);
@@ -10279,7 +10150,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const updateBusinessPlan = async (businessId: string, plan: BusinessPlanTier): Promise<void> => {
     if (!isSuperAdmin) {
-      showToast('Access denied: Only verified Paystack checkout or Super Admin can change subscription tiers.', 'error');
+      showToast('Access denied: Only verified Paystack checkout or Authorized Platform Support can change subscription tiers.', 'error');
       return;
     }
     const targetBiz = businesses.find((b) => b.id === businessId);
@@ -10620,7 +10491,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           status: 'active',
           subscription: nextSubscription,
         });
-        showToast(`Package "${formatTierDisplayName(normalizedTier)}" activated by Super Admin.`, 'success');
+        showToast(`Package "${formatTierDisplayName(normalizedTier)}" activated by Platform Support.`, 'success');
         return { success: true, message: `ADMIN-${Date.now()}` };
       }
 
@@ -10957,9 +10828,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     <PosContext.Provider
       value={{
         currentUser,
-        setCurrentUser,
-        isAuthenticated,
-        isFirebaseAuthLoading,
         pendingVerificationEmail,
         loginWithFirebaseGoogle,
         loginWithFirebaseEmailPassword,
@@ -10968,7 +10836,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         resendVerificationEmail,
         checkEmailVerificationStatus,
         cancelEmailVerification,
-        exchangeOAuthTokenForSession,
         businesses,
         currentBusiness,
         activeBusinessId,
@@ -11001,6 +10868,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         pricingTiers,
         pricingSyncStatus,
         pricingSyncError,
+        refreshPricingTiers,
         updatePricingTier,
         resetPricingTiersToDefault,
         updateBusinessPlan,
@@ -11028,7 +10896,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         livePaymentRecordSnapshot,
         ensureBusinessSyncedForCheckout,
         isPricingPageOpen,
-        setIsPricingPageOpen,
         openPricingPage,
         closePricingPage,
         isAffiliateModalOpen,
@@ -11038,7 +10905,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updateLoyaltySettings,
 
         isDarkMode,
-        setIsDarkMode,
         toggleDarkMode,
 
         retailTheme,
@@ -11070,13 +10936,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         rolePermissions,
         updateRolePermissions,
         can,
-        hasPermission,
-        resetRolePermissionsToDefault,
 
         superAdminAuditLogs,
-        logSuperAdminAction,
         pendingDestructiveAction,
-        requestDestructiveAction,
         confirmDestructiveAction,
         cancelDestructiveAction,
 
@@ -11119,7 +10981,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addCategory,
         updateCategory,
         deleteCategory,
-        refreshTenantCategories,
         addProduct,
         updateProduct,
         deleteProduct,
@@ -11132,19 +10993,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         // Supplier Management & Supply Chain Oversight
         suppliers,
-        selectedSupplier,
-        setSelectedSupplier,
         addSupplier,
         bulkAddSuppliers,
         bulkUpdateSuppliers,
         updateSupplier,
         deleteSupplier,
-        getProductsForSupplier,
         refreshTenantSuppliers,
         isSuppliersLoading,
 
         fetchFreshInventoryFromServer,
-        isInventoryFreshFromServer,
         isInventoryLoading,
         inventoryLastFetchedAt,
 
@@ -11234,7 +11091,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         // Supervisor Overrides & Attributions (Edge Case 1)
         supervisorOverrideLogs,
-        logSupervisorOverride,
         voidRecords,
         recordVoid,
 
@@ -11245,7 +11101,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         syncLogs,
         pendingOfflineCount,
         triggerCloudSync,
-        isStorageHydrated,
         outboxItems: tenantOutboxItems,
         pendingOutboxCount,
         deadLetterCount,
@@ -11259,19 +11114,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         downloadOpfsArchive,
         exportFullLocalStore,
 
-        isFirestoreConnected,
         firestoreDbId,
-        firestoreRlsStatus,
         seedTenantDataToFirestoreAction,
 
-        toastMessage,
         toasts,
         showToast,
         dismissToast,
         soundFx,
 
-        language,
-        setLanguage,
         t,
 
         adminActivityLogs,

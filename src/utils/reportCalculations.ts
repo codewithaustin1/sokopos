@@ -1,4 +1,4 @@
-import { Transaction, Product, Location, Cashier, SuperAdminAuditEntry, ShiftSession } from '../types';
+import { Transaction, Product, Cashier, ShiftSession } from '../types';
 import { DateRange } from '../types/reporting';
 import { isTimestampInRange } from './dateRangeUtils';
 

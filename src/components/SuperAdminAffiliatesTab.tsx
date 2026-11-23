@@ -58,7 +58,7 @@ export const SuperAdminAffiliatesTab: React.FC = () => {
       action,
       mpesaReceiptNumber: receipt,
       notes: notes || undefined,
-      reviewedBy: currentUser?.email || 'Super Admin',
+      reviewedBy: currentUser?.email || 'Platform Support',
     });
     setBusyId(null);
 

@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
-  QrCode,
   Maximize2,
   Minimize2,
   Copy,
   Check,
   Download,
-  RefreshCw,
   CheckCircle2,
   Smartphone,
   Sparkles,

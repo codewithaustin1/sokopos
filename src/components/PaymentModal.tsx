@@ -22,7 +22,6 @@ import {
   GitFork,
   Plus,
   Trash2,
-  Split,
   RefreshCw,
   Landmark,
 } from 'lucide-react';

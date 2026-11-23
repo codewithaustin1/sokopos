@@ -383,6 +383,33 @@ export async function getOpfsManifestList(): Promise<OpfsSnapshotManifest[]> {
   return Array.isArray(rec?.value) ? rec.value : [];
 }
 
+export async function getTerminalMeta<T = any>(key: string): Promise<T | null> {
+  if (!key) return null;
+  if (!isIndexedDbAvailable()) {
+    return (memoryFallbackStore.get(`meta:${key}`) as T) ?? null;
+  }
+  const db = await openTerminalDb();
+  const tx = db.transaction('terminal_meta', 'readonly');
+  const rec = await reqToPromise(tx.objectStore('terminal_meta').get(key));
+  return rec && 'value' in rec ? (rec.value as T) : null;
+}
+
+export async function setTerminalMeta<T = any>(key: string, value: T): Promise<void> {
+  if (!key) return;
+  if (!isIndexedDbAvailable()) {
+    memoryFallbackStore.set(`meta:${key}`, value);
+    return;
+  }
+  const db = await openTerminalDb();
+  const tx = db.transaction('terminal_meta', 'readwrite');
+  tx.objectStore('terminal_meta').put({
+    key,
+    value,
+    updatedAt: new Date().toISOString(),
+  });
+  await txDonePromise(tx);
+}
+
 function safeParseJson<T>(raw: string | null): T | null {
   if (!raw) return null;
   try {

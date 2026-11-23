@@ -1,31 +1,23 @@
 import React, { useState, useMemo } from 'react';
 import {
   X,
-  User,
   Phone,
   Mail,
   MapPin,
-  Tag,
   CreditCard,
   ShoppingCart,
   Calendar,
-  Clock,
   Star,
   Receipt,
   FileText,
-  DollarSign,
-  ArrowDownLeft,
-  ArrowUpRight,
   TrendingUp,
   Award,
   Wallet,
-  CheckCircle,
-  ExternalLink,
   Edit2,
   Trash2,
   Plus,
 } from 'lucide-react';
-import { Customer, Transaction } from '../types';
+import { Customer } from '../types';
 import { usePos } from '../context/PosContext';
 
 interface CustomerDetailModalProps {
@@ -51,10 +43,7 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
     setActiveReceipt,
     redeemCustomerLoyaltyPoints,
     showToast,
-    soundFx,
     deleteCustomer,
-    isSuperAdmin,
-    currentUser,
     loyaltySettings,
     requireCapability,
   } = usePos();

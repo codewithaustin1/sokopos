@@ -22,6 +22,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
+import { isSuperAdminEmail } from '../data/initialData';
 import { Product } from '../types';
 import {
   BiChartMetric,
@@ -800,7 +801,11 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
             cashiers={systemUsers}
             currentBusiness={currentBusiness}
             currentLocation={currentLocation}
-            currentUserEmail={currentUser?.email || 'admin@sokopos.co.ke'}
+            currentUserEmail={
+              !currentUser?.email || isSuperAdminEmail(currentUser.email)
+                ? 'support@sokopos.co.ke'
+                : currentUser.email
+            }
             auditLogs={superAdminAuditLogs}
             dateRange={dateRange}
             selectedLocationId={selectedLocationId}

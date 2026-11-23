@@ -9,7 +9,6 @@ import {
   Cpu,
   Award,
   CreditCard,
-  MessageCircle,
   ShoppingCart,
   Package,
   BarChart3,
@@ -21,7 +20,6 @@ import {
   Settings,
   ShieldCheck,
   Monitor,
-  User,
   Gift,
   Lock,
 } from 'lucide-react';
@@ -76,6 +74,7 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
     posContext = null;
   }
   const isSuperAdmin = posContext?.isSuperAdmin ?? false;
+  const isDemoSession = posContext?.isDemoSession ?? false;
   const entitlements = posContext?.entitlements;
   const isCurrentlyPricing = currentPage === 'pricing' || Boolean(posContext?.isPricingPageOpen);
 
@@ -387,14 +386,14 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
                 <span className="truncate flex-1">Refer &amp; Earn (20%)</span>
               </button>
 
-              {isSuperAdmin && (
+              {isSuperAdmin && !isDemoSession && (
                 <button
                   type="button"
                   onClick={() => handleItemClick(() => onNavigateTab!('super-admin'))}
                   className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
                 >
                   <ShieldCheck className="w-5 h-5 text-amber-500 group-hover:text-[#28a745] transition-colors shrink-0" />
-                  <span className="truncate flex-1">Super Admin Console</span>
+                  <span className="truncate flex-1">Platform Console</span>
                 </button>
               )}
             </>

@@ -26,7 +26,7 @@ import {
 import { usePos } from '../context/PosContext';
 import { PaystackSubaccountPanel } from './common/PaystackSubaccountPanel';
 import { SettingsSectionHeader } from './common/SettingsSectionHeader';
-import { SUPER_ADMIN_EMAIL, isSuperAdminEmail } from '../data/initialData';
+import { isSuperAdminEmail } from '../data/initialData';
 import { PricingSlider } from './pricing/PricingSlider';
 import { SuperAdminAffiliatesTab } from './SuperAdminAffiliatesTab';
 import { SuperAdminTrafficTab } from './superadmin/SuperAdminTrafficTab';
@@ -110,9 +110,11 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
     pricingTiers,
     pricingSyncStatus,
     pricingSyncError,
+    refreshPricingTiers,
     updatePricingTier,
     resetPricingTiersToDefault,
     refreshAllBusinessesForSuperAdmin,
+    isDemoSession,
   } = usePos();
 
   const isSuperAdminUser = isSuperAdminEmail(currentUser?.email);
@@ -146,6 +148,12 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
   }, [isOpen, isSuperAdminUser, refreshAllBusinessesForSuperAdmin]);
 
   useEffect(() => {
+    if (isOpen !== false && activeTab === 'pricing') {
+      refreshPricingTiers(false).catch(() => {});
+    }
+  }, [isOpen, activeTab, refreshPricingTiers]);
+
+  useEffect(() => {
     if (isOpen !== false && defaultTab) {
       if (isRestrictedTab(defaultTab) && !isSuperAdminUser) {
         setActiveTab('tenants');
@@ -165,7 +173,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
   const [newBizOwnerName, setNewBizOwnerName] = useState('');
   const [newBizPlan, setNewBizPlan] = useState<'free' | 'starter' | 'business' | 'premium'>('business');
 
-  if (isOpen === false) return null;
+  if (isOpen === false || isDemoSession) return null;
 
   const handleProvisionSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -299,7 +307,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
         <div className="flex items-center justify-between gap-4">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-              <span>Admin</span>
+              <span>Platform</span>
               <span className="text-slate-300 dark:text-slate-600">/</span>
               <span>{activeNavMeta.group}</span>
               <span className="text-slate-300 dark:text-slate-600">/</span>
@@ -307,7 +315,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
             </div>
             <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 mt-0.5">
               <h2 className="text-base sm:text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100 truncate">
-                Platform Super-Admin
+                Platform Support Console
               </h2>
               {activeScopeBiz && (
                 <>
@@ -318,7 +326,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                 </>
               )}
               <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">·</span>
-              <span className="text-xs font-medium text-amber-600 dark:text-amber-400">Root Privileges</span>
+              <span className="text-xs font-medium text-amber-600 dark:text-amber-400">Platform Controls</span>
             </div>
           </div>
 
@@ -340,7 +348,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0">
         {/* Desktop Grouped Left Sidebar */}
         <aside
-          aria-label="Super Admin sections"
+          aria-label="Platform console sections"
           className="hidden lg:flex lg:flex-col w-64 shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 overflow-y-auto modal-scrollbar p-4 space-y-5"
         >
           {visibleGroups.map((group) => (
@@ -386,7 +394,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
         {/* Mobile / Tablet Compact Switcher */}
         <div className="lg:hidden bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 py-2.5 shrink-0">
           <label htmlFor="mobile-superadmin-section-select" className="sr-only">
-            Select Super Admin section
+            Select platform console section
           </label>
           <select
             id="mobile-superadmin-section-select"
@@ -900,8 +908,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                     Restricted Access Panel
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
-                    The Subscriptions panel is restricted exclusively to the platform super administrator (
-                    <strong>{SUPER_ADMIN_EMAIL}</strong>).
+                    The Subscriptions panel is restricted exclusively to authorized Platform Support.
                   </p>
                   <button
                     type="button"
@@ -1473,8 +1480,8 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
             {activeTab === 'audit' && (
               <div className="space-y-5">
                 <SettingsSectionHeader
-                  title="Super-Admin Write Audit Ledger"
-                  description="Every super-admin write across any tenant is logged with before and after snapshots."
+                  title="Platform Write Audit Ledger"
+                  description="Every platform-level write across any tenant is logged with before and after snapshots."
                   meta={
                     <span className="font-mono tabular-nums">{filteredAuditLogs.length} events</span>
                   }
@@ -1494,7 +1501,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
 
                 {filteredAuditLogs.length === 0 ? (
                   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl py-12 text-center text-xs text-slate-500 dark:text-slate-400">
-                    No matching super-admin write events found.
+                    No matching platform audit events found.
                   </div>
                 ) : (
                   <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-200 dark:divide-slate-800 overflow-hidden">

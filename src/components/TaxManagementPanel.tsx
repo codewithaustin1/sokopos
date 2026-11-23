@@ -1,38 +1,23 @@
 import React, { useState } from 'react';
 import {
-  Receipt,
   Plus,
   Trash2,
   Edit2,
-  Check,
   X,
-  AlertTriangle,
-  Building2,
-  Layers,
-  Sparkles,
   Save,
   CheckCircle2,
-  HelpCircle,
-  Percent,
   Sliders,
   RotateCcw,
-  Tag,
-  MapPin,
-  Calculator,
-  ShieldCheck,
   FileCheck,
   Zap,
   RefreshCw,
-  Server,
   ExternalLink,
-  QrCode as QrIcon,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { TaxRule, BusinessTaxSettings, TaxScope } from '../types';
 import { DEFAULT_TAX_SETTINGS, DEFAULT_TAX_RULES, resolveDynamicTaxRate } from '../utils/taxResolver';
 import {
   digitaxService,
-  DIGITAX_TEST_API_KEY,
   DigitaxSaleResponse,
   DigitaxEtimsInfo,
 } from '../services/digitaxService';
@@ -80,10 +65,8 @@ export const TaxManagementPanel: React.FC = () => {
   const [digitaxEnv, setDigitaxEnv] = useState<'sandbox' | 'production'>('sandbox');
   const [isTestingDigitax, setIsTestingDigitax] = useState(false);
   const [isTransmittingTestSale, setIsTransmittingTestSale] = useState(false);
-  const [digitaxApiKey, setDigitaxApiKey] = useState(digitaxService.getApiKey());
   const [etimsInfo, setEtimsInfo] = useState<DigitaxEtimsInfo | null>(null);
   const [recentDigitaxSales, setRecentDigitaxSales] = useState<DigitaxSaleResponse[]>([]);
-  const [lastTestSale, setLastTestSale] = useState<DigitaxSaleResponse | null>(null);
 
   const [digitaxTestResult, setDigitaxTestResult] = useState<{
     status: 'connected' | 'error';
@@ -189,7 +172,6 @@ export const TaxManagementPanel: React.FC = () => {
       showToast(`Sale transmitted (${sale.trader_invoice_number}). Awaiting KRA signature...`, 'info');
       
       const finalSale = await digitaxService.pollSaleCompletion(sale.id);
-      setLastTestSale(finalSale);
       soundFx.playSuccess();
       showToast(
         `KRA eTIMS Validated! CU Serial: ${finalSale.serial_number} • Invoice #${finalSale.invoice_number}`,

@@ -451,7 +451,6 @@ export function generateReportPdf(data: ReportPrintData): {
   const margin = 14;
   const contentWidth = pageWidth - margin * 2;
   const currentDate = new Date().toLocaleString();
-  const currency = data.business?.currency || 'KES';
   const taxId = data.business?.taxNumber || data.location?.taxId || '';
 
   let y = margin;

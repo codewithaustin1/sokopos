@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, UserCheck, Shield, Loader2, LogOut, AlertTriangle } from 'lucide-react';
+import { Shield, Loader2, LogOut } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { AppLogo } from './common/AppLogo';
 
 export const PinLockModal: React.FC = () => {
   const {
     isPinLocked,
-    setIsPinLocked,
     currentCashier,
     verifyPin,
     currentLocation,
