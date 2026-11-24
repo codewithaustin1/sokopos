@@ -153,9 +153,16 @@ export function generateReceiptPdf({
 
     printDashedLine();
 
-    // 4. Totals and VAT Breakdown
+    // 4. Totals and Dynamic Tax Breakdown
     printRow('Net Subtotal:', `${currency} ${transaction.subtotal.toFixed(2)}`, 8, false);
-    printRow('VAT / Tax (16%):', `${currency} ${transaction.taxAmount.toFixed(2)}`, 8, false);
+    const taxTitle = transaction.taxLabel || 'VAT / Tax';
+    const taxMode = transaction.pricingType === 'exclusive' ? 'Exclusive' : 'Inclusive';
+    printRow(`${taxTitle} (${taxMode}):`, `${currency} ${transaction.taxAmount.toFixed(2)}`, 8, false);
+    if (transaction.taxBreakdown && transaction.taxBreakdown.length > 0) {
+      transaction.taxBreakdown.forEach((tb) => {
+        printRow(`[${tb.code}] ${tb.name} (${tb.ratePercent}%):`, `${currency} ${tb.taxAmount.toFixed(2)}`, 7, false);
+      });
+    }
 
     if (transaction.roundingAmount && transaction.roundingAmount !== 0) {
       const sign = transaction.roundingAmount > 0 ? '+' : '';
@@ -229,14 +236,35 @@ export function generateReceiptPdf({
   y += 7.5;
   printCenter(`*${receiptNum}*`, 7, false);
 
-  // 6. Mandatory Footer: Digitax Partnership & SokoPoS Enterprise
+  // 6. Honest Fiscal eTIMS Footer
   y += 1;
-  doc.setTextColor(37, 99, 235);
-  printCenter('KRA eTIMS Validated • Digitax Partner', 7, true);
-  doc.setTextColor(15, 23, 42);
-  const cuSerial = (transaction as any)?.etimsData?.cuSerialNumber || 'KRARVS000000005';
-  const cuInv = (transaction as any)?.etimsData?.cuInvoiceNumber || ('1181' + receiptNum.slice(-4));
-  printCenter(`CU Serial: ${cuSerial} • CU Inv: #${cuInv}`, 6.5, false);
+  const etims = transaction?.etimsData;
+  const isEtimsVerified =
+    etims?.status === 'COMPLETED' &&
+    Boolean(etims?.isPartnerVerified || etims?.receiptSignature || etims?.cuInvoiceNumber);
+
+  if (isEtimsVerified) {
+    doc.setTextColor(5, 150, 105);
+    printCenter('KRA eTIMS Verified • Digitax Partner', 7, true);
+    doc.setTextColor(15, 23, 42);
+    const cuSerial = etims?.cuSerialNumber || '—';
+    const cuInv = etims?.cuInvoiceNumber !== undefined ? `#${etims.cuInvoiceNumber}` : '—';
+    printCenter(`CU Serial: ${cuSerial} • CU Inv: ${cuInv}`, 6.5, false);
+    if (etims?.receiptSignature) {
+      printCenter(`KRA Sig: ${etims.receiptSignature}`, 6, false);
+    }
+  } else if (transaction) {
+    doc.setTextColor(180, 83, 9);
+    printCenter(
+      etims?.status === 'FAILED'
+        ? 'KRA eTIMS: Sync Attention Required'
+        : 'KRA eTIMS: Pending Fiscalization',
+      7,
+      true
+    );
+    doc.setTextColor(71, 85, 105);
+    printCenter(`Trader Inv: ${etims?.traderInvoiceNumber || receiptNum}`, 6.5, false);
+  }
   y += 0.5;
   doc.setTextColor(100, 116, 139);
   printCenter('Powered by SokoPoS in partnership with Digitax', 7, false);

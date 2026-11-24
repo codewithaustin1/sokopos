@@ -1,6 +1,18 @@
 import React, { useRef, useState } from 'react';
-import { Printer, MessageSquare, Check, X, RotateCcw, Bluetooth } from 'lucide-react';
+import {
+  Printer,
+  MessageSquare,
+  Check,
+  X,
+  RotateCcw,
+  Bluetooth,
+  Clock,
+  AlertTriangle,
+  RefreshCw,
+  ExternalLink,
+} from 'lucide-react';
 import { usePos } from '../context/PosContext';
+import { isDemoBusinessId } from '../lib/firestoreService';
 import { ReceiptShareModal } from './ReceiptShareModal';
 import { formatRefundVoucherText } from '../utils/receiptFormatter';
 import { bluetoothPrinterService } from '../services/bluetoothPrinterService';
@@ -11,17 +23,41 @@ export const RefundReceiptModal: React.FC = () => {
     setActiveRefundReceipt,
     currentLocation,
     currentBusiness,
+    currentUser,
+    isDemoSession,
     showToast,
     printerType,
     receiptFormat,
+    retryRefundCreditNote,
   } = usePos();
   const receiptRef = useRef<HTMLDivElement | null>(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isBluetoothPrinting, setIsBluetoothPrinting] = useState(false);
+  const [isRetryingCreditNote, setIsRetryingCreditNote] = useState(false);
 
   if (!activeRefundReceipt) return null;
 
   const { refund, originalTx } = activeRefundReceipt;
+  const isDemoRefund = Boolean(
+    isDemoSession || currentUser?.isDemoSession || isDemoBusinessId(originalTx.businessId)
+  );
+  const etimsCn = refund.etimsCreditNote;
+  const isCnVerified = Boolean(
+    !isDemoRefund &&
+      etimsCn?.status === 'COMPLETED' &&
+      (etimsCn.cuInvoiceNumber || etimsCn.receiptSignature || etimsCn.etimsUrl)
+  );
+  const isCnFailed = Boolean(!isDemoRefund && etimsCn?.status === 'FAILED');
+
+  const handleRetryCreditNote = async () => {
+    if (isRetryingCreditNote) return;
+    setIsRetryingCreditNote(true);
+    try {
+      await retryRefundCreditNote(originalTx.id, refund.id);
+    } finally {
+      setIsRetryingCreditNote(false);
+    }
+  };
 
   const handlePrint = async () => {
     if (printerType === 'bluetooth') {
@@ -44,6 +80,15 @@ export const RefundReceiptModal: React.FC = () => {
           taxAmount: -refund.taxRefund,
           paymentMethod: refund.refundMethod,
           status: 'refunded',
+          etimsData: etimsCn
+            ? {
+                status: etimsCn.status,
+                cuSerialNumber: etimsCn.cuSerialNumber,
+                cuInvoiceNumber: etimsCn.cuInvoiceNumber,
+                receiptSignature: etimsCn.receiptSignature,
+                etimsUrl: etimsCn.etimsUrl,
+              }
+            : undefined,
         };
 
         await bluetoothPrinterService.printReceipt(mockTx, currentLocation, {
@@ -255,6 +300,113 @@ export const RefundReceiptModal: React.FC = () => {
                 ? `${totalRestockedCount} units returned to active store stock`
                 : 'Inventory write-off / damaged goods recorded'}
             </p>
+
+            {/* Honest KRA eTIMS Credit Note Verification Block */}
+            <div className="mt-2.5 pt-2.5 border-t border-dashed border-slate-200 text-center w-full max-w-[260px] space-y-1">
+              {isCnVerified ? (
+                <>
+                  <div className="text-[10px] font-bold text-slate-900 flex items-center justify-center gap-1.5">
+                    <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                    <span>KRA Credit Note Verified</span>
+                    <span className="text-slate-300" aria-hidden="true">·</span>
+                    <span className="text-blue-600 font-semibold">Digitax</span>
+                  </div>
+                  <div className="text-[9px] font-mono text-slate-600 flex justify-between px-1 tabular-nums">
+                    <span>CU Serial:</span>
+                    <span className="font-bold text-slate-900">{etimsCn?.cuSerialNumber || '—'}</span>
+                  </div>
+                  <div className="text-[9px] font-mono text-slate-600 flex justify-between px-1 tabular-nums">
+                    <span>CU Credit Note:</span>
+                    <span className="font-bold text-slate-900">{etimsCn?.cuInvoiceNumber ?? '—'}</span>
+                  </div>
+                  {etimsCn?.reasonCode && (
+                    <div className="text-[9px] font-mono text-slate-600 flex justify-between px-1 tabular-nums">
+                      <span>KRA Reason Code:</span>
+                      <span className="font-bold text-slate-900">{etimsCn.reasonCode}</span>
+                    </div>
+                  )}
+                  {etimsCn?.receiptSignature && (
+                    <div className="text-[8px] font-mono text-slate-500 truncate px-1 pt-0.5 border-t border-slate-100">
+                      KRA Sig: {etimsCn.receiptSignature}
+                    </div>
+                  )}
+                  {(etimsCn?.etimsUrl || etimsCn?.offlineUrl) && (
+                    <a
+                      href={etimsCn.etimsUrl || etimsCn.offlineUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 inline-flex items-center gap-1 text-[9px] font-bold text-blue-600 hover:text-blue-700 underline cursor-pointer"
+                    >
+                      <span>Verify Credit Note on KRA</span>
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </a>
+                  )}
+                </>
+              ) : isDemoRefund ? (
+                <div className="space-y-0.5">
+                  <div className="text-[10px] font-bold text-slate-700 flex items-center justify-center gap-1.5">
+                    <Clock className="w-3 h-3 text-slate-500 shrink-0" />
+                    <span>Demo Sandbox Credit Note</span>
+                  </div>
+                  <p className="text-[9px] font-sans text-slate-500">
+                    Sandbox demonstration only · Not transmitted to KRA eTIMS
+                  </p>
+                </div>
+              ) : isCnFailed ? (
+                <div className="space-y-1.5">
+                  <div className="text-[10px] font-bold text-rose-700 flex items-center justify-center gap-1.5">
+                    <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
+                    <span>Credit Note Sync Attention Required</span>
+                  </div>
+                  {etimsCn?.lastError && (
+                    <p className="text-[9px] font-sans text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1 text-left break-words">
+                      {etimsCn.lastError}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleRetryCreditNote}
+                    disabled={isRetryingCreditNote}
+                    className="no-print w-full py-1.5 px-2.5 rounded-lg border border-rose-300 bg-rose-50 hover:bg-rose-100 disabled:opacity-60 text-rose-800 font-sans font-semibold text-[10px] inline-flex items-center justify-center gap-1.5 cursor-pointer transition"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isRetryingCreditNote ? 'animate-spin' : ''}`} />
+                    <span>
+                      {isRetryingCreditNote ? 'Transmitting Credit Note...' : 'Retry KRA Credit Note'}
+                    </span>
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <div className="text-[10px] font-bold text-amber-800 flex items-center justify-center gap-1.5">
+                    <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                    <span>Pending KRA Credit Note</span>
+                  </div>
+                  <div className="text-[9px] font-mono text-slate-600 flex justify-between px-1 tabular-nums">
+                    <span>Linked Sale Ref:</span>
+                    <span className="font-bold text-slate-800">
+                      {etimsCn?.originalTraderInvoiceNumber || refund.receiptNumber}
+                    </span>
+                  </div>
+                  {etimsCn?.lastError && (
+                    <p className="text-[9px] font-sans text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 text-left break-words">
+                      {etimsCn.lastError}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleRetryCreditNote}
+                    disabled={isRetryingCreditNote}
+                    className="no-print w-full py-1.5 px-2.5 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 disabled:opacity-60 text-amber-900 font-sans font-semibold text-[10px] inline-flex items-center justify-center gap-1.5 cursor-pointer transition"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isRetryingCreditNote ? 'animate-spin' : ''}`} />
+                    <span>
+                      {isRetryingCreditNote ? 'Transmitting Credit Note...' : 'Retry KRA Credit Note'}
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
+
             <p className="text-[10px] text-slate-400 mt-2">Powered by Sokoplus Horizon</p>
             <p className="text-[10px] text-slate-500 font-sans font-bold mt-1">
               Customer copy

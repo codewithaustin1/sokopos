@@ -10,7 +10,6 @@ import {
   Scale,
   ChevronDown,
   ChevronUp,
-  Printer,
   ArrowLeft,
   Store,
   ShieldCheck,
@@ -120,17 +119,8 @@ export const LegalPageView: React.FC<LegalPageViewProps> = ({
           <AppLogo theme="light" size="md" onClick={onBackToLogin} />
         </div>
 
-        {/* Secondary Header Actions & Mobile Hamburger Menu */}
+        {/* Mobile Hamburger Menu */}
         <div className="flex items-center gap-2 sm:gap-3">
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-[#0e1a2b] text-xs font-semibold border border-[#d9e1e6] transition cursor-pointer shadow-xs"
-          >
-            <Printer className="w-3.5 h-3.5 text-[#4c5a6b]" />
-            <span className="hidden sm:inline">Print Document</span>
-          </button>
-
           <MobileHeaderNav
             onNavigateSection={(sectionId) => {
               onBackToLogin();

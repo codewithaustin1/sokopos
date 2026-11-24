@@ -10,9 +10,12 @@ import {
   Star,
   ExternalLink,
   Bluetooth,
+  Clock,
+  RefreshCw,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { usePos } from '../context/PosContext';
+import { isDemoBusinessId } from '../lib/firestoreService';
 import { getItemDiscountedUnitPrice, formatDiscountBadge } from '../utils/discountUtils';
 import { ReceiptShareModal } from './ReceiptShareModal';
 import { generateReceiptPdf } from '../utils/receiptPdfGenerator';
@@ -24,8 +27,11 @@ export const ReceiptModal: React.FC = () => {
     setActiveReceipt,
     currentLocation,
     currentBusiness,
+    currentUser,
+    isDemoSession,
     showToast,
     openReturnsModal,
+    retryTransactionEtims,
     autoPrintReceipt,
     toggleAutoPrintReceipt,
     receiptFormat,
@@ -38,18 +44,31 @@ export const ReceiptModal: React.FC = () => {
   const [isBluetoothPrinting, setIsBluetoothPrinting] = useState<boolean>(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
+  const [isRetryingEtims, setIsRetryingEtims] = useState<boolean>(false);
 
-  // Generate real KRA eTIMS verification QR code dynamically via Digitax verification link
+  const isDemoReceipt = Boolean(
+    isDemoSession ||
+      currentUser?.isDemoSession ||
+      (activeReceipt && isDemoBusinessId(activeReceipt.businessId))
+  );
+
+  // Generate KRA eTIMS verification QR code ONLY from a genuinely verified Digitax/KRA URL
   useEffect(() => {
-    if (!activeReceipt) {
+    if (!activeReceipt || isDemoReceipt) {
       setQrCodeDataUrl('');
       return;
     }
 
-    const qrTargetUrl =
-      activeReceipt.etimsData?.etimsUrl ||
-      activeReceipt.etimsData?.offlineUrl ||
-      `https://receipt.dg.tax/r/business_01M4WBVDC1WR8K1WYB8MKYMKG6/SOKO-${activeReceipt.receiptNumber}`;
+    const etims = activeReceipt.etimsData;
+    const isVerified =
+      etims?.status === 'COMPLETED' &&
+      Boolean(etims?.isPartnerVerified || etims?.receiptSignature || etims?.cuInvoiceNumber);
+    const qrTargetUrl = isVerified ? etims?.etimsUrl || etims?.offlineUrl || '' : '';
+
+    if (!qrTargetUrl) {
+      setQrCodeDataUrl('');
+      return;
+    }
 
     QRCode.toDataURL(qrTargetUrl, {
       width: 140,
@@ -61,7 +80,7 @@ export const ReceiptModal: React.FC = () => {
     })
       .then((url) => setQrCodeDataUrl(url))
       .catch((err) => console.warn('KRA QR Code generation error:', err));
-  }, [activeReceipt]);
+  }, [activeReceipt, isDemoReceipt]);
 
   // Dedicated Thermal Receipt Print Handler:
   // Adds print-isolation CSS class, invokes native window.print() or dispatches to Bluetooth, and cleans up
@@ -197,9 +216,26 @@ export const ReceiptModal: React.FC = () => {
     openReturnsModal(tx);
   };
 
+  const handleRetryEtims = async () => {
+    if (!activeReceipt || isRetryingEtims) return;
+    setIsRetryingEtims(true);
+    try {
+      await retryTransactionEtims(activeReceipt.id);
+    } finally {
+      setIsRetryingEtims(false);
+    }
+  };
+
   const isFullyRefunded = activeReceipt.status === 'refunded';
   const isPartiallyRefunded = activeReceipt.status === 'partially_refunded';
   const hasRefunds = (activeReceipt.refunds && activeReceipt.refunds.length > 0) || (activeReceipt.totalRefunded && activeReceipt.totalRefunded > 0);
+  const etims = activeReceipt.etimsData;
+  const isEtimsVerified = Boolean(
+    !isDemoReceipt &&
+      etims?.status === 'COMPLETED' &&
+      (etims.isPartnerVerified || etims.receiptSignature || etims.cuInvoiceNumber)
+  );
+  const isEtimsFailed = Boolean(!isDemoReceipt && etims?.status === 'FAILED');
 
   // Paper width styling based on user hardware preference
   const receiptMaxWidthClass =
@@ -631,7 +667,7 @@ export const ReceiptModal: React.FC = () => {
               *{activeReceipt.receiptNumber}*
             </span>
 
-            {/* Scannable KRA eTIMS Dynamic QR Code (Powered by Digitax) */}
+            {/* Scannable KRA eTIMS Dynamic QR Code (Only rendered when genuinely KRA-verified) */}
             {qrCodeDataUrl ? (
               <div className="mt-2.5 p-2 bg-white border border-slate-200 rounded-lg flex flex-col items-center">
                 <img
@@ -645,37 +681,107 @@ export const ReceiptModal: React.FC = () => {
               </div>
             ) : null}
 
-            {/* Fiscal eTIMS & Digitax Validation Block (Hairline divider, zero pulse) */}
+            {/* Honest Fiscal eTIMS & Digitax Status Block */}
             <div className="mt-2.5 pt-2.5 border-t border-dashed border-slate-200 text-center w-full max-w-[260px] space-y-1">
-              <div className="text-[10px] font-bold text-slate-900 flex items-center justify-center gap-1.5">
-                <Check className="w-3 h-3 text-emerald-600 shrink-0" />
-                <span>KRA eTIMS Validated</span>
-                <span className="text-slate-300" aria-hidden="true">·</span>
-                <span className="text-blue-600 font-semibold">Digitax</span>
-              </div>
-              <div className="text-[9px] font-mono text-slate-600 flex justify-between px-1 tabular-nums">
-                <span>CU Serial:</span>
-                <span className="font-bold text-slate-900">{activeReceipt.etimsData?.cuSerialNumber || 'KRARVS000000005'}</span>
-              </div>
-              <div className="text-[9px] font-mono text-slate-600 flex justify-between px-1 tabular-nums">
-                <span>CU Invoice:</span>
-                <span className="font-bold text-slate-900">{activeReceipt.etimsData?.cuInvoiceNumber || ('1181' + activeReceipt.receiptNumber.slice(-4))}</span>
-              </div>
-              <div className="text-[9px] font-mono text-slate-600 flex justify-between px-1 tabular-nums">
-                <span>Fiscal Receipt:</span>
-                <span className="font-bold text-slate-900">{activeReceipt.etimsData?.receiptNumber || ('960' + activeReceipt.receiptNumber.slice(-4))}</span>
-              </div>
-              {activeReceipt.etimsData?.receiptSignature && (
-                <div className="text-[8px] font-mono text-slate-500 truncate px-1 pt-0.5 border-t border-slate-100">
-                  KRA Sig: {activeReceipt.etimsData.receiptSignature}
+              {isEtimsVerified ? (
+                <>
+                  <div className="text-[10px] font-bold text-slate-900 flex items-center justify-center gap-1.5">
+                    <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                    <span>KRA eTIMS Verified</span>
+                    <span className="text-slate-300" aria-hidden="true">·</span>
+                    <span className="text-blue-600 font-semibold">Digitax</span>
+                  </div>
+                  <div className="text-[9px] font-mono text-slate-600 flex justify-between px-1 tabular-nums">
+                    <span>CU Serial:</span>
+                    <span className="font-bold text-slate-900">{etims?.cuSerialNumber || '—'}</span>
+                  </div>
+                  <div className="text-[9px] font-mono text-slate-600 flex justify-between px-1 tabular-nums">
+                    <span>CU Invoice:</span>
+                    <span className="font-bold text-slate-900">{etims?.cuInvoiceNumber ?? '—'}</span>
+                  </div>
+                  {etims?.receiptNumber && (
+                    <div className="text-[9px] font-mono text-slate-600 flex justify-between px-1 tabular-nums">
+                      <span>Fiscal Receipt:</span>
+                      <span className="font-bold text-slate-900">{etims.receiptNumber}</span>
+                    </div>
+                  )}
+                  {etims?.receiptSignature && (
+                    <div className="text-[8px] font-mono text-slate-500 truncate px-1 pt-0.5 border-t border-slate-100">
+                      KRA Sig: {etims.receiptSignature}
+                    </div>
+                  )}
+                </>
+              ) : isDemoReceipt ? (
+                <div className="space-y-1">
+                  <div className="text-[10px] font-bold text-slate-700 flex items-center justify-center gap-1.5">
+                    <Clock className="w-3 h-3 text-slate-500 shrink-0" />
+                    <span>Demo Sandbox Receipt</span>
+                  </div>
+                  <p className="text-[9px] font-sans text-slate-500 leading-snug">
+                    Sandbox demonstration only · Not transmitted to KRA eTIMS
+                  </p>
+                </div>
+              ) : isEtimsFailed ? (
+                <div className="space-y-1.5">
+                  <div className="text-[10px] font-bold text-rose-700 flex items-center justify-center gap-1.5">
+                    <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
+                    <span>Fiscal Sync Attention Required</span>
+                  </div>
+                  {etims?.traderInvoiceNumber && (
+                    <div className="text-[9px] font-mono text-slate-600 flex justify-between px-1 tabular-nums">
+                      <span>Invoice Ref:</span>
+                      <span className="font-bold text-slate-800">{etims.traderInvoiceNumber}</span>
+                    </div>
+                  )}
+                  {etims?.lastError && (
+                    <p className="text-[9px] font-sans text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1 text-left break-words">
+                      {etims.lastError}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleRetryEtims}
+                    disabled={isRetryingEtims}
+                    className="no-print w-full py-1.5 px-2.5 rounded-lg border border-rose-300 bg-rose-50 hover:bg-rose-100 disabled:opacity-60 text-rose-800 font-sans font-semibold text-[10px] inline-flex items-center justify-center gap-1.5 cursor-pointer transition"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isRetryingEtims ? 'animate-spin' : ''}`} />
+                    <span>{isRetryingEtims ? 'Retrying KRA Signing...' : 'Retry KRA Signing'}</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <div className="text-[10px] font-bold text-amber-800 flex items-center justify-center gap-1.5">
+                    <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                    <span>Pending KRA Fiscalization</span>
+                  </div>
+                  <div className="text-[9px] font-mono text-slate-600 flex justify-between px-1 tabular-nums">
+                    <span>Trader Inv:</span>
+                    <span className="font-bold text-slate-800">
+                      {etims?.traderInvoiceNumber || activeReceipt.receiptNumber}
+                    </span>
+                  </div>
+                  {etims?.lastError && (
+                    <p className="text-[9px] font-sans text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 text-left break-words">
+                      {etims.lastError}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleRetryEtims}
+                    disabled={isRetryingEtims}
+                    className="no-print w-full py-1.5 px-2.5 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 disabled:opacity-60 text-amber-900 font-sans font-semibold text-[10px] inline-flex items-center justify-center gap-1.5 cursor-pointer transition"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isRetryingEtims ? 'animate-spin' : ''}`} />
+                    <span>{isRetryingEtims ? 'Transmitting to KRA...' : 'Retry KRA Signing'}</span>
+                  </button>
                 </div>
               )}
             </div>
 
             {/* Direct External Link to KRA / Digitax portal verification */}
-            {activeReceipt.etimsData?.etimsUrl && (
+            {isEtimsVerified && (etims?.etimsUrl || etims?.offlineUrl) && (
               <a
-                href={activeReceipt.etimsData.etimsUrl}
+                href={etims.etimsUrl || etims.offlineUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-1.5 inline-flex items-center gap-1 text-[9px] font-bold text-blue-600 hover:text-blue-700 underline cursor-pointer"

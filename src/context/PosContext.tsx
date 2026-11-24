@@ -45,6 +45,7 @@ import {
   DEFAULT_PRICING_TIERS,
   PendingCheckoutIntent,
   DigitaxEtimsData,
+  DigitaxCreditNoteData,
   PermissionKey,
   RolePermissionsMap,
   ConfigurableStaffRole,
@@ -52,7 +53,7 @@ import {
   IndustrySolutionId,
   BrandingSlotId,
 } from '../types';
-import { digitaxService } from '../services/digitaxService';
+import { digitaxService, DigitaxApiError } from '../services/digitaxService';
 import { bluetoothPrinterService } from '../services/bluetoothPrinterService';
 import type { ScannerBurstMetadata } from '../utils/backgroundScanner';
 import {
@@ -60,6 +61,11 @@ import {
   calculateCartTaxBreakdown,
   TaxBreakdownEntry,
 } from '../utils/taxResolver';
+import {
+  formatTraderInvoiceNumber,
+  deriveKraCreditNoteReasonCode,
+  resolveKraTaxTypeCode,
+} from '../utils/etimsFiscalMapper';
 import { normalizePathname, resolveLegacyHashToPath } from '../utils/seoConfig';
 import {
   INITIAL_BUSINESSES,
@@ -146,6 +152,7 @@ import {
   getTenantAnalyticsSavedViewsFromFirestore,
   flushOutboxMutationToFirestore,
   isFirestoreQuotaCooldownActive,
+  OutboxDispatchResult,
 } from '../lib/firestoreService';
 import {
   AnalyticsDailyRollup,
@@ -180,6 +187,7 @@ import {
 import {
   flushSyncOutbox,
   resetOutboxEntriesForImmediateRetry,
+  isEtimsOutboxCollection,
 } from '../lib/syncOutboxWorker';
 import {
   createOpfsBinarySnapshot,
@@ -625,6 +633,8 @@ interface PosContextType {
     isSupervisorOverride?: boolean;
     supervisorOverrideReason?: string;
   }) => Promise<{ success: boolean; refundRecord?: RefundRecord; error?: string }>;
+  retryTransactionEtims: (txId: string) => Promise<boolean>;
+  retryRefundCreditNote: (txId: string, refundId: string) => Promise<boolean>;
   isReturnsModalOpen: boolean;
   selectedReturnTx: Transaction | null;
   openReturnsModal: (tx?: Transaction | null) => void;
@@ -826,6 +836,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const isIdbHydratedRef = useRef<boolean>(false);
   const [isStorageHydrated, setIsStorageHydrated] = useState<boolean>(false);
   const [outboxItems, setOutboxItems] = useState<OutboxMutationEntry[]>([]);
+  const outboxItemsRef = useRef<OutboxMutationEntry[]>(outboxItems);
+  outboxItemsRef.current = outboxItems;
   const [opfsSnapshots, setOpfsSnapshots] = useState<OpfsSnapshotManifest[]>([]);
   const [storageTelemetry, setStorageTelemetry] = useState<StorageQuotaTelemetry>(() => {
     const opfsSupported = isOpfsSupported();
@@ -879,7 +891,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setOutboxItems((prev) => [entry, ...prev.filter((o) => o.id !== entry.id)]);
       await enqueueOutboxMutations([entry]);
 
+      const isEtimsTask = isEtimsOutboxCollection(params.collectionName);
       if (
+        !isEtimsTask &&
         params.immediateDispatch !== false &&
         isOnlineRef.current &&
         auth.currentUser &&
@@ -1298,6 +1312,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Primitive identity & memoized tenant authorization keys (prevents listener teardown on array/object updates)
   const businessesRef = useRef<Business[]>(businesses);
   businessesRef.current = businesses;
+  const currentBusinessRef = useRef<Business>(currentBusiness);
+  currentBusinessRef.current = currentBusiness;
 
   const firebaseUid = firebaseUser?.uid || null;
   const firebaseEmail = (firebaseUser?.email || '').toLowerCase().trim();
@@ -3011,6 +3027,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return true;
     });
   });
+  const allProductsRef = useRef<Product[]>(allProducts);
+  allProductsRef.current = allProducts;
 
   useEffect(() => {
     if (!isIdbHydratedRef.current) return;
@@ -3385,6 +3403,60 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       beforeValue: null,
       afterValue: newProduct,
     });
+
+    if (
+      isOnline &&
+      !isDemoBusinessId(activeBusinessId) &&
+      auth.currentUser &&
+      !newProduct.digitaxItemId
+    ) {
+      const env = currentBusiness?.taxSettings?.digitaxEnvironment || 'sandbox';
+      void digitaxService
+        .ensureProductsRegisteredForSale({
+          items: [
+            {
+              productId: newProduct.id,
+              productName: newProduct.name,
+              sku: newProduct.sku,
+              unitPrice: newProduct.sellingPrice,
+              taxRate: newProduct.taxRate,
+              taxTypeCode: newProduct.taxTypeCode,
+              digitaxItemId: newProduct.digitaxItemId,
+            },
+          ],
+          productsCatalog: [newProduct],
+          locationId: currentLocation.id,
+          taxSettings: currentBusiness?.taxSettings,
+          environment: env,
+        })
+        .then(({ registeredProducts }) => {
+          const reg = registeredProducts[0];
+          if (!reg) return;
+          const syncedProd: Product = {
+            ...newProduct,
+            digitaxItemId: reg.digitaxItemId,
+            etimsItemCode: reg.etimsItemCode ?? newProduct.etimsItemCode,
+            taxTypeCode: reg.taxTypeCode,
+            itemClassCode: reg.itemClassCode ?? newProduct.itemClassCode,
+            packageUnitCode: reg.packageUnitCode ?? newProduct.packageUnitCode,
+            quantityUnitCode: reg.quantityUnitCode ?? newProduct.quantityUnitCode,
+            digitaxSyncedAt: reg.digitaxSyncedAt,
+          };
+          setAllProducts((prev) => prev.map((p) => (p.id === syncedProd.id ? syncedProd : p)));
+          void queueMutationToOutbox({
+            businessId: activeBusinessId,
+            collectionName: 'products',
+            docId: syncedProd.id,
+            operation: 'upsert',
+            payload: syncedProd,
+            label: `Digitax SKU ${syncedProd.name}`,
+          });
+        })
+        .catch(() => {
+          // Silently defer to just-in-time sale registration if Digitax key/network unavailable
+        });
+    }
+
     showToast(`Product "${newProduct.name}" added`, 'success');
     return newProduct;
   };
@@ -3397,10 +3469,43 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ? (!updates.category || !updates.category.trim() ? 'All' : updates.category.trim())
       : oldProduct.category;
 
+    const prevResolvedTax = resolveDynamicTaxRate(
+      { category: oldProduct.category, taxRate: oldProduct.taxRate, id: oldProduct.id },
+      currentLocation.id,
+      currentBusiness?.taxSettings
+    );
+    const prevTaxCode = resolveKraTaxTypeCode({
+      taxRate: prevResolvedTax.rate,
+      ruleCode: prevResolvedTax.code,
+      ruleName: prevResolvedTax.ruleName,
+      explicitTaxTypeCode: oldProduct.taxTypeCode,
+    });
+
+    const nextResolvedTax = resolveDynamicTaxRate(
+      {
+        category: finalCategory,
+        taxRate: updates.taxRate ?? oldProduct.taxRate,
+        id: oldProduct.id,
+      },
+      currentLocation.id,
+      currentBusiness?.taxSettings
+    );
+    const nextTaxCode = resolveKraTaxTypeCode({
+      taxRate: nextResolvedTax.rate,
+      ruleCode: nextResolvedTax.code,
+      ruleName: nextResolvedTax.ruleName,
+      explicitTaxTypeCode:
+        updates.taxTypeCode !== undefined ? updates.taxTypeCode : oldProduct.taxTypeCode,
+    });
+
+    const taxClassificationChanged = prevTaxCode !== nextTaxCode;
     const updated: Product = {
       ...oldProduct,
       ...updates,
       category: finalCategory,
+      ...(taxClassificationChanged && updates.digitaxItemId === undefined
+        ? { digitaxItemId: undefined, digitaxSyncedAt: undefined }
+        : {}),
       isPendingCloudSync: !isOnline,
     };
     setAllProducts((prev) => prev.map((p) => (p.id === id ? updated : p)));
@@ -3412,6 +3517,57 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       payload: updated,
       label: `Product ${updated.name}`,
     });
+
+    if (
+      isOnline &&
+      !isDemoBusinessId(oldProduct.businessId || activeBusinessId) &&
+      auth.currentUser &&
+      !updated.digitaxItemId
+    ) {
+      const env = currentBusiness?.taxSettings?.digitaxEnvironment || 'sandbox';
+      void digitaxService
+        .ensureProductsRegisteredForSale({
+          items: [
+            {
+              productId: updated.id,
+              productName: updated.name,
+              sku: updated.sku,
+              unitPrice: updated.sellingPrice,
+              taxRate: updated.taxRate,
+              taxTypeCode: updated.taxTypeCode,
+              digitaxItemId: updated.digitaxItemId,
+            },
+          ],
+          productsCatalog: [updated],
+          locationId: currentLocation.id,
+          taxSettings: currentBusiness?.taxSettings,
+          environment: env,
+        })
+        .then(({ registeredProducts }) => {
+          const reg = registeredProducts[0];
+          if (!reg) return;
+          const syncedProd: Product = {
+            ...updated,
+            digitaxItemId: reg.digitaxItemId,
+            etimsItemCode: reg.etimsItemCode ?? updated.etimsItemCode,
+            taxTypeCode: reg.taxTypeCode,
+            itemClassCode: reg.itemClassCode ?? updated.itemClassCode,
+            packageUnitCode: reg.packageUnitCode ?? updated.packageUnitCode,
+            quantityUnitCode: reg.quantityUnitCode ?? updated.quantityUnitCode,
+            digitaxSyncedAt: reg.digitaxSyncedAt,
+          };
+          setAllProducts((prev) => prev.map((p) => (p.id === syncedProd.id ? syncedProd : p)));
+          void queueMutationToOutbox({
+            businessId: oldProduct.businessId || activeBusinessId,
+            collectionName: 'products',
+            docId: syncedProd.id,
+            operation: 'upsert',
+            payload: syncedProd,
+            label: `Digitax SKU ${syncedProd.name}`,
+          });
+        })
+        .catch(() => {});
+    }
 
     if (isSuperAdmin) {
       logSuperAdminAction(
@@ -4508,6 +4664,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // 11. Multi-Tenant Transactions Store (persisted in IndexedDB)
   const [allTransactions, setAllTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS);
+  const allTransactionsRef = useRef<Transaction[]>(allTransactions);
+  allTransactionsRef.current = allTransactions;
 
   useEffect(() => {
     if (!isIdbHydratedRef.current) return;
@@ -5944,6 +6102,669 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   };
 
+  const persistRegisteredDigitaxProducts = useCallback(
+    (
+      registeredProducts: Array<{
+        productId: string;
+        digitaxItemId: string;
+        etimsItemCode?: string;
+        taxTypeCode: Product['taxTypeCode'];
+        itemClassCode?: string;
+        packageUnitCode?: string;
+        quantityUnitCode?: string;
+        digitaxSyncedAt: string;
+      }>
+    ) => {
+      if (!registeredProducts || registeredProducts.length === 0) return;
+      const byId = new Map(registeredProducts.map((r) => [r.productId, r]));
+      const updatedForOutbox: Product[] = [];
+
+      setAllProducts((prev) =>
+        prev.map((prod) => {
+          const reg = byId.get(prod.id);
+          if (!reg) return prod;
+          const nextProd: Product = {
+            ...prod,
+            digitaxItemId: reg.digitaxItemId,
+            etimsItemCode: reg.etimsItemCode ?? prod.etimsItemCode,
+            taxTypeCode: reg.taxTypeCode ?? prod.taxTypeCode,
+            itemClassCode: reg.itemClassCode ?? prod.itemClassCode,
+            packageUnitCode: reg.packageUnitCode ?? prod.packageUnitCode,
+            quantityUnitCode: reg.quantityUnitCode ?? prod.quantityUnitCode,
+            digitaxSyncedAt: reg.digitaxSyncedAt,
+          };
+          updatedForOutbox.push(nextProd);
+          return nextProd;
+        })
+      );
+
+      updatedForOutbox.forEach((p) => {
+        if (!isDemoBusinessId(p.businessId)) {
+          void queueMutationToOutbox({
+            businessId: p.businessId,
+            collectionName: 'products',
+            docId: p.id,
+            operation: 'upsert',
+            payload: p,
+            label: `Digitax SKU ${p.name}`,
+          });
+        }
+      });
+    },
+    [queueMutationToOutbox]
+  );
+
+  const transmitSaleToDigitax = useCallback(
+    async (
+      tx: Transaction,
+      options: { buyerPin?: string; fromOutbox?: boolean } = {}
+    ): Promise<OutboxDispatchResult> => {
+      const latestTx = allTransactionsRef.current.find((t) => t.id === tx.id) || tx;
+      if (isDemoBusinessId(latestTx.businessId)) {
+        return { status: 'acked' };
+      }
+
+      const biz = currentBusinessRef.current;
+      const env = biz?.taxSettings?.digitaxEnvironment || 'sandbox';
+      const configuredTaxPin = biz?.taxSettings?.taxNumber || biz?.taxNumber || undefined;
+      const attemptCount = (latestTx.etimsData?.attemptCount || 0) + 1;
+      const attemptIso = new Date().toISOString();
+
+      const applyEtimsPatchToTx = (updatedEtims: DigitaxEtimsData, persistCloud: boolean) => {
+        const patchedTx: Transaction = { ...latestTx, etimsData: updatedEtims };
+        setAllTransactions((prev) =>
+          prev.map((t) => (t.id === latestTx.id ? { ...t, etimsData: updatedEtims } : t))
+        );
+        setActiveReceipt((prev) =>
+          prev?.id === latestTx.id ? { ...prev, etimsData: updatedEtims } : prev
+        );
+        if (persistCloud && auth.currentUser) {
+          void queueMutationToOutbox({
+            businessId: latestTx.businessId,
+            collectionName: 'transactions',
+            docId: latestTx.id,
+            operation: 'upsert',
+            payload: patchedTx,
+            label: `Sale eTIMS ${latestTx.receiptNumber}`,
+          });
+        }
+      };
+
+      const enqueueSaleEtimsOutbox = (reason?: string) => {
+        void queueMutationToOutbox({
+          businessId: latestTx.businessId,
+          collectionName: 'etims_sales',
+          docId: latestTx.id,
+          operation: 'upsert',
+          payload: {
+            transactionId: latestTx.id,
+            receiptNumber: latestTx.receiptNumber,
+            buyerPin: options.buyerPin || latestTx.etimsData?.customerTin,
+            reason,
+            tx: latestTx,
+          },
+          label: `eTIMS Sale ${latestTx.receiptNumber}`,
+          immediateDispatch: false,
+        });
+      };
+
+      if (!isOnlineRef.current || !auth.currentUser) {
+        if (!options.fromOutbox) {
+          enqueueSaleEtimsOutbox('Offline terminal');
+        }
+        return {
+          status: 'skipped_offline_or_quota',
+          reason: 'Terminal offline or unauthenticated for Digitax transmission',
+        };
+      }
+
+      try {
+        let finalSale;
+        if (latestTx.etimsData?.saleId && latestTx.etimsData.status !== 'COMPLETED') {
+          finalSale = await digitaxService.pollSaleCompletion(
+            latestTx.etimsData.saleId,
+            4,
+            1000,
+            env
+          );
+        } else {
+          const catalog = allProductsRef.current;
+          const { resolvedItemIdsByProductId, registeredProducts } =
+            await digitaxService.ensureProductsRegisteredForSale({
+              items: latestTx.items,
+              productsCatalog: catalog,
+              locationId: latestTx.locationId,
+              taxSettings: biz?.taxSettings,
+              environment: env,
+            });
+
+          persistRegisteredDigitaxProducts(registeredProducts);
+
+          const payload = digitaxService.mapTransactionToEtims({
+            tx: latestTx,
+            productsCatalog: catalog,
+            resolvedItemIdsByProductId,
+            taxSettings: biz?.taxSettings,
+            buyerPin: options.buyerPin || latestTx.etimsData?.customerTin,
+          });
+
+          const saleResp = await digitaxService.createSale(payload, {
+            environment: env,
+            expectedTaxPin: configuredTaxPin,
+          });
+
+          finalSale = saleResp?.id
+            ? await digitaxService.pollSaleCompletion(saleResp.id, 6, 1200, env)
+            : saleResp;
+        }
+
+        const isSigned = Boolean(
+          finalSale && (finalSale.receipt_signature || finalSale.status === 'COMPLETED')
+        );
+        const resolvedStatus: DigitaxEtimsData['status'] =
+          finalSale?.status === 'FAILED'
+            ? 'FAILED'
+            : isSigned
+            ? 'COMPLETED'
+            : 'PENDING';
+
+        const updatedEtims: DigitaxEtimsData = {
+          ...latestTx.etimsData,
+          saleId: finalSale?.id || latestTx.etimsData?.saleId,
+          traderInvoiceNumber:
+            finalSale?.trader_invoice_number ||
+            latestTx.etimsData?.traderInvoiceNumber ||
+            formatTraderInvoiceNumber(latestTx.receiptNumber),
+          cuSerialNumber: finalSale?.serial_number || latestTx.etimsData?.cuSerialNumber,
+          cuInvoiceNumber: finalSale?.invoice_number ?? latestTx.etimsData?.cuInvoiceNumber,
+          receiptNumber: finalSale?.receipt_number ?? latestTx.etimsData?.receiptNumber,
+          internalData: finalSale?.internal_data || latestTx.etimsData?.internalData,
+          receiptSignature: finalSale?.receipt_signature || latestTx.etimsData?.receiptSignature,
+          etimsUrl: finalSale?.etims_url || latestTx.etimsData?.etimsUrl,
+          offlineUrl: finalSale?.offline_url || latestTx.etimsData?.offlineUrl,
+          status: resolvedStatus,
+          taxPin: configuredTaxPin || latestTx.etimsData?.taxPin,
+          customerTin:
+            finalSale?.customer_pin ||
+            finalSale?.customer_tin ||
+            options.buyerPin ||
+            latestTx.etimsData?.customerTin,
+          customerName: finalSale?.customer_name || latestTx.customerName || undefined,
+          verifiedAt: isSigned ? new Date().toISOString() : undefined,
+          attemptCount,
+          lastAttemptAt: attemptIso,
+          lastError:
+            resolvedStatus === 'FAILED'
+              ? 'KRA Control Unit rejected invoice during signing'
+              : undefined,
+          isPartnerVerified: isSigned,
+        };
+
+        applyEtimsPatchToTx(updatedEtims, true);
+
+        if (resolvedStatus === 'COMPLETED') {
+          const outboxKey = `etims_sales:${latestTx.id}`;
+          if (!options.fromOutbox) {
+            await removeOutboxEntries([outboxKey]).catch(() => {});
+            setOutboxItems((prev) => prev.filter((o) => o.id !== outboxKey));
+          }
+          return { status: 'acked' };
+        }
+
+        if (resolvedStatus === 'FAILED') {
+          return {
+            status: 'failed',
+            retryable: false,
+            error: updatedEtims.lastError || 'Rejected by KRA Control Unit',
+            errorCode: 'ETIMS_REJECTED',
+          };
+        }
+
+        if (!options.fromOutbox) {
+          enqueueSaleEtimsOutbox('Awaiting KRA Control Unit signature');
+        }
+        return {
+          status: 'failed',
+          retryable: true,
+          error: 'Invoice queued; awaiting KRA Control Unit signature completion',
+          errorCode: 'ETIMS_PENDING_SIGNATURE',
+        };
+      } catch (err: any) {
+        const retryable = err instanceof DigitaxApiError ? err.retryable : true;
+        const errCode = err instanceof DigitaxApiError ? err.code : 'DIGITAX_ERROR';
+        const errMsg = err?.message || 'Failed to transmit sale to Digitax eTIMS';
+
+        const updatedEtims: DigitaxEtimsData = {
+          ...latestTx.etimsData,
+          traderInvoiceNumber:
+            latestTx.etimsData?.traderInvoiceNumber ||
+            formatTraderInvoiceNumber(latestTx.receiptNumber),
+          taxPin: configuredTaxPin || latestTx.etimsData?.taxPin,
+          status: retryable ? 'PENDING' : 'FAILED',
+          attemptCount,
+          lastAttemptAt: attemptIso,
+          lastError: errMsg,
+          isPartnerVerified: false,
+        };
+
+        applyEtimsPatchToTx(updatedEtims, true);
+
+        if (!options.fromOutbox && retryable) {
+          enqueueSaleEtimsOutbox(errMsg);
+        }
+
+        return {
+          status: 'failed',
+          retryable,
+          error: errMsg,
+          errorCode: errCode,
+        };
+      }
+    },
+    [persistRegisteredDigitaxProducts, queueMutationToOutbox]
+  );
+
+  const transmitCreditNoteToDigitax = useCallback(
+    async (
+      tx: Transaction,
+      refund: RefundRecord,
+      options: { fromOutbox?: boolean } = {}
+    ): Promise<OutboxDispatchResult> => {
+      const latestTx = allTransactionsRef.current.find((t) => t.id === tx.id) || tx;
+      const latestRefund = latestTx.refunds?.find((r) => r.id === refund.id) || refund;
+      if (isDemoBusinessId(latestTx.businessId)) {
+        return { status: 'acked' };
+      }
+
+      const biz = currentBusinessRef.current;
+      const env = biz?.taxSettings?.digitaxEnvironment || 'sandbox';
+      const configuredTaxPin = biz?.taxSettings?.taxNumber || biz?.taxNumber || undefined;
+      const attemptCount = (latestRefund.etimsCreditNote?.attemptCount || 0) + 1;
+      const attemptIso = new Date().toISOString();
+      const outboxDocId = `${latestTx.id}::${latestRefund.id}`;
+
+      const applyCreditNotePatch = (cn: DigitaxCreditNoteData, persistCloud: boolean) => {
+        const updatedTx: Transaction = {
+          ...latestTx,
+          refunds: (latestTx.refunds || []).map((r) =>
+            r.id === latestRefund.id ? { ...r, etimsCreditNote: cn } : r
+          ),
+        };
+        const updatedRefund: RefundRecord = { ...latestRefund, etimsCreditNote: cn };
+
+        setAllTransactions((prev) =>
+          prev.map((t) => (t.id === latestTx.id ? updatedTx : t))
+        );
+        setActiveReceipt((prev) =>
+          prev?.id === latestTx.id ? updatedTx : prev
+        );
+        setActiveRefundReceipt((prev) =>
+          prev && prev.refund.id === latestRefund.id
+            ? { refund: updatedRefund, originalTx: updatedTx }
+            : prev
+        );
+        if (persistCloud && auth.currentUser) {
+          void queueMutationToOutbox({
+            businessId: latestTx.businessId,
+            collectionName: 'transactions',
+            docId: latestTx.id,
+            operation: 'upsert',
+            payload: updatedTx,
+            label: `Credit Note ${latestRefund.refundNumber}`,
+          });
+        }
+      };
+
+      const enqueueCreditNoteOutbox = (reason?: string) => {
+        void queueMutationToOutbox({
+          businessId: latestTx.businessId,
+          collectionName: 'etims_credit_notes',
+          docId: outboxDocId,
+          operation: 'upsert',
+          payload: {
+            transactionId: latestTx.id,
+            refundId: latestRefund.id,
+            refundNumber: latestRefund.refundNumber,
+            reason,
+            refund: latestRefund,
+            originalTx: latestTx,
+          },
+          label: `eTIMS Credit Note ${latestRefund.refundNumber}`,
+          immediateDispatch: false,
+        });
+      };
+
+      const saleQueuedInOutbox = outboxItemsRef.current.some(
+        (e) => e.id === `etims_sales:${latestTx.id}`
+      );
+      const originalSaleMissingFiscalLink =
+        saleQueuedInOutbox ||
+        (!latestTx.etimsData?.saleId &&
+          !latestTx.etimsData?.cuInvoiceNumber &&
+          latestTx.etimsData?.status !== 'COMPLETED');
+
+      if (originalSaleMissingFiscalLink) {
+        const waitingCn: DigitaxCreditNoteData = {
+          ...latestRefund.etimsCreditNote,
+          status: 'PENDING',
+          traderInvoiceNumber:
+            latestRefund.etimsCreditNote?.traderInvoiceNumber ||
+            formatTraderInvoiceNumber(latestRefund.refundNumber),
+          originalTraderInvoiceNumber:
+            latestTx.etimsData?.traderInvoiceNumber ||
+            formatTraderInvoiceNumber(latestTx.receiptNumber),
+          lastAttemptAt: attemptIso,
+          lastError: 'Waiting for original sale KRA fiscalization before issuing Credit Note',
+        };
+        applyCreditNotePatch(waitingCn, false);
+        if (!options.fromOutbox) {
+          enqueueCreditNoteOutbox(waitingCn.lastError);
+        }
+        return {
+          status: 'skipped_offline_or_quota',
+          reason: waitingCn.lastError || 'Waiting for original sale KRA fiscalization',
+        };
+      }
+
+      if (!isOnlineRef.current || !auth.currentUser) {
+        if (!options.fromOutbox) {
+          enqueueCreditNoteOutbox('Offline terminal');
+        }
+        return {
+          status: 'skipped_offline_or_quota',
+          reason: 'Terminal offline or unauthenticated for Digitax Credit Note',
+        };
+      }
+
+      try {
+        let finalCn;
+        if (
+          latestRefund.etimsCreditNote?.creditNoteId &&
+          latestRefund.etimsCreditNote.status !== 'COMPLETED'
+        ) {
+          finalCn = await digitaxService.pollCreditNoteCompletion(
+            latestRefund.etimsCreditNote.creditNoteId,
+            5,
+            1000,
+            env
+          );
+        } else {
+          const catalog = allProductsRef.current;
+          const refundSkuItems = latestRefund.items.map((ri) => ({
+            productId: ri.productId,
+            productName: ri.productName,
+            sku: ri.sku,
+            unitPrice: ri.unitPrice,
+            taxRate: ri.taxRate,
+            taxTypeCode: ri.taxTypeCode,
+          }));
+
+          const { resolvedItemIdsByProductId, registeredProducts } =
+            await digitaxService.ensureProductsRegisteredForSale({
+              items: refundSkuItems,
+              productsCatalog: catalog,
+              locationId: latestTx.locationId,
+              taxSettings: biz?.taxSettings,
+              environment: env,
+            });
+
+          persistRegisteredDigitaxProducts(registeredProducts);
+
+          const payload = digitaxService.mapRefundToCreditNote({
+            refund: latestRefund,
+            originalTx: latestTx,
+            productsCatalog: catalog,
+            resolvedItemIdsByProductId,
+            taxSettings: biz?.taxSettings,
+          });
+
+          const cnResp = await digitaxService.createCreditNote(payload, {
+            environment: env,
+            expectedTaxPin: configuredTaxPin,
+          });
+
+          finalCn = cnResp?.id
+            ? await digitaxService.pollCreditNoteCompletion(cnResp.id, 5, 1200, env)
+            : cnResp;
+        }
+
+        const isSigned = Boolean(
+          finalCn && (finalCn.receipt_signature || finalCn.status === 'COMPLETED')
+        );
+        const resolvedStatus: DigitaxCreditNoteData['status'] =
+          finalCn?.status === 'FAILED'
+            ? 'FAILED'
+            : isSigned
+            ? 'COMPLETED'
+            : 'PENDING';
+
+        const updatedCn: DigitaxCreditNoteData = {
+          ...latestRefund.etimsCreditNote,
+          creditNoteId: finalCn?.id || latestRefund.etimsCreditNote?.creditNoteId,
+          saleId: latestTx.etimsData?.saleId || latestRefund.etimsCreditNote?.saleId,
+          originalTraderInvoiceNumber:
+            latestTx.etimsData?.traderInvoiceNumber ||
+            formatTraderInvoiceNumber(latestTx.receiptNumber),
+          traderInvoiceNumber:
+            finalCn?.trader_invoice_number ||
+            latestRefund.etimsCreditNote?.traderInvoiceNumber ||
+            formatTraderInvoiceNumber(latestRefund.refundNumber),
+          cuSerialNumber: finalCn?.serial_number || latestRefund.etimsCreditNote?.cuSerialNumber,
+          cuInvoiceNumber: finalCn?.invoice_number ?? latestRefund.etimsCreditNote?.cuInvoiceNumber,
+          receiptNumber: finalCn?.receipt_number ?? latestRefund.etimsCreditNote?.receiptNumber,
+          receiptSignature: finalCn?.receipt_signature || latestRefund.etimsCreditNote?.receiptSignature,
+          internalData: finalCn?.internal_data || latestRefund.etimsCreditNote?.internalData,
+          etimsUrl: finalCn?.etims_url || latestRefund.etimsCreditNote?.etimsUrl,
+          offlineUrl: finalCn?.offline_url || latestRefund.etimsCreditNote?.offlineUrl,
+          reasonCode:
+            latestRefund.etimsCreditNote?.reasonCode ||
+            deriveKraCreditNoteReasonCode(
+              latestRefund.refundReason,
+              latestRefund.items.some((ri) => !ri.restockToInventory)
+            ),
+          status: resolvedStatus,
+          verifiedAt: isSigned ? new Date().toISOString() : undefined,
+          attemptCount,
+          lastAttemptAt: attemptIso,
+          lastError:
+            resolvedStatus === 'FAILED'
+              ? 'KRA Control Unit rejected credit note'
+              : undefined,
+        };
+
+        applyCreditNotePatch(updatedCn, true);
+
+        if (resolvedStatus === 'COMPLETED') {
+          const key = `etims_credit_notes:${outboxDocId}`;
+          if (!options.fromOutbox) {
+            await removeOutboxEntries([key]).catch(() => {});
+            setOutboxItems((prev) => prev.filter((o) => o.id !== key));
+          }
+          return { status: 'acked' };
+        }
+
+        if (resolvedStatus === 'FAILED') {
+          return {
+            status: 'failed',
+            retryable: false,
+            error: updatedCn.lastError || 'Rejected by KRA Credit Note API',
+            errorCode: 'ETIMS_CREDIT_NOTE_REJECTED',
+          };
+        }
+
+        if (!options.fromOutbox) {
+          enqueueCreditNoteOutbox('Awaiting KRA Credit Note signature');
+        }
+        return {
+          status: 'failed',
+          retryable: true,
+          error: 'Credit note queued; awaiting KRA signature',
+          errorCode: 'ETIMS_PENDING_SIGNATURE',
+        };
+      } catch (err: any) {
+        const retryable = err instanceof DigitaxApiError ? err.retryable : true;
+        const errCode = err instanceof DigitaxApiError ? err.code : 'DIGITAX_ERROR';
+        const errMsg = err?.message || 'Failed to transmit KRA Credit Note to Digitax';
+
+        const updatedCn: DigitaxCreditNoteData = {
+          ...latestRefund.etimsCreditNote,
+          traderInvoiceNumber:
+            latestRefund.etimsCreditNote?.traderInvoiceNumber ||
+            formatTraderInvoiceNumber(latestRefund.refundNumber),
+          originalTraderInvoiceNumber:
+            latestTx.etimsData?.traderInvoiceNumber ||
+            formatTraderInvoiceNumber(latestTx.receiptNumber),
+          status: retryable ? 'PENDING' : 'FAILED',
+          attemptCount,
+          lastAttemptAt: attemptIso,
+          lastError: errMsg,
+        };
+
+        applyCreditNotePatch(updatedCn, true);
+
+        if (!options.fromOutbox && retryable) {
+          enqueueCreditNoteOutbox(errMsg);
+        }
+
+        return {
+          status: 'failed',
+          retryable,
+          error: errMsg,
+          errorCode: errCode,
+        };
+      }
+    },
+    [persistRegisteredDigitaxProducts, queueMutationToOutbox]
+  );
+
+  const dispatchEtimsOutboxEntry = useCallback(
+    async (entry: OutboxMutationEntry): Promise<OutboxDispatchResult> => {
+      if (entry.collectionName === 'etims_sales') {
+        const tx =
+          allTransactionsRef.current.find((t) => t.id === entry.docId) ||
+          (entry.payload?.tx as Transaction | undefined);
+        if (!tx) {
+          return {
+            status: 'failed',
+            retryable: false,
+            error: 'Original sale transaction is no longer present locally.',
+            errorCode: 'TX_NOT_FOUND',
+          };
+        }
+        return transmitSaleToDigitax(tx, {
+          buyerPin: entry.payload?.buyerPin || tx.etimsData?.customerTin,
+          fromOutbox: true,
+        });
+      }
+
+      if (entry.collectionName === 'etims_credit_notes') {
+        const [docTxId, docRefId] = entry.docId.split('::');
+        const txId = entry.payload?.transactionId || docTxId;
+        const refundId = entry.payload?.refundId || docRefId;
+        const tx =
+          allTransactionsRef.current.find((t) => t.id === txId) ||
+          (entry.payload?.originalTx as Transaction | undefined);
+        const refund =
+          tx?.refunds?.find((r) => r.id === refundId) ||
+          (entry.payload?.refund as RefundRecord | undefined);
+        if (!tx || !refund) {
+          return {
+            status: 'failed',
+            retryable: false,
+            error: 'Linked transaction or refund record could not be located.',
+            errorCode: 'REFUND_NOT_FOUND',
+          };
+        }
+        return transmitCreditNoteToDigitax(tx, refund, { fromOutbox: true });
+      }
+
+      return {
+        status: 'failed',
+        retryable: false,
+        error: `Unsupported eTIMS outbox collection ${entry.collectionName}`,
+        errorCode: 'UNSUPPORTED_ETIMS_COLLECTION',
+      };
+    },
+    [transmitSaleToDigitax, transmitCreditNoteToDigitax]
+  );
+
+  const retryTransactionEtims = useCallback(
+    async (txId: string): Promise<boolean> => {
+      if (!isOnlineRef.current) {
+        showToast('Terminal is offline. Sale will fiscalize automatically when back online.', 'error');
+        return false;
+      }
+      const tx = allTransactionsRef.current.find((t) => t.id === txId);
+      if (!tx) {
+        showToast('Receipt record not found.', 'error');
+        return false;
+      }
+      if (isDemoBusinessId(tx.businessId)) {
+        showToast('Demo sandbox receipts do not transmit to live KRA servers.', 'info');
+        return false;
+      }
+      const res = await transmitSaleToDigitax(tx, { buyerPin: tx.etimsData?.customerTin });
+      if (res.status === 'acked') {
+        soundFx.playSuccess();
+        showToast(`Receipt ${tx.receiptNumber} verified & signed with KRA eTIMS!`, 'success');
+        return true;
+      }
+      showToast(
+        res.status === 'failed'
+          ? res.error
+          : res.reason || 'KRA fiscalization still pending; retained in Sync Outbox.',
+        'warning'
+      );
+      return false;
+    },
+    [transmitSaleToDigitax, showToast, soundFx]
+  );
+
+  const retryRefundCreditNote = useCallback(
+    async (txId: string, refundId: string): Promise<boolean> => {
+      if (!isOnlineRef.current) {
+        showToast('Terminal is offline. Credit Note will transmit when back online.', 'error');
+        return false;
+      }
+      const tx = allTransactionsRef.current.find((t) => t.id === txId);
+      const refund = tx?.refunds?.find((r) => r.id === refundId);
+      if (!tx || !refund) {
+        showToast('Refund record not found.', 'error');
+        return false;
+      }
+      if (isDemoBusinessId(tx.businessId)) {
+        showToast('Demo sandbox credit notes do not transmit to live KRA servers.', 'info');
+        return false;
+      }
+      if (tx.etimsData?.status !== 'COMPLETED' && !tx.etimsData?.saleId) {
+        const saleRes = await transmitSaleToDigitax(tx, { buyerPin: tx.etimsData?.customerTin });
+        if (saleRes.status !== 'acked') {
+          showToast(
+            'Original sale must finish KRA fiscalization before issuing its Credit Note.',
+            'warning'
+          );
+          return false;
+        }
+      }
+      const freshTx = allTransactionsRef.current.find((t) => t.id === txId) || tx;
+      const freshRefund = freshTx.refunds?.find((r) => r.id === refundId) || refund;
+      const cnRes = await transmitCreditNoteToDigitax(freshTx, freshRefund);
+      if (cnRes.status === 'acked') {
+        soundFx.playSuccess();
+        showToast(`KRA Credit Note ${freshRefund.refundNumber} verified!`, 'success');
+        return true;
+      }
+      showToast(
+        cnRes.status === 'failed'
+          ? cnRes.error
+          : cnRes.reason || 'Credit Note queued in Sync Outbox.',
+        'warning'
+      );
+      return false;
+    },
+    [transmitSaleToDigitax, transmitCreditNoteToDigitax, showToast, soundFx]
+  );
+
   // Process Payment
   const processPayment = (
     paymentMethod: PaymentMethod,
@@ -6062,30 +6883,34 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         currentLocation.id,
         currentBusiness?.taxSettings
       );
+      const taxTypeCode = resolveKraTaxTypeCode({
+        taxRate: resolved.rate,
+        ruleCode: resolved.code,
+        ruleName: resolved.ruleName,
+        explicitTaxTypeCode: item.taxTypeCode || prod?.taxTypeCode,
+      });
       return {
         ...item,
         unitCost: typeof item.unitCost === 'number' ? item.unitCost : (prod?.buyingPrice ?? 0),
         taxRate: resolved.rate,
+        taxTypeCode,
+        digitaxItemId: item.digitaxItemId || prod?.digitaxItemId,
       };
     });
 
-    const cleanNum = receiptNum.replace(/[^0-9]/g, '').slice(-4) || Math.floor(1000 + Math.random() * 9000).toString();
-    const traderInvNum = receiptNum.startsWith('SOKO') ? receiptNum : `SOKO-${receiptNum}`;
-    const isSandboxEtims = Boolean(currentUser?.isDemoSession || activeBusinessId === 'biz-demo');
+    const traderInvNum = formatTraderInvoiceNumber(receiptNum);
+    const isSandboxEtims = Boolean(currentUser?.isDemoSession || isDemoBusinessId(activeBusinessId));
+    const configuredTaxPin =
+      currentBusiness?.taxSettings?.taxNumber || currentBusiness?.taxNumber || undefined;
     const initialEtimsData: DigitaxEtimsData = {
-      cuSerialNumber: 'KRARVS000000005',
-      cuInvoiceNumber: Number(`1181${cleanNum}`),
-      receiptNumber: Number(`960${cleanNum}`),
-      internalData: 'UZ4JESUT5QGLW4CPRBSUVAZRLE',
-      receiptSignature: 'QK2OPDK3TMLJ6BQ5',
-      offlineUrl: `https://receipt.dg.tax/r/business_01M4WBVDC1WR8K1WYB8MKYMKG6/${traderInvNum}`,
-      etimsUrl: `https://etims-sbx.kra.go.ke/common/link/etims/receipt/indexEtimsReceiptData?Data=P052100681P01QK2OPDK3TMLJ6BQ5`,
-      taxPin: isSandboxEtims ? 'P099887766D' : (currentBusiness?.taxSettings?.taxNumber || 'A011001890C'),
+      traderInvoiceNumber: traderInvNum,
+      taxPin: configuredTaxPin,
       customerTin: customer?.kraPin || undefined,
       customerName: customer?.name || undefined,
       status: isSandboxEtims ? 'COMPLETED' : 'PENDING',
-      verifiedAt: new Date().toISOString(),
-      isPartnerVerified: true,
+      attemptCount: 0,
+      ...(isSandboxEtims ? { verifiedAt: new Date().toISOString() } : {}),
+      isPartnerVerified: false,
     };
 
     const newTx: Transaction = {
@@ -6172,69 +6997,28 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       );
     }
 
-    // Asynchronously transmit to Digitax KRA eTIMS (bypassed in sandbox mode)
-    if (isOnline && !isSandboxEtims) {
-      (async () => {
-        try {
-          const payload = digitaxService.mapTransactionToEtims(
-            {
-              receiptNumber: newTx.receiptNumber,
-              total: newTx.total,
-              subtotal: newTx.subtotal,
-              taxAmount: newTx.taxAmount,
-              paymentMethod: newTx.paymentMethod,
-              customerName: customer?.name,
-              items: newTx.items.map((it) => ({
-                name: it.productName,
-                quantity: it.quantity,
-                price: it.unitPrice,
-                taxRate: it.taxRate,
-              })),
-            },
-            customer?.kraPin
-          );
-          const saleResp = await digitaxService.createSale(payload);
-          if (saleResp?.id) {
-            const finalSale = await digitaxService.pollSaleCompletion(saleResp.id);
-            if (finalSale) {
-              const updatedEtims: DigitaxEtimsData = {
-                saleId: finalSale.id,
-                cuSerialNumber: finalSale.serial_number || 'KRARVS000000005',
-                cuInvoiceNumber: finalSale.invoice_number,
-                receiptNumber: finalSale.receipt_number,
-                internalData: finalSale.internal_data,
-                receiptSignature: finalSale.receipt_signature,
-                etimsUrl: finalSale.etims_url,
-                offlineUrl: finalSale.offline_url,
-                status: finalSale.status,
-                taxPin: 'A011001890C',
-                customerTin: finalSale.customer_tin || customer?.kraPin,
-                customerName: finalSale.customer_name || customer?.name,
-                verifiedAt: new Date().toISOString(),
-                isPartnerVerified: true,
-              };
-
-              const txWithEtims = { ...newTx, etimsData: updatedEtims };
-              setAllTransactions((prev) =>
-                prev.map((t) => (t.id === newTx.id ? { ...t, etimsData: updatedEtims } : t))
-              );
-              setActiveReceipt((prev) => (prev?.id === newTx.id ? { ...prev, etimsData: updatedEtims } : prev));
-              if (auth.currentUser) {
-                void queueMutationToOutbox({
-                  businessId: activeBusinessId,
-                  collectionName: 'transactions',
-                  docId: newTx.id,
-                  operation: 'upsert',
-                  payload: txWithEtims,
-                  label: `Sale eTIMS ${newTx.receiptNumber}`,
-                });
-              }
-            }
-          }
-        } catch (etimsErr) {
-          console.warn('Digitax eTIMS automated transmission notice:', etimsErr);
-        }
-      })();
+    // Transmit itemized invoice to Digitax KRA eTIMS (or queue into IndexedDB outbox if offline)
+    const shouldAutoTransmitEtims = currentBusiness?.taxSettings?.autoTransmitEtims !== false;
+    if (!isSandboxEtims && shouldAutoTransmitEtims) {
+      if (isOnline && auth.currentUser) {
+        void transmitSaleToDigitax(newTx, { buyerPin: customer?.kraPin });
+      } else {
+        void queueMutationToOutbox({
+          businessId: activeBusinessId,
+          collectionName: 'etims_sales',
+          docId: newTx.id,
+          operation: 'upsert',
+          payload: {
+            transactionId: newTx.id,
+            receiptNumber: newTx.receiptNumber,
+            buyerPin: customer?.kraPin,
+            reason: 'Terminal offline at checkout',
+            tx: newTx,
+          },
+          label: `eTIMS Sale ${newTx.receiptNumber}`,
+          immediateDispatch: false,
+        });
+      }
     }
 
     // Dispatch sale + inventory deductions through the transactional Sync Outbox
@@ -6515,12 +7299,17 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           };
         }
 
-        // Calculate unit prices taking discounts into account
-        const discountedUnitPrice = origItem.unitPrice * (1 - origItem.discountPercent / 100);
-        const netUnitPrice = discountedUnitPrice / (1 + origItem.taxRate);
-        const lineItemTotal = Number((discountedUnitPrice * reqItem.quantity).toFixed(2));
-        const lineItemSubtotal = Number((netUnitPrice * reqItem.quantity).toFixed(2));
+        // Calculate proportional unit prices taking both percentage & flat discounts and inclusive/exclusive tax into account
+        const discountedUnitPrice = getItemDiscountedUnitPrice(origItem);
+        const isTxExclusive = targetTx.pricingType === 'exclusive';
+        const lineItemSubtotal = isTxExclusive
+          ? Number((discountedUnitPrice * reqItem.quantity).toFixed(2))
+          : Number(((discountedUnitPrice / (1 + origItem.taxRate)) * reqItem.quantity).toFixed(2));
+        const lineItemTotal = isTxExclusive
+          ? Number((lineItemSubtotal * (1 + origItem.taxRate)).toFixed(2))
+          : Number((discountedUnitPrice * reqItem.quantity).toFixed(2));
         const lineItemTax = Number((lineItemTotal - lineItemSubtotal).toFixed(2));
+        const refundUnitGross = Number((lineItemTotal / reqItem.quantity).toFixed(2));
 
         calculatedSubtotalRefund += lineItemSubtotal;
         calculatedTaxRefund += lineItemTax;
@@ -6534,7 +7323,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           quantity: reqItem.quantity,
           unitPrice: origItem.unitPrice,
           taxRate: origItem.taxRate,
-          refundUnitAmount: Number(discountedUnitPrice.toFixed(2)),
+          taxTypeCode: origItem.taxTypeCode,
+          refundUnitAmount: refundUnitGross,
           refundTotalAmount: lineItemTotal,
           restockToInventory: reqItem.restockToInventory,
           restockLocationId: targetTx.locationId,
@@ -6545,6 +7335,20 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Generate refund reference and timestamp
       const refundRefNumber = `REF-${Date.now().toString().slice(-6)}`;
       const timestamp = new Date().toISOString();
+      const isSandboxRefund = Boolean(currentUser?.isDemoSession || isDemoBusinessId(activeBusinessId));
+      const anyNonRestocked = refundItemsRecord.some((ri) => !ri.restockToInventory);
+      const initialCreditNote: DigitaxCreditNoteData | undefined = !isSandboxRefund
+        ? {
+            status: 'PENDING',
+            saleId: targetTx.etimsData?.saleId,
+            originalTraderInvoiceNumber:
+              targetTx.etimsData?.traderInvoiceNumber ||
+              formatTraderInvoiceNumber(targetTx.receiptNumber),
+            traderInvoiceNumber: formatTraderInvoiceNumber(refundRefNumber),
+            reasonCode: deriveKraCreditNoteReasonCode(refundReason, anyNonRestocked),
+            attemptCount: 0,
+          }
+        : undefined;
 
       const newRefundRecord: RefundRecord = {
         id: `ref-${Date.now()}`,
@@ -6571,6 +7375,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         totalRefund: Number(calculatedTotalRefund.toFixed(2)),
         customerName: customerName?.trim() || undefined,
         customerPhone: customerPhone?.trim() || undefined,
+        etimsCreditNote: initialCreditNote,
       };
 
       // Edge Case 1: If supervisor override was performed, log to dedicated supervisor audit ledger
@@ -6762,6 +7567,31 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         'success'
       );
 
+      // Auto-issue KRA eTIMS Credit Note (or enqueue into Sync Outbox if offline / awaiting sale signing)
+      const shouldAutoTransmitCn = currentBusiness?.taxSettings?.autoTransmitEtims !== false;
+      if (!isSandboxRefund && shouldAutoTransmitCn) {
+        if (isOnline && auth.currentUser) {
+          void transmitCreditNoteToDigitax(updatedTx, newRefundRecord);
+        } else {
+          void queueMutationToOutbox({
+            businessId: activeBusinessId,
+            collectionName: 'etims_credit_notes',
+            docId: `${updatedTx.id}::${newRefundRecord.id}`,
+            operation: 'upsert',
+            payload: {
+              transactionId: updatedTx.id,
+              refundId: newRefundRecord.id,
+              refundNumber: newRefundRecord.refundNumber,
+              reason: 'Terminal offline during refund',
+              refund: newRefundRecord,
+              originalTx: updatedTx,
+            },
+            label: `eTIMS Credit Note ${newRefundRecord.refundNumber}`,
+            immediateDispatch: false,
+          });
+        }
+      }
+
       // Set active refund receipt for instant display & printing
       setActiveRefundReceipt({
         refund: newRefundRecord,
@@ -6780,6 +7610,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       isSuperAdmin,
       logSuperAdminAction,
       showToast,
+      currentUser,
+      currentBusiness?.taxSettings?.autoTransmitEtims,
+      transmitCreditNoteToDigitax,
+      queueMutationToOutbox,
     ]
   );
 
@@ -7598,6 +8432,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         businessId: activeBusinessId,
         isOnline,
         includeScheduledOrDeadLetter: !isSilent,
+        dispatchEtimsOutboxEntry,
       });
 
       setOutboxItems(report.remainingQueue);
@@ -7673,6 +8508,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       allSystemUsers,
       activeBusinessId,
       refreshStorageQuotaTelemetry,
+      dispatchEtimsOutboxEntry,
     ]
   );
 
@@ -11070,6 +11906,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         processPayment,
         settleExactCash,
         processRefund,
+        retryTransactionEtims,
+        retryRefundCreditNote,
         isReturnsModalOpen,
         selectedReturnTx,
         openReturnsModal,

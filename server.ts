@@ -2471,11 +2471,12 @@ Extract:
       const caller = await requireVerifiedCaller(req, res);
       if (!caller) return;
 
-      const { apiKey } = resolveServerDigitaxKey(req);
+      const { apiKey, environment } = resolveServerDigitaxKey(req);
       if (!apiKey) {
         return res.status(503).json({
           error: 'DIGITAX_API_KEY is not configured in server environment variables.',
           code: 'DIGITAX_NOT_CONFIGURED',
+          environment,
         });
       }
 
@@ -2486,6 +2487,24 @@ Extract:
           code: 'FISCAL_VALIDATION_FAILED',
           errors: validation.errors,
         });
+      }
+
+      const tenantTaxPin = String(req.headers['x-tenant-tax-pin'] || '')
+        .trim()
+        .toUpperCase();
+      if (
+        environment === 'production' &&
+        tenantTaxPin &&
+        tenantTaxPin !== 'P051234567Z' &&
+        tenantTaxPin !== 'P000000000X'
+      ) {
+        const remotePin = await resolveVerifiedDigitaxTaxPin(apiKey);
+        if (remotePin && remotePin !== tenantTaxPin) {
+          return res.status(422).json({
+            error: `Tenant KRA PIN (${tenantTaxPin}) does not match active Digitax CU Tax PIN (${remotePin}).`,
+            code: 'TAX_PIN_MISMATCH',
+          });
+        }
       }
 
       const cleanCreditPayload = {

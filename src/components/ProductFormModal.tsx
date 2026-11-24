@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Barcode, Save, Sparkles, Trash2, Camera, CheckCircle2 } from 'lucide-react';
-import { Product } from '../types';
+import { X, Barcode, Save, Sparkles, Trash2, Camera, CheckCircle2, FileCheck } from 'lucide-react';
+import { KraTaxTypeCode, Product } from '../types';
+import { getExpectedTaxRateForCode } from '../utils/etimsFiscalMapper';
 import { usePos } from '../context/PosContext';
 import { PackageScannerModal } from './PackageScannerModal';
 import { ParsedProductPackage } from '../types/aiVision';
@@ -32,6 +33,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const [buyingPrice, setBuyingPrice] = useState('100');
   const [sellingPrice, setSellingPrice] = useState('130');
   const [unit, setUnit] = useState('packet');
+  const [taxTypeCode, setTaxTypeCode] = useState<'AUTO' | KraTaxTypeCode>('AUTO');
+  const [packageUnitCode, setPackageUnitCode] = useState('CT');
+  const [quantityUnitCode, setQuantityUnitCode] = useState('U');
   const [reorderPoint, setReorderPoint] = useState('15');
   const [description, setDescription] = useState('');
   const [initialStocks, setInitialStocks] = useState<Record<string, number>>({});
@@ -48,6 +52,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       setBuyingPrice(productToEdit.buyingPrice.toString());
       setSellingPrice(productToEdit.sellingPrice.toString());
       setUnit(productToEdit.unit);
+      setTaxTypeCode(productToEdit.taxTypeCode || 'AUTO');
+      setPackageUnitCode(productToEdit.packageUnitCode || 'CT');
+      setQuantityUnitCode(productToEdit.quantityUnitCode || 'U');
       setReorderPoint(productToEdit.reorderPoint.toString());
       setDescription(productToEdit.description || '');
       setInitialStocks(productToEdit.stockByLocation);
@@ -65,6 +72,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       setBuyingPrice(String(initialDraftProduct.buyingPrice ?? 120));
       setSellingPrice(String(initialDraftProduct.sellingPrice ?? 150));
       setUnit(initialDraftProduct.unit || 'packet');
+      setTaxTypeCode(initialDraftProduct.taxTypeCode || 'AUTO');
+      setPackageUnitCode(initialDraftProduct.packageUnitCode || 'CT');
+      setQuantityUnitCode(initialDraftProduct.quantityUnitCode || 'U');
       setReorderPoint(String(initialDraftProduct.reorderPoint ?? 15));
       setDescription(initialDraftProduct.description || '');
       setInitialStocks(
@@ -85,6 +95,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       setBuyingPrice('120');
       setSellingPrice('150');
       setUnit('packet');
+      setTaxTypeCode('AUTO');
+      setPackageUnitCode('CT');
+      setQuantityUnitCode('U');
       setReorderPoint('20');
       setDescription('');
       setAiPopulatedNotice(null);
@@ -128,6 +141,10 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     const chosenSupplier = suppliers.find((s) => s.id === supplierId);
     const suppName = chosenSupplier ? chosenSupplier.name : null;
 
+    const resolvedExplicitCode = taxTypeCode === 'AUTO' ? undefined : taxTypeCode;
+    const explicitRate =
+      resolvedExplicitCode ? getExpectedTaxRateForCode(resolvedExplicitCode) ?? 0.16 : undefined;
+
     if (productToEdit) {
       updateProduct(productToEdit.id, {
         name,
@@ -137,6 +154,10 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         buyingPrice: bPrice,
         sellingPrice: sPrice,
         unit,
+        ...(explicitRate !== undefined ? { taxRate: explicitRate } : {}),
+        taxTypeCode: resolvedExplicitCode,
+        packageUnitCode: packageUnitCode || 'CT',
+        quantityUnitCode: quantityUnitCode || 'U',
         reorderPoint: reorder,
         description: description || '',
         supplierId: supplierId || null,
@@ -152,7 +173,10 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         buyingPrice: bPrice,
         sellingPrice: sPrice,
         unit,
-        taxRate: 0.16,
+        taxRate: explicitRate !== undefined ? explicitRate : 0.16,
+        taxTypeCode: resolvedExplicitCode,
+        packageUnitCode: packageUnitCode || 'CT',
+        quantityUnitCode: quantityUnitCode || 'U',
         reorderPoint: reorder,
         description: description || '',
         supplierId: supplierId || null,
@@ -321,6 +345,79 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* KRA eTIMS Fiscal Classification & Units */}
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                <FileCheck className="w-3.5 h-3.5 text-blue-600" />
+                KRA eTIMS Fiscal Classification
+              </span>
+              {productToEdit?.digitaxItemId ? (
+                <span className="text-[10px] font-mono text-emerald-700 truncate max-w-[200px]">
+                  Synced · {productToEdit.digitaxItemId}
+                </span>
+              ) : (
+                <span className="text-[10px] text-slate-500">
+                  Auto-registers on save / sale
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  KRA Tax Class
+                </label>
+                <select
+                  value={taxTypeCode}
+                  onChange={(e) => setTaxTypeCode(e.target.value as 'AUTO' | KraTaxTypeCode)}
+                  className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800"
+                >
+                  <option value="AUTO">Auto (From Tax Rules)</option>
+                  <option value="B">B · Standard VAT (16%)</option>
+                  <option value="E">E · Special VAT (8%)</option>
+                  <option value="C">C · Zero-Rated (0%)</option>
+                  <option value="A">A · Tax Exempt (0%)</option>
+                  <option value="D">D · Non-VAT (0%)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  Package Code
+                </label>
+                <select
+                  value={packageUnitCode}
+                  onChange={(e) => setPackageUnitCode(e.target.value)}
+                  className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-mono font-semibold text-slate-800"
+                >
+                  <option value="CT">CT · Carton / Piece</option>
+                  <option value="BG">BG · Bag / Sack</option>
+                  <option value="PK">PK · Packet / Pouch</option>
+                  <option value="BX">BX · Box / Case</option>
+                  <option value="BO">BO · Bottle</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  Quantity Unit Code
+                </label>
+                <select
+                  value={quantityUnitCode}
+                  onChange={(e) => setQuantityUnitCode(e.target.value)}
+                  className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-mono font-semibold text-slate-800"
+                >
+                  <option value="U">U · Unit / Each</option>
+                  <option value="KG">KG · Kilogram</option>
+                  <option value="L">L · Litre</option>
+                  <option value="M">M · Metre</option>
+                  <option value="G">G · Gram</option>
+                </select>
+              </div>
+            </div>
           </div>
 
           {/* Pricing & Margins */}

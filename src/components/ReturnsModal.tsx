@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { Transaction } from '../types';
+import { getItemDiscountedUnitPrice } from '../utils/discountUtils';
 
 const RETURN_REASONS = [
   'Customer Changed Mind',
@@ -156,6 +157,7 @@ export const ReturnsModal: React.FC = () => {
   let totalRestockUnits = 0;
 
   if (activeTx) {
+    const isExclusivePricing = activeTx.pricingType === 'exclusive';
     activeTx.items.forEach((it) => {
       const returnQty = selectedQuantities[it.productId] || 0;
       if (returnQty > 0) {
@@ -164,11 +166,21 @@ export const ReturnsModal: React.FC = () => {
           totalRestockUnits += returnQty;
         }
 
-        const discountedUnitPrice = it.unitPrice * (1 - it.discountPercent / 100);
-        const netUnitPrice = discountedUnitPrice / (1 + it.taxRate);
-        const lineTotal = discountedUnitPrice * returnQty;
-        const lineSubtotal = netUnitPrice * returnQty;
-        const lineTax = lineTotal - lineSubtotal;
+        const discountedUnitPrice = getItemDiscountedUnitPrice(it);
+        const rate = Number(it.taxRate || 0);
+        let lineSubtotal: number;
+        let lineTax: number;
+        let lineTotal: number;
+
+        if (isExclusivePricing) {
+          lineSubtotal = discountedUnitPrice * returnQty;
+          lineTax = lineSubtotal * rate;
+          lineTotal = lineSubtotal + lineTax;
+        } else {
+          lineTotal = discountedUnitPrice * returnQty;
+          lineSubtotal = lineTotal / (1 + rate);
+          lineTax = lineTotal - lineSubtotal;
+        }
 
         calculatedSubtotalRefund += lineSubtotal;
         calculatedTaxRefund += lineTax;

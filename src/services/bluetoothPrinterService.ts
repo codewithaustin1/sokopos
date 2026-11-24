@@ -174,8 +174,9 @@ class BluetoothPrinterService {
 
     // Totals
     const currency = location.currency || 'KES';
+    const taxTitle = transaction.taxLabel || 'Tax';
     printData += this.formatRow('Subtotal:', `${currency} ${transaction.subtotal.toFixed(2)}`, charWidth) + '\n';
-    printData += this.formatRow('Tax:', `${currency} ${transaction.taxAmount.toFixed(2)}`, charWidth) + '\n';
+    printData += this.formatRow(`${taxTitle}:`, `${currency} ${transaction.taxAmount.toFixed(2)}`, charWidth) + '\n';
     
     printData += COMMANDS.BOLD_ON;
     printData += this.formatRow('TOTAL:', `${currency} ${transaction.total.toFixed(2)}`, charWidth) + '\n';
@@ -190,10 +191,23 @@ class BluetoothPrinterService {
 
     // Footer
     printData += COMMANDS.ALIGN_CENTER;
+    if (options.headerNote) printData += options.headerNote + '\n';
     if (options.footerNote) printData += options.footerNote + '\n';
-    
-    printData += 'KRA eTIMS Validated\n';
-    printData += `CU Serial: ${transaction.etimsData?.cuSerialNumber || 'KRARVS000000005'}\n`;
+
+    const etims = transaction.etimsData;
+    const isEtimsVerified =
+      etims?.status === 'COMPLETED' &&
+      Boolean(etims?.isPartnerVerified || etims?.receiptSignature || etims?.cuInvoiceNumber);
+
+    if (isEtimsVerified) {
+      printData += 'KRA eTIMS Verified (Digitax)\n';
+      if (etims?.cuSerialNumber) printData += `CU Serial: ${etims.cuSerialNumber}\n`;
+      if (etims?.cuInvoiceNumber !== undefined) printData += `CU Inv: ${etims.cuInvoiceNumber}\n`;
+    } else if (etims?.status === 'FAILED') {
+      printData += 'KRA eTIMS: SYNC ATTENTION REQ\n';
+    } else {
+      printData += 'KRA eTIMS: PENDING SYNC\n';
+    }
     printData += 'Powered by SokoPoS\n';
     printData += 'Asante kwa kununua na sisi!\n';
     

@@ -12,12 +12,15 @@ import {
   Zap,
   RefreshCw,
   ExternalLink,
+  AlertTriangle,
+  Clock,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { TaxRule, BusinessTaxSettings, TaxScope } from '../types';
 import { DEFAULT_TAX_SETTINGS, DEFAULT_TAX_RULES, resolveDynamicTaxRate } from '../utils/taxResolver';
 import {
   digitaxService,
+  DigitaxApiError,
   DigitaxSaleResponse,
   DigitaxEtimsInfo,
 } from '../services/digitaxService';
@@ -62,83 +65,127 @@ export const TaxManagementPanel: React.FC = () => {
   const [simAmount, setSimAmount] = useState('1000');
 
   // Digitax KRA eTIMS Fiscal Engine State
-  const [digitaxEnv, setDigitaxEnv] = useState<'sandbox' | 'production'>('sandbox');
+  const [digitaxEnv, setDigitaxEnv] = useState<'sandbox' | 'production'>(
+    initialSettings.digitaxEnvironment || 'sandbox'
+  );
   const [isTestingDigitax, setIsTestingDigitax] = useState(false);
   const [isTransmittingTestSale, setIsTransmittingTestSale] = useState(false);
   const [etimsInfo, setEtimsInfo] = useState<DigitaxEtimsInfo | null>(null);
   const [recentDigitaxSales, setRecentDigitaxSales] = useState<DigitaxSaleResponse[]>([]);
+  const [digitaxStatus, setDigitaxStatus] = useState<
+    'checking' | 'connected' | 'unconfigured' | 'error'
+  >('checking');
+  const [digitaxError, setDigitaxError] = useState<string | null>(null);
 
   const [digitaxTestResult, setDigitaxTestResult] = useState<{
     status: 'connected' | 'error';
-    cuSerial: string;
-    sequenceNo: string;
+    cuSerial?: string;
+    sequenceNo?: string;
     timestamp: string;
     endpoint: string;
     taxPin?: string;
-  } | null>({
-    status: 'connected',
-    cuSerial: 'KRARVS000000005',
-    sequenceNo: '1181464',
-    timestamp: new Date().toISOString(),
-    endpoint: 'https://api.digitax.tech/ke/v2/etims-info',
-    taxPin: 'A011001890C',
-  });
-  const [autoTransmitEtims, setAutoTransmitEtims] = useState(true);
+  } | null>(null);
+  const [autoTransmitEtims, setAutoTransmitEtims] = useState(
+    initialSettings.autoTransmitEtims !== false
+  );
   const [generateKraQr, setGenerateKraQr] = useState(true);
 
-  // Auto-fetch eTIMS info on mount
+  // Sync local digitax/tax form defaults when active tenant switches
+  React.useEffect(() => {
+    const nextSettings: BusinessTaxSettings = currentBusiness?.taxSettings || {
+      ...DEFAULT_TAX_SETTINGS,
+      taxNumber: currentBusiness?.taxNumber || DEFAULT_TAX_SETTINGS.taxNumber,
+    };
+    setTaxSettings(nextSettings);
+    setDigitaxEnv(nextSettings.digitaxEnvironment || 'sandbox');
+    setAutoTransmitEtims(nextSettings.autoTransmitEtims !== false);
+  }, [currentBusiness?.id]);
+
+  // Auto-fetch honest eTIMS connection state for selected environment
   React.useEffect(() => {
     let isMounted = true;
-    digitaxService
-      .getEtimsInfo()
-      .then((info) => {
-        if (isMounted && info) {
-          setEtimsInfo(info);
-        }
-      })
-      .catch(() => {});
+    setDigitaxStatus('checking');
+    setDigitaxError(null);
 
-    digitaxService
-      .getSales()
-      .then((sales) => {
-        if (isMounted && Array.isArray(sales)) {
-          setRecentDigitaxSales(sales.slice(0, 5));
-        }
-      })
-      .catch(() => {});
+    Promise.allSettled([
+      digitaxService.getEtimsInfo(digitaxEnv),
+      digitaxService.getSales(digitaxEnv),
+    ]).then(([infoRes, salesRes]) => {
+      if (!isMounted) return;
+
+      if (infoRes.status === 'fulfilled' && infoRes.value) {
+        const info = infoRes.value;
+        const sales = salesRes.status === 'fulfilled' && Array.isArray(salesRes.value) ? salesRes.value : [];
+        setEtimsInfo(info);
+        setRecentDigitaxSales(sales.slice(0, 5));
+        setDigitaxStatus('connected');
+        setDigitaxError(null);
+        setDigitaxTestResult({
+          status: 'connected',
+          cuSerial: sales[0]?.serial_number,
+          sequenceNo: sales[0]?.invoice_number ? String(sales[0].invoice_number) : undefined,
+          timestamp: new Date().toISOString(),
+          endpoint: '/api/digitax/etims-info',
+          taxPin: info.tax_pin,
+        });
+      } else {
+        const reason = infoRes.status === 'rejected' ? infoRes.reason : null;
+        const isNotConfigured =
+          (reason instanceof DigitaxApiError &&
+            (reason.code === 'DIGITAX_NOT_CONFIGURED' || reason.status === 503)) ||
+          String(reason?.message || '').toLowerCase().includes('not configured');
+
+        setEtimsInfo(null);
+        setRecentDigitaxSales([]);
+        setDigitaxTestResult(null);
+        setDigitaxStatus(isNotConfigured ? 'unconfigured' : 'error');
+        setDigitaxError(
+          reason?.message || 'Unable to verify Digitax eTIMS connection with backend gateway.'
+        );
+      }
+    });
 
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [digitaxEnv]);
 
   const handleTestDigitaxPing = async () => {
     setIsTestingDigitax(true);
     soundFx.playBarcodeBeep();
     try {
-      const info = await digitaxService.getEtimsInfo();
+      const info = await digitaxService.getEtimsInfo(digitaxEnv);
       setEtimsInfo(info);
-      const sales = await digitaxService.getSales();
+      const sales = await digitaxService.getSales(digitaxEnv);
       setRecentDigitaxSales(sales.slice(0, 5));
 
-      const activeSeq = sales[0]?.invoice_number ? String(sales[0].invoice_number) : '1181464';
-      const activeSerial = sales[0]?.serial_number || 'KRARVS000000005';
+      const activeSeq = sales[0]?.invoice_number ? String(sales[0].invoice_number) : undefined;
+      const activeSerial = sales[0]?.serial_number || undefined;
 
+      setDigitaxStatus('connected');
+      setDigitaxError(null);
       setDigitaxTestResult({
         status: 'connected',
         cuSerial: activeSerial,
         sequenceNo: activeSeq,
         timestamp: new Date().toISOString(),
-        endpoint: 'https://api.digitax.tech/ke/v2/etims-info',
+        endpoint: '/api/digitax/etims-info',
         taxPin: info.tax_pin,
       });
       soundFx.playSuccess();
       showToast(
-        `Digitax eTIMS Online: PIN ${info.tax_pin} • Branch ${info.branch_office_id} (Handshake 200 OK)`,
+        `Digitax eTIMS Online (${digitaxEnv}): PIN ${info.tax_pin} · Branch ${info.branch_office_id}`,
         'success'
       );
     } catch (err: any) {
       soundFx.playError();
+      const isNotConfigured =
+        (err instanceof DigitaxApiError &&
+          (err.code === 'DIGITAX_NOT_CONFIGURED' || err.status === 503)) ||
+        String(err?.message || '').toLowerCase().includes('not configured');
+      setDigitaxStatus(isNotConfigured ? 'unconfigured' : 'error');
+      setDigitaxError(err?.message || 'Handshake error');
+      setDigitaxTestResult(null);
       showToast(`Digitax eTIMS notice: ${err?.message || 'Handshake error'}`, 'error');
     } finally {
       setIsTestingDigitax(false);
@@ -149,38 +196,82 @@ export const TaxManagementPanel: React.FC = () => {
     setIsTransmittingTestSale(true);
     soundFx.playBarcodeBeep();
     try {
+      // Dynamically lookup or register a 16% VAT diagnostic item (never hardcode external IDs)
+      const catalogItems = await digitaxService.getItems(digitaxEnv);
+      let diagItem = catalogItems.find(
+        (it) =>
+          it.tax_type_code === 'B' &&
+          it.item_name.trim().toLowerCase() === 'diagnostic test item (16% vat)'
+      );
+      if (!diagItem) {
+        diagItem = await digitaxService.registerItem(
+          {
+            item_name: 'Diagnostic Test Item (16% VAT)',
+            tax_type_code: 'B',
+            default_unit_price: 350,
+            is_stock_item: false,
+            package_unit_code: 'CT',
+            quantity_unit_code: 'U',
+            sku: 'DIAG-VAT-16',
+          },
+          digitaxEnv
+        );
+      }
+
       const today = new Date().toISOString().split('T')[0];
-      const invNum = `SOKO-TEST-${Date.now().toString().slice(-4)}`;
+      const invNum = `SOKO-TEST-${Date.now().toString().slice(-6)}`;
       const payload = {
         sale_date: today,
         trader_invoice_number: invNum,
         payment_type_code: '04' as const, // M-Pesa
         invoice_status_code: '02',
-        customer_tin: 'P051289192M',
-        customer_name: 'Kenya Retail Distributors Ltd',
+        customer_name: 'Walk-in Diagnostic Verification',
+        pricing_type: 'inclusive' as const,
+        expected_total: 350,
         items: [
           {
-            id: 'item_01M4WCY79237JRVADVKFB0SMNW', // 16% VAT standard non-stock item
+            id: diagItem.id,
+            sku: 'DIAG-VAT-16',
+            name: 'Diagnostic Test Item (16% VAT)',
             quantity: 1,
             unit_price: 350,
             total_amount: 350,
+            tax_type_code: 'B' as const,
+            tax_rate: 0.16,
+            taxable_amount: 301.72,
+            tax_amount: 48.28,
+            discount_rate: 0,
+            discount_amount: 0,
           },
         ],
       };
 
-      const sale = await digitaxService.createSale(payload);
+      const sale = await digitaxService.createSale(payload, {
+        environment: digitaxEnv,
+        expectedTaxPin: taxSettings.taxNumber,
+      });
       showToast(`Sale transmitted (${sale.trader_invoice_number}). Awaiting KRA signature...`, 'info');
-      
-      const finalSale = await digitaxService.pollSaleCompletion(sale.id);
+
+      const finalSale = await digitaxService.pollSaleCompletion(sale.id, 6, 1200, digitaxEnv);
       soundFx.playSuccess();
       showToast(
-        `KRA eTIMS Validated! CU Serial: ${finalSale.serial_number} • Invoice #${finalSale.invoice_number}`,
+        `KRA eTIMS Verified! CU Serial: ${finalSale.serial_number} • Invoice #${finalSale.invoice_number}`,
         'success'
       );
 
       // Refresh recent sales
-      const sales = await digitaxService.getSales();
+      const sales = await digitaxService.getSales(digitaxEnv);
       setRecentDigitaxSales(sales.slice(0, 5));
+      if (sales[0]) {
+        setDigitaxTestResult({
+          status: 'connected',
+          cuSerial: sales[0].serial_number,
+          sequenceNo: sales[0].invoice_number ? String(sales[0].invoice_number) : undefined,
+          timestamp: new Date().toISOString(),
+          endpoint: '/api/digitax/sales',
+          taxPin: etimsInfo?.tax_pin || taxSettings.taxNumber,
+        });
+      }
     } catch (err: any) {
       soundFx.playError();
       showToast(`Failed to transmit test sale: ${err?.message || 'Transmission error'}`, 'error');
@@ -387,6 +478,8 @@ export const TaxManagementPanel: React.FC = () => {
     try {
       const updatedTaxSettings: BusinessTaxSettings = {
         ...taxSettings,
+        digitaxEnvironment: digitaxEnv,
+        autoTransmitEtims,
         updatedAt: new Date().toISOString(),
       };
 
@@ -592,7 +685,27 @@ export const TaxManagementPanel: React.FC = () => {
               <span className="text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
               <span className="text-slate-600 dark:text-slate-400">Digitax Partner Integration</span>
               <span className="text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
-              <span className="text-emerald-700 dark:text-emerald-400 font-medium">API Connected</span>
+              {digitaxStatus === 'connected' ? (
+                <span className="text-emerald-700 dark:text-emerald-400 font-medium inline-flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>Gateway Connected</span>
+                </span>
+              ) : digitaxStatus === 'checking' ? (
+                <span className="text-slate-500 dark:text-slate-400 font-medium inline-flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 shrink-0" />
+                  <span>Checking Gateway...</span>
+                </span>
+              ) : digitaxStatus === 'unconfigured' ? (
+                <span className="text-amber-700 dark:text-amber-400 font-medium inline-flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>API Key Not Configured</span>
+                </span>
+              ) : (
+                <span className="text-rose-700 dark:text-rose-400 font-medium inline-flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>Gateway Offline</span>
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Automated Control Unit (CU) invoice signing and KRA verification QR generation via Digitax.
@@ -606,7 +719,7 @@ export const TaxManagementPanel: React.FC = () => {
               disabled={isTestingDigitax}
               onClick={handleTestDigitaxPing}
               className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 text-slate-700 dark:text-slate-200 font-medium text-xs transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-              title="Ping Digitax eTIMS sandbox server to verify KRA transmission"
+              title="Ping Digitax eTIMS server to verify KRA gateway connection"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isTestingDigitax ? 'animate-spin' : ''}`} />
               <span>{isTestingDigitax ? 'Testing Ping...' : 'Test Digitax Ping'}</span>
@@ -615,7 +728,7 @@ export const TaxManagementPanel: React.FC = () => {
             <button
               type="button"
               id="transmit-digitax-test-sale-btn"
-              disabled={isTransmittingTestSale}
+              disabled={isTransmittingTestSale || digitaxStatus === 'unconfigured'}
               onClick={handleTransmitTestSale}
               className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium text-xs transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
               title="Transmit a live compliant test sale to KRA eTIMS via Digitax"
@@ -665,18 +778,24 @@ export const TaxManagementPanel: React.FC = () => {
           <div className="p-3.5">
             <div className="text-[11px] text-slate-500 dark:text-slate-400">Virtual CU Serial</div>
             <div className="font-mono tabular-nums font-semibold text-slate-900 dark:text-slate-100 mt-0.5">
-              {digitaxTestResult?.cuSerial || 'KRARVS000000005'}
+              {digitaxTestResult?.cuSerial || 'Awaiting CU sync'}
             </div>
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Certified Device Unit</div>
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+              {digitaxTestResult?.cuSerial ? 'Certified Device Unit' : 'Run ping or sale to fetch'}
+            </div>
           </div>
 
           <div className="p-3.5">
             <div className="text-[11px] text-slate-500 dark:text-slate-400">Registered Tax PIN</div>
             <div className="font-mono tabular-nums font-semibold text-slate-900 dark:text-slate-100 mt-0.5">
-              {etimsInfo?.tax_pin || taxSettings.taxNumber || 'A011001890C'}
+              {etimsInfo?.tax_pin || taxSettings.taxNumber || 'Not configured'}
             </div>
             <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
-              Branch {etimsInfo?.branch_office_id || '01'} · Active
+              {etimsInfo?.branch_office_id
+                ? `Branch ${etimsInfo.branch_office_id} · Active`
+                : digitaxStatus === 'unconfigured'
+                ? 'Gateway offline'
+                : 'Tenant PIN profile'}
             </div>
           </div>
         </div>
@@ -691,10 +810,10 @@ export const TaxManagementPanel: React.FC = () => {
             />
             <div>
               <div className="font-semibold text-slate-800 dark:text-slate-200">
-                Auto-Transmit Sales via Digitax API
+                Auto-Transmit Sales & Credit Notes via Digitax API
               </div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                Submits signed itemized fiscal invoices upon checkout completion.
+                Submits signed itemized fiscal invoices & refund Credit Notes upon completion.
               </div>
             </div>
           </label>
@@ -711,21 +830,44 @@ export const TaxManagementPanel: React.FC = () => {
                 Embed KRA Verification QR Codes
               </div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                Prints verifiable KRA QR code and CU sequence on receipts.
+                Prints verifiable KRA QR code and CU sequence on receipts once signed.
               </div>
             </div>
           </label>
         </div>
 
-        {digitaxTestResult && (
+        {digitaxStatus === 'connected' && digitaxTestResult && (
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono tabular-nums text-emerald-700 dark:text-emerald-400 px-3 py-2 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900">
             <span className="inline-flex items-center gap-1.5">
               <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              Digitax Handshake 200 OK · CU Invoice {digitaxTestResult.sequenceNo}
+              Digitax Handshake 200 OK ·{' '}
+              {digitaxTestResult.sequenceNo
+                ? `Latest CU Invoice ${digitaxTestResult.sequenceNo}`
+                : 'Ready to fiscalize sales'}
             </span>
             <span className="text-slate-500 dark:text-slate-400">
               {new Date(digitaxTestResult.timestamp).toLocaleTimeString()}
             </span>
+          </div>
+        )}
+
+        {(digitaxStatus === 'unconfigured' || digitaxStatus === 'error') && digitaxError && (
+          <div
+            className={`flex items-start gap-2 text-xs px-3 py-2.5 rounded-lg border ${
+              digitaxStatus === 'unconfigured'
+                ? 'bg-amber-50/80 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900 text-amber-900 dark:text-amber-300'
+                : 'bg-rose-50/80 dark:bg-rose-950/30 border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-300'
+            }`}
+          >
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-semibold">
+                {digitaxStatus === 'unconfigured'
+                  ? 'Digitax Server Credentials Required'
+                  : 'Digitax Connection Notice'}
+              </div>
+              <p className="text-[11px] mt-0.5 opacity-90">{digitaxError}</p>
+            </div>
           </div>
         )}
 

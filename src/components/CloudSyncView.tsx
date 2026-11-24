@@ -24,7 +24,13 @@ import { OutboxMutationEntry } from '../types/storage';
 import { OutboxPayloadDrawer } from './cloud-sync/OutboxPayloadDrawer';
 import { isSuperAdminEmail } from '../data/initialData';
 
-type OutboxFilterTab = 'all' | 'pending' | 'dead_letter';
+type OutboxFilterTab = 'all' | 'pending' | 'etims' | 'dead_letter';
+
+function formatOutboxCollectionTag(collectionName: string): string | null {
+  if (collectionName === 'etims_sales') return 'KRA eTIMS Sale';
+  if (collectionName === 'etims_credit_notes') return 'KRA Credit Note';
+  return null;
+}
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
@@ -88,6 +94,13 @@ export const CloudSyncView: React.FC = () => {
     return outboxItems.filter((item) => {
       if (outboxFilter === 'dead_letter' && item.status !== 'dead_letter') return false;
       if (outboxFilter === 'pending' && item.status === 'dead_letter') return false;
+      if (
+        outboxFilter === 'etims' &&
+        item.collectionName !== 'etims_sales' &&
+        item.collectionName !== 'etims_credit_notes'
+      ) {
+        return false;
+      }
       if (!q) return true;
       return (
         (item.label || '').toLowerCase().includes(q) ||
@@ -98,6 +111,15 @@ export const CloudSyncView: React.FC = () => {
       );
     });
   }, [outboxItems, outboxFilter, outboxSearch]);
+
+  const etimsOutboxCount = useMemo(
+    () =>
+      outboxItems.filter(
+        (item) =>
+          item.collectionName === 'etims_sales' || item.collectionName === 'etims_credit_notes'
+      ).length,
+    [outboxItems]
+  );
 
   const handleSeed = async () => {
     setIsSeeding(true);
@@ -349,6 +371,7 @@ export const CloudSyncView: React.FC = () => {
                 [
                   { id: 'all', label: `All (${outboxItems.length})` },
                   { id: 'pending', label: `Pending & Retrying (${pendingOutboxCount})` },
+                  { id: 'etims', label: `KRA eTIMS (${etimsOutboxCount})` },
                   { id: 'dead_letter', label: `Dead-Letter (${deadLetterCount})` },
                 ] as const
               ).map((tab) => (
@@ -414,21 +437,27 @@ export const CloudSyncView: React.FC = () => {
                         0,
                         Math.ceil((item.nextRetryAt - Date.now()) / 1000)
                       );
+                      const etimsTag = formatOutboxCollectionTag(item.collectionName);
                       return (
                         <tr
                           key={item.id}
                           className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition"
                         >
                           <td className="py-3 px-4">
-                            <div className="font-semibold text-slate-900 dark:text-white">
-                              {item.label || item.docId}
+                            <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                              <span>{item.label || item.docId}</span>
+                              {etimsTag && (
+                                <span className="text-[11px] font-medium text-blue-700 dark:text-blue-400">
+                                  · {etimsTag}
+                                </span>
+                              )}
                             </div>
                             <div className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
                               {item.collectionName}/{item.docId}
                             </div>
                           </td>
                           <td className="py-3 px-4 font-mono uppercase text-[11px] text-slate-700 dark:text-slate-300">
-                            {item.operation}
+                            {etimsTag || item.operation}
                           </td>
                           <td className="py-3 px-4">
                             <div
@@ -506,12 +535,14 @@ export const CloudSyncView: React.FC = () => {
               <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
                 {filteredOutbox.map((item) => {
                   const isDead = item.status === 'dead_letter';
+                  const etimsTag = formatOutboxCollectionTag(item.collectionName);
                   return (
                     <div key={item.id} className="p-4 space-y-2.5 text-xs">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="font-semibold text-slate-900 dark:text-white truncate">
                             {item.label || item.docId}
+                            {etimsTag ? ` · ${etimsTag}` : ''}
                           </p>
                           <p className="font-mono text-[11px] text-slate-500 dark:text-slate-400 truncate">
                             {item.operation.toUpperCase()} · {item.collectionName}/{item.docId}

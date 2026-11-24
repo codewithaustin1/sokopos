@@ -68,7 +68,14 @@ export function formatTransactionReceiptText(
 
   lines.push('----------------------------------------');
   lines.push(`Subtotal: ${currency} ${transaction.subtotal.toFixed(2)}`);
-  lines.push(`VAT (16%): ${currency} ${transaction.taxAmount.toFixed(2)}`);
+  const taxMode = transaction.pricingType === 'exclusive' ? 'Exclusive' : 'Inclusive';
+  const taxTitle = transaction.taxLabel || 'Tax';
+  lines.push(`${taxTitle} (${taxMode}): ${currency} ${transaction.taxAmount.toFixed(2)}`);
+  if (transaction.taxBreakdown && transaction.taxBreakdown.length > 0) {
+    transaction.taxBreakdown.forEach((tb) => {
+      lines.push(` - [${tb.code}] ${tb.name} (${tb.ratePercent}%): ${currency} ${tb.taxAmount.toFixed(2)}`);
+    });
+  }
 
   if (transaction.roundingAmount && transaction.roundingAmount !== 0) {
     const sign = transaction.roundingAmount >= 0 ? '+' : '';
@@ -101,16 +108,28 @@ export function formatTransactionReceiptText(
   }
 
   lines.push('----------------------------------------');
-  lines.push('KRA eTIMS FISCAL RECEIPT');
-  lines.push(`CU Serial: ${transaction.etimsData?.cuSerialNumber || 'KRARVS000000005'}`);
-  lines.push(`CU Invoice: ${transaction.etimsData?.cuInvoiceNumber || ('1181' + transaction.receiptNumber.slice(-4))}`);
-  if (transaction.etimsData?.receiptSignature) {
-    lines.push(`KRA Signature: ${transaction.etimsData.receiptSignature}`);
+  const etims = transaction.etimsData;
+  const isEtimsVerified =
+    etims?.status === 'COMPLETED' &&
+    Boolean(etims?.isPartnerVerified || etims?.receiptSignature || etims?.cuInvoiceNumber);
+
+  if (isEtimsVerified) {
+    lines.push('KRA eTIMS FISCAL RECEIPT (VERIFIED)');
+    if (etims?.cuSerialNumber) lines.push(`CU Serial: ${etims.cuSerialNumber}`);
+    if (etims?.cuInvoiceNumber !== undefined) lines.push(`CU Invoice: ${etims.cuInvoiceNumber}`);
+    if (etims?.receiptNumber !== undefined) lines.push(`Fiscal Receipt: ${etims.receiptNumber}`);
+    if (etims?.receiptSignature) lines.push(`KRA Signature: ${etims.receiptSignature}`);
+    if (etims?.etimsUrl || etims?.offlineUrl) {
+      lines.push(`KRA Verify: ${etims.etimsUrl || etims.offlineUrl}`);
+    }
+    lines.push('Verified via Digitax Technologies (KRA Partner)');
+  } else if (etims?.status === 'FAILED') {
+    lines.push('KRA eTIMS: SYNC ATTENTION REQUIRED');
+    lines.push(`Trader Invoice: ${etims?.traderInvoiceNumber || transaction.receiptNumber}`);
+  } else {
+    lines.push('KRA eTIMS: PENDING FISCALIZATION (Queued)');
+    lines.push(`Trader Invoice: ${etims?.traderInvoiceNumber || transaction.receiptNumber}`);
   }
-  if (transaction.etimsData?.etimsUrl) {
-    lines.push(`KRA Verify: ${transaction.etimsData.etimsUrl}`);
-  }
-  lines.push('Validated via Digitax Technologies (KRA Partner)');
   lines.push('Thank you for shopping with us! • Asante!');
   lines.push('Powered by SokoPoS in partnership with Digitax');
 
@@ -128,6 +147,15 @@ export function formatRefundVoucherText(
     totalRefund: number;
     customerName?: string;
     customerPhone?: string;
+    etimsCreditNote?: {
+      status?: 'PENDING' | 'COMPLETED' | 'FAILED';
+      cuSerialNumber?: string;
+      cuInvoiceNumber?: number | string;
+      receiptSignature?: string;
+      etimsUrl?: string;
+      offlineUrl?: string;
+      reasonCode?: string;
+    };
     items: Array<{
       productName: string;
       quantity: number;
@@ -173,6 +201,19 @@ export function formatRefundVoucherText(
   lines.push('----------------------------------------');
   lines.push(`TOTAL REFUNDED: -${currency} ${refund.totalRefund.toFixed(2)}`);
   lines.push('----------------------------------------');
+  const cn = refund.etimsCreditNote;
+  if (cn?.status === 'COMPLETED' && (cn.cuInvoiceNumber || cn.receiptSignature || cn.etimsUrl)) {
+    lines.push('KRA eTIMS CREDIT NOTE (VERIFIED)');
+    if (cn.cuSerialNumber) lines.push(`CU Serial: ${cn.cuSerialNumber}`);
+    if (cn.cuInvoiceNumber !== undefined) lines.push(`CU Credit Note: ${cn.cuInvoiceNumber}`);
+    if (cn.reasonCode) lines.push(`KRA Reason Code: ${cn.reasonCode}`);
+    if (cn.receiptSignature) lines.push(`KRA Signature: ${cn.receiptSignature}`);
+    if (cn.etimsUrl || cn.offlineUrl) lines.push(`KRA Verify: ${cn.etimsUrl || cn.offlineUrl}`);
+  } else if (cn?.status === 'FAILED') {
+    lines.push('KRA CREDIT NOTE: SYNC ATTENTION REQUIRED');
+  } else if (cn?.status === 'PENDING') {
+    lines.push('KRA CREDIT NOTE: PENDING FISCALIZATION');
+  }
   lines.push('Customer copy');
   lines.push('Powered by Sokoplus Horizon');
 

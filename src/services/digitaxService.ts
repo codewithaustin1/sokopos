@@ -283,6 +283,8 @@ class DigitaxService {
       etimsItemCode?: string;
       taxTypeCode: KraTaxTypeCode;
       itemClassCode?: string;
+      packageUnitCode?: string;
+      quantityUnitCode?: string;
       digitaxSyncedAt: string;
     }>;
   }> {
@@ -293,6 +295,8 @@ class DigitaxService {
       etimsItemCode?: string;
       taxTypeCode: KraTaxTypeCode;
       itemClassCode?: string;
+      packageUnitCode?: string;
+      quantityUnitCode?: string;
       digitaxSyncedAt: string;
     }> = [];
 
@@ -303,6 +307,8 @@ class DigitaxService {
       unitPrice: number;
       taxTypeCode: KraTaxTypeCode;
       itemClassCode?: string;
+      packageUnitCode?: string;
+      quantityUnitCode?: string;
     }> = [];
 
     for (const item of params.items) {
@@ -338,6 +344,8 @@ class DigitaxService {
           etimsItemCode: memMatch.etims_item_code,
           taxTypeCode,
           itemClassCode: memMatch.item_class_code,
+          packageUnitCode: memMatch.package_unit_code,
+          quantityUnitCode: memMatch.quantity_unit_code,
           digitaxSyncedAt: new Date().toISOString(),
         });
         continue;
@@ -350,6 +358,8 @@ class DigitaxService {
         unitPrice: prod?.sellingPrice ?? item.unitPrice,
         taxTypeCode,
         itemClassCode: prod?.itemClassCode,
+        packageUnitCode: prod?.packageUnitCode,
+        quantityUnitCode: prod?.quantityUnitCode,
       });
     }
 
@@ -382,6 +392,8 @@ class DigitaxService {
           etimsItemCode: remoteMatch.etims_item_code,
           taxTypeCode: entry.taxTypeCode,
           itemClassCode: remoteMatch.item_class_code,
+          packageUnitCode: remoteMatch.package_unit_code,
+          quantityUnitCode: remoteMatch.quantity_unit_code,
           digitaxSyncedAt: new Date().toISOString(),
         });
         continue;
@@ -392,6 +404,8 @@ class DigitaxService {
           item_name: entry.name,
           item_class_code: entry.itemClassCode,
           tax_type_code: entry.taxTypeCode,
+          package_unit_code: entry.packageUnitCode,
+          quantity_unit_code: entry.quantityUnitCode,
           default_unit_price: entry.unitPrice,
           is_stock_item: true,
           sku: entry.sku,
@@ -414,6 +428,8 @@ class DigitaxService {
         etimsItemCode: created.etims_item_code,
         taxTypeCode: entry.taxTypeCode,
         itemClassCode: created.item_class_code,
+        packageUnitCode: created.package_unit_code,
+        quantityUnitCode: created.quantity_unit_code,
         digitaxSyncedAt: new Date().toISOString(),
       });
     }

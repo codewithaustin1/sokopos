@@ -356,6 +356,8 @@ export interface Product {
   etimsItemCode?: string;
   taxTypeCode?: KraTaxTypeCode;
   itemClassCode?: string;
+  packageUnitCode?: string;
+  quantityUnitCode?: string;
   digitaxSyncedAt?: string;
   updatedAt?: string;
   isDeleted?: boolean;
@@ -405,6 +407,7 @@ export interface RefundItem {
   quantity: number;
   unitPrice: number;
   taxRate: number;
+  taxTypeCode?: KraTaxTypeCode;
   refundUnitAmount: number;
   refundTotalAmount: number;
   restockToInventory: boolean;

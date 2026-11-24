@@ -427,20 +427,41 @@ export function buildDigitaxCreditNotePayload(params: {
       taxRate: resolvedTax.rate,
       ruleCode: resolvedTax.code,
       ruleName: resolvedTax.ruleName,
-      explicitTaxTypeCode: origLine?.taxTypeCode || prod?.taxTypeCode,
+      explicitTaxTypeCode: ri.taxTypeCode || origLine?.taxTypeCode || prod?.taxTypeCode,
     });
 
     const totalAmount = roundCurrency2(ri.refundTotalAmount);
-    const unitPrice = roundCurrency2(ri.refundUnitAmount);
-    const origUnit = roundCurrency2(ri.unitPrice);
-    const discountPerUnit = Math.max(0, origUnit - unitPrice);
-    const discountRate = origUnit > 0 ? roundCurrency2((discountPerUnit / origUnit) * 100) : 0;
-    const discountAmount = roundCurrency2(discountPerUnit * ri.quantity);
+    const qty = Math.max(0.0001, Number(ri.quantity || 1));
+    const unitPrice = roundCurrency2(totalAmount / qty);
+
+    let discountRate = 0;
+    let discountAmount = 0;
+    if (origLine) {
+      const origLineCalc = computeLineTaxAndNetTotals({
+        item: {
+          unitPrice: origLine.unitPrice,
+          quantity: qty,
+          discountPercent: origLine.discountPercent,
+          discountAmount: origLine.discountAmount ? roundCurrency2((origLine.discountAmount / Math.max(0.0001, origLine.quantity)) * qty) : undefined,
+          discountType: origLine.discountType,
+        },
+        taxRate: resolvedTax.rate,
+        pricingType,
+      });
+      discountRate = origLineCalc.discountRatePct;
+      discountAmount = origLineCalc.discountAmount;
+    } else {
+      const origGrossUnit =
+        pricingType === 'exclusive'
+          ? roundCurrency2(ri.unitPrice * (1 + resolvedTax.rate))
+          : roundCurrency2(ri.unitPrice);
+      const discountPerUnit = Math.max(0, origGrossUnit - unitPrice);
+      discountRate = origGrossUnit > 0 ? roundCurrency2((discountPerUnit / origGrossUnit) * 100) : 0;
+      discountAmount = roundCurrency2(discountPerUnit * qty);
+    }
 
     const taxableAmount =
-      pricingType === 'exclusive'
-        ? roundCurrency2(totalAmount / (1 + resolvedTax.rate))
-        : resolvedTax.rate > 0
+      resolvedTax.rate > 0
         ? roundCurrency2(totalAmount / (1 + resolvedTax.rate))
         : totalAmount;
     const taxAmount = roundCurrency2(totalAmount - taxableAmount);

@@ -114,6 +114,8 @@
         "etimsItemCode": { "type": "string", "maxLength": 64 },
         "taxTypeCode": { "type": "string", "enum": ["A", "B", "C", "D", "E"] },
         "itemClassCode": { "type": "string", "maxLength": 64 },
+        "packageUnitCode": { "type": "string", "maxLength": 16 },
+        "quantityUnitCode": { "type": "string", "maxLength": 16 },
         "digitaxSyncedAt": { "type": "string", "maxLength": 64 },
         "updatedAt": { "type": "string" },
         "isDeleted": { "type": "boolean" }
@@ -171,7 +173,41 @@
             "status": { "type": "string", "enum": ["PENDING", "COMPLETED", "FAILED"] },
             "taxPin": { "type": "string" },
             "customerTin": { "type": "string" },
+            "attemptCount": { "type": "number" },
+            "lastAttemptAt": { "type": "string" },
             "lastError": { "type": "string" }
+          }
+        },
+        "refunds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "refundNumber": { "type": "string" },
+              "totalRefund": { "type": "number" },
+              "etimsCreditNote": {
+                "type": "object",
+                "properties": {
+                  "creditNoteId": { "type": "string" },
+                  "saleId": { "type": "string" },
+                  "originalTraderInvoiceNumber": { "type": "string" },
+                  "traderInvoiceNumber": { "type": "string" },
+                  "cuSerialNumber": { "type": "string" },
+                  "cuInvoiceNumber": { "type": "string" },
+                  "receiptNumber": { "type": "string" },
+                  "receiptSignature": { "type": "string" },
+                  "internalData": { "type": "string" },
+                  "etimsUrl": { "type": "string" },
+                  "offlineUrl": { "type": "string" },
+                  "reasonCode": { "type": "string", "enum": ["01", "02", "03", "04", "05", "06"] },
+                  "status": { "type": "string", "enum": ["PENDING", "COMPLETED", "FAILED"] },
+                  "attemptCount": { "type": "number" },
+                  "lastAttemptAt": { "type": "string" },
+                  "lastError": { "type": "string" }
+                }
+              }
+            }
           }
         }
       },

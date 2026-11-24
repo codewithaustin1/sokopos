@@ -2,7 +2,16 @@ import { calculatePaymentGuardrails } from '../src/utils/cashRounding';
 import { getItemDiscountedUnitPrice } from '../src/utils/discountUtils';
 import { calculateSalesReport } from '../src/utils/reportCalculations';
 import { calculateDateRange } from '../src/utils/dateRangeUtils';
-import { Transaction, Product } from '../src/types';
+import {
+  resolveKraTaxTypeCode,
+  normalizeAndValidateKraPin,
+  mapPaymentMethodToKraCode,
+  buildDigitaxSalePayload,
+  buildDigitaxCreditNotePayload,
+  verifyDigitaxSalePayloadServerSide,
+  verifyDigitaxCreditNotePayloadServerSide,
+} from '../src/utils/etimsFiscalMapper';
+import { Transaction, Product, RefundRecord, BusinessTaxSettings } from '../src/types';
 
 interface TestResult {
   category: string;
@@ -289,6 +298,326 @@ console.log('================================================================\n'
   assert(cat, 'Sales Report Gross Sales Summation (360 + 250 = 610)', salesReport.grossSales === 610, `Gross: ${salesReport.grossSales}`);
   assert(cat, 'Sales Report Order Count (2 orders)', salesReport.orderCount === 2, `Orders: ${salesReport.orderCount}`);
   assert(cat, 'Sales Report Total Items Sold (3 items)', salesReport.totalItemsSold === 3, `Items sold: ${salesReport.totalItemsSold}`);
+}
+
+// -----------------------------------------------------------------------------
+// 8. KRA eTIMS TAX CLASS, PIN & PAYMENT CODE MAPPING TEST
+// -----------------------------------------------------------------------------
+{
+  const cat = '8. KRA eTIMS Tax Class, PIN & Tender Mapping';
+
+  assert(cat, '16% Standard VAT maps to KRA Class B', resolveKraTaxTypeCode({ taxRate: 0.16, ruleCode: 'A' }) === 'B', `Resolved: ${resolveKraTaxTypeCode({ taxRate: 0.16, ruleCode: 'A' })}`);
+  assert(cat, '8% Concession VAT maps to KRA Class E', resolveKraTaxTypeCode({ taxRate: 0.08 }) === 'E', `Resolved: ${resolveKraTaxTypeCode({ taxRate: 0.08 })}`);
+  assert(cat, '0% Zero-Rated Food maps to KRA Class C', resolveKraTaxTypeCode({ taxRate: 0, ruleName: 'Zero-Rated Staples' }) === 'C', `Resolved: ${resolveKraTaxTypeCode({ taxRate: 0, ruleName: 'Zero-Rated Staples' })}`);
+  assert(cat, '0% Tax Exempt maps to KRA Class A', resolveKraTaxTypeCode({ taxRate: 0, ruleName: 'Exempt Medical' }) === 'A', `Resolved: ${resolveKraTaxTypeCode({ taxRate: 0, ruleName: 'Exempt Medical' })}`);
+  assert(cat, '0% Non-VAT maps to KRA Class D', resolveKraTaxTypeCode({ taxRate: 0, ruleName: 'Non-VAT Duty-Free' }) === 'D', `Resolved: ${resolveKraTaxTypeCode({ taxRate: 0, ruleName: 'Non-VAT Duty-Free' })}`);
+
+  const validPin = normalizeAndValidateKraPin(' p051289192m ');
+  assert(cat, 'Valid KRA PIN normalized & accepted', validPin.isValid && validPin.normalized === 'P051289192M', `Normalized: ${validPin.normalized}`);
+
+  const invalidPin = normalizeAndValidateKraPin('INVALID123');
+  assert(cat, 'Invalid KRA PIN rejected', !invalidPin.isValid, 'Rejected INVALID123');
+
+  assert(cat, 'Cash -> KRA code 01', mapPaymentMethodToKraCode('cash') === '01', '01');
+  assert(cat, 'Card -> KRA code 02', mapPaymentMethodToKraCode('card') === '02', '02');
+  assert(cat, 'Store Credit -> KRA code 03', mapPaymentMethodToKraCode('store_credit') === '03', '03');
+  assert(cat, 'M-Pesa -> KRA code 04', mapPaymentMethodToKraCode('mpesa') === '04', '04');
+  assert(
+    cat,
+    'Split Tender selects largest leg (M-Pesa 04 > Cash 01)',
+    mapPaymentMethodToKraCode('split', [
+      { id: 's1', method: 'cash', amount: 200 },
+      { id: 's2', method: 'mpesa', amount: 800 },
+    ]) === '04',
+    'Primary split tender selected'
+  );
+}
+
+// -----------------------------------------------------------------------------
+// 9. DIGITAX SALE PAYLOAD & SERVER-SIDE MATH VERIFICATION TEST
+// -----------------------------------------------------------------------------
+{
+  const cat = '9. Digitax Itemized Sale & Server Verifier';
+
+  const catalog: Product[] = [
+    {
+      id: 'p-oil',
+      businessId: 'biz-1',
+      sku: 'OIL-1L',
+      barcode: '616001',
+      unit: 'bottle',
+      name: 'Cooking Oil 1L',
+      category: 'Oils',
+      buyingPrice: 200,
+      sellingPrice: 290,
+      taxRate: 0.16,
+      taxTypeCode: 'B',
+      digitaxItemId: 'item_oil_123',
+      reorderPoint: 10,
+      stockByLocation: { 'loc-1': 20 },
+    },
+    {
+      id: 'p-flour',
+      businessId: 'biz-1',
+      sku: 'FLR-2K',
+      barcode: '616002',
+      unit: 'packet',
+      name: 'Maize Flour 2kg',
+      category: 'Flour & Grains',
+      buyingPrice: 120,
+      sellingPrice: 150,
+      taxRate: 0,
+      taxTypeCode: 'C',
+      digitaxItemId: 'item_flour_456',
+      reorderPoint: 10,
+      stockByLocation: { 'loc-1': 30 },
+    },
+  ];
+
+  const taxSettings: BusinessTaxSettings = {
+    taxLabel: 'VAT',
+    defaultTaxRate: 0.16,
+    taxNumber: 'P051234567Z',
+    pricingType: 'inclusive',
+    enableDynamicCategoryTax: true,
+    enableDynamicRegionalTax: false,
+    rules: [
+      { id: 'r1', name: 'Zero-Rated Flour', code: 'C', rate: 0, scope: 'category', targetCategory: 'Flour & Grains', isActive: true },
+    ],
+  };
+
+  // Case A: Inclusive pricing with % discount, flat discount & half-up cash rounding (-0.49)
+  // Item 1: 2 * 290 with 10% discount => unit 261 => line = 522.00 (16% B)
+  // Item 2: 1 * 150.49 with KES 20 flat discount => line = 130.49 (0% C)
+  // Raw total = 652.49 -> Cash half-up payable = 652.00 (roundingAmount = -0.49)
+  const saleInclusive = buildDigitaxSalePayload({
+    tx: {
+      receiptNumber: 'SOK-1001',
+      timestamp: '2026-11-23T12:00:00.000Z',
+      locationId: 'loc-1',
+      subtotal: 580.49,
+      taxAmount: 72.0,
+      roundingAmount: -0.49,
+      total: 652.0,
+      pricingType: 'inclusive',
+      paymentMethod: 'cash',
+      customerName: 'Acme Buyer Ltd',
+      items: [
+        {
+          productId: 'p-oil',
+          productName: 'Cooking Oil 1L',
+          sku: 'OIL-1L',
+          barcode: '616001',
+          unitPrice: 290,
+          quantity: 2,
+          taxRate: 0.16,
+          discountPercent: 10,
+          discountAmount: 0,
+          discountType: 'percentage',
+        },
+        {
+          productId: 'p-flour',
+          productName: 'Maize Flour 2kg',
+          sku: 'FLR-2K',
+          barcode: '616002',
+          unitPrice: 150.49,
+          quantity: 1,
+          taxRate: 0,
+          discountPercent: 0,
+          discountAmount: 20,
+          discountType: 'flat',
+        },
+      ],
+    },
+    productsCatalog: catalog,
+    resolvedItemIdsByProductId: { 'p-oil': 'item_oil_123', 'p-flour': 'item_flour_456' },
+    taxSettings,
+    buyerPin: 'P051289192M',
+  });
+
+  const inclusiveVerification = verifyDigitaxSalePayloadServerSide(saleInclusive);
+  assert(
+    cat,
+    'Inclusive Multi-SKU + Discounts + Cash Rounding Sale Verifies Cleanly',
+    inclusiveVerification.valid && inclusiveVerification.computedTotal === 652.0 && saleInclusive.items.every((i) => i.total_amount > 0),
+    `Valid: ${inclusiveVerification.valid}, Total: ${inclusiveVerification.computedTotal}, Errors: ${inclusiveVerification.errors.join('; ')}`
+  );
+
+  // Case B: Exclusive pricing (net unit price + 16% added on top)
+  const saleExclusive = buildDigitaxSalePayload({
+    tx: {
+      receiptNumber: 'SOK-1002',
+      timestamp: '2026-11-23T12:05:00.000Z',
+      locationId: 'loc-1',
+      subtotal: 500,
+      taxAmount: 80,
+      roundingAmount: 0,
+      total: 580,
+      pricingType: 'exclusive',
+      paymentMethod: 'mpesa',
+      items: [
+        {
+          productId: 'p-oil',
+          productName: 'Cooking Oil 1L',
+          sku: 'OIL-1L',
+          barcode: '616001',
+          unitPrice: 250,
+          quantity: 2,
+          taxRate: 0.16,
+          discountPercent: 0,
+          discountAmount: 0,
+          discountType: 'percentage',
+        },
+      ],
+    },
+    productsCatalog: catalog,
+    resolvedItemIdsByProductId: { 'p-oil': 'item_oil_123' },
+    taxSettings: { ...taxSettings, pricingType: 'exclusive' },
+  });
+  const exclusiveVerification = verifyDigitaxSalePayloadServerSide(saleExclusive);
+  assert(
+    cat,
+    'Tax-Exclusive Itemized Sale Math Verifies (500 + 80 = 580)',
+    exclusiveVerification.valid && exclusiveVerification.computedTax === 80 && exclusiveVerification.computedTotal === 580,
+    `Tax: ${exclusiveVerification.computedTax}, Total: ${exclusiveVerification.computedTotal}`
+  );
+
+  // Rejection Cases on Server Verifier
+  const tamperedTotal = { ...saleInclusive, expected_total: 9999 };
+  assert(cat, 'Verifier Rejects Tampered Invoice Total', !verifyDigitaxSalePayloadServerSide(tamperedTotal).valid, 'Tampered total blocked');
+
+  const missingItemId = {
+    ...saleInclusive,
+    items: [{ ...saleInclusive.items[0], id: '' }],
+  };
+  assert(cat, 'Verifier Rejects Missing Digitax Item ID', !verifyDigitaxSalePayloadServerSide(missingItemId).valid, 'Missing item ID blocked');
+
+  const negativePrice = {
+    ...saleInclusive,
+    items: [{ ...saleInclusive.items[0], unit_price: -50 }],
+  };
+  assert(cat, 'Verifier Rejects Negative Unit Price', !verifyDigitaxSalePayloadServerSide(negativePrice).valid, 'Negative unit price blocked');
+
+  const badBuyerPin = { ...saleInclusive, customer_pin: 'BADPIN' };
+  assert(cat, 'Verifier Rejects Malformed Buyer KRA PIN', !verifyDigitaxSalePayloadServerSide(badBuyerPin).valid, 'Malformed PIN blocked');
+
+  const wrongTaxClass = {
+    ...saleInclusive,
+    expected_total: 522,
+    items: [{ ...saleInclusive.items[0], tax_type_code: 'C' }], // claims 0% C while tax_amount > 0
+  };
+  assert(cat, 'Verifier Rejects Mismatched Tax Class Math', !verifyDigitaxSalePayloadServerSide(wrongTaxClass).valid, 'Tax class mismatch blocked');
+}
+
+// -----------------------------------------------------------------------------
+// 10. KRA CREDIT NOTE ON REFUND BUILD & VERIFICATION TEST
+// -----------------------------------------------------------------------------
+{
+  const cat = '10. Automated KRA Credit Note on Refund';
+
+  const refundDamaged: RefundRecord = {
+    id: 'ref-1',
+    refundNumber: 'CRN-1001',
+    transactionId: 'tx-1001',
+    receiptNumber: 'SOK-1001',
+    timestamp: '2026-11-23T13:00:00.000Z',
+    cashierId: 'c1',
+    cashierName: 'Grace M.',
+    locationId: 'loc-1',
+    locationName: 'Main Store',
+    refundMethod: 'mpesa',
+    refundReason: 'Defective / Damaged Item',
+    items: [
+      {
+        productId: 'p-oil',
+        productName: 'Cooking Oil 1L',
+        sku: 'OIL-1L',
+        quantity: 1,
+        unitPrice: 290,
+        taxRate: 0.16,
+        taxTypeCode: 'B',
+        refundUnitAmount: 261, // net of 10% original discount
+        refundTotalAmount: 261,
+        restockToInventory: false,
+        restockLocationId: 'loc-1',
+        reason: 'Defective / Damaged Item',
+      },
+    ],
+    subtotalRefund: 225,
+    taxRefund: 36,
+    totalRefund: 261,
+  };
+
+  const cnPayloadDamaged = buildDigitaxCreditNotePayload({
+    refund: refundDamaged,
+    originalTx: {
+      receiptNumber: 'SOK-1001',
+      locationId: 'loc-1',
+      pricingType: 'inclusive',
+      items: [
+        {
+          productId: 'p-oil',
+          productName: 'Cooking Oil 1L',
+          sku: 'OIL-1L',
+          barcode: '616001',
+          unitPrice: 290,
+          quantity: 2,
+          taxRate: 0.16,
+          taxTypeCode: 'B',
+          discountPercent: 10,
+          discountAmount: 0,
+          discountType: 'percentage',
+        },
+      ],
+      etimsData: {
+        saleId: 'sale_01ABC',
+        traderInvoiceNumber: 'SOKO-SOK-1001',
+        cuInvoiceNumber: 1181901,
+        customerTin: 'P051289192M',
+      },
+    },
+    productsCatalog: [],
+    resolvedItemIdsByProductId: { 'p-oil': 'item_oil_123' },
+  });
+
+  const cnVerification = verifyDigitaxCreditNotePayloadServerSide(cnPayloadDamaged);
+  assert(
+    cat,
+    'Damaged Item Refund Maps Reason Code 03, Links Original Sale & Verifies',
+    cnVerification.valid &&
+      cnPayloadDamaged.credit_note_reason === '03' &&
+      cnPayloadDamaged.sale_id === 'sale_01ABC' &&
+      cnPayloadDamaged.original_trader_invoice_number === 'SOKO-SOK-1001' &&
+      cnPayloadDamaged.items[0].discount_rate === 10 &&
+      cnVerification.computedTotal === 261,
+    `Valid: ${cnVerification.valid}, Reason: ${cnPayloadDamaged.credit_note_reason}, DiscRate: ${cnPayloadDamaged.items[0].discount_rate}%`
+  );
+
+  const cnCustomerMind = buildDigitaxCreditNotePayload({
+    refund: { ...refundDamaged, refundReason: 'Customer Changed Mind', items: [{ ...refundDamaged.items[0], restockToInventory: true }] },
+    originalTx: {
+      receiptNumber: 'SOK-1001',
+      locationId: 'loc-1',
+      items: [],
+      etimsData: { traderInvoiceNumber: 'SOKO-SOK-1001' },
+    },
+    productsCatalog: [],
+    resolvedItemIdsByProductId: { 'p-oil': 'item_oil_123' },
+  });
+  assert(
+    cat,
+    'Customer Change-of-Mind Restocked Return Maps Reason Code 06',
+    cnCustomerMind.credit_note_reason === '06' && verifyDigitaxCreditNotePayloadServerSide(cnCustomerMind).valid,
+    `Reason code: ${cnCustomerMind.credit_note_reason}`
+  );
+
+  const unlinkedCn = { ...cnPayloadDamaged, sale_id: undefined, original_trader_invoice_number: undefined };
+  assert(
+    cat,
+    'Credit Note Verifier Rejects Unlinked Refund Without Original Sale Reference',
+    !verifyDigitaxCreditNotePayloadServerSide(unlinkedCn).valid,
+    'Unlinked credit note blocked'
+  );
 }
 
 // -----------------------------------------------------------------------------
