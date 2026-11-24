@@ -3373,19 +3373,72 @@ Extract:
         ...(posSubaccountCode ? { subaccount: posSubaccountCode } : {}),
       };
 
+      const cleanEnvUrl = (raw?: string): string => {
+        const trimmed = String(raw || '')
+          .trim()
+          .replace(/^['"]|['"]$/g, '')
+          .replace(/\/+$/, '');
+        if (!trimmed || /^MY_/i.test(trimmed)) return '';
+        return trimmed;
+      };
+
+      const normalizeOriginUrl = (raw?: string): string => {
+        const cleaned = cleanEnvUrl(raw);
+        if (!cleaned) return '';
+        const withScheme = /^https?:\/\//i.test(cleaned)
+          ? cleaned
+          : /^[a-z0-9.-]+\.[a-z]{2,}(?::\d+)?(?:\/.*)?$/i.test(cleaned)
+          ? `https://${cleaned}`
+          : '';
+        if (!withScheme) return '';
+        try {
+          const parsed = new URL(withScheme);
+          return parsed.origin;
+        } catch {
+          return '';
+        }
+      };
+
       const forwardedProto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https')
         .split(',')[0]
         .trim();
-      const reqHost = req.get('host') || 'localhost:3000';
+      const forwardedHost = String(req.headers['x-forwarded-host'] || '')
+        .split(',')[0]
+        .trim();
+      const reqHost = forwardedHost || req.get('host') || 'localhost:3000';
       const isLocalHost = reqHost.startsWith('localhost') || reqHost.startsWith('127.0.0.1');
       const computedProto = isLocalHost ? forwardedProto : 'https';
-      const appBaseUrl = (process.env.APP_URL || `${computedProto}://${reqHost}`).replace(/\/+$/, '');
+
+      const appBaseUrl =
+        normalizeOriginUrl(process.env.APP_URL) ||
+        normalizeOriginUrl(process.env.RAILWAY_STATIC_URL || process.env.RAILWAY_PUBLIC_DOMAIN) ||
+        `${computedProto}://${reqHost}`.replace(/\/+$/, '');
+
       const darajaCallbackSecret = (process.env.DARAJA_CALLBACK_SECRET || '').trim();
       const callbackSig = signDarajaCallbackRef(reference);
-      const customDarajaCallback = (process.env.DARAJA_CALLBACK_URL || '').trim();
-      const darajaCallbackBase = customDarajaCallback
-        ? customDarajaCallback.replace(/\/+$/, '')
-        : `${appBaseUrl}/api/payments/daraja/callback`;
+      const rawCustomCallback = cleanEnvUrl(process.env.DARAJA_CALLBACK_URL);
+      let darajaCallbackBase = `${appBaseUrl}/api/payments/daraja/callback`;
+      if (rawCustomCallback) {
+        if (rawCustomCallback.startsWith('/')) {
+          darajaCallbackBase = `${appBaseUrl}${rawCustomCallback}`;
+        } else {
+          const candidate = /^https?:\/\//i.test(rawCustomCallback)
+            ? rawCustomCallback
+            : /^[a-z0-9.-]+\.[a-z]{2,}(?::\d+)?(?:\/.*)?$/i.test(rawCustomCallback)
+            ? `https://${rawCustomCallback}`
+            : '';
+          if (candidate) {
+            try {
+              const parsedCb = new URL(candidate);
+              darajaCallbackBase = `${parsedCb.origin}${parsedCb.pathname}${parsedCb.search}`.replace(/\/+$/, '');
+            } catch {
+              console.warn('[Daraja] Ignoring invalid DARAJA_CALLBACK_URL env var; falling back to appBaseUrl');
+            }
+          } else {
+            console.warn('[Daraja] Ignoring malformed DARAJA_CALLBACK_URL env var; falling back to appBaseUrl');
+          }
+        }
+      }
       const callbackSep = darajaCallbackBase.includes('?') ? '&' : '?';
       const darajaCallbackUrl = `${darajaCallbackBase}${callbackSep}ref=${encodeURIComponent(reference)}&sig=${encodeURIComponent(callbackSig)}${
         darajaCallbackSecret ? `&token=${encodeURIComponent(darajaCallbackSecret)}` : ''
