@@ -28,10 +28,17 @@ import {
   normalizePathname,
 } from './src/utils/seoConfig';
 import {
+  buildDigitaxCreditNotePayload,
+  buildDigitaxSalePayload,
+  deriveKraCreditNoteReasonCode,
+  formatTraderInvoiceNumber,
+  resolveKraTaxTypeCode,
+  roundCurrency2,
   VALID_KRA_TAX_CODES,
   verifyDigitaxCreditNotePayloadServerSide,
   verifyDigitaxSalePayloadServerSide,
 } from './src/utils/etimsFiscalMapper';
+import { resolveDynamicTaxRate } from './src/utils/taxResolver';
 
 async function startServer() {
   const app = express();
@@ -883,6 +890,131 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
     }
   }
 
+  async function lookupFirebaseUserByEmail(emailInput: string): Promise<{
+    ok: boolean;
+    found: boolean;
+    uid?: string;
+    email?: string;
+    code?: string;
+    error?: string;
+  }> {
+    const cleanEmail = String(emailInput || '').trim().toLowerCase();
+    const sa = parseServiceAccountConfig();
+    if (!sa) {
+      return {
+        ok: false,
+        found: false,
+        code: 'PASSWORD_RESET_UNAVAILABLE',
+        error:
+          'Email OTP password reset requires FIREBASE_SERVICE_ACCOUNT_JSON from a user-owned Firebase project.',
+      };
+    }
+    if (sa.projectId && sa.projectId !== firebaseProjectId) {
+      return {
+        ok: false,
+        found: false,
+        code: 'PROJECT_MISMATCH',
+        error: `Service account project (${sa.projectId}) does not match active Firebase project (${firebaseProjectId}).`,
+      };
+    }
+    const adminToken = await getIdentityToolkitAccessToken();
+    if (!adminToken) {
+      return {
+        ok: false,
+        found: false,
+        code: 'IDENTITY_TOOLKIT_AUTH_FAILED',
+        error:
+          'Could not obtain an Identity Toolkit admin access token from FIREBASE_SERVICE_ACCOUNT_JSON.',
+      };
+    }
+    const projectBase = `https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(firebaseProjectId)}`;
+    try {
+      const lookupResp = await fetch(`${projectBase}/accounts:lookup`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${adminToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: [cleanEmail] }),
+      });
+      if (!lookupResp.ok) {
+        const errBody = await lookupResp.text().catch(() => '');
+        console.warn(`Identity Toolkit accounts:lookup failed (${lookupResp.status}):`, errBody);
+        return {
+          ok: false,
+          found: false,
+          code: 'IDENTITY_LOOKUP_FAILED',
+          error: 'Unable to look up account in Firebase Authentication.',
+        };
+      }
+      const lookupData: any = await lookupResp.json().catch(() => ({}));
+      const existingUser = Array.isArray(lookupData?.users) ? lookupData.users[0] : null;
+      const uid = existingUser?.localId ? String(existingUser.localId) : '';
+      if (!uid) {
+        return { ok: true, found: false };
+      }
+      return { ok: true, found: true, uid, email: cleanEmail };
+    } catch (err: any) {
+      console.error('lookupFirebaseUserByEmail error:', err);
+      return {
+        ok: false,
+        found: false,
+        code: 'IDENTITY_LOOKUP_ERROR',
+        error: err?.message || 'Unexpected error verifying account.',
+      };
+    }
+  }
+
+  async function updateFirebaseUserPassword(
+    uid: string,
+    newPassword: string
+  ): Promise<{ ok: boolean; code?: string; error?: string }> {
+    const adminToken = await getIdentityToolkitAccessToken();
+    if (!adminToken) {
+      return {
+        ok: false,
+        code: 'IDENTITY_TOOLKIT_AUTH_FAILED',
+        error: 'Could not authenticate with Firebase Authentication Admin API.',
+      };
+    }
+    const projectBase = `https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(firebaseProjectId)}`;
+    try {
+      const updateResp = await fetch(`${projectBase}/accounts:update`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${adminToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          localId: uid,
+          password: newPassword,
+          emailVerified: true,
+        }),
+      });
+      if (!updateResp.ok) {
+        const errJson: any = await updateResp.json().catch(() => ({}));
+        const fbMsg = errJson?.error?.message || `HTTP ${updateResp.status}`;
+        console.warn(`Identity Toolkit accounts:update password failed:`, fbMsg);
+        return {
+          ok: false,
+          code: 'PASSWORD_UPDATE_FAILED',
+          error:
+            fbMsg === 'WEAK_PASSWORD'
+              ? 'Password is too weak. Please choose at least 8 characters with letters and numbers.'
+              : 'Could not update your password right now. Please request a fresh verification code.',
+        };
+      }
+      return { ok: true };
+    } catch (err: any) {
+      console.error('updateFirebaseUserPassword error:', err);
+      return {
+        ok: false,
+        code: 'PASSWORD_UPDATE_ERROR',
+        error: err?.message || 'Unexpected error updating user credentials.',
+      };
+    }
+  }
+
   async function getAdminFirestoreToken(): Promise<{ token: string; source: 'service_account' | 'adc' } | null> {
     const saToken = await getServiceAccountAccessToken();
     if (saToken) {
@@ -1527,6 +1659,7 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
   });
 
   const EMAIL_OTP_FILE = path.join(DATA_DIR, 'email_otps.json');
+  const PASSWORD_RESET_TOKENS_FILE = path.join(DATA_DIR, 'password_reset_tokens.json');
   const EMAIL_OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
   const EMAIL_OTP_RESEND_COOLDOWN_MS = 60 * 1000; // 60 seconds
   const EMAIL_OTP_MAX_ATTEMPTS = 5;
@@ -1535,15 +1668,25 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
     (process.env.DARAJA_CALLBACK_SECRET || '').trim() ||
     crypto.randomBytes(32).toString('hex');
 
+  type ServerEmailOtpPurpose = 'passwordless_login' | 'step_up_2fa' | 'password_reset';
+
   interface StoredEmailOtpChallenge {
     email: string;
-    purpose: 'passwordless_login' | 'step_up_2fa';
+    purpose: ServerEmailOtpPurpose;
     salt: string;
     otpHmac: string;
     expiresAt: number;
     resendAfter: number;
     attempts: number;
     maxAttempts: number;
+    createdAt: number;
+  }
+
+  interface StoredPasswordResetToken {
+    jti: string;
+    email: string;
+    uid: string;
+    expiresAt: number;
     createdAt: number;
   }
 
@@ -1583,9 +1726,96 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
     }
   }
 
+  function loadPasswordResetTokens(): Record<string, StoredPasswordResetToken> {
+    try {
+      if (!fs.existsSync(PASSWORD_RESET_TOKENS_FILE)) return {};
+      const parsed = JSON.parse(fs.readFileSync(PASSWORD_RESET_TOKENS_FILE, 'utf-8') || '{}');
+      const now = Date.now();
+      const active: Record<string, StoredPasswordResetToken> = {};
+      for (const [jti, item] of Object.entries(parsed || {})) {
+        const rec = item as StoredPasswordResetToken;
+        if (rec && typeof rec.expiresAt === 'number' && rec.expiresAt > now) {
+          active[jti] = rec;
+        }
+      }
+      return active;
+    } catch {
+      return {};
+    }
+  }
+
+  function savePasswordResetTokens(store: Record<string, StoredPasswordResetToken>): void {
+    try {
+      if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      }
+      const now = Date.now();
+      const pruned: Record<string, StoredPasswordResetToken> = {};
+      for (const [jti, item] of Object.entries(store)) {
+        if (item && item.expiresAt > now) {
+          pruned[jti] = item;
+        }
+      }
+      fs.writeFileSync(PASSWORD_RESET_TOKENS_FILE, JSON.stringify(pruned, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn('Could not persist password reset tokens:', err);
+    }
+  }
+
+  function signPasswordResetToken(payload: {
+    jti: string;
+    email: string;
+    uid: string;
+    exp: number;
+  }): string {
+    const encoded = base64UrlEncode(JSON.stringify(payload));
+    const sig = crypto
+      .createHmac('sha256', EMAIL_OTP_HMAC_KEY)
+      .update(`pwdreset::${encoded}`)
+      .digest('hex');
+    return `${encoded}.${sig}`;
+  }
+
+  function verifySignedPasswordResetToken(token: string): {
+    jti: string;
+    email: string;
+    uid: string;
+    exp: number;
+  } | null {
+    const parts = String(token || '').split('.');
+    if (parts.length !== 2) return null;
+    const [encoded, providedSig] = parts;
+    if (!encoded || !/^[a-f0-9]{64}$/i.test(providedSig)) return null;
+    const expectedSig = crypto
+      .createHmac('sha256', EMAIL_OTP_HMAC_KEY)
+      .update(`pwdreset::${encoded}`)
+      .digest('hex');
+    const a = Buffer.from(expectedSig, 'hex');
+    const b = Buffer.from(providedSig, 'hex');
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    try {
+      const b64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+      const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+      const parsed = JSON.parse(Buffer.from(padded, 'base64').toString('utf8'));
+      if (
+        !parsed ||
+        typeof parsed.jti !== 'string' ||
+        typeof parsed.email !== 'string' ||
+        typeof parsed.uid !== 'string' ||
+        typeof parsed.exp !== 'number'
+      ) {
+        return null;
+      }
+      if (Date.now() > parsed.exp) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
   function computeEmailOtpHmac(
     email: string,
-    purpose: 'passwordless_login' | 'step_up_2fa',
+    purpose: ServerEmailOtpPurpose,
     salt: string,
     otp: string
   ): string {
@@ -1629,9 +1859,11 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
   app.get('/api/auth/otp/capabilities', (_req, res) => {
     const resendApiKey = (process.env.RESEND_API_KEY || '').trim();
     const isResendKeySet = Boolean(resendApiKey && resendApiKey !== 'MY_RESEND_API_KEY');
+    const hasServiceAccount = hasServiceAccountCredentials();
     return res.json({
       emailProviderConfigured: isResendKeySet,
-      customTokenConfigured: hasServiceAccountCredentials(),
+      customTokenConfigured: hasServiceAccount,
+      passwordResetOtpConfigured: isResendKeySet && hasServiceAccount,
       provider: 'resend',
       otpDigits: 6,
       ttlSeconds: Math.floor(EMAIL_OTP_TTL_MS / 1000),
@@ -1643,8 +1875,12 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
     try {
       const { email, purpose: rawPurpose } = req.body || {};
       const cleanEmail = String(email || '').trim().toLowerCase();
-      const purpose: 'passwordless_login' | 'step_up_2fa' =
-        rawPurpose === 'step_up_2fa' ? 'step_up_2fa' : 'passwordless_login';
+      const purpose: ServerEmailOtpPurpose =
+        rawPurpose === 'step_up_2fa'
+          ? 'step_up_2fa'
+          : rawPurpose === 'password_reset'
+          ? 'password_reset'
+          : 'passwordless_login';
 
       if (!cleanEmail || !isValidEmailAddress(cleanEmail)) {
         return res.status(400).json({
@@ -1654,12 +1890,14 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
         });
       }
 
-      if (purpose === 'passwordless_login' && !hasServiceAccountCredentials()) {
+      if ((purpose === 'passwordless_login' || purpose === 'password_reset') && !hasServiceAccountCredentials()) {
         return res.status(503).json({
           success: false,
-          code: 'CUSTOM_TOKEN_UNAVAILABLE',
+          code: purpose === 'password_reset' ? 'PASSWORD_RESET_UNAVAILABLE' : 'CUSTOM_TOKEN_UNAVAILABLE',
           error:
-            'Passwordless Email OTP login requires FIREBASE_SERVICE_ACCOUNT_JSON from a user-owned Firebase project. On Starter Tier projects without IAM keys, please sign in with Email & Password or Google.',
+            purpose === 'password_reset'
+              ? 'Email OTP password reset requires FIREBASE_SERVICE_ACCOUNT_JSON from a user-owned Firebase project. You can send a standard Firebase reset link below instead.'
+              : 'Passwordless Email OTP login requires FIREBASE_SERVICE_ACCOUNT_JSON from a user-owned Firebase project. On Starter Tier projects without IAM keys, please sign in with Email & Password or Google.',
         });
       }
 
@@ -1687,6 +1925,27 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
         });
       }
 
+      if (purpose === 'password_reset') {
+        const lookup = await lookupFirebaseUserByEmail(cleanEmail);
+        if (!lookup.ok) {
+          return res.status(503).json({
+            success: false,
+            code: lookup.code || 'PASSWORD_RESET_UNAVAILABLE',
+            error: lookup.error || 'Could not verify account status right now.',
+          });
+        }
+        if (!lookup.found) {
+          // Do not reveal whether the email address is registered (anti-enumeration),
+          // while still throttling rapid retries on the same key.
+          return res.json({
+            success: true,
+            message: `If a SokoPoS account exists for ${cleanEmail}, a 6-digit password reset code has been sent.`,
+            expiresInSeconds: Math.floor(EMAIL_OTP_TTL_MS / 1000),
+            resendCooldownSeconds: Math.floor(EMAIL_OTP_RESEND_COOLDOWN_MS / 1000),
+          });
+        }
+      }
+
       const otp = crypto.randomInt(100000, 1000000).toString();
       const salt = crypto.randomBytes(16).toString('hex');
       const otpHmac = computeEmailOtpHmac(cleanEmail, purpose, salt, otp);
@@ -1705,22 +1964,34 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
       saveEmailOtpChallenges(store);
 
       const fromEmail = (process.env.RESEND_FROM_EMAIL || '').trim() || 'SokoPoS <onboarding@resend.dev>';
-      const subject = `Your SokoPoS sign-in code: ${otp}`;
+      const isPasswordReset = purpose === 'password_reset';
+      const subject = isPasswordReset
+        ? `Reset your SokoPoS password — Code: ${otp}`
+        : `Your SokoPoS sign-in code: ${otp}`;
+      const headingText = isPasswordReset ? 'Reset Your SokoPoS Password' : 'SokoPoS Verification Code';
+      const leadCopy = isPasswordReset
+        ? 'Use the 6-digit verification code below to confirm your identity and set a new password for your SokoPoS account. This code expires in <strong>10 minutes</strong>.'
+        : 'Use the 6-digit verification code below to sign in to your SokoPoS account. This code expires in <strong>10 minutes</strong>.';
+      const footerCopy = isPasswordReset
+        ? 'If you did not request a password reset, you can safely ignore this email—your existing password will remain unchanged.'
+        : 'If you did not request this code, you can safely ignore this email. Never share this code with anyone.';
       const htmlBody = `
         <div style="font-family:Inter,system-ui,-apple-system,sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;color:#0f172a;">
-          <h2 style="margin:0 0 8px;font-size:20px;font-weight:800;color:#090d16;">SokoPoS Verification Code</h2>
+          <h2 style="margin:0 0 8px;font-size:20px;font-weight:800;color:#090d16;">${headingText}</h2>
           <p style="margin:0 0 20px;font-size:14px;line-height:1.5;color:#475569;">
-            Use the 6-digit verification code below to sign in to your SokoPoS account. This code expires in <strong>10 minutes</strong>.
+            ${leadCopy}
           </p>
           <div style="padding:18px 20px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;text-align:center;margin-bottom:20px;">
             <span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:32px;font-weight:800;letter-spacing:0.28em;color:#059669;">${otp}</span>
           </div>
           <p style="margin:0;font-size:12px;line-height:1.5;color:#64748b;">
-            If you did not request this code, you can safely ignore this email. Never share this code with anyone.
+            ${footerCopy}
           </p>
         </div>
       `;
-      const textBody = `Your SokoPoS sign-in code is ${otp}. It expires in 10 minutes. If you did not request this code, ignore this email.`;
+      const textBody = isPasswordReset
+        ? `Your SokoPoS password reset code is ${otp}. It expires in 10 minutes. If you did not request a password reset, ignore this email.`
+        : `Your SokoPoS sign-in code is ${otp}. It expires in 10 minutes. If you did not request this code, ignore this email.`;
 
       const resendResp = await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -1756,7 +2027,9 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
 
       return res.json({
         success: true,
-        message: `6-digit verification code sent to ${cleanEmail}.`,
+        message: isPasswordReset
+          ? `If a SokoPoS account exists for ${cleanEmail}, a 6-digit password reset code has been sent.`
+          : `6-digit verification code sent to ${cleanEmail}.`,
         expiresInSeconds: Math.floor(EMAIL_OTP_TTL_MS / 1000),
         resendCooldownSeconds: Math.floor(EMAIL_OTP_RESEND_COOLDOWN_MS / 1000),
       });
@@ -1775,8 +2048,12 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
       const { email, otp, purpose: rawPurpose } = req.body || {};
       const cleanEmail = String(email || '').trim().toLowerCase();
       const cleanOtp = String(otp || '').trim();
-      const purpose: 'passwordless_login' | 'step_up_2fa' =
-        rawPurpose === 'step_up_2fa' ? 'step_up_2fa' : 'passwordless_login';
+      const purpose: ServerEmailOtpPurpose =
+        rawPurpose === 'step_up_2fa'
+          ? 'step_up_2fa'
+          : rawPurpose === 'password_reset'
+          ? 'password_reset'
+          : 'passwordless_login';
 
       if (!cleanEmail || !isValidEmailAddress(cleanEmail)) {
         return res.status(400).json({
@@ -1873,6 +2150,50 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
         });
       }
 
+      if (purpose === 'password_reset') {
+        const lookup = await lookupFirebaseUserByEmail(cleanEmail);
+        if (!lookup.ok || !lookup.found || !lookup.uid) {
+          return res.status(400).json({
+            success: false,
+            code: lookup.code || 'ACCOUNT_NOT_FOUND',
+            error: lookup.error || 'Account verification could not be completed. Please request a new reset code.',
+          });
+        }
+
+        const jti = crypto.randomBytes(16).toString('hex');
+        const expiresAt = Date.now() + EMAIL_OTP_TTL_MS;
+        const resetTokens = loadPasswordResetTokens();
+        // Invalidate any earlier unused reset tokens for the same email
+        for (const [existingJti, rec] of Object.entries(resetTokens)) {
+          if (rec.email === cleanEmail) {
+            delete resetTokens[existingJti];
+          }
+        }
+        resetTokens[jti] = {
+          jti,
+          email: cleanEmail,
+          uid: lookup.uid,
+          expiresAt,
+          createdAt: Date.now(),
+        };
+        savePasswordResetTokens(resetTokens);
+
+        const resetToken = signPasswordResetToken({
+          jti,
+          email: cleanEmail,
+          uid: lookup.uid,
+          exp: expiresAt,
+        });
+
+        return res.json({
+          success: true,
+          verified: true,
+          resetToken,
+          email: cleanEmail,
+          expiresInSeconds: Math.floor(EMAIL_OTP_TTL_MS / 1000),
+        });
+      }
+
       return res.json({
         success: true,
         verified: true,
@@ -1884,6 +2205,123 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
         success: false,
         code: 'OTP_VERIFY_ERROR',
         error: err?.message || 'Verification failed.',
+      });
+    }
+  });
+
+  app.post('/api/auth/password-reset/confirm', otpVerifyLimiter, async (req, res) => {
+    try {
+      const { email, resetToken, newPassword } = req.body || {};
+      const cleanEmail = String(email || '').trim().toLowerCase();
+      const rawToken = String(resetToken || '').trim();
+      const passwordStr = typeof newPassword === 'string' ? newPassword : '';
+
+      if (!cleanEmail || !isValidEmailAddress(cleanEmail)) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_EMAIL',
+          error: 'Valid email address is required.',
+        });
+      }
+
+      if (!rawToken) {
+        return res.status(400).json({
+          success: false,
+          code: 'MISSING_RESET_TOKEN',
+          error: 'Verification session missing. Please verify your 6-digit email code first.',
+        });
+      }
+
+      if (passwordStr.trim().length < 8 || passwordStr.length > 128) {
+        return res.status(400).json({
+          success: false,
+          code: 'WEAK_PASSWORD',
+          error: 'Password must be between 8 and 128 characters long.',
+        });
+      }
+
+      const parsedToken = verifySignedPasswordResetToken(rawToken);
+      if (!parsedToken || parsedToken.email !== cleanEmail) {
+        return res.status(401).json({
+          success: false,
+          code: 'INVALID_OR_EXPIRED_RESET_TOKEN',
+          error: 'Your password reset session has expired or is invalid. Please request a new 6-digit code.',
+        });
+      }
+
+      const tokenStore = loadPasswordResetTokens();
+      const storedRecord = tokenStore[parsedToken.jti];
+      if (
+        !storedRecord ||
+        storedRecord.email !== cleanEmail ||
+        storedRecord.uid !== parsedToken.uid ||
+        Date.now() > storedRecord.expiresAt
+      ) {
+        if (storedRecord) {
+          delete tokenStore[parsedToken.jti];
+          savePasswordResetTokens(tokenStore);
+        }
+        return res.status(401).json({
+          success: false,
+          code: 'RESET_TOKEN_ALREADY_USED',
+          error: 'This reset session has already been used or expired. Please request a new 6-digit code.',
+        });
+      }
+
+      // Enforce single-use before mutating Firebase credentials
+      delete tokenStore[parsedToken.jti];
+      savePasswordResetTokens(tokenStore);
+
+      const updated = await updateFirebaseUserPassword(parsedToken.uid, passwordStr);
+      if (!updated.ok) {
+        return res.status(502).json({
+          success: false,
+          code: updated.code || 'PASSWORD_UPDATE_FAILED',
+          error: updated.error || 'Could not update your password. Please try again.',
+        });
+      }
+
+      // Send a non-blocking confirmation notice via Resend
+      const resendApiKey = (process.env.RESEND_API_KEY || '').trim();
+      if (resendApiKey && resendApiKey !== 'MY_RESEND_API_KEY') {
+        const fromEmail = (process.env.RESEND_FROM_EMAIL || '').trim() || 'SokoPoS <onboarding@resend.dev>';
+        fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${resendApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: fromEmail,
+            to: [cleanEmail],
+            subject: 'Your SokoPoS password was reset',
+            html: `
+              <div style="font-family:Inter,system-ui,-apple-system,sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;color:#0f172a;">
+                <h2 style="margin:0 0 8px;font-size:20px;font-weight:800;color:#090d16;">Password Updated</h2>
+                <p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#475569;">
+                  Your password for <strong>${cleanEmail}</strong> on SokoPoS was successfully reset after email verification.
+                </p>
+                <p style="margin:0;font-size:12px;line-height:1.5;color:#64748b;">
+                  If you did not make this change, reset your password immediately and contact platform support.
+                </p>
+              </div>
+            `,
+            text: `Your SokoPoS password for ${cleanEmail} was successfully reset. If you did not make this change, contact support immediately.`,
+          }),
+        }).catch(() => {});
+      }
+
+      return res.json({
+        success: true,
+        email: cleanEmail,
+        message: 'Your password has been updated. You can now sign in with your new password.',
+      });
+    } catch (err: any) {
+      console.error('Error in /api/auth/password-reset/confirm:', err);
+      return res.status(500).json({
+        success: false,
+        code: 'PASSWORD_RESET_CONFIRM_ERROR',
+        error: err?.message || 'Failed to update password.',
       });
     }
   });
@@ -2579,6 +3017,1553 @@ Extract:
   });
 
   // -------------------------------------------------------------
+  // Super Admin Global eTIMS Outbox Aggregation & Recovery APIs
+  // -------------------------------------------------------------
+  type NormalizedOutboxStatus =
+    | 'FAILED'
+    | 'PENDING'
+    | 'WAITING_SALE'
+    | 'MISSING'
+    | 'COMPLETED';
+
+  function resolveDigitaxKeyForEnvironment(env: 'sandbox' | 'production'): string | null {
+    const key =
+      env === 'production'
+        ? (process.env.DIGITAX_PRODUCTION_API_KEY || process.env.DIGITAX_API_KEY || '').trim()
+        : (process.env.DIGITAX_SANDBOX_API_KEY || process.env.DIGITAX_API_KEY || '').trim();
+    return key || null;
+  }
+
+  function classifyEtimsErrorCategory(params: {
+    status: NormalizedOutboxStatus;
+    lastError?: string;
+    hasParentSaleIssue?: boolean;
+  }): string {
+    if (params.status === 'COMPLETED') return 'COMPLIANT';
+    if (params.hasParentSaleIssue || params.status === 'WAITING_SALE') {
+      return 'PARENT_SALE_UNFISCALIZED';
+    }
+    const errLower = String(params.lastError || '').toLowerCase();
+    if (errLower.includes('pin') || errLower.includes('mismatch')) {
+      return 'TAX_PIN_MISMATCH';
+    }
+    if (errLower.includes('item id') || errLower.includes('sku') || errLower.includes('register')) {
+      return 'SKU_UNREGISTERED';
+    }
+    if (errLower.includes('not configured') || errLower.includes('api_key')) {
+      return 'GATEWAY_UNCONFIGURED';
+    }
+    if (
+      errLower.includes('validation') ||
+      errLower.includes('tax_amount') ||
+      errLower.includes('tax_type_code') ||
+      errLower.includes('invalid')
+    ) {
+      return 'FISCAL_VALIDATION';
+    }
+    if (
+      errLower.includes('network') ||
+      errLower.includes('timeout') ||
+      errLower.includes('offline') ||
+      errLower.includes('502') ||
+      errLower.includes('503') ||
+      errLower.includes('504')
+    ) {
+      return 'GATEWAY_TIMEOUT';
+    }
+    if (params.status === 'FAILED') return 'CU_REJECTED';
+    if (params.status === 'PENDING') return 'AWAITING_SIGNATURE';
+    return 'NEVER_SUBMITTED';
+  }
+
+  function buildEtimsOutboxRecords(
+    txDocs: Record<string, any>[],
+    bizMap: Map<string, Record<string, any>>
+  ) {
+    const items: Record<string, any>[] = [];
+
+    for (const tx of txDocs) {
+      if (!tx || !tx.id || !tx.businessId) continue;
+      const bizId = String(tx.businessId);
+      if (bizId === 'biz-demo') continue;
+      const biz = bizMap.get(bizId);
+      if (biz?.isDemo === true) continue;
+
+      const env: 'sandbox' | 'production' =
+        biz?.taxSettings?.digitaxEnvironment === 'production' ? 'production' : 'sandbox';
+      const configuredTaxPin = String(
+        biz?.taxSettings?.taxNumber || biz?.taxNumber || tx.etimsData?.taxPin || ''
+      )
+        .trim()
+        .toUpperCase();
+      const businessName = String(biz?.name || bizId);
+      const businessCode = String(biz?.code || '');
+      const ownerEmail = String(biz?.ownerEmail || '');
+
+      const saleEtims = tx.etimsData && typeof tx.etimsData === 'object' ? tx.etimsData : null;
+      const saleStatusRaw = String(saleEtims?.status || '').toUpperCase();
+      const saleStatus: NormalizedOutboxStatus =
+        saleStatusRaw === 'COMPLETED'
+          ? 'COMPLETED'
+          : saleStatusRaw === 'FAILED'
+          ? 'FAILED'
+          : saleStatusRaw === 'PENDING'
+          ? 'PENDING'
+          : 'MISSING';
+
+      const saleErrorCategory = classifyEtimsErrorCategory({
+        status: saleStatus,
+        lastError: saleEtims?.lastError,
+      });
+
+      const txItems = Array.isArray(tx.items) ? tx.items : [];
+
+      items.push({
+        outboxId: `sale:${tx.id}`,
+        kind: 'sale',
+        transactionId: String(tx.id),
+        businessId: bizId,
+        businessName,
+        businessCode,
+        ownerEmail,
+        environment: env,
+        configuredTaxPin,
+        receiptNumber: String(tx.receiptNumber || tx.id),
+        traderInvoiceNumber: String(
+          saleEtims?.traderInvoiceNumber || formatTraderInvoiceNumber(String(tx.receiptNumber || tx.id))
+        ),
+        timestamp: String(tx.timestamp || ''),
+        amountKes: Number(tx.total || 0),
+        taxAmountKes: Number(tx.taxAmount || 0),
+        paymentMethod: String(tx.paymentMethod || 'cash'),
+        status: saleStatus,
+        digitaxId: saleEtims?.saleId ? String(saleEtims.saleId) : undefined,
+        cuSerialNumber: saleEtims?.cuSerialNumber ? String(saleEtims.cuSerialNumber) : undefined,
+        cuInvoiceNumber: saleEtims?.cuInvoiceNumber ?? undefined,
+        fiscalReceiptNumber: saleEtims?.receiptNumber ?? undefined,
+        receiptSignature: saleEtims?.receiptSignature ? String(saleEtims.receiptSignature) : undefined,
+        etimsUrl: saleEtims?.etimsUrl ? String(saleEtims.etimsUrl) : undefined,
+        attemptCount: Number(saleEtims?.attemptCount || 0),
+        lastAttemptAt: saleEtims?.lastAttemptAt ? String(saleEtims.lastAttemptAt) : undefined,
+        lastError: saleEtims?.lastError
+          ? String(saleEtims.lastError)
+          : saleStatus === 'MISSING'
+          ? 'No eTIMS fiscalization attempt recorded on this receipt yet.'
+          : undefined,
+        errorCategory: saleErrorCategory,
+        itemCount: txItems.length,
+        itemsSummary: txItems.slice(0, 12).map((it: any) => ({
+          productId: String(it?.productId || ''),
+          productName: String(it?.productName || 'Item'),
+          sku: String(it?.sku || ''),
+          quantity: Number(it?.quantity || 0),
+          unitPrice: Number(it?.unitPrice || 0),
+          taxTypeCode: it?.taxTypeCode ? String(it.taxTypeCode) : undefined,
+          hasDigitaxItemId: Boolean(it?.digitaxItemId),
+        })),
+        overrideReason: saleEtims?.overrideReason ? String(saleEtims.overrideReason) : undefined,
+        overriddenByEmail: saleEtims?.overriddenByEmail
+          ? String(saleEtims.overriddenByEmail)
+          : undefined,
+        overriddenAt: saleEtims?.overriddenAt ? String(saleEtims.overriddenAt) : undefined,
+      });
+
+      const parentSaleReady = Boolean(
+        saleEtims?.saleId || saleEtims?.cuInvoiceNumber || saleStatus === 'COMPLETED'
+      );
+
+      const refunds = Array.isArray(tx.refunds) ? tx.refunds : [];
+      for (const refund of refunds) {
+        if (!refund || !refund.id) continue;
+        const cn =
+          refund.etimsCreditNote && typeof refund.etimsCreditNote === 'object'
+            ? refund.etimsCreditNote
+            : null;
+        const cnRaw = String(cn?.status || '').toUpperCase();
+        let cnStatus: NormalizedOutboxStatus;
+        if (cnRaw === 'COMPLETED') {
+          cnStatus = 'COMPLETED';
+        } else if (!parentSaleReady) {
+          cnStatus = 'WAITING_SALE';
+        } else if (cnRaw === 'FAILED') {
+          cnStatus = 'FAILED';
+        } else if (cnRaw === 'PENDING') {
+          cnStatus = 'PENDING';
+        } else {
+          cnStatus = 'MISSING';
+        }
+
+        const cnError =
+          cn?.lastError ||
+          (cnStatus === 'WAITING_SALE'
+            ? 'Blocked: original sale invoice must be fiscalized before KRA Credit Note submission.'
+            : cnStatus === 'MISSING'
+            ? 'No eTIMS Credit Note submission recorded for this refund yet.'
+            : undefined);
+
+        const cnItems = Array.isArray(refund.items) ? refund.items : [];
+        items.push({
+          outboxId: `credit_note:${tx.id}:${refund.id}`,
+          kind: 'credit_note',
+          transactionId: String(tx.id),
+          refundId: String(refund.id),
+          businessId: bizId,
+          businessName,
+          businessCode,
+          ownerEmail,
+          environment: env,
+          configuredTaxPin,
+          receiptNumber: String(tx.receiptNumber || tx.id),
+          refundNumber: String(refund.refundNumber || refund.id),
+          traderInvoiceNumber: String(
+            cn?.traderInvoiceNumber || formatTraderInvoiceNumber(String(refund.refundNumber || refund.id))
+          ),
+          originalTraderInvoiceNumber: String(
+            cn?.originalTraderInvoiceNumber ||
+              saleEtims?.traderInvoiceNumber ||
+              formatTraderInvoiceNumber(String(tx.receiptNumber || tx.id))
+          ),
+          timestamp: String(refund.timestamp || tx.timestamp || ''),
+          amountKes: Number(refund.totalRefund || 0),
+          taxAmountKes: Number(refund.taxRefund || 0),
+          paymentMethod: String(refund.refundMethod || 'original'),
+          status: cnStatus,
+          digitaxId: cn?.creditNoteId ? String(cn.creditNoteId) : undefined,
+          cuSerialNumber: cn?.cuSerialNumber ? String(cn.cuSerialNumber) : undefined,
+          cuInvoiceNumber: cn?.cuInvoiceNumber ?? undefined,
+          fiscalReceiptNumber: cn?.receiptNumber ?? undefined,
+          receiptSignature: cn?.receiptSignature ? String(cn.receiptSignature) : undefined,
+          etimsUrl: cn?.etimsUrl ? String(cn.etimsUrl) : undefined,
+          attemptCount: Number(cn?.attemptCount || 0),
+          lastAttemptAt: cn?.lastAttemptAt ? String(cn.lastAttemptAt) : undefined,
+          lastError: cnError ? String(cnError) : undefined,
+          errorCategory: classifyEtimsErrorCategory({
+            status: cnStatus,
+            lastError: cnError,
+            hasParentSaleIssue: cnStatus === 'WAITING_SALE',
+          }),
+          parentSaleStatus: saleStatus,
+          parentSaleId: saleEtims?.saleId ? String(saleEtims.saleId) : undefined,
+          parentCuInvoiceNumber: saleEtims?.cuInvoiceNumber ?? undefined,
+          itemCount: cnItems.length,
+          itemsSummary: cnItems.slice(0, 12).map((ri: any) => ({
+            productId: String(ri?.productId || ''),
+            productName: String(ri?.productName || 'Item'),
+            sku: String(ri?.sku || ''),
+            quantity: Number(ri?.quantity || 0),
+            unitPrice: Number(ri?.unitPrice || 0),
+            taxTypeCode: ri?.taxTypeCode ? String(ri.taxTypeCode) : undefined,
+            hasDigitaxItemId: true,
+          })),
+          overrideReason: cn?.overrideReason ? String(cn.overrideReason) : undefined,
+          overriddenByEmail: cn?.overriddenByEmail ? String(cn.overriddenByEmail) : undefined,
+          overriddenAt: cn?.overriddenAt ? String(cn.overriddenAt) : undefined,
+        });
+      }
+    }
+
+    const statusWeight: Record<NormalizedOutboxStatus, number> = {
+      FAILED: 0,
+      WAITING_SALE: 1,
+      PENDING: 2,
+      MISSING: 3,
+      COMPLETED: 4,
+    };
+
+    items.sort((a, b) => {
+      const wa = statusWeight[a.status as NormalizedOutboxStatus] ?? 9;
+      const wb = statusWeight[b.status as NormalizedOutboxStatus] ?? 9;
+      if (wa !== wb) return wa - wb;
+      const ta = new Date(a.lastAttemptAt || a.timestamp || 0).getTime() || 0;
+      const tb = new Date(b.lastAttemptAt || b.timestamp || 0).getTime() || 0;
+      return tb - ta;
+    });
+
+    const completedCount = items.filter((i) => i.status === 'COMPLETED').length;
+    const failedCount = items.filter((i) => i.status === 'FAILED').length;
+    const pendingCount = items.filter((i) => i.status === 'PENDING').length;
+    const waitingSaleCount = items.filter((i) => i.status === 'WAITING_SALE').length;
+    const missingCount = items.filter((i) => i.status === 'MISSING').length;
+    const attentionItems = items.filter((i) => i.status !== 'COMPLETED');
+
+    const tenantAgg = new Map<string, Record<string, any>>();
+    for (const item of items) {
+      let t = tenantAgg.get(item.businessId);
+      if (!t) {
+        t = {
+          businessId: item.businessId,
+          businessName: item.businessName,
+          businessCode: item.businessCode,
+          taxPin: item.configuredTaxPin,
+          environment: item.environment,
+          totalCount: 0,
+          completedCount: 0,
+          failedCount: 0,
+          pendingCount: 0,
+          waitingSaleCount: 0,
+          missingCount: 0,
+          attentionCount: 0,
+          exposedKes: 0,
+        };
+        tenantAgg.set(item.businessId, t);
+      }
+      t.totalCount += 1;
+      if (item.status === 'COMPLETED') t.completedCount += 1;
+      else {
+        t.attentionCount += 1;
+        t.exposedKes = roundCurrency2(t.exposedKes + (Number(item.amountKes) || 0));
+        if (item.status === 'FAILED') t.failedCount += 1;
+        else if (item.status === 'PENDING') t.pendingCount += 1;
+        else if (item.status === 'WAITING_SALE') t.waitingSaleCount += 1;
+        else if (item.status === 'MISSING') t.missingCount += 1;
+      }
+    }
+
+    const tenants = Array.from(tenantAgg.values()).sort((a, b) => {
+      if (b.attentionCount !== a.attentionCount) return b.attentionCount - a.attentionCount;
+      return String(a.businessName).localeCompare(String(b.businessName));
+    });
+
+    const totalRecords = items.length;
+    const complianceRatePct =
+      totalRecords > 0 ? Math.round((completedCount / totalRecords) * 1000) / 10 : 100;
+
+    return {
+      items,
+      tenants,
+      summary: {
+        totalRecords,
+        completedCount,
+        failedCount,
+        pendingCount,
+        waitingSaleCount,
+        missingCount,
+        attentionCount: attentionItems.length,
+        failedSalesCount: items.filter((i) => i.kind === 'sale' && i.status === 'FAILED').length,
+        failedCreditNotesCount: items.filter(
+          (i) => i.kind === 'credit_note' && (i.status === 'FAILED' || i.status === 'WAITING_SALE')
+        ).length,
+        complianceRatePct,
+        affectedTenantCount: tenants.filter((t) => t.attentionCount > 0).length,
+        exposedKes: roundCurrency2(
+          attentionItems.reduce((sum, i) => sum + (Number(i.amountKes) || 0), 0)
+        ),
+        digitaxConfigured: {
+          sandbox: Boolean(resolveDigitaxKeyForEnvironment('sandbox')),
+          production: Boolean(resolveDigitaxKeyForEnvironment('production')),
+        },
+      },
+    };
+  }
+
+  async function ensureTenantProductsRegisteredOnDigitax(params: {
+    items: Array<any>;
+    businessId: string;
+    locationId: string;
+    taxSettings?: any;
+    environment: 'sandbox' | 'production';
+    apiKey: string;
+    bearerToken?: string;
+  }): Promise<{
+    resolvedItemIdsByProductId: Record<string, string>;
+    catalogProducts: any[];
+    newlyRegisteredCount: number;
+  }> {
+    const catalogProducts = await queryFirestoreDocsWithToken(
+      'products',
+      'businessId',
+      params.businessId,
+      500,
+      params.bearerToken
+    ).catch(() => []);
+
+    const resolvedItemIdsByProductId: Record<string, string> = {};
+    const needsLookup: Array<{
+      productId: string;
+      prodDoc: any | null;
+      name: string;
+      sku: string;
+      unitPrice: number;
+      taxTypeCode: 'A' | 'B' | 'C' | 'D' | 'E';
+      itemClassCode?: string;
+      packageUnitCode?: string;
+      quantityUnitCode?: string;
+    }> = [];
+
+    for (const line of params.items) {
+      const productId = String(line?.productId || '');
+      if (!productId) continue;
+      const prod = catalogProducts.find((p) => String(p.id) === productId) || null;
+      const resolvedTax = resolveDynamicTaxRate(
+        {
+          category: prod?.category,
+          taxRate: line?.taxRate ?? prod?.taxRate,
+          id: productId,
+        },
+        params.locationId,
+        params.taxSettings
+      );
+      const taxTypeCode = resolveKraTaxTypeCode({
+        taxRate: resolvedTax.rate,
+        ruleCode: resolvedTax.code,
+        ruleName: resolvedTax.ruleName,
+        explicitTaxTypeCode: line?.taxTypeCode || prod?.taxTypeCode,
+      });
+
+      const existingId = prod?.digitaxItemId || line?.digitaxItemId;
+      const storedClass = prod?.taxTypeCode || line?.taxTypeCode;
+      if (existingId && (!storedClass || storedClass === taxTypeCode)) {
+        resolvedItemIdsByProductId[productId] = String(existingId);
+        continue;
+      }
+
+      if (!needsLookup.some((n) => n.productId === productId)) {
+        needsLookup.push({
+          productId,
+          prodDoc: prod,
+          name: String(prod?.name || line?.productName || 'POS Item'),
+          sku: String(prod?.sku || line?.sku || ''),
+          unitPrice: Number(prod?.sellingPrice ?? line?.unitPrice ?? 0),
+          taxTypeCode,
+          itemClassCode: prod?.itemClassCode,
+          packageUnitCode: prod?.packageUnitCode,
+          quantityUnitCode: prod?.quantityUnitCode,
+        });
+      }
+    }
+
+    let newlyRegisteredCount = 0;
+    if (needsLookup.length === 0) {
+      return { resolvedItemIdsByProductId, catalogProducts, newlyRegisteredCount };
+    }
+
+    let remoteItems: any[] = [];
+    try {
+      const itemsResp = await fetch(`${DIGITAX_BASE_URL}/items`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': params.apiKey,
+        },
+      });
+      if (itemsResp.ok) {
+        const itemsJson: any = await itemsResp.json().catch(() => ({}));
+        remoteItems = Array.isArray(itemsJson) ? itemsJson : itemsJson?.data || [];
+      }
+    } catch {
+      remoteItems = [];
+    }
+
+    for (const entry of needsLookup) {
+      const remoteMatch = remoteItems.find(
+        (ri: any) =>
+          ri?.active !== false &&
+          ri?.tax_type_code === entry.taxTypeCode &&
+          (String(ri?.item_name || '').trim().toLowerCase() === entry.name.trim().toLowerCase() ||
+            (entry.sku && ri?.etims_item_code === entry.sku))
+      );
+
+      let chosenItem = remoteMatch;
+      if (!chosenItem?.id) {
+        const createBody = {
+          item_name: entry.name.trim().slice(0, 180),
+          item_class_code: String(entry.itemClassCode || '50202300'),
+          item_type_code: '2',
+          tax_type_code: entry.taxTypeCode,
+          origin_nation_code: 'KE',
+          package_unit_code: String(entry.packageUnitCode || 'CT').slice(0, 8),
+          quantity_unit_code: String(entry.quantityUnitCode || 'U').slice(0, 8),
+          default_unit_price: roundCurrency2(Math.max(0, entry.unitPrice)),
+          is_stock_item: true,
+        };
+        const regResp = await fetch(`${DIGITAX_BASE_URL}/items`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Api-Key': params.apiKey,
+          },
+          body: JSON.stringify(createBody),
+        });
+        const regData: any = await regResp.json().catch(() => ({}));
+        if (!regResp.ok || !regData?.id) {
+          throw new Error(
+            regData?.error ||
+              regData?.message ||
+              `Failed registering SKU "${entry.name}" with Digitax (${regResp.status})`
+          );
+        }
+        chosenItem = regData;
+        newlyRegisteredCount += 1;
+      }
+
+      resolvedItemIdsByProductId[entry.productId] = String(chosenItem.id);
+
+      if (entry.prodDoc?.id) {
+        await patchFirestoreDoc(
+          'products',
+          String(entry.prodDoc.id),
+          {
+            digitaxItemId: String(chosenItem.id),
+            etimsItemCode: chosenItem.etims_item_code || entry.prodDoc.etimsItemCode || '',
+            taxTypeCode: entry.taxTypeCode,
+            itemClassCode: chosenItem.item_class_code || entry.itemClassCode || '50202300',
+            packageUnitCode: chosenItem.package_unit_code || entry.packageUnitCode || 'CT',
+            quantityUnitCode: chosenItem.quantity_unit_code || entry.quantityUnitCode || 'U',
+            digitaxSyncedAt: new Date().toISOString(),
+          },
+          [
+            'digitaxItemId',
+            'etimsItemCode',
+            'taxTypeCode',
+            'itemClassCode',
+            'packageUnitCode',
+            'quantityUnitCode',
+            'digitaxSyncedAt',
+          ],
+          params.bearerToken
+        ).catch(() => false);
+      }
+    }
+
+    return { resolvedItemIdsByProductId, catalogProducts, newlyRegisteredCount };
+  }
+
+  async function pollDigitaxForAdmin(params: {
+    tx: Record<string, any>;
+    refundId?: string;
+    biz: Record<string, any> | null;
+    bearerToken?: string;
+  }) {
+    const { tx, refundId, biz, bearerToken } = params;
+    const env: 'sandbox' | 'production' =
+      biz?.taxSettings?.digitaxEnvironment === 'production' ? 'production' : 'sandbox';
+    const apiKey = resolveDigitaxKeyForEnvironment(env);
+    if (!apiKey) {
+      return {
+        ok: false,
+        httpStatus: 503,
+        code: 'DIGITAX_NOT_CONFIGURED',
+        error: `Digitax ${env} API key is not configured on the server.`,
+      };
+    }
+
+    const nowIso = new Date().toISOString();
+
+    if (refundId) {
+      const refunds = Array.isArray(tx.refunds) ? [...tx.refunds] : [];
+      const rIdx = refunds.findIndex((r: any) => String(r?.id) === refundId);
+      if (rIdx === -1) {
+        return { ok: false, httpStatus: 404, code: 'REFUND_NOT_FOUND', error: 'Refund record not found.' };
+      }
+      const refund = refunds[rIdx];
+      const beforeValue = refund.etimsCreditNote ? { ...refund.etimsCreditNote } : null;
+      const cnId = refund.etimsCreditNote?.creditNoteId;
+      if (!cnId) {
+        return {
+          ok: false,
+          httpStatus: 400,
+          code: 'NO_CREDIT_NOTE_ID',
+          error: 'No Digitax creditNoteId exists yet on this refund. Use Retry Submit instead.',
+        };
+      }
+
+      const resp = await fetch(`${DIGITAX_BASE_URL}/credit-notes/${encodeURIComponent(String(cnId))}`, {
+        headers: { 'Content-Type': 'application/json', 'X-Api-Key': apiKey },
+      });
+      const data: any = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        const errMsg = data?.error || data?.message || `Digitax poll failed (${resp.status})`;
+        return { ok: false, httpStatus: resp.status, code: 'DIGITAX_POLL_ERROR', error: errMsg };
+      }
+
+      const isSigned = Boolean(data?.receipt_signature || data?.status === 'COMPLETED');
+      const resolvedStatus: 'PENDING' | 'COMPLETED' | 'FAILED' =
+        data?.status === 'FAILED' ? 'FAILED' : isSigned ? 'COMPLETED' : 'PENDING';
+
+      const updatedCn = {
+        ...(refund.etimsCreditNote || {}),
+        creditNoteId: data?.id || cnId,
+        saleId: tx.etimsData?.saleId || refund.etimsCreditNote?.saleId,
+        originalTraderInvoiceNumber:
+          tx.etimsData?.traderInvoiceNumber ||
+          refund.etimsCreditNote?.originalTraderInvoiceNumber ||
+          formatTraderInvoiceNumber(String(tx.receiptNumber || tx.id)),
+        traderInvoiceNumber:
+          data?.trader_invoice_number ||
+          refund.etimsCreditNote?.traderInvoiceNumber ||
+          formatTraderInvoiceNumber(String(refund.refundNumber || refund.id)),
+        cuSerialNumber: data?.serial_number || refund.etimsCreditNote?.cuSerialNumber,
+        cuInvoiceNumber: data?.invoice_number ?? refund.etimsCreditNote?.cuInvoiceNumber,
+        receiptNumber: data?.receipt_number ?? refund.etimsCreditNote?.receiptNumber,
+        receiptSignature: data?.receipt_signature || refund.etimsCreditNote?.receiptSignature,
+        internalData: data?.internal_data || refund.etimsCreditNote?.internalData,
+        etimsUrl: data?.etims_url || refund.etimsCreditNote?.etimsUrl,
+        offlineUrl: data?.offline_url || refund.etimsCreditNote?.offlineUrl,
+        status: resolvedStatus,
+        verifiedAt: isSigned ? nowIso : refund.etimsCreditNote?.verifiedAt,
+        lastAttemptAt: nowIso,
+        lastError:
+          resolvedStatus === 'COMPLETED'
+            ? undefined
+            : resolvedStatus === 'FAILED'
+            ? data?.error || data?.message || 'KRA Control Unit rejected credit note'
+            : refund.etimsCreditNote?.lastError,
+      };
+
+      refunds[rIdx] = { ...refund, etimsCreditNote: updatedCn };
+      await patchFirestoreDoc('transactions', String(tx.id), { refunds }, ['refunds'], bearerToken);
+
+      return {
+        ok: true,
+        httpStatus: 200,
+        status: resolvedStatus,
+        beforeValue,
+        afterValue: updatedCn,
+        message:
+          resolvedStatus === 'COMPLETED'
+            ? `Credit Note ${refund.refundNumber} verified with KRA signature.`
+            : `Credit Note ${refund.refundNumber} polled: status is ${resolvedStatus}.`,
+      };
+    }
+
+    const beforeValue = tx.etimsData ? { ...tx.etimsData } : null;
+    const saleId = tx.etimsData?.saleId;
+    if (!saleId) {
+      return {
+        ok: false,
+        httpStatus: 400,
+        code: 'NO_SALE_ID',
+        error: 'No Digitax saleId exists yet on this transaction. Use Retry Submit instead.',
+      };
+    }
+
+    const resp = await fetch(`${DIGITAX_BASE_URL}/sales/${encodeURIComponent(String(saleId))}`, {
+      headers: { 'Content-Type': 'application/json', 'X-Api-Key': apiKey },
+    });
+    const data: any = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      const errMsg = data?.error || data?.message || `Digitax poll failed (${resp.status})`;
+      return { ok: false, httpStatus: resp.status, code: 'DIGITAX_POLL_ERROR', error: errMsg };
+    }
+
+    const isSigned = Boolean(data?.receipt_signature || data?.status === 'COMPLETED');
+    const resolvedStatus: 'PENDING' | 'COMPLETED' | 'FAILED' =
+      data?.status === 'FAILED' ? 'FAILED' : isSigned ? 'COMPLETED' : 'PENDING';
+
+    const updatedEtims = {
+      ...(tx.etimsData || {}),
+      saleId: data?.id || saleId,
+      traderInvoiceNumber:
+        data?.trader_invoice_number ||
+        tx.etimsData?.traderInvoiceNumber ||
+        formatTraderInvoiceNumber(String(tx.receiptNumber || tx.id)),
+      cuSerialNumber: data?.serial_number || tx.etimsData?.cuSerialNumber,
+      cuInvoiceNumber: data?.invoice_number ?? tx.etimsData?.cuInvoiceNumber,
+      receiptNumber: data?.receipt_number ?? tx.etimsData?.receiptNumber,
+      internalData: data?.internal_data || tx.etimsData?.internalData,
+      receiptSignature: data?.receipt_signature || tx.etimsData?.receiptSignature,
+      etimsUrl: data?.etims_url || tx.etimsData?.etimsUrl,
+      offlineUrl: data?.offline_url || tx.etimsData?.offlineUrl,
+      status: resolvedStatus,
+      verifiedAt: isSigned ? nowIso : tx.etimsData?.verifiedAt,
+      lastAttemptAt: nowIso,
+      isPartnerVerified: isSigned,
+      lastError:
+        resolvedStatus === 'COMPLETED'
+          ? undefined
+          : resolvedStatus === 'FAILED'
+          ? data?.error || data?.message || 'KRA Control Unit rejected invoice during signing'
+          : tx.etimsData?.lastError,
+    };
+
+    await patchFirestoreDoc(
+      'transactions',
+      String(tx.id),
+      { etimsData: updatedEtims },
+      ['etimsData'],
+      bearerToken
+    );
+
+    return {
+      ok: true,
+      httpStatus: 200,
+      status: resolvedStatus,
+      beforeValue,
+      afterValue: updatedEtims,
+      message:
+        resolvedStatus === 'COMPLETED'
+          ? `Invoice ${tx.receiptNumber} verified with KRA signature.`
+          : `Invoice ${tx.receiptNumber} polled: status is ${resolvedStatus}.`,
+    };
+  }
+
+  async function retryDigitaxForAdmin(params: {
+    tx: Record<string, any>;
+    refundId?: string;
+    biz: Record<string, any> | null;
+    bearerToken?: string;
+  }) {
+    const { tx, refundId, biz, bearerToken } = params;
+    const env: 'sandbox' | 'production' =
+      biz?.taxSettings?.digitaxEnvironment === 'production' ? 'production' : 'sandbox';
+    const apiKey = resolveDigitaxKeyForEnvironment(env);
+    if (!apiKey) {
+      return {
+        ok: false,
+        httpStatus: 503,
+        code: 'DIGITAX_NOT_CONFIGURED',
+        error: `Digitax ${env} API key is not configured on the server.`,
+      };
+    }
+
+    const configuredTaxPin = String(biz?.taxSettings?.taxNumber || biz?.taxNumber || '')
+      .trim()
+      .toUpperCase();
+    const attemptIso = new Date().toISOString();
+
+    if (
+      env === 'production' &&
+      configuredTaxPin &&
+      configuredTaxPin !== 'P051234567Z' &&
+      configuredTaxPin !== 'P000000000X'
+    ) {
+      const remotePin = await resolveVerifiedDigitaxTaxPin(apiKey);
+      if (remotePin && remotePin !== configuredTaxPin) {
+        const errMsg = `Tenant KRA PIN (${configuredTaxPin}) does not match active Digitax CU Tax PIN (${remotePin}).`;
+        if (refundId) {
+          const refunds = Array.isArray(tx.refunds) ? [...tx.refunds] : [];
+          const rIdx = refunds.findIndex((r: any) => String(r?.id) === refundId);
+          if (rIdx !== -1) {
+            const refund = refunds[rIdx];
+            const beforeValue = refund.etimsCreditNote ? { ...refund.etimsCreditNote } : null;
+            const afterValue = {
+              ...(refund.etimsCreditNote || {}),
+              status: 'FAILED' as const,
+              attemptCount: Number(refund.etimsCreditNote?.attemptCount || 0) + 1,
+              lastAttemptAt: attemptIso,
+              lastError: errMsg,
+            };
+            refunds[rIdx] = { ...refund, etimsCreditNote: afterValue };
+            await patchFirestoreDoc('transactions', String(tx.id), { refunds }, ['refunds'], bearerToken);
+            return {
+              ok: false,
+              httpStatus: 422,
+              code: 'TAX_PIN_MISMATCH',
+              error: errMsg,
+              beforeValue,
+              afterValue,
+            };
+          }
+        } else {
+          const beforeValue = tx.etimsData ? { ...tx.etimsData } : null;
+          const afterValue = {
+            ...(tx.etimsData || {}),
+            taxPin: configuredTaxPin,
+            status: 'FAILED' as const,
+            attemptCount: Number(tx.etimsData?.attemptCount || 0) + 1,
+            lastAttemptAt: attemptIso,
+            lastError: errMsg,
+            isPartnerVerified: false,
+          };
+          await patchFirestoreDoc(
+            'transactions',
+            String(tx.id),
+            { etimsData: afterValue },
+            ['etimsData'],
+            bearerToken
+          );
+          return {
+            ok: false,
+            httpStatus: 422,
+            code: 'TAX_PIN_MISMATCH',
+            error: errMsg,
+            beforeValue,
+            afterValue,
+          };
+        }
+      }
+    }
+
+    // ---------- CREDIT NOTE RETRY ----------
+    if (refundId) {
+      const refunds = Array.isArray(tx.refunds) ? [...tx.refunds] : [];
+      const rIdx = refunds.findIndex((r: any) => String(r?.id) === refundId);
+      if (rIdx === -1) {
+        return { ok: false, httpStatus: 404, code: 'REFUND_NOT_FOUND', error: 'Refund record not found.' };
+      }
+      const refund = refunds[rIdx];
+      const beforeValue = refund.etimsCreditNote ? { ...refund.etimsCreditNote } : null;
+      const attemptCount = Number(refund.etimsCreditNote?.attemptCount || 0) + 1;
+
+      if (refund.etimsCreditNote?.status === 'COMPLETED') {
+        return {
+          ok: true,
+          httpStatus: 200,
+          status: 'COMPLETED',
+          beforeValue,
+          afterValue: beforeValue,
+          message: `Credit Note ${refund.refundNumber} is already COMPLETED.`,
+        };
+      }
+
+      const parentSaleReady = Boolean(
+        tx.etimsData?.saleId || tx.etimsData?.cuInvoiceNumber || tx.etimsData?.status === 'COMPLETED'
+      );
+      if (!parentSaleReady) {
+        const errMsg =
+          'Waiting for original sale KRA fiscalization before issuing Credit Note. Retry the parent sale invoice first.';
+        const afterValue = {
+          ...(refund.etimsCreditNote || {}),
+          status: 'PENDING' as const,
+          traderInvoiceNumber:
+            refund.etimsCreditNote?.traderInvoiceNumber ||
+            formatTraderInvoiceNumber(String(refund.refundNumber || refund.id)),
+          originalTraderInvoiceNumber:
+            tx.etimsData?.traderInvoiceNumber ||
+            formatTraderInvoiceNumber(String(tx.receiptNumber || tx.id)),
+          attemptCount,
+          lastAttemptAt: attemptIso,
+          lastError: errMsg,
+        };
+        refunds[rIdx] = { ...refund, etimsCreditNote: afterValue };
+        await patchFirestoreDoc('transactions', String(tx.id), { refunds }, ['refunds'], bearerToken);
+        return {
+          ok: false,
+          httpStatus: 409,
+          code: 'PARENT_SALE_UNFISCALIZED',
+          error: errMsg,
+          beforeValue,
+          afterValue,
+        };
+      }
+
+      // If existing PENDING creditNoteId exists, poll DigiTax first to avoid duplicate creation
+      if (
+        refund.etimsCreditNote?.creditNoteId &&
+        refund.etimsCreditNote?.status === 'PENDING'
+      ) {
+        const pollRes = await pollDigitaxForAdmin({ tx, refundId, biz, bearerToken });
+        if (pollRes.ok && pollRes.status === 'COMPLETED') {
+          return pollRes;
+        }
+      }
+
+      try {
+        const refundLineItems = (Array.isArray(refund.items) ? refund.items : []).map((ri: any) => ({
+          productId: ri.productId,
+          productName: ri.productName,
+          sku: ri.sku,
+          unitPrice: ri.unitPrice,
+          taxRate: ri.taxRate,
+          taxTypeCode: ri.taxTypeCode,
+        }));
+
+        const { resolvedItemIdsByProductId, catalogProducts, newlyRegisteredCount } =
+          await ensureTenantProductsRegisteredOnDigitax({
+            items: refundLineItems,
+            businessId: String(tx.businessId),
+            locationId: String(tx.locationId || ''),
+            taxSettings: biz?.taxSettings,
+            environment: env,
+            apiKey,
+            bearerToken,
+          });
+
+        const payload = buildDigitaxCreditNotePayload({
+          refund: refund as any,
+          originalTx: tx as any,
+          productsCatalog: catalogProducts as any[],
+          resolvedItemIdsByProductId,
+          taxSettings: biz?.taxSettings,
+        });
+
+        const validation = verifyDigitaxCreditNotePayloadServerSide(payload);
+        if (!validation.valid) {
+          throw new Error(validation.errors.join('; '));
+        }
+
+        const cnResp = await fetch(`${DIGITAX_BASE_URL}/credit-notes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Api-Key': apiKey },
+          body: JSON.stringify({
+            return_date: payload.return_date,
+            trader_invoice_number: payload.trader_invoice_number,
+            original_trader_invoice_number: payload.original_trader_invoice_number,
+            sale_id: payload.sale_id || undefined,
+            original_invoice_number: payload.original_invoice_number || undefined,
+            credit_note_reason: payload.credit_note_reason || '06',
+            receipt_type_code: 'R',
+            customer_pin: payload.customer_pin || payload.customer_tin || undefined,
+            customer_name: payload.customer_name || undefined,
+            items: payload.items.map((it) => ({
+              id: it.id,
+              quantity: Number(it.quantity),
+              unit_price: Number(it.unit_price),
+              total_amount: Number(it.total_amount),
+              tax_type_code: it.tax_type_code,
+              taxable_amount: it.taxable_amount,
+              tax_amount: it.tax_amount,
+              discount_rate: Number(it.discount_rate ?? 0),
+              discount_amount: Number(it.discount_amount ?? 0),
+            })),
+          }),
+        });
+        let finalCn: any = await cnResp.json().catch(() => ({}));
+        if (!cnResp.ok) {
+          throw new Error(
+            finalCn?.error ||
+              finalCn?.message ||
+              (Array.isArray(finalCn?.errors) ? finalCn.errors.join('; ') : '') ||
+              `Digitax Credit Note failed (${cnResp.status})`
+          );
+        }
+
+        if (finalCn?.id && finalCn?.status !== 'COMPLETED' && finalCn?.status !== 'FAILED') {
+          for (let p = 0; p < 3; p++) {
+            await new Promise((r) => setTimeout(r, 800));
+            const pResp = await fetch(
+              `${DIGITAX_BASE_URL}/credit-notes/${encodeURIComponent(String(finalCn.id))}`,
+              { headers: { 'Content-Type': 'application/json', 'X-Api-Key': apiKey } }
+            ).catch(() => null);
+            if (pResp?.ok) {
+              const polled = await pResp.json().catch(() => null);
+              if (polled) {
+                finalCn = polled;
+                if (finalCn.status === 'COMPLETED' || finalCn.status === 'FAILED') break;
+              }
+            }
+          }
+        }
+
+        const isSigned = Boolean(
+          finalCn && (finalCn.receipt_signature || finalCn.status === 'COMPLETED')
+        );
+        const resolvedStatus: 'PENDING' | 'COMPLETED' | 'FAILED' =
+          finalCn?.status === 'FAILED' ? 'FAILED' : isSigned ? 'COMPLETED' : 'PENDING';
+
+        const updatedCn = {
+          ...(refund.etimsCreditNote || {}),
+          creditNoteId: finalCn?.id || refund.etimsCreditNote?.creditNoteId,
+          saleId: tx.etimsData?.saleId || refund.etimsCreditNote?.saleId,
+          originalTraderInvoiceNumber:
+            tx.etimsData?.traderInvoiceNumber ||
+            formatTraderInvoiceNumber(String(tx.receiptNumber || tx.id)),
+          traderInvoiceNumber:
+            finalCn?.trader_invoice_number ||
+            refund.etimsCreditNote?.traderInvoiceNumber ||
+            formatTraderInvoiceNumber(String(refund.refundNumber || refund.id)),
+          cuSerialNumber: finalCn?.serial_number || refund.etimsCreditNote?.cuSerialNumber,
+          cuInvoiceNumber: finalCn?.invoice_number ?? refund.etimsCreditNote?.cuInvoiceNumber,
+          receiptNumber: finalCn?.receipt_number ?? refund.etimsCreditNote?.receiptNumber,
+          receiptSignature: finalCn?.receipt_signature || refund.etimsCreditNote?.receiptSignature,
+          internalData: finalCn?.internal_data || refund.etimsCreditNote?.internalData,
+          etimsUrl: finalCn?.etims_url || refund.etimsCreditNote?.etimsUrl,
+          offlineUrl: finalCn?.offline_url || refund.etimsCreditNote?.offlineUrl,
+          reasonCode:
+            refund.etimsCreditNote?.reasonCode ||
+            deriveKraCreditNoteReasonCode(
+              String(refund.refundReason || ''),
+              Array.isArray(refund.items) && refund.items.some((ri: any) => !ri.restockToInventory)
+            ),
+          status: resolvedStatus,
+          verifiedAt: isSigned ? new Date().toISOString() : undefined,
+          attemptCount,
+          lastAttemptAt: attemptIso,
+          lastError:
+            resolvedStatus === 'FAILED' ? 'KRA Control Unit rejected credit note' : undefined,
+        };
+
+        refunds[rIdx] = { ...refund, etimsCreditNote: updatedCn };
+        await patchFirestoreDoc('transactions', String(tx.id), { refunds }, ['refunds'], bearerToken);
+
+        return {
+          ok: resolvedStatus !== 'FAILED',
+          httpStatus: resolvedStatus === 'FAILED' ? 422 : 200,
+          status: resolvedStatus,
+          newlyRegisteredSkus: newlyRegisteredCount,
+          beforeValue,
+          afterValue: updatedCn,
+          message:
+            resolvedStatus === 'COMPLETED'
+              ? `Credit Note ${refund.refundNumber} fiscalized with KRA signature.`
+              : resolvedStatus === 'PENDING'
+              ? `Credit Note ${refund.refundNumber} submitted and awaiting CU signature.`
+              : updatedCn.lastError,
+        };
+      } catch (err: any) {
+        const errMsg = err?.message || 'Credit Note retry failed';
+        const updatedCn = {
+          ...(refund.etimsCreditNote || {}),
+          traderInvoiceNumber:
+            refund.etimsCreditNote?.traderInvoiceNumber ||
+            formatTraderInvoiceNumber(String(refund.refundNumber || refund.id)),
+          originalTraderInvoiceNumber:
+            tx.etimsData?.traderInvoiceNumber ||
+            formatTraderInvoiceNumber(String(tx.receiptNumber || tx.id)),
+          status: 'FAILED' as const,
+          attemptCount,
+          lastAttemptAt: attemptIso,
+          lastError: errMsg,
+        };
+        refunds[rIdx] = { ...refund, etimsCreditNote: updatedCn };
+        await patchFirestoreDoc('transactions', String(tx.id), { refunds }, ['refunds'], bearerToken);
+        return {
+          ok: false,
+          httpStatus: 422,
+          code: 'ETIMS_RETRY_FAILED',
+          error: errMsg,
+          beforeValue,
+          afterValue: updatedCn,
+        };
+      }
+    }
+
+    // ---------- SALE INVOICE RETRY ----------
+    const beforeValue = tx.etimsData ? { ...tx.etimsData } : null;
+    const attemptCount = Number(tx.etimsData?.attemptCount || 0) + 1;
+
+    if (tx.etimsData?.status === 'COMPLETED') {
+      return {
+        ok: true,
+        httpStatus: 200,
+        status: 'COMPLETED',
+        beforeValue,
+        afterValue: beforeValue,
+        message: `Invoice ${tx.receiptNumber} is already COMPLETED.`,
+      };
+    }
+
+    if (tx.etimsData?.saleId && tx.etimsData?.status === 'PENDING') {
+      const pollRes = await pollDigitaxForAdmin({ tx, biz, bearerToken });
+      if (pollRes.ok && pollRes.status === 'COMPLETED') {
+        return pollRes;
+      }
+    }
+
+    try {
+      const txItems = Array.isArray(tx.items) ? tx.items : [];
+      const { resolvedItemIdsByProductId, catalogProducts, newlyRegisteredCount } =
+        await ensureTenantProductsRegisteredOnDigitax({
+          items: txItems,
+          businessId: String(tx.businessId),
+          locationId: String(tx.locationId || ''),
+          taxSettings: biz?.taxSettings,
+          environment: env,
+          apiKey,
+          bearerToken,
+        });
+
+      const payload = buildDigitaxSalePayload({
+        tx: tx as any,
+        productsCatalog: catalogProducts as any[],
+        resolvedItemIdsByProductId,
+        taxSettings: biz?.taxSettings,
+        buyerPin: tx.etimsData?.customerTin,
+      });
+
+      const validation = verifyDigitaxSalePayloadServerSide(payload);
+      if (!validation.valid) {
+        throw new Error(validation.errors.join('; '));
+      }
+
+      const saleResp = await fetch(`${DIGITAX_BASE_URL}/sales`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Api-Key': apiKey },
+        body: JSON.stringify({
+          sale_date: payload.sale_date,
+          trader_invoice_number: payload.trader_invoice_number,
+          payment_type_code: payload.payment_type_code || '01',
+          invoice_status_code: payload.invoice_status_code || '02',
+          customer_pin: payload.customer_pin || payload.customer_tin || undefined,
+          customer_name: payload.customer_name || undefined,
+          items: payload.items.map((it) => ({
+            id: it.id,
+            quantity: Number(it.quantity),
+            unit_price: Number(it.unit_price),
+            total_amount: Number(it.total_amount),
+            tax_type_code: it.tax_type_code,
+            taxable_amount: it.taxable_amount,
+            tax_amount: it.tax_amount,
+            discount_rate: Number(it.discount_rate ?? 0),
+            discount_amount: Number(it.discount_amount ?? 0),
+          })),
+        }),
+      });
+
+      let finalSale: any = await saleResp.json().catch(() => ({}));
+      if (!saleResp.ok) {
+        throw new Error(
+          finalSale?.error ||
+            finalSale?.message ||
+            (Array.isArray(finalSale?.errors) ? finalSale.errors.join('; ') : '') ||
+            `Digitax Sale submission failed (${saleResp.status})`
+        );
+      }
+
+      if (finalSale?.id && finalSale?.status !== 'COMPLETED' && finalSale?.status !== 'FAILED') {
+        for (let p = 0; p < 3; p++) {
+          await new Promise((r) => setTimeout(r, 800));
+          const pResp = await fetch(
+            `${DIGITAX_BASE_URL}/sales/${encodeURIComponent(String(finalSale.id))}`,
+            { headers: { 'Content-Type': 'application/json', 'X-Api-Key': apiKey } }
+          ).catch(() => null);
+          if (pResp?.ok) {
+            const polled = await pResp.json().catch(() => null);
+            if (polled) {
+              finalSale = polled;
+              if (finalSale.status === 'COMPLETED' || finalSale.status === 'FAILED') break;
+            }
+          }
+        }
+      }
+
+      const isSigned = Boolean(
+        finalSale && (finalSale.receipt_signature || finalSale.status === 'COMPLETED')
+      );
+      const resolvedStatus: 'PENDING' | 'COMPLETED' | 'FAILED' =
+        finalSale?.status === 'FAILED' ? 'FAILED' : isSigned ? 'COMPLETED' : 'PENDING';
+
+      const updatedEtims = {
+        ...(tx.etimsData || {}),
+        saleId: finalSale?.id || tx.etimsData?.saleId,
+        traderInvoiceNumber:
+          finalSale?.trader_invoice_number ||
+          tx.etimsData?.traderInvoiceNumber ||
+          formatTraderInvoiceNumber(String(tx.receiptNumber || tx.id)),
+        cuSerialNumber: finalSale?.serial_number || tx.etimsData?.cuSerialNumber,
+        cuInvoiceNumber: finalSale?.invoice_number ?? tx.etimsData?.cuInvoiceNumber,
+        receiptNumber: finalSale?.receipt_number ?? tx.etimsData?.receiptNumber,
+        internalData: finalSale?.internal_data || tx.etimsData?.internalData,
+        receiptSignature: finalSale?.receipt_signature || tx.etimsData?.receiptSignature,
+        etimsUrl: finalSale?.etims_url || tx.etimsData?.etimsUrl,
+        offlineUrl: finalSale?.offline_url || tx.etimsData?.offlineUrl,
+        status: resolvedStatus,
+        taxPin: configuredTaxPin || tx.etimsData?.taxPin,
+        customerTin:
+          finalSale?.customer_pin || finalSale?.customer_tin || tx.etimsData?.customerTin,
+        customerName: finalSale?.customer_name || tx.customerName || undefined,
+        verifiedAt: isSigned ? new Date().toISOString() : undefined,
+        attemptCount,
+        lastAttemptAt: attemptIso,
+        isPartnerVerified: isSigned,
+        lastError:
+          resolvedStatus === 'FAILED'
+            ? 'KRA Control Unit rejected invoice during signing'
+            : undefined,
+      };
+
+      await patchFirestoreDoc(
+        'transactions',
+        String(tx.id),
+        { etimsData: updatedEtims },
+        ['etimsData'],
+        bearerToken
+      );
+
+      return {
+        ok: resolvedStatus !== 'FAILED',
+        httpStatus: resolvedStatus === 'FAILED' ? 422 : 200,
+        status: resolvedStatus,
+        newlyRegisteredSkus: newlyRegisteredCount,
+        beforeValue,
+        afterValue: updatedEtims,
+        message:
+          resolvedStatus === 'COMPLETED'
+            ? `Invoice ${tx.receiptNumber} fiscalized with KRA signature.`
+            : resolvedStatus === 'PENDING'
+            ? `Invoice ${tx.receiptNumber} submitted and awaiting CU signature.`
+            : updatedEtims.lastError,
+      };
+    } catch (err: any) {
+      const errMsg = err?.message || 'Invoice retry failed';
+      const updatedEtims = {
+        ...(tx.etimsData || {}),
+        traderInvoiceNumber:
+          tx.etimsData?.traderInvoiceNumber ||
+          formatTraderInvoiceNumber(String(tx.receiptNumber || tx.id)),
+        taxPin: configuredTaxPin || tx.etimsData?.taxPin,
+        status: 'FAILED' as const,
+        attemptCount,
+        lastAttemptAt: attemptIso,
+        lastError: errMsg,
+        isPartnerVerified: false,
+      };
+      await patchFirestoreDoc(
+        'transactions',
+        String(tx.id),
+        { etimsData: updatedEtims },
+        ['etimsData'],
+        bearerToken
+      );
+      return {
+        ok: false,
+        httpStatus: 422,
+        code: 'ETIMS_RETRY_FAILED',
+        error: errMsg,
+        beforeValue,
+        afterValue: updatedEtims,
+      };
+    }
+  }
+
+  app.get('/api/digitax/admin/outbox', async (req, res) => {
+    try {
+      const caller = await requireSuperAdminCaller(req, res);
+      if (!caller) return;
+
+      const [bizDocs, txDocs] = await Promise.all([
+        listFirestoreDocsPaginated('businesses', 500, caller.bearerToken).catch(() => []),
+        listFirestoreDocsPaginated('transactions', 2000, caller.bearerToken).catch(() => []),
+      ]);
+
+      const bizMap = new Map<string, Record<string, any>>();
+      for (const biz of bizDocs) {
+        if (biz?.id) bizMap.set(String(biz.id), biz);
+      }
+
+      const payload = buildEtimsOutboxRecords(txDocs, bizMap);
+      return res.json({ success: true, ...payload });
+    } catch (err: any) {
+      console.error('Error in GET /api/digitax/admin/outbox:', err);
+      return res.status(500).json({
+        success: false,
+        items: [],
+        tenants: [],
+        error: err?.message || 'Failed to aggregate global eTIMS outbox.',
+      });
+    }
+  });
+
+  app.post('/api/digitax/admin/poll', async (req, res) => {
+    try {
+      const caller = await requireSuperAdminCaller(req, res);
+      if (!caller) return;
+
+      const transactionId = String(req.body?.transactionId || '').trim();
+      const refundId = req.body?.refundId ? String(req.body.refundId).trim() : undefined;
+      if (!/^[a-zA-Z0-9_.\-]{1,128}$/.test(transactionId)) {
+        return res.status(400).json({ success: false, error: 'Valid transactionId is required.' });
+      }
+      if (refundId && !/^[a-zA-Z0-9_.\-]{1,128}$/.test(refundId)) {
+        return res.status(400).json({ success: false, error: 'Invalid refundId format.' });
+      }
+
+      const tx = await getFirestoreDoc('transactions', transactionId, caller.bearerToken);
+      if (!tx) {
+        return res.status(404).json({ success: false, error: 'Transaction not found.' });
+      }
+      const biz = tx.businessId
+        ? await getFirestoreDoc('businesses', String(tx.businessId), caller.bearerToken)
+        : null;
+
+      const result = await pollDigitaxForAdmin({
+        tx,
+        refundId,
+        biz,
+        bearerToken: caller.bearerToken,
+      });
+
+      return res.status(result.httpStatus).json({
+        success: result.ok,
+        ...result,
+      });
+    } catch (err: any) {
+      console.error('Error in POST /api/digitax/admin/poll:', err);
+      return res.status(500).json({
+        success: false,
+        error: err?.message || 'Failed to poll Digitax eTIMS status.',
+      });
+    }
+  });
+
+  app.post('/api/digitax/admin/retry', async (req, res) => {
+    try {
+      const caller = await requireSuperAdminCaller(req, res);
+      if (!caller) return;
+
+      const transactionId = String(req.body?.transactionId || '').trim();
+      const refundId = req.body?.refundId ? String(req.body.refundId).trim() : undefined;
+      if (!/^[a-zA-Z0-9_.\-]{1,128}$/.test(transactionId)) {
+        return res.status(400).json({ success: false, error: 'Valid transactionId is required.' });
+      }
+      if (refundId && !/^[a-zA-Z0-9_.\-]{1,128}$/.test(refundId)) {
+        return res.status(400).json({ success: false, error: 'Invalid refundId format.' });
+      }
+
+      const tx = await getFirestoreDoc('transactions', transactionId, caller.bearerToken);
+      if (!tx) {
+        return res.status(404).json({ success: false, error: 'Transaction not found.' });
+      }
+      const biz = tx.businessId
+        ? await getFirestoreDoc('businesses', String(tx.businessId), caller.bearerToken)
+        : null;
+
+      const result = await retryDigitaxForAdmin({
+        tx,
+        refundId,
+        biz,
+        bearerToken: caller.bearerToken,
+      });
+
+      return res.status(result.httpStatus).json({
+        success: result.ok,
+        ...result,
+      });
+    } catch (err: any) {
+      console.error('Error in POST /api/digitax/admin/retry:', err);
+      return res.status(500).json({
+        success: false,
+        error: err?.message || 'Failed to retry Digitax eTIMS submission.',
+      });
+    }
+  });
+
+  app.post('/api/digitax/admin/bulk-replay', async (req, res) => {
+    try {
+      const caller = await requireSuperAdminCaller(req, res);
+      if (!caller) return;
+
+      const rawItems = Array.isArray(req.body?.items) ? req.body.items : [];
+      if (rawItems.length === 0) {
+        return res.status(400).json({ success: false, error: 'At least one outbox item is required.' });
+      }
+      if (rawItems.length > 50) {
+        return res.status(400).json({
+          success: false,
+          error: 'Bulk replay batches are limited to 50 items per request.',
+        });
+      }
+
+      const normalizedRequests: Array<{ transactionId: string; refundId?: string }> = [];
+      for (const entry of rawItems) {
+        const transactionId = String(entry?.transactionId || '').trim();
+        const refundId = entry?.refundId ? String(entry.refundId).trim() : undefined;
+        if (!/^[a-zA-Z0-9_.\-]{1,128}$/.test(transactionId)) continue;
+        if (refundId && !/^[a-zA-Z0-9_.\-]{1,128}$/.test(refundId)) continue;
+        normalizedRequests.push({ transactionId, refundId });
+      }
+
+      // Dependency ordering: Phase 1 sales invoices first, Phase 2 refund credit notes second
+      const saleQueue = normalizedRequests.filter((r) => !r.refundId);
+      const creditNoteQueue = normalizedRequests.filter((r) => Boolean(r.refundId));
+      const orderedQueue = [...saleQueue, ...creditNoteQueue];
+
+      const bizCache = new Map<string, Record<string, any> | null>();
+      const results: Array<Record<string, any>> = [];
+
+      for (const reqItem of orderedQueue) {
+        // Re-fetch transaction freshly so credit notes immediately see newly fiscalized parent sales
+        const tx = await getFirestoreDoc('transactions', reqItem.transactionId, caller.bearerToken);
+        if (!tx) {
+          results.push({
+            transactionId: reqItem.transactionId,
+            refundId: reqItem.refundId,
+            kind: reqItem.refundId ? 'credit_note' : 'sale',
+            ok: false,
+            status: 'FAILED',
+            message: 'Transaction document not found in Firestore.',
+          });
+          continue;
+        }
+
+        const bizId = String(tx.businessId || '');
+        let biz = bizCache.get(bizId) ?? null;
+        if (bizId && !bizCache.has(bizId)) {
+          biz = await getFirestoreDoc('businesses', bizId, caller.bearerToken);
+          bizCache.set(bizId, biz);
+        }
+
+        const outcome = await retryDigitaxForAdmin({
+          tx,
+          refundId: reqItem.refundId,
+          biz,
+          bearerToken: caller.bearerToken,
+        });
+
+        results.push({
+          transactionId: reqItem.transactionId,
+          refundId: reqItem.refundId,
+          businessId: bizId,
+          businessName: biz?.name ? String(biz.name) : bizId,
+          receiptNumber: String(tx.receiptNumber || tx.id),
+          kind: reqItem.refundId ? 'credit_note' : 'sale',
+          ok: outcome.ok,
+          status: outcome.status || 'FAILED',
+          message: outcome.message || outcome.error || 'Replay completed',
+          beforeValue: outcome.beforeValue ?? null,
+          afterValue: outcome.afterValue ?? null,
+        });
+      }
+
+      const completedCount = results.filter((r) => r.status === 'COMPLETED').length;
+      const pendingCount = results.filter((r) => r.status === 'PENDING').length;
+      const failedCount = results.filter((r) => !r.ok || r.status === 'FAILED').length;
+
+      return res.json({
+        success: true,
+        results,
+        summary: {
+          processed: results.length,
+          completedCount,
+          pendingCount,
+          failedCount,
+        },
+      });
+    } catch (err: any) {
+      console.error('Error in POST /api/digitax/admin/bulk-replay:', err);
+      return res.status(500).json({
+        success: false,
+        error: err?.message || 'Bulk eTIMS replay failed.',
+      });
+    }
+  });
+
+  app.post('/api/digitax/admin/override', async (req, res) => {
+    try {
+      const caller = await requireSuperAdminCaller(req, res);
+      if (!caller) return;
+
+      const transactionId = String(req.body?.transactionId || '').trim();
+      const refundId = req.body?.refundId ? String(req.body.refundId).trim() : undefined;
+      const targetStatus = req.body?.targetStatus === 'COMPLETED' ? 'COMPLETED' : 'FAILED';
+      const reason = String(req.body?.reason || '').trim();
+      const cuInvoiceNumber = req.body?.cuInvoiceNumber
+        ? String(req.body.cuInvoiceNumber).trim().slice(0, 64)
+        : undefined;
+      const cuSerialNumber = req.body?.cuSerialNumber
+        ? String(req.body.cuSerialNumber).trim().slice(0, 64)
+        : undefined;
+      const receiptSignature = req.body?.receiptSignature
+        ? String(req.body.receiptSignature).trim().slice(0, 256)
+        : undefined;
+      const etimsUrlRaw = req.body?.etimsUrl ? String(req.body.etimsUrl).trim().slice(0, 512) : undefined;
+
+      if (!/^[a-zA-Z0-9_.\-]{1,128}$/.test(transactionId)) {
+        return res.status(400).json({ success: false, error: 'Valid transactionId is required.' });
+      }
+      if (refundId && !/^[a-zA-Z0-9_.\-]{1,128}$/.test(refundId)) {
+        return res.status(400).json({ success: false, error: 'Invalid refundId format.' });
+      }
+      if (reason.length < 5 || reason.length > 300) {
+        return res.status(400).json({
+          success: false,
+          error: 'An audit reason note (5-300 characters) is required for manual overrides.',
+        });
+      }
+      if (etimsUrlRaw && !/^https?:\/\//i.test(etimsUrlRaw)) {
+        return res.status(400).json({
+          success: false,
+          error: 'eTIMS QR verification URL must start with http:// or https://.',
+        });
+      }
+
+      const tx = await getFirestoreDoc('transactions', transactionId, caller.bearerToken);
+      if (!tx) {
+        return res.status(404).json({ success: false, error: 'Transaction not found.' });
+      }
+
+      const nowIso = new Date().toISOString();
+
+      if (refundId) {
+        const refunds = Array.isArray(tx.refunds) ? [...tx.refunds] : [];
+        const rIdx = refunds.findIndex((r: any) => String(r?.id) === refundId);
+        if (rIdx === -1) {
+          return res.status(404).json({ success: false, error: 'Refund record not found.' });
+        }
+        const refund = refunds[rIdx];
+        const beforeValue = refund.etimsCreditNote ? { ...refund.etimsCreditNote } : null;
+        const updatedCn = {
+          ...(refund.etimsCreditNote || {}),
+          traderInvoiceNumber:
+            refund.etimsCreditNote?.traderInvoiceNumber ||
+            formatTraderInvoiceNumber(String(refund.refundNumber || refund.id)),
+          originalTraderInvoiceNumber:
+            tx.etimsData?.traderInvoiceNumber ||
+            refund.etimsCreditNote?.originalTraderInvoiceNumber ||
+            formatTraderInvoiceNumber(String(tx.receiptNumber || tx.id)),
+          cuInvoiceNumber: cuInvoiceNumber ?? refund.etimsCreditNote?.cuInvoiceNumber,
+          cuSerialNumber: cuSerialNumber ?? refund.etimsCreditNote?.cuSerialNumber,
+          receiptSignature: receiptSignature ?? refund.etimsCreditNote?.receiptSignature,
+          etimsUrl: etimsUrlRaw ?? refund.etimsCreditNote?.etimsUrl,
+          status: targetStatus,
+          verifiedAt: targetStatus === 'COMPLETED' ? nowIso : refund.etimsCreditNote?.verifiedAt,
+          lastAttemptAt: nowIso,
+          lastError: targetStatus === 'FAILED' ? reason : undefined,
+          overrideReason: reason,
+          overriddenByEmail: caller.email,
+          overriddenAt: nowIso,
+        };
+        refunds[rIdx] = { ...refund, etimsCreditNote: updatedCn };
+        const patched = await patchFirestoreDoc(
+          'transactions',
+          transactionId,
+          { refunds },
+          ['refunds'],
+          caller.bearerToken
+        );
+        if (!patched) {
+          return res.status(502).json({
+            success: false,
+            error: 'Failed to persist credit note override to Firestore.',
+          });
+        }
+        return res.json({
+          success: true,
+          status: targetStatus,
+          beforeValue,
+          afterValue: updatedCn,
+          message: `Credit Note ${refund.refundNumber} manually updated to ${targetStatus}.`,
+        });
+      }
+
+      const beforeValue = tx.etimsData ? { ...tx.etimsData } : null;
+      const updatedEtims = {
+        ...(tx.etimsData || {}),
+        traderInvoiceNumber:
+          tx.etimsData?.traderInvoiceNumber ||
+          formatTraderInvoiceNumber(String(tx.receiptNumber || tx.id)),
+        cuInvoiceNumber: cuInvoiceNumber ?? tx.etimsData?.cuInvoiceNumber,
+        cuSerialNumber: cuSerialNumber ?? tx.etimsData?.cuSerialNumber,
+        receiptSignature: receiptSignature ?? tx.etimsData?.receiptSignature,
+        etimsUrl: etimsUrlRaw ?? tx.etimsData?.etimsUrl,
+        status: targetStatus,
+        verifiedAt: targetStatus === 'COMPLETED' ? nowIso : tx.etimsData?.verifiedAt,
+        lastAttemptAt: nowIso,
+        lastError: targetStatus === 'FAILED' ? reason : undefined,
+        isPartnerVerified: targetStatus === 'COMPLETED',
+        overrideReason: reason,
+        overriddenByEmail: caller.email,
+        overriddenAt: nowIso,
+      };
+      const patched = await patchFirestoreDoc(
+        'transactions',
+        transactionId,
+        { etimsData: updatedEtims },
+        ['etimsData'],
+        caller.bearerToken
+      );
+      if (!patched) {
+        return res.status(502).json({
+          success: false,
+          error: 'Failed to persist invoice override to Firestore.',
+        });
+      }
+      return res.json({
+        success: true,
+        status: targetStatus,
+        beforeValue,
+        afterValue: updatedEtims,
+        message: `Invoice ${tx.receiptNumber} manually updated to ${targetStatus}.`,
+      });
+    } catch (err: any) {
+      console.error('Error in POST /api/digitax/admin/override:', err);
+      return res.status(500).json({
+        success: false,
+        error: err?.message || 'Failed to apply eTIMS override.',
+      });
+    }
+  });
+
+  // -------------------------------------------------------------
   // Unified Payment Gateway API (Hybrid: Daraja M-Pesa Subscriptions + Paystack Cards & POS)
   // -------------------------------------------------------------
   interface StoredPaymentIntent {
@@ -2599,10 +4584,13 @@ Extract:
     authorizationUrl?: string;
     phone?: string;
     resolvedBy?: string;
+    adminNote?: string;
+    reconciledByEmail?: string;
     activatedSubscription?: Record<string, any>;
     gatewayResponse?: string;
     paidAt?: string;
     createdAt: string;
+    updatedAt?: string;
   }
 
   const darajaAdapter = new DarajaAdapter();
@@ -2918,17 +4906,319 @@ Extract:
   });
 
   app.post('/api/payments/daraja/poller-sweep', async (req, res) => {
-    const authHeader = req.headers.authorization;
-    const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-    if (!bearerToken) {
-      return res.status(401).json({ error: 'Authentication required.' });
-    }
-    const caller = await verifyFirebaseIdToken(bearerToken);
-    if (!caller || caller.email !== SUPER_ADMIN_EMAIL || !caller.emailVerified) {
-      return res.status(403).json({ error: 'Super Admin privileges required.' });
-    }
+    const caller = await requireSuperAdminCaller(req, res);
+    if (!caller) return;
     const result = await darajaPoller.tick(true);
     return res.json({ success: true, ...result, status: darajaPoller.getStatus() });
+  });
+
+  app.get('/api/payments/admin/records', async (req, res) => {
+    try {
+      const caller = await requireSuperAdminCaller(req, res);
+      if (!caller) return;
+
+      const requestedLimit = Math.min(Math.max(Number(req.query.limit) || 250, 20), 500);
+      const [dbDocs, bizDocs] = await Promise.all([
+        listFirestoreDocs('payment_records', requestedLimit, caller.bearerToken).catch(() => []),
+        listFirestoreDocs('businesses', 500, caller.bearerToken).catch(() => []),
+      ]);
+
+      const bizMap = new Map<string, Record<string, any>>();
+      for (const biz of bizDocs) {
+        if (biz?.id) {
+          bizMap.set(String(biz.id), biz);
+        }
+      }
+
+      const mergedMap = new Map<string, Record<string, any>>();
+
+      for (const doc of dbDocs) {
+        if (!doc?.reference) continue;
+        const ref = String(doc.reference);
+        const bizId = doc.businessId ? String(doc.businessId) : '';
+        const biz = bizId ? bizMap.get(bizId) : undefined;
+        mergedMap.set(ref, {
+          reference: ref,
+          provider: doc.provider === 'daraja' ? 'daraja' : 'paystack',
+          flowType: doc.flowType === 'pos_sale' ? 'pos_sale' : 'subscription',
+          channel: doc.channel === 'card' ? 'card' : 'mpesa_stk',
+          amountKes: Number(doc.amountKes || 0),
+          status: doc.status || 'pending',
+          businessId: bizId,
+          businessName: biz?.name ? String(biz.name) : undefined,
+          businessCode: biz?.code ? String(biz.code) : undefined,
+          businessOwnerEmail: biz?.ownerEmail
+            ? String(biz.ownerEmail)
+            : doc.ownerEmail
+            ? String(doc.ownerEmail)
+            : undefined,
+          currentBusinessPlan: biz?.plan ? String(biz.plan) : undefined,
+          currentBusinessStatus: biz?.status ? String(biz.status) : undefined,
+          planId: doc.planId ? String(doc.planId) : undefined,
+          billingCycle: doc.billingCycle === 'annual' ? 'annual' : 'monthly',
+          durationDays: doc.durationDays ? Number(doc.durationDays) : undefined,
+          checkoutRequestId: doc.checkoutRequestId ? String(doc.checkoutRequestId) : undefined,
+          merchantRequestId: doc.merchantRequestId ? String(doc.merchantRequestId) : undefined,
+          mpesaReceiptNumber: doc.mpesaReceiptNumber ? String(doc.mpesaReceiptNumber) : undefined,
+          phone: doc.phone ? String(doc.phone) : undefined,
+          customerEmail: doc.customerEmail ? String(doc.customerEmail) : undefined,
+          ownerEmail: doc.ownerEmail ? String(doc.ownerEmail) : undefined,
+          resultCode: typeof doc.resultCode === 'number' ? doc.resultCode : undefined,
+          pollAttempts: typeof doc.pollAttempts === 'number' ? doc.pollAttempts : undefined,
+          resolvedBy: doc.resolvedBy ? String(doc.resolvedBy) : undefined,
+          adminNote: doc.adminNote ? String(doc.adminNote) : undefined,
+          reconciledByEmail: doc.reconciledByEmail ? String(doc.reconciledByEmail) : undefined,
+          gatewayResponse: doc.gatewayResponse ? String(doc.gatewayResponse) : undefined,
+          paidAt: doc.paidAt ? String(doc.paidAt) : undefined,
+          createdAt: String(doc.createdAt || ''),
+          updatedAt: String(doc.updatedAt || doc.paidAt || doc.createdAt || ''),
+        });
+      }
+
+      for (const intent of paymentIntents.values()) {
+        const prev = mergedMap.get(intent.reference);
+        const bizId = intent.businessId || prev?.businessId || '';
+        const biz = bizId ? bizMap.get(bizId) : undefined;
+        mergedMap.set(intent.reference, {
+          ...(prev || {}),
+          reference: intent.reference,
+          provider: intent.provider,
+          flowType: intent.flowType,
+          channel: intent.channel,
+          amountKes: intent.amountKes,
+          status: intent.status,
+          businessId: bizId,
+          businessName: biz?.name ? String(biz.name) : prev?.businessName,
+          businessCode: biz?.code ? String(biz.code) : prev?.businessCode,
+          businessOwnerEmail: biz?.ownerEmail
+            ? String(biz.ownerEmail)
+            : intent.ownerEmail || prev?.businessOwnerEmail,
+          currentBusinessPlan: biz?.plan ? String(biz.plan) : prev?.currentBusinessPlan,
+          currentBusinessStatus: biz?.status ? String(biz.status) : prev?.currentBusinessStatus,
+          planId: intent.planId || prev?.planId,
+          billingCycle: intent.billingCycle || prev?.billingCycle || 'monthly',
+          durationDays: intent.durationDays || prev?.durationDays,
+          checkoutRequestId: intent.checkoutRequestId || prev?.checkoutRequestId,
+          merchantRequestId: intent.merchantRequestId || prev?.merchantRequestId,
+          mpesaReceiptNumber: intent.mpesaReceiptNumber || prev?.mpesaReceiptNumber,
+          phone: intent.phone || prev?.phone,
+          ownerEmail: intent.ownerEmail || prev?.ownerEmail,
+          resolvedBy: intent.resolvedBy || prev?.resolvedBy,
+          adminNote: intent.adminNote || prev?.adminNote,
+          reconciledByEmail: intent.reconciledByEmail || prev?.reconciledByEmail,
+          gatewayResponse: intent.gatewayResponse || prev?.gatewayResponse,
+          paidAt: intent.paidAt || prev?.paidAt,
+          createdAt: intent.createdAt || prev?.createdAt || '',
+          updatedAt: intent.updatedAt || prev?.updatedAt || intent.paidAt || intent.createdAt || '',
+        });
+      }
+
+      const records = Array.from(mergedMap.values()).sort((a, b) => {
+        const aTime = new Date(a.updatedAt || a.createdAt || a.paidAt || 0).getTime() || 0;
+        const bTime = new Date(b.updatedAt || b.createdAt || b.paidAt || 0).getTime() || 0;
+        return bTime - aTime;
+      });
+
+      const summary = {
+        total: records.length,
+        pendingCount: records.filter((r) => r.status === 'pending' || r.status === 'pay_offline').length,
+        successCount: records.filter((r) => r.status === 'success').length,
+        failedCount: records.filter((r) => r.status === 'failed' || r.status === 'abandoned').length,
+        darajaCount: records.filter((r) => r.provider === 'daraja').length,
+        paystackCount: records.filter((r) => r.provider === 'paystack').length,
+        settledSubscriptionKes: records
+          .filter((r) => r.status === 'success' && r.flowType === 'subscription')
+          .reduce((sum, r) => sum + (Number(r.amountKes) || 0), 0),
+      };
+
+      return res.json({ success: true, records, summary });
+    } catch (err: any) {
+      console.error('Error in /api/payments/admin/records:', err);
+      return res.status(500).json({
+        success: false,
+        records: [],
+        error: err?.message || 'Failed to load cross-tenant payment records.',
+      });
+    }
+  });
+
+  app.post('/api/payments/admin/reconcile', async (req, res) => {
+    try {
+      const caller = await requireSuperAdminCaller(req, res);
+      if (!caller) return;
+
+      const {
+        reference,
+        targetStatus,
+        mpesaReceiptNumber,
+        reason,
+        activateSubscription = true,
+      } = req.body || {};
+
+      const cleanRef = String(reference || '').trim();
+      if (!cleanRef || !/^[a-zA-Z0-9_-]{1,128}$/.test(cleanRef)) {
+        return res.status(400).json({
+          success: false,
+          error: 'A valid payment reference ID is required.',
+        });
+      }
+
+      if (targetStatus !== 'success' && targetStatus !== 'failed' && targetStatus !== 'abandoned') {
+        return res.status(400).json({
+          success: false,
+          error: 'Target status must be success, failed, or abandoned.',
+        });
+      }
+
+      const cleanReason = String(reason || '').trim().slice(0, 300);
+      if (cleanReason.length < 5) {
+        return res.status(400).json({
+          success: false,
+          error: 'A clear reason note (minimum 5 characters) is required for reconciliation.',
+        });
+      }
+
+      const cleanReceipt = String(mpesaReceiptNumber || '')
+        .trim()
+        .toUpperCase()
+        .slice(0, 64);
+
+      const memRecord = paymentIntents.get(cleanRef);
+      const dbRecord = await getFirestoreDoc('payment_records', cleanRef, caller.bearerToken).catch(() => null);
+      if (!memRecord && !dbRecord) {
+        return res.status(404).json({
+          success: false,
+          error: `Payment reference "${cleanRef}" was not found.`,
+        });
+      }
+
+      const baseRecord = {
+        reference: cleanRef,
+        provider: (memRecord?.provider || (dbRecord?.provider === 'daraja' ? 'daraja' : 'paystack')) as 'daraja' | 'paystack',
+        flowType: (memRecord?.flowType || (dbRecord?.flowType === 'pos_sale' ? 'pos_sale' : 'subscription')) as PaymentFlowType,
+        channel: (memRecord?.channel || (dbRecord?.channel === 'card' ? 'card' : 'mpesa_stk')) as PaymentChannel,
+        amountKes: Number(memRecord?.amountKes ?? dbRecord?.amountKes ?? 0),
+        status: String(memRecord?.status || dbRecord?.status || 'pending') as StoredPaymentIntent['status'],
+        businessId: memRecord?.businessId || (dbRecord?.businessId ? String(dbRecord.businessId) : undefined),
+        ownerEmail: memRecord?.ownerEmail || (dbRecord?.ownerEmail ? String(dbRecord.ownerEmail) : undefined),
+        planId: memRecord?.planId || (dbRecord?.planId ? String(dbRecord.planId) : undefined),
+        billingCycle: (memRecord?.billingCycle || (dbRecord?.billingCycle === 'annual' ? 'annual' : 'monthly')) as 'monthly' | 'annual',
+        durationDays: memRecord?.durationDays || (dbRecord?.durationDays ? Number(dbRecord.durationDays) : undefined),
+        checkoutRequestId: memRecord?.checkoutRequestId || (dbRecord?.checkoutRequestId ? String(dbRecord.checkoutRequestId) : undefined),
+        merchantRequestId: memRecord?.merchantRequestId || (dbRecord?.merchantRequestId ? String(dbRecord.merchantRequestId) : undefined),
+        mpesaReceiptNumber: memRecord?.mpesaReceiptNumber || (dbRecord?.mpesaReceiptNumber ? String(dbRecord.mpesaReceiptNumber) : undefined),
+        phone: memRecord?.phone || (dbRecord?.phone ? String(dbRecord.phone) : undefined),
+        resolvedBy: memRecord?.resolvedBy || (dbRecord?.resolvedBy ? String(dbRecord.resolvedBy) : undefined),
+        gatewayResponse: memRecord?.gatewayResponse || (dbRecord?.gatewayResponse ? String(dbRecord.gatewayResponse) : undefined),
+        paidAt: memRecord?.paidAt || (dbRecord?.paidAt ? String(dbRecord.paidAt) : undefined),
+        createdAt: memRecord?.createdAt || String(dbRecord?.createdAt || new Date().toISOString()),
+      };
+
+      const beforeSnapshot = {
+        status: baseRecord.status,
+        mpesaReceiptNumber: baseRecord.mpesaReceiptNumber || null,
+        resolvedBy: baseRecord.resolvedBy || null,
+        gatewayResponse: baseRecord.gatewayResponse || null,
+        planId: baseRecord.planId || null,
+        businessId: baseRecord.businessId || null,
+      };
+
+      const nowIso = new Date().toISOString();
+      const effectiveReceipt = cleanReceipt || baseRecord.mpesaReceiptNumber;
+      const gatewaySummary = `Manual reconciliation (${caller.email}): ${cleanReason}`.slice(0, 256);
+
+      const patchPayload: Record<string, any> = {
+        reference: cleanRef,
+        provider: baseRecord.provider,
+        status: targetStatus,
+        resolvedBy: 'super_admin_manual',
+        adminNote: cleanReason,
+        reconciledByEmail: caller.email.slice(0, 160),
+        gatewayResponse: gatewaySummary,
+        updatedAt: nowIso,
+      };
+
+      if (targetStatus === 'success') {
+        patchPayload.paidAt = baseRecord.paidAt || nowIso;
+        if (effectiveReceipt) {
+          patchPayload.mpesaReceiptNumber = effectiveReceipt;
+        }
+      } else if (cleanReceipt) {
+        patchPayload.mpesaReceiptNumber = cleanReceipt;
+      }
+
+      const firestoreSynced = await patchFirestoreDoc(
+        'payment_records',
+        cleanRef,
+        patchPayload,
+        Object.keys(patchPayload),
+        caller.bearerToken
+      );
+
+      darajaPoller.markResolved(cleanRef);
+
+      let activatedSubscription: Record<string, any> | undefined;
+      if (
+        targetStatus === 'success' &&
+        activateSubscription !== false &&
+        baseRecord.flowType === 'subscription' &&
+        baseRecord.businessId
+      ) {
+        activatedSubscription = await activateSubscriptionFromPayment({
+          reference: cleanRef,
+          provider: baseRecord.provider,
+          businessId: baseRecord.businessId,
+          planId: baseRecord.planId,
+          billingCycle: baseRecord.billingCycle,
+          durationDays: baseRecord.durationDays,
+          amountKes: baseRecord.amountKes,
+          channel: baseRecord.channel,
+          paidAt: patchPayload.paidAt || nowIso,
+          mpesaReceiptNumber: effectiveReceipt,
+          preferredBearerToken: caller.bearerToken,
+          telemetrySessionPrefix: 'superadmin-reconcile',
+        });
+      }
+
+      const updatedIntent: StoredPaymentIntent = {
+        ...baseRecord,
+        status: targetStatus,
+        resolvedBy: 'super_admin_manual',
+        adminNote: cleanReason,
+        reconciledByEmail: caller.email,
+        gatewayResponse: gatewaySummary,
+        paidAt: patchPayload.paidAt || baseRecord.paidAt,
+        mpesaReceiptNumber: effectiveReceipt,
+        updatedAt: nowIso,
+        ...(activatedSubscription ? { activatedSubscription } : {}),
+      };
+      paymentIntents.set(cleanRef, updatedIntent);
+
+      const afterSnapshot = {
+        status: targetStatus,
+        mpesaReceiptNumber: effectiveReceipt || null,
+        resolvedBy: 'super_admin_manual',
+        adminNote: cleanReason,
+        reconciledByEmail: caller.email,
+        subscriptionActivated: Boolean(activatedSubscription),
+        planId: activatedSubscription?.planId || baseRecord.planId || null,
+      };
+
+      return res.json({
+        success: true,
+        firestoreSynced,
+        record: updatedIntent,
+        beforeSnapshot,
+        afterSnapshot,
+        ...(activatedSubscription ? { activatedSubscription } : {}),
+      });
+    } catch (err: any) {
+      console.error('Error in /api/payments/admin/reconcile:', err);
+      return res.status(500).json({
+        success: false,
+        error: err?.message || 'Manual payment reconciliation failed.',
+      });
+    }
   });
 
   app.get('/api/payments/banks', async (_req, res) => {
@@ -4339,6 +6629,111 @@ Extract:
         }
       } catch {
         // try next candidate token
+      }
+    }
+    return [];
+  }
+
+  async function listFirestoreDocsPaginated(
+    collection: string,
+    maxDocs = 1500,
+    preferredBearerToken?: string
+  ): Promise<Record<string, any>[]> {
+    const candidates = await resolveFirestoreCandidateTokens(preferredBearerToken);
+    if (candidates.length === 0) return [];
+
+    for (let i = 0; i < candidates.length; i++) {
+      const { token, source } = candidates[i];
+      const collected: Record<string, any>[] = [];
+      let pageToken: string | undefined;
+      let tokenRejected = false;
+
+      try {
+        while (collected.length < maxDocs) {
+          const batchSize = Math.min(500, maxDocs - collected.length);
+          const qp = new URLSearchParams({ pageSize: String(batchSize) });
+          if (pageToken) qp.set('pageToken', pageToken);
+          const url = `${firestoreCollectionUrl(collection)}?${qp.toString()}`;
+          const resp = await fetch(url, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!resp.ok) {
+            if ((resp.status === 401 || resp.status === 403) && source === 'adc') {
+              cachedAdcToken = null;
+              gcpTokenFirestoreCooldownUntil = Date.now() + GCP_FIRESTORE_DENIED_COOLDOWN_MS;
+              tokenRejected = true;
+            }
+            break;
+          }
+          const json: any = await resp.json().catch(() => ({}));
+          const docs = Array.isArray(json.documents) ? json.documents : [];
+          for (const d of docs) {
+            const parsed = fromFirestoreDoc(d);
+            if (parsed) collected.push(parsed);
+          }
+          if (!json.nextPageToken || docs.length === 0) {
+            return collected;
+          }
+          pageToken = String(json.nextPageToken);
+        }
+        if (!tokenRejected && collected.length > 0) {
+          return collected;
+        }
+      } catch {
+        // try next candidate token
+      }
+    }
+    return [];
+  }
+
+  async function queryFirestoreDocsWithToken(
+    collection: string,
+    fieldPath: string,
+    value: string | number | boolean,
+    pageSize = 100,
+    preferredBearerToken?: string
+  ): Promise<Record<string, any>[]> {
+    const candidates = await resolveFirestoreCandidateTokens(preferredBearerToken);
+    if (candidates.length === 0) return [];
+    const runQueryUrl = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(firebaseProjectId)}/databases/${encodeURIComponent(firestoreDatabaseId)}/documents:runQuery`;
+
+    for (let i = 0; i < candidates.length; i++) {
+      const { token, source } = candidates[i];
+      try {
+        const resp = await fetch(runQueryUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            structuredQuery: {
+              from: [{ collectionId: collection }],
+              where: {
+                fieldFilter: {
+                  field: { fieldPath },
+                  op: 'EQUAL',
+                  value: toFirestoreValue(value),
+                },
+              },
+              limit: pageSize,
+            },
+          }),
+        });
+        if (resp.ok) {
+          const rows: any = await resp.json().catch(() => []);
+          if (!Array.isArray(rows)) return [];
+          return rows
+            .map((r: any) => (r?.document ? fromFirestoreDoc(r.document) : null))
+            .filter(Boolean) as Record<string, any>[];
+        }
+        if ((resp.status === 401 || resp.status === 403) && source === 'adc') {
+          cachedAdcToken = null;
+          gcpTokenFirestoreCooldownUntil = Date.now() + GCP_FIRESTORE_DENIED_COOLDOWN_MS;
+          continue;
+        }
+      } catch {
+        // try next token
       }
     }
     return [];

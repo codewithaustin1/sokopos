@@ -403,7 +403,7 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
               <button
                 type="button"
                 onClick={handleScrollHome}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 min-h-[44px] rounded-xl text-[#090d16] font-bold hover:bg-emerald-50 hover:text-[#28a745] transition-colors cursor-pointer group text-sm w-full text-left"
               >
                 <Home className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
                 <span className="truncate flex-1">Home</span>
@@ -412,43 +412,43 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
               <button
                 type="button"
                 onClick={() => handleSectionNav('solutions')}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 min-h-[44px] rounded-xl text-[#090d16] font-bold hover:bg-emerald-50 hover:text-[#28a745] transition-colors cursor-pointer group text-sm w-full text-left"
               >
                 <Layers className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
-                <span className="truncate flex-1">Your Shop</span>
+                <span className="truncate flex-1">Solutions</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleSectionNav('payments')}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 min-h-[44px] rounded-xl text-[#090d16] font-bold hover:bg-emerald-50 hover:text-[#28a745] transition-colors cursor-pointer group text-sm w-full text-left"
               >
                 <Smartphone className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
-                <span className="truncate flex-1">M-Pesa &amp; eTIMS</span>
+                <span className="truncate flex-1">Platform</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleSectionNav('hardware')}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 min-h-[44px] rounded-xl text-[#090d16] font-bold hover:bg-emerald-50 hover:text-[#28a745] transition-colors cursor-pointer group text-sm w-full text-left"
               >
                 <Cpu className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
-                <span className="truncate flex-1">Use Your Hardware</span>
+                <span className="truncate flex-1">Hardware</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleSectionNav('compare')}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 min-h-[44px] rounded-xl text-[#090d16] font-bold hover:bg-emerald-50 hover:text-[#28a745] transition-colors cursor-pointer group text-sm w-full text-left"
               >
                 <Award className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
-                <span className="truncate flex-1">Why Switch</span>
+                <span className="truncate flex-1">Compare</span>
               </button>
 
               <button
                 type="button"
                 onClick={handlePricingNav}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-[#28a745] transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 min-h-[44px] rounded-xl text-[#090d16] font-bold hover:bg-emerald-50 hover:text-[#28a745] transition-colors cursor-pointer group text-sm w-full text-left"
               >
                 <CreditCard className="w-5 h-5 text-slate-400 group-hover:text-[#28a745] transition-colors shrink-0" />
                 <span className="truncate flex-1">Pricing</span>
@@ -457,7 +457,7 @@ export const MobileSlideDrawer: React.FC<MobileSlideDrawerProps> = ({
               <button
                 type="button"
                 onClick={() => handleItemClick(() => posContext?.setIsAffiliateModalOpen(true))}
-                className="drawer-item flex items-center gap-3 px-3.5 py-3 rounded-xl text-slate-700 font-medium hover:bg-emerald-50 hover:text-emerald-700 transition-all cursor-pointer group text-sm w-full text-left"
+                className="drawer-item flex items-center gap-3 px-3.5 py-3 min-h-[44px] rounded-xl text-[#090d16] font-bold hover:bg-emerald-50 hover:text-emerald-700 transition-colors cursor-pointer group text-sm w-full text-left"
               >
                 <Gift className="w-5 h-5 text-emerald-600 group-hover:text-emerald-700 transition-colors shrink-0" />
                 <span className="truncate flex-1">Partners</span>

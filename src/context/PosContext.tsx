@@ -135,6 +135,7 @@ import {
   getTenantTransactionsRangeFromFirestore,
   flushPendingDocsBatch,
   isDemoBusinessId,
+  isCurrentUserSuperAdmin,
   seedInitialTenantDataToFirestore,
   getPlatformSettingsFromFirestore,
   saveBrandingSlotToFirestore,
@@ -289,7 +290,7 @@ interface PosContextType {
   refreshPricingTiers: (forceRefresh?: boolean) => Promise<PricingTier[]>;
   updatePricingTier: (tierId: string, updates: Partial<PricingTier>) => void;
   resetPricingTiersToDefault: () => void;
-  updateBusinessPlan: (businessId: string, plan: BusinessPlanTier) => Promise<void>;
+  updateBusinessPlan: (businessId: string, plan: BusinessPlanTier, reason?: string) => Promise<void>;
   entitlements: SubscriptionEntitlements;
   upgradePrompt: UpgradePromptRequest | null;
   openUpgradePrompt: (req: UpgradePromptRequest) => void;
@@ -381,6 +382,15 @@ interface PosContextType {
 
   // Super-Admin Audit & Safeguards
   superAdminAuditLogs: SuperAdminAuditEntry[];
+  logSuperAdminAction: (
+    businessId: string,
+    recordType: SuperAdminAuditEntry['recordType'],
+    recordId: string,
+    action: SuperAdminAuditEntry['action'],
+    description: string,
+    beforeValue: unknown,
+    afterValue: unknown
+  ) => void;
   pendingDestructiveAction: DestructiveActionRequest | null;
   confirmDestructiveAction: () => void;
   cancelDestructiveAction: () => void;
@@ -969,6 +979,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isFirebaseAuthLoading, setIsFirebaseAuthLoading] = useState<boolean>(true);
   const [pendingVerificationEmail, setPendingVerificationEmail] = useState<string | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [firebaseEmailVerifiedState, setFirebaseEmailVerifiedState] = useState<boolean>(false);
 
   // When logged out or visiting clean, currentUser is null.
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
@@ -1008,16 +1019,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
     const now = new Date().toISOString();
 
-    // Verify strictly against owner's businesses and stable tenant ID (no full-collection scan)
+    // Verify strictly against owner's businesses in Firestore (no full-collection scan or blind ID probe on non-existent docs)
     let candidateBusinesses = [...businesses];
     const remoteBusinessIds = new Set<string>();
     try {
-      const stableId = getStableBusinessIdForEmail(normalizedEmail);
-      const [ownerMatches, stableBiz] = await Promise.all([
+      const [ownerMatches, superAdminBiz] = await Promise.all([
         getBusinessesByOwnerEmailFromFirestore(normalizedEmail),
-        getBusinessByIdFromFirestore(stableId),
+        isSuperAdminEmail ? getBusinessByIdFromFirestore('biz-upfront') : Promise.resolve(null),
       ]);
-      const remoteBizs = [...ownerMatches, ...(stableBiz ? [stableBiz] : [])];
+      const remoteBizs = [...ownerMatches, ...(superAdminBiz ? [superAdminBiz] : [])];
       if (remoteBizs.length > 0) {
         const map = new Map<string, Business>();
         candidateBusinesses.forEach((b) => map.set(b.id, b));
@@ -1115,7 +1125,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         } else if (isSuperAdminEmail) {
           await saveBusinessToFirestore(winner);
         } else {
-          await ensureBusinessDocInFirestore(winner, normalizedEmail);
+          await ensureBusinessDocInFirestore(winner, normalizedEmail, {
+            skipInitialGet: !isExistingAccount,
+          });
         }
       } catch (e) {
         console.warn('Firestore sync winner note:', e);
@@ -1149,6 +1161,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const unsubscribe = onAuthStateChanged(auth, async (fbUser: FirebaseUser | null) => {
       clearTimeout(watchdogTimer);
       setFirebaseUser(fbUser);
+      setFirebaseEmailVerifiedState(Boolean(fbUser?.emailVerified));
       if (!fbUser || !fbUser.email) {
         setIsFirebaseAuthLoading(false);
         return;
@@ -1176,8 +1189,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         setPendingVerificationEmail(null);
 
-        const idToken = await fbUser.getIdToken();
-        const tokenResult = await fbUser.getIdTokenResult();
+        let tokenResult = await fbUser.getIdTokenResult();
+        let idToken = tokenResult.token;
+        if (fbUser.emailVerified && tokenResult.claims?.email_verified !== true) {
+          idToken = await fbUser.getIdToken(true);
+          tokenResult = await fbUser.getIdTokenResult();
+        }
         const expirationTime = new Date(tokenResult.expirationTime).getTime();
 
         const pendingStoreName = sessionStorage.getItem('sokopos_pending_store_name') || undefined;
@@ -1283,7 +1300,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setAllCustomers((prev) => prev.filter((c) => !unverifiedIds.has(c.businessId)));
       setAllShifts((prev) => prev.filter((s) => !unverifiedIds.has(s.businessId)));
 
-      if (auth.currentUser) {
+      if (auth.currentUser && isCurrentUserSuperAdmin()) {
         for (const bId of unverifiedIds) {
           deleteBusinessFromFirestore(bId).catch((e) => console.warn('Clean startup biz from firestore:', e));
           purgeTenantAllDataFromFirestore(bId).catch((e) => console.warn('Clean startup tenant data from firestore:', e));
@@ -1317,7 +1334,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const firebaseUid = firebaseUser?.uid || null;
   const firebaseEmail = (firebaseUser?.email || '').toLowerCase().trim();
-  const firebaseEmailVerified = Boolean(firebaseUser?.emailVerified);
+  const firebaseEmailVerified = firebaseUser
+    ? Boolean(firebaseUser.emailVerified) || firebaseEmailVerifiedState
+    : false;
 
   const hasAuthenticatedUser = Boolean(currentUser);
   const currentUserFirebaseUid = currentUser?.firebaseUid || null;
@@ -1640,9 +1659,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const logSuperAdminAction = useCallback(
     (
       businessId: string,
-      recordType: 'product' | 'transaction' | 'user' | 'location' | 'business' | 'stock',
+      recordType: SuperAdminAuditEntry['recordType'],
       recordId: string,
-      action: 'create' | 'update' | 'delete' | 'switch_tenant' | 'provision_business',
+      action: SuperAdminAuditEntry['action'],
       description: string,
       beforeValue: unknown,
       afterValue: unknown
@@ -8953,7 +8972,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Test Firestore Connection once per signed-in user identity and load scoped business profile (no full-collection scan)
   useEffect(() => {
-    if (!firebaseUid || !auth.currentUser) {
+    const activeEmail = firebaseEmail || (auth.currentUser?.email || '').toLowerCase().trim();
+    const isSA = activeEmail === SUPER_ADMIN_EMAIL.toLowerCase();
+    if (!firebaseUid || !auth.currentUser || (!firebaseEmailVerified && !isSA)) {
       return;
     }
     let cancelled = false;
@@ -8967,9 +8988,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const userEmail = firebaseEmail || (auth.currentUser.email || '').toLowerCase().trim();
       if (!userEmail) return;
 
+      const isSuperAdminAccount = userEmail === SUPER_ADMIN_EMAIL.toLowerCase();
+      if (!isSuperAdminAccount && !auth.currentUser.emailVerified) {
+        return;
+      }
+
       try {
-        const isSA = userEmail === SUPER_ADMIN_EMAIL.toLowerCase();
-        const remoteBizs = isSA
+        const remoteBizs = isSuperAdminAccount
           ? (await getBusinessByIdFromFirestore('biz-upfront').then((b) => (b ? [b] : [])))
           : await getBusinessesByOwnerEmailFromFirestore(userEmail);
 
@@ -9708,6 +9733,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const tokenResult = await refreshedUser.getIdTokenResult();
       const expirationTime = new Date(tokenResult.expirationTime).getTime();
 
+      setFirebaseUser(refreshedUser);
+      setFirebaseEmailVerifiedState(true);
+
       const normalizedEmail = refreshedUser.email!.toLowerCase().trim();
       const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
       const pendingStoreName = sessionStorage.getItem('sokopos_pending_store_name') || undefined;
@@ -9883,13 +9911,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     ensureTenantDefaults(matchedBiz);
 
-    if (auth.currentUser) {
+    if (auth.currentUser && (auth.currentUser.emailVerified || isCurrentUserSuperAdmin())) {
       if (emailMatches.length > 0) {
         updateBusinessInFirestore(matchedBiz.id, { lastLoginAt: matchedBiz.lastLoginAt }).catch((e) =>
           console.warn('Sync matched biz lastLoginAt note:', e)
         );
       } else {
-        ensureBusinessDocInFirestore(matchedBiz, normalizedEmail).catch((e) =>
+        ensureBusinessDocInFirestore(matchedBiz, normalizedEmail, { skipInitialGet: true }).catch((e) =>
           console.warn('Sync matched biz note:', e)
         );
       }
@@ -10105,7 +10133,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               : targetBizLocations[0]?.id || matchedUser.assignedLocationId);
 
         let biz = businesses.find((b) => b.id === targetBizId);
-        if (!biz && isOnline && auth.currentUser && !isDemoBusinessId(targetBizId)) {
+        if (!biz && isOnline && auth.currentUser && (auth.currentUser.emailVerified || isCurrentUserSuperAdmin()) && !isDemoBusinessId(targetBizId)) {
           try {
             const singleBiz = await getBusinessByIdFromFirestore(targetBizId);
             if (singleBiz) {
@@ -10232,6 +10260,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setInventoryLastFetchedAt(null);
 
     // 5. Clear user session completely
+    setFirebaseEmailVerifiedState(false);
+    setPendingVerificationEmail(null);
     setCurrentUser(null);
     clearCart();
     setActiveReceipt(null);
@@ -10984,7 +11014,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
   };
 
-  const updateBusinessPlan = async (businessId: string, plan: BusinessPlanTier): Promise<void> => {
+  const updateBusinessPlan = async (
+    businessId: string,
+    plan: BusinessPlanTier,
+    reason?: string
+  ): Promise<void> => {
     if (!isSuperAdmin) {
       showToast('Access denied: Only verified Paystack checkout or Authorized Platform Support can change subscription tiers.', 'error');
       return;
@@ -10992,18 +11026,74 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const targetBiz = businesses.find((b) => b.id === businessId);
     if (!targetBiz) return;
 
+    const cleanReason = (reason || '').trim();
     const oldPlan = targetBiz.plan;
-    const updatedBiz: Business = { ...targetBiz, plan };
+    const oldSubscription = targetBiz.subscription ? { ...targetBiz.subscription } : null;
+    const nowIso = new Date().toISOString();
+    const existingExpiryMs = targetBiz.subscription?.expiresAt
+      ? new Date(targetBiz.subscription.expiresAt).getTime()
+      : 0;
+    const preservedOrExtendedExpiry =
+      Number.isFinite(existingExpiryMs) && existingExpiryMs > Date.now()
+        ? targetBiz.subscription!.expiresAt
+        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    const updatedSubscription =
+      plan === 'free'
+        ? targetBiz.subscription
+          ? {
+              status: targetBiz.subscription.status === 'expired' ? ('expired' as const) : ('active' as const),
+              plan: 'free' as const,
+              planId: 'free',
+              ...(targetBiz.subscription.activatedAt ? { activatedAt: targetBiz.subscription.activatedAt } : {}),
+              ...(targetBiz.subscription.expiresAt ? { expiresAt: targetBiz.subscription.expiresAt } : {}),
+              ...(targetBiz.subscription.lastPaymentReference
+                ? { lastPaymentReference: targetBiz.subscription.lastPaymentReference }
+                : {}),
+              paymentProvider: 'super_admin_override',
+            }
+          : undefined
+        : (() => {
+            const canonicalTier: 'starter' | 'business' | 'premium' =
+              plan === 'professional'
+                ? 'business'
+                : plan === 'enterprise'
+                ? 'premium'
+                : plan;
+            return {
+              status: 'active' as const,
+              plan: canonicalTier,
+              planId: canonicalTier,
+              activatedAt: nowIso,
+              expiresAt: preservedOrExtendedExpiry,
+              lastPaymentReference:
+                targetBiz.subscription?.lastPaymentReference || `ADMIN-OVERRIDE-${Date.now()}`,
+              paymentProvider: 'super_admin_override',
+            };
+          })();
+
+    const updatedBiz: Business = {
+      ...targetBiz,
+      plan,
+      ...(updatedSubscription ? { subscription: updatedSubscription } : {}),
+    };
 
     setBusinesses((prev) =>
       prev.map((b) => (b.id === businessId ? updatedBiz : b))
     );
 
     if (isOnline) {
-      updateBusinessInFirestore(businessId, { plan }).catch((err) =>
+      updateBusinessInFirestore(businessId, {
+        plan,
+        ...(updatedSubscription ? { subscription: updatedSubscription } : {}),
+      }).catch((err) =>
         console.warn('Firestore business plan update error:', err)
       );
     }
+
+    const auditSummary = `Changed subscription tier for "${targetBiz.name}" from ${oldPlan} to ${plan}${
+      cleanReason ? ` (Reason: ${cleanReason})` : ''
+    }`;
 
     if (isSuperAdmin) {
       logSuperAdminAction(
@@ -11011,20 +11101,34 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         'business',
         businessId,
         'update',
-        `Changed subscription tier for "${targetBiz.name}" from ${oldPlan} to ${plan}`,
-        { plan: oldPlan },
-        { plan }
+        auditSummary,
+        {
+          plan: oldPlan,
+          subscription: oldSubscription,
+        },
+        {
+          plan,
+          subscription: updatedSubscription || null,
+          reason: cleanReason || 'Super Admin manual plan tier override',
+          overriddenBy: currentUser?.email || SUPER_ADMIN_EMAIL,
+        }
       );
     }
 
     logAdminActivity({
       category: 'system',
       action: 'change_plan',
-      description: `Updated plan from ${oldPlan?.toUpperCase()} to ${plan.toUpperCase()} for "${targetBiz.name}"`,
+      description: `Updated plan from ${oldPlan?.toUpperCase()} to ${plan.toUpperCase()} for "${targetBiz.name}"${
+        cleanReason ? ` — ${cleanReason}` : ''
+      }`,
       recordType: 'business',
       recordId: businessId,
-      beforeValue: { plan: oldPlan },
-      afterValue: { plan },
+      beforeValue: { plan: oldPlan, subscription: oldSubscription },
+      afterValue: {
+        plan,
+        subscription: updatedSubscription || null,
+        reason: cleanReason || 'Super Admin manual plan tier override',
+      },
     });
 
     soundFx.playSuccess();
@@ -11681,6 +11785,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         appointedDemoCashier,
         appointDemoCashier,
         isDemoSession,
+        logSuperAdminAction,
         loginWithGoogle,
         loginWithCredentials,
         logout,

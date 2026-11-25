@@ -22,6 +22,8 @@ import {
   Sliders,
   Landmark,
   Activity,
+  ShieldCheck,
+  Receipt,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { PaystackSubaccountPanel } from './common/PaystackSubaccountPanel';
@@ -31,11 +33,16 @@ import { PricingSlider } from './pricing/PricingSlider';
 import { SuperAdminAffiliatesTab } from './SuperAdminAffiliatesTab';
 import { SuperAdminTrafficTab } from './superadmin/SuperAdminTrafficTab';
 import { SuperAdminBrandingTab } from './superadmin/SuperAdminBrandingTab';
+import { SuperAdminReconciliationTab } from './superadmin/SuperAdminReconciliationTab';
+import { SuperAdminEtimsOutboxTab } from './superadmin/SuperAdminEtimsOutboxTab';
 import { PackageTierId } from '../types/pricing';
+import { normalizePlanTier } from '../utils/subscriptionEntitlements';
 
 export type SuperAdminTabId =
   | 'tenants'
   | 'subscriptions'
+  | 'reconciliation'
+  | 'etims'
   | 'pricing'
   | 'audit'
   | 'provision'
@@ -67,6 +74,7 @@ const ADMIN_NAV_GROUPS: Array<{
     items: [
       { id: 'tenants', domId: 'superadmin-tab-tenants-btn', label: 'Business Tenants', group: 'Tenants & Access', icon: Building2 },
       { id: 'subscriptions', domId: 'superadmin-tab-subscriptions-btn', label: 'Subscriptions & Access', group: 'Tenants & Access', icon: CreditCard, restricted: true },
+      { id: 'reconciliation', domId: 'superadmin-tab-reconciliation-btn', label: 'Payment Reconciliation', group: 'Tenants & Access', icon: Receipt, restricted: true },
       { id: 'provision', domId: 'superadmin-tab-provision-btn', label: 'Provision Tenant', group: 'Tenants & Access', icon: PlusCircle },
     ],
   },
@@ -81,6 +89,7 @@ const ADMIN_NAV_GROUPS: Array<{
   {
     label: 'Platform & Governance',
     items: [
+      { id: 'etims', domId: 'superadmin-tab-etims-btn', label: 'eTIMS Outbox', group: 'Platform & Governance', icon: ShieldCheck, restricted: true },
       { id: 'branding', domId: 'superadmin-tab-branding-btn', label: 'Platform Branding', group: 'Platform & Governance', icon: Palette },
       { id: 'audit', domId: 'superadmin-tab-audit-btn', label: 'Write Audit Log', group: 'Platform & Governance', icon: FileText },
     ],
@@ -107,6 +116,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
     performSystemCleanup,
     isRealGoogleAccount,
     updateBusinessStatus,
+    updateBusinessPlan,
     pricingTiers,
     pricingSyncStatus,
     pricingSyncError,
@@ -119,23 +129,33 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
 
   const isSuperAdminUser = isSuperAdminEmail(currentUser?.email);
   const isRestrictedTab = (tab: SuperAdminTabId) =>
-    tab === 'subscriptions' || tab === 'affiliates' || tab === 'traffic';
+    tab === 'subscriptions' ||
+    tab === 'reconciliation' ||
+    tab === 'etims' ||
+    tab === 'affiliates' ||
+    tab === 'traffic';
 
   const [activeTab, setActiveTab] = useState<SuperAdminTabId>(
     isRestrictedTab(defaultTab) && !isSuperAdminUser ? 'tenants' : defaultTab || 'tenants'
   );
   const [isCleaningUp, setIsCleaningUp] = useState(false);
+  const [etimsBacklogCount, setEtimsBacklogCount] = useState<number | null>(null);
 
   // Pricing Tiers Config State
   const [selectedPricingTierId, setSelectedPricingTierId] = useState<string>('business');
   const [newFeatureText, setNewFeatureText] = useState<{ [tierId: string]: string }>({});
   const [confirmResetPricing, setConfirmResetPricing] = useState(false);
 
-  // Subscriptions Tab State
+  // Subscriptions & Plan Override State
   const [subSearchQuery, setSubSearchQuery] = useState('');
   const [subStatusFilter, setSubStatusFilter] = useState<'all' | 'active' | 'suspended'>('all');
   const [subPlanFilter, setSubPlanFilter] = useState<'all' | 'free' | 'starter' | 'business' | 'premium'>('all');
   const [togglingBizId, setTogglingBizId] = useState<string | null>(null);
+  const [overrideBizId, setOverrideBizId] = useState<string | null>(null);
+  const [overrideTargetPlan, setOverrideTargetPlan] = useState<PackageTierId>('business');
+  const [overrideReason, setOverrideReason] = useState('');
+  const [overrideError, setOverrideError] = useState<string | null>(null);
+  const [isSavingOverride, setIsSavingOverride] = useState(false);
   const [selectedSubaccountBizId, setSelectedSubaccountBizId] = useState<string | null>(null);
   const selectedSubaccountBiz = selectedSubaccountBizId
     ? businesses.find((b) => b.id === selectedSubaccountBizId) || null
@@ -255,6 +275,12 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
       case 'branding':
         return hasCustomBranding ? (
           <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">Custom</span>
+        ) : null;
+      case 'etims':
+        return etimsBacklogCount !== null && etimsBacklogCount > 0 ? (
+          <span className="text-[11px] font-mono tabular-nums font-semibold text-rose-600 dark:text-rose-400">
+            {etimsBacklogCount}
+          </span>
         ) : null;
       case 'audit':
         return (
@@ -838,6 +864,33 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                               <button
                                 type="button"
                                 onClick={() => {
+                                  if (overrideBizId === biz.id) {
+                                    setOverrideBizId(null);
+                                    setOverrideError(null);
+                                  } else {
+                                    const currentCanonical = normalizePlanTier(
+                                      biz.plan,
+                                      biz.subscription?.planId
+                                    );
+                                    setOverrideBizId(biz.id);
+                                    setOverrideTargetPlan(currentCanonical);
+                                    setOverrideReason('');
+                                    setOverrideError(null);
+                                  }
+                                }}
+                                className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border transition cursor-pointer whitespace-nowrap ${
+                                  overrideBizId === biz.id
+                                    ? 'bg-blue-50 dark:bg-blue-950/50 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300'
+                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                }`}
+                              >
+                                <Sliders className="w-3.5 h-3.5" />
+                                <span>{overrideBizId === biz.id ? 'Close Override' : 'Override Plan'}</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
                                   setActiveBusinessId(biz.id);
                                   onClose();
                                 }}
@@ -847,6 +900,142 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                               </button>
                             </div>
                           </div>
+
+                          {/* Inline Plan Tier Override Panel */}
+                          {overrideBizId === biz.id && (() => {
+                            const currentCanonical = normalizePlanTier(
+                              biz.plan,
+                              biz.subscription?.planId
+                            );
+                            const currentFee = getTierMonthlyFee(currentCanonical);
+                            const nextFee = getTierMonthlyFee(overrideTargetPlan);
+                            const nextTierMeta = pricingTiers.find((t) => t.id === overrideTargetPlan);
+                            const isUnchanged = overrideTargetPlan === currentCanonical;
+                            const cleanReason = overrideReason.trim();
+                            return (
+                              <div className="px-5 py-4 bg-slate-50 dark:bg-slate-950/70 border-t border-slate-200 dark:border-slate-800 space-y-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-800 dark:text-slate-100">
+                                    <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                                    <span>Manual Subscription Tier Override</span>
+                                  </div>
+                                  <span className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                                    {currentCanonical.toUpperCase()} (KES {currentFee.toLocaleString()}/mo) →{' '}
+                                    <strong className="text-blue-600 dark:text-blue-400">
+                                      {overrideTargetPlan.toUpperCase()} (KES {nextFee.toLocaleString()}/mo)
+                                    </strong>
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                  <div>
+                                    <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
+                                      Target Subscription Tier *
+                                    </label>
+                                    <select
+                                      value={overrideTargetPlan}
+                                      onChange={(e) => {
+                                        setOverrideTargetPlan(e.target.value as PackageTierId);
+                                        if (overrideError) setOverrideError(null);
+                                      }}
+                                      className="w-full px-3 py-2 text-xs font-medium bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-slate-100 cursor-pointer"
+                                    >
+                                      <option value="free">Free Advisory (KES 0/mo · 1 Branch, 1 Staff)</option>
+                                      <option value="starter">Starter (KES {getTierMonthlyFee('starter').toLocaleString()}/mo · 1 Branch, 2 Staff)</option>
+                                      <option value="business">Business / Pro (KES {getTierMonthlyFee('business').toLocaleString()}/mo · 3 Branches, 10 Staff)</option>
+                                      <option value="premium">Premium / Enterprise (KES {getTierMonthlyFee('premium').toLocaleString()}/mo · Unlimited)</option>
+                                    </select>
+                                    {nextTierMeta && (
+                                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono">
+                                        Limits:{' '}
+                                        {nextTierMeta.maxBranches === -1
+                                          ? 'Unlimited branches'
+                                          : `${nextTierMeta.maxBranches} branch${nextTierMeta.maxBranches === 1 ? '' : 'es'}`}{' '}
+                                        ·{' '}
+                                        {nextTierMeta.maxStaffUsers === -1
+                                          ? 'Unlimited staff'
+                                          : `${nextTierMeta.maxStaffUsers} staff`}
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  <div className="md:col-span-2">
+                                    <div className="flex items-center justify-between mb-1">
+                                      <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                                        Mandatory Audit Reason Note *
+                                      </label>
+                                      <span className="text-[11px] font-mono tabular-nums text-slate-400">
+                                        {cleanReason.length}/250
+                                      </span>
+                                    </div>
+                                    <input
+                                      type="text"
+                                      maxLength={250}
+                                      value={overrideReason}
+                                      onChange={(e) => {
+                                        setOverrideReason(e.target.value);
+                                        if (overrideError) setOverrideError(null);
+                                      }}
+                                      placeholder="e.g. Verified bank/M-Pesa deposit or 14-day onboarding upgrade per support ticket..."
+                                      className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-slate-100"
+                                    />
+                                    <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+                                      Minimum 5 characters. Records before/after snapshot to Write Audit Log.
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {overrideError && (
+                                  <div className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 rounded-lg px-3 py-2">
+                                    {overrideError}
+                                  </div>
+                                )}
+
+                                <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                                  <button
+                                    type="button"
+                                    disabled={isSavingOverride}
+                                    onClick={() => {
+                                      setOverrideBizId(null);
+                                      setOverrideError(null);
+                                    }}
+                                    className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isSavingOverride || isUnchanged || cleanReason.length < 5}
+                                    onClick={async () => {
+                                      if (isUnchanged) {
+                                        setOverrideError('Select a different plan tier than the current plan.');
+                                        return;
+                                      }
+                                      if (cleanReason.length < 5) {
+                                        setOverrideError('Please enter an audit reason note (minimum 5 characters).');
+                                        return;
+                                      }
+                                      setIsSavingOverride(true);
+                                      setOverrideError(null);
+                                      try {
+                                        await updateBusinessPlan(biz.id, overrideTargetPlan, cleanReason);
+                                        setOverrideBizId(null);
+                                        setOverrideReason('');
+                                      } catch (err: any) {
+                                        setOverrideError(err?.message || 'Failed to apply plan override.');
+                                      } finally {
+                                        setIsSavingOverride(false);
+                                      }
+                                    }}
+                                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition"
+                                  >
+                                    {isSavingOverride && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                                    <span>Confirm Plan Override</span>
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })()}
 
                           <div
                             className={`px-5 py-2.5 border-t text-xs flex flex-wrap items-center justify-between gap-2 ${
@@ -1677,17 +1866,67 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
             )}
 
             {/* ============================================================== */}
-            {/* TAB 6: AFFILIATES & PAYOUTS (Restricted)                       */}
+            {/* TAB 6: PAYMENT RECONCILIATION (Restricted)                     */}
+            {/* ============================================================== */}
+            {activeTab === 'reconciliation' &&
+              (isSuperAdminUser ? (
+                <SuperAdminReconciliationTab />
+              ) : (
+                <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+                  <Lock className="w-10 h-10 text-rose-500 mx-auto mb-3" />
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                    Restricted Access Panel
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
+                    Payment Reconciliation is restricted exclusively to authorized Platform Support.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('tenants')}
+                    className="mt-4 px-4 py-2 bg-slate-900 dark:bg-blue-600 hover:bg-slate-800 dark:hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition cursor-pointer"
+                  >
+                    Return to Business Tenants
+                  </button>
+                </div>
+              ))}
+
+            {/* ============================================================== */}
+            {/* TAB 6B: GLOBAL eTIMS OUTBOX (Restricted)                       */}
+            {/* ============================================================== */}
+            {activeTab === 'etims' &&
+              (isSuperAdminUser ? (
+                <SuperAdminEtimsOutboxTab onBacklogCountChange={setEtimsBacklogCount} />
+              ) : (
+                <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+                  <Lock className="w-10 h-10 text-rose-500 mx-auto mb-3" />
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                    Restricted Access Panel
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
+                    Global eTIMS Outbox is restricted exclusively to authorized Platform Support.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('tenants')}
+                    className="mt-4 px-4 py-2 bg-slate-900 dark:bg-blue-600 hover:bg-slate-800 dark:hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition cursor-pointer"
+                  >
+                    Return to Business Tenants
+                  </button>
+                </div>
+              ))}
+
+            {/* ============================================================== */}
+            {/* TAB 7: AFFILIATES & PAYOUTS (Restricted)                       */}
             {/* ============================================================== */}
             {activeTab === 'affiliates' && isSuperAdminUser && <SuperAdminAffiliatesTab />}
 
             {/* ============================================================== */}
-            {/* TAB 7: TRAFFIC & TELEMETRY (Restricted)                        */}
+            {/* TAB 8: TRAFFIC & TELEMETRY (Restricted)                        */}
             {/* ============================================================== */}
             {activeTab === 'traffic' && isSuperAdminUser && <SuperAdminTrafficTab />}
 
             {/* ============================================================== */}
-            {/* TAB 8: PLATFORM BRANDING & ASSETS                              */}
+            {/* TAB 9: PLATFORM BRANDING & ASSETS                              */}
             {/* ============================================================== */}
             {activeTab === 'branding' && <SuperAdminBrandingTab />}
           </div>

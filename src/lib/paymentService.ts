@@ -153,6 +153,71 @@ export interface VerifyPaymentResponse {
   error?: string;
 }
 
+export interface AdminPaymentRecord extends SubscriptionPaymentRecord {
+  businessName?: string;
+  businessCode?: string;
+  businessOwnerEmail?: string;
+  currentBusinessPlan?: string;
+  currentBusinessStatus?: string;
+  merchantRequestId?: string;
+  ownerEmail?: string;
+  resultCode?: number;
+  pollAttempts?: number;
+  adminNote?: string;
+  reconciledByEmail?: string;
+}
+
+export interface AdminPaymentSummary {
+  total: number;
+  pendingCount: number;
+  successCount: number;
+  failedCount: number;
+  darajaCount: number;
+  paystackCount: number;
+  settledSubscriptionKes: number;
+}
+
+export interface DarajaPollerStatusResponse {
+  running: boolean;
+  darajaConfigured: boolean;
+  darajaEnv: 'sandbox' | 'production';
+  activeTrackedCount: number;
+  totalSweeps: number;
+  totalResolvedSuccess: number;
+  totalResolvedFailed: number;
+  lastSweepAt: string | null;
+  lastError: string | null;
+  trackedReferences?: string[];
+}
+
+export interface DarajaPollerSweepResponse {
+  success: boolean;
+  checked?: number;
+  settled?: number;
+  failed?: number;
+  stillPending?: number;
+  status?: DarajaPollerStatusResponse;
+  error?: string;
+}
+
+export interface AdminReconcilePaymentRequest {
+  reference: string;
+  targetStatus: 'success' | 'failed' | 'abandoned';
+  mpesaReceiptNumber?: string;
+  reason: string;
+  activateSubscription?: boolean;
+}
+
+export interface AdminReconcilePaymentResponse {
+  success: boolean;
+  firestoreSynced?: boolean;
+  record?: AdminPaymentRecord;
+  beforeSnapshot?: Record<string, any>;
+  afterSnapshot?: Record<string, any>;
+  activatedSubscription?: Record<string, any>;
+  error?: string;
+}
+
 const PENDING_SUB_STORAGE_KEY = 'sokopos_pending_sub_payment';
 const PENDING_SUB_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
@@ -546,3 +611,130 @@ export async function pollSubscriptionPaymentStatus(
 
   return lastResult;
 }
+
+export async function fetchDarajaPollerStatus(idToken: string): Promise<{
+  success: boolean;
+  status?: DarajaPollerStatusResponse;
+  error?: string;
+}> {
+  try {
+    const resp = await fetch(resolveApiUrl('/api/payments/daraja/poller-status'), {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+    });
+    const data = await readJsonSafe(resp);
+    if (!resp.ok || !data) {
+      return {
+        success: false,
+        error: data?.error || `Failed to load Daraja poller status (${resp.status})`,
+      };
+    }
+    return {
+      success: true,
+      status: data as DarajaPollerStatusResponse,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || 'Unable to reach Daraja poller status endpoint.',
+    };
+  }
+}
+
+export async function triggerDarajaPollerSweep(idToken: string): Promise<DarajaPollerSweepResponse> {
+  try {
+    const resp = await fetch(resolveApiUrl('/api/payments/daraja/poller-sweep'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+    });
+    const data = await readJsonSafe(resp);
+    if (!resp.ok || !data?.success) {
+      return {
+        success: false,
+        error: data?.error || `Daraja poller sweep failed (${resp.status})`,
+      };
+    }
+    return data as DarajaPollerSweepResponse;
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || 'Unable to trigger Daraja poller sweep.',
+    };
+  }
+}
+
+export async function fetchAdminPaymentRecords(
+  idToken: string,
+  limit = 250
+): Promise<{
+  success: boolean;
+  records: AdminPaymentRecord[];
+  summary?: AdminPaymentSummary;
+  error?: string;
+}> {
+  try {
+    const resp = await fetch(
+      resolveApiUrl(`/api/payments/admin/records?limit=${encodeURIComponent(String(limit))}`),
+      {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+      }
+    );
+    const data = await readJsonSafe(resp);
+    if (!resp.ok || !data?.success) {
+      return {
+        success: false,
+        records: [],
+        error: data?.error || `Failed to load payment records (${resp.status})`,
+      };
+    }
+    return {
+      success: true,
+      records: Array.isArray(data.records) ? (data.records as AdminPaymentRecord[]) : [],
+      summary: data.summary as AdminPaymentSummary | undefined,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      records: [],
+      error: err?.message || 'Unable to reach payment reconciliation ledger.',
+    };
+  }
+}
+
+export async function reconcileAdminPayment(
+  payload: AdminReconcilePaymentRequest,
+  idToken: string
+): Promise<AdminReconcilePaymentResponse> {
+  try {
+    const resp = await fetch(resolveApiUrl('/api/payments/admin/reconcile'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await readJsonSafe(resp);
+    if (!resp.ok || !data?.success) {
+      return {
+        success: false,
+        error: data?.error || `Manual reconciliation failed (${resp.status})`,
+      };
+    }
+    return data as AdminReconcilePaymentResponse;
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || 'Unable to reach payment reconciliation server.',
+    };
+  }
+}
+

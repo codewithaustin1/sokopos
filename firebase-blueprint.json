@@ -522,6 +522,8 @@
         "resultCode": { "type": "number" },
         "pollAttempts": { "type": "number" },
         "resolvedBy": { "type": "string", "maxLength": 64 },
+        "adminNote": { "type": "string", "maxLength": 300 },
+        "reconciledByEmail": { "type": "string", "maxLength": 160 },
         "gatewayResponse": { "type": "string", "maxLength": 256 },
         "authorizationUrl": { "type": "string", "maxLength": 512 },
         "paidAt": { "type": "string", "maxLength": 64 },

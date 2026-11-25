@@ -199,12 +199,13 @@ export async function updateAffiliateRateOrStatus(params: {
 export interface EmailOtpCapabilities {
   emailProviderConfigured: boolean;
   customTokenConfigured: boolean;
+  passwordResetOtpConfigured?: boolean;
   otpDigits: number;
   ttlSeconds: number;
   resendCooldownSeconds: number;
 }
 
-export type EmailOtpPurpose = 'passwordless_login' | 'step_up_2fa';
+export type EmailOtpPurpose = 'passwordless_login' | 'step_up_2fa' | 'password_reset';
 
 export async function fetchEmailOtpCapabilities(): Promise<EmailOtpCapabilities | null> {
   try {
@@ -215,6 +216,7 @@ export async function fetchEmailOtpCapabilities(): Promise<EmailOtpCapabilities 
     return {
       emailProviderConfigured: Boolean(data.emailProviderConfigured),
       customTokenConfigured: Boolean(data.customTokenConfigured),
+      passwordResetOtpConfigured: Boolean(data.passwordResetOtpConfigured),
       otpDigits: Number(data.otpDigits) || 6,
       ttlSeconds: Number(data.ttlSeconds) || 600,
       resendCooldownSeconds: Number(data.resendCooldownSeconds) || 60,
@@ -268,6 +270,8 @@ export async function verifyLoginOtp(
   success: boolean;
   verified?: boolean;
   customToken?: string;
+  resetToken?: string;
+  expiresInSeconds?: number;
   uid?: string;
   email?: string;
   remainingAttempts?: number;
@@ -293,11 +297,46 @@ export async function verifyLoginOtp(
       success: true,
       verified: Boolean(data?.verified),
       customToken: typeof data?.customToken === 'string' ? data.customToken : undefined,
+      resetToken: typeof data?.resetToken === 'string' ? data.resetToken : undefined,
+      expiresInSeconds: typeof data?.expiresInSeconds === 'number' ? data.expiresInSeconds : undefined,
       uid: typeof data?.uid === 'string' ? data.uid : undefined,
       email: typeof data?.email === 'string' ? data.email : undefined,
     };
   } catch (err: any) {
     return { success: false, error: err?.message || 'Network error verifying code.' };
+  }
+}
+
+export async function confirmPasswordResetWithToken(
+  email: string,
+  resetToken: string,
+  newPassword: string
+): Promise<{
+  success: boolean;
+  message?: string;
+  code?: string;
+  error?: string;
+}> {
+  try {
+    const resp = await fetch(resolveApiUrl('/api/auth/password-reset/confirm'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, resetToken, newPassword }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      return {
+        success: false,
+        code: data?.code,
+        error: data?.error || 'Could not reset your password. Please request a fresh verification code.',
+      };
+    }
+    return {
+      success: true,
+      message: typeof data?.message === 'string' ? data.message : 'Your password has been updated.',
+    };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Network error updating password.' };
   }
 }
 

@@ -589,6 +589,45 @@ service cloud.firestore {
              recordId.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidAdminPaymentRecord(data, recordId) {
+      return data.keys().hasAll(['reference', 'provider', 'status']) &&
+             data.keys().hasOnly([
+               'reference', 'provider', 'flowType', 'channel', 'amountKes', 'status',
+               'businessId', 'planId', 'billingCycle', 'durationDays',
+               'checkoutRequestId', 'merchantRequestId', 'mpesaReceiptNumber',
+               'phone', 'customerEmail', 'ownerEmail', 'resultCode', 'pollAttempts',
+               'resolvedBy', 'adminNote', 'reconciledByEmail', 'gatewayResponse',
+               'authorizationUrl', 'paidAt', 'createdAt', 'updatedAt'
+             ]) &&
+             data.reference is string &&
+             data.reference == recordId &&
+             data.provider in ['paystack', 'daraja'] &&
+             data.status in ['pending', 'pay_offline', 'success', 'failed', 'abandoned'] &&
+             (!('flowType' in data) || data.flowType in ['subscription', 'pos_sale']) &&
+             (!('channel' in data) || data.channel in ['mpesa_stk', 'card']) &&
+             (!('amountKes' in data) || (data.amountKes is number && data.amountKes >= 0)) &&
+             (!('businessId' in data) || (data.businessId is string && data.businessId.size() <= 128)) &&
+             (!('planId' in data) || (data.planId is string && data.planId.size() <= 64)) &&
+             (!('billingCycle' in data) || (data.billingCycle is string && data.billingCycle.size() <= 32)) &&
+             (!('durationDays' in data) || (data.durationDays is number && data.durationDays >= 0)) &&
+             (!('checkoutRequestId' in data) || (data.checkoutRequestId is string && data.checkoutRequestId.size() <= 128)) &&
+             (!('merchantRequestId' in data) || (data.merchantRequestId is string && data.merchantRequestId.size() <= 128)) &&
+             (!('mpesaReceiptNumber' in data) || (data.mpesaReceiptNumber is string && data.mpesaReceiptNumber.size() <= 64)) &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() <= 32)) &&
+             (!('customerEmail' in data) || (data.customerEmail is string && data.customerEmail.size() <= 160)) &&
+             (!('ownerEmail' in data) || (data.ownerEmail is string && data.ownerEmail.size() <= 160)) &&
+             (!('resultCode' in data) || data.resultCode is number) &&
+             (!('pollAttempts' in data) || (data.pollAttempts is number && data.pollAttempts >= 0)) &&
+             (!('resolvedBy' in data) || (data.resolvedBy is string && data.resolvedBy.size() <= 64)) &&
+             (!('adminNote' in data) || (data.adminNote is string && data.adminNote.size() <= 300)) &&
+             (!('reconciledByEmail' in data) || (data.reconciledByEmail is string && data.reconciledByEmail.size() <= 160)) &&
+             (!('gatewayResponse' in data) || (data.gatewayResponse is string && data.gatewayResponse.size() <= 256)) &&
+             (!('authorizationUrl' in data) || (data.authorizationUrl is string && data.authorizationUrl.size() <= 512)) &&
+             (!('paidAt' in data) || (data.paidAt is string && data.paidAt.size() <= 64)) &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64)) &&
+             (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
     match /payment_records/{recordId} {
       allow get: if isValidPaymentRecordId(recordId) && (
         isSuperAdmin() ||
@@ -600,7 +639,10 @@ service cloud.firestore {
         hasTokenEmail() &&
         resource.data.ownerEmail == request.auth.token.email.lower()
       );
-      allow write: if false;
+      allow create, update: if isSuperAdmin() &&
+        isValidPaymentRecordId(recordId) &&
+        isValidAdminPaymentRecord(request.resource.data, recordId);
+      allow delete: if false;
     }
 
     // -------------------------------------------------------------------------

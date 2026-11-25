@@ -211,6 +211,13 @@ export function isCurrentUserSuperAdmin(): boolean {
   return Boolean(user.emailVerified && cleanEmail === SUPER_ADMIN_EMAIL);
 }
 
+export function isCurrentUserEmailVerifiedOrSuperAdmin(): boolean {
+  const user = auth.currentUser;
+  if (!user) return false;
+  if (isCurrentUserSuperAdmin()) return true;
+  return Boolean(user.emailVerified);
+}
+
 const PROTECTED_BUSINESS_FIELD_KEYS = [
   'plan',
   'status',
@@ -269,7 +276,14 @@ export async function getBusinessesFromFirestore(): Promise<Business[]> {
 }
 
 export async function getBusinessByIdFromFirestore(businessId: string): Promise<Business | null> {
-  if (!db || !businessId || isDemoBusinessId(businessId) || !auth.currentUser || isFirestoreQuotaCooldownActive()) {
+  if (
+    !db ||
+    !businessId ||
+    isDemoBusinessId(businessId) ||
+    !auth.currentUser ||
+    !isCurrentUserEmailVerifiedOrSuperAdmin() ||
+    isFirestoreQuotaCooldownActive()
+  ) {
     return null;
   }
   const path = `businesses/${businessId}`;
@@ -277,6 +291,10 @@ export async function getBusinessByIdFromFirestore(businessId: string): Promise<
     const snap = await getDoc(doc(db, 'businesses', businessId));
     return snap.exists() ? (snap.data() as Business) : null;
   } catch (error) {
+    if (isFirestoreQuotaError(error)) {
+      markFirestoreQuotaExceeded();
+      return null;
+    }
     logFirestoreErrorInfo(error, OperationType.GET, path);
     return null;
   }
@@ -284,7 +302,15 @@ export async function getBusinessByIdFromFirestore(businessId: string): Promise<
 
 export async function getBusinessesByOwnerEmailFromFirestore(email: string): Promise<Business[]> {
   const cleanEmail = (email || '').trim();
-  if (!db || !cleanEmail || !auth.currentUser || isFirestoreQuotaCooldownActive()) return [];
+  if (
+    !db ||
+    !cleanEmail ||
+    !auth.currentUser ||
+    !isCurrentUserEmailVerifiedOrSuperAdmin() ||
+    isFirestoreQuotaCooldownActive()
+  ) {
+    return [];
+  }
   const path = 'businesses';
   try {
     const lowerEmail = cleanEmail.toLowerCase();
@@ -390,10 +416,14 @@ export async function saveBusinessLegalConsentToFirestore(
 
 export async function ensureBusinessDocInFirestore(
   biz: Business,
-  ownerEmail: string
+  ownerEmail: string,
+  options?: { skipInitialGet?: boolean }
 ): Promise<{ ok: boolean; error?: string }> {
   if (!db || !auth.currentUser) {
     return { ok: false, error: 'Firebase session is not active.' };
+  }
+  if (!isCurrentUserEmailVerifiedOrSuperAdmin()) {
+    return { ok: false, error: 'Please verify your email address before syncing your store.' };
   }
   if (!biz?.id || isDemoBusinessId(biz.id)) {
     return { ok: false, error: 'Demo stores cannot be synced for live billing.' };
@@ -401,6 +431,45 @@ export async function ensureBusinessDocInFirestore(
   const normalizedOwnerEmail = ownerEmail.trim().toLowerCase();
   try {
     const docRef = doc(db, 'businesses', biz.id);
+    const nowIso = new Date().toISOString();
+
+    const {
+      plan: _omitPlan,
+      status: _omitStatus,
+      subscription: _omitSub,
+      referredByCode: _omitRef,
+      referredAt: _omitRefAt,
+      paystackSubaccountCode: _omitPsCode,
+      paystackSettlementBank: _omitPsBank,
+      paystackSettlementAccountMask: _omitPsMask,
+      paystackSubaccountStatus: _omitPsStatus,
+      paystackSubaccountVerifiedAt: _omitPsVerifiedAt,
+      paystackFeeBearer: _omitPsBearer,
+      ...safeProfile
+    } = biz;
+
+    const createPayload = sanitizeForFirestore({
+      ...safeProfile,
+      id: biz.id,
+      ownerEmail: normalizedOwnerEmail,
+      plan: 'free',
+      status: 'active',
+      lastLoginAt: nowIso,
+    });
+
+    if (options?.skipInitialGet) {
+      try {
+        await setDoc(docRef, createPayload);
+        return { ok: true };
+      } catch (createErr: any) {
+        const code = String(createErr?.code || '').toLowerCase();
+        if (!code.includes('permission-denied')) {
+          throw createErr;
+        }
+        // Document may already exist on server; fall through to lookup + merge update.
+      }
+    }
+
     let existing: Business | null = null;
     try {
       const snap = await getDoc(docRef);
@@ -415,7 +484,6 @@ export async function ensureBusinessDocInFirestore(
         throw getErr;
       }
     }
-    const nowIso = new Date().toISOString();
 
     if (existing) {
       const existingOwner = String(existing.ownerEmail || '').trim().toLowerCase();
@@ -439,32 +507,7 @@ export async function ensureBusinessDocInFirestore(
       return { ok: true };
     }
 
-    const {
-      plan: _omitPlan,
-      status: _omitStatus,
-      subscription: _omitSub,
-      referredByCode: _omitRef,
-      referredAt: _omitRefAt,
-      paystackSubaccountCode: _omitPsCode,
-      paystackSettlementBank: _omitPsBank,
-      paystackSettlementAccountMask: _omitPsMask,
-      paystackSubaccountStatus: _omitPsStatus,
-      paystackSubaccountVerifiedAt: _omitPsVerifiedAt,
-      paystackFeeBearer: _omitPsBearer,
-      ...safeProfile
-    } = biz;
-
-    await setDoc(
-      docRef,
-      sanitizeForFirestore({
-        ...safeProfile,
-        id: biz.id,
-        ownerEmail: normalizedOwnerEmail,
-        plan: 'free',
-        status: 'active',
-        lastLoginAt: nowIso,
-      })
-    );
+    await setDoc(docRef, createPayload);
     return { ok: true };
   } catch (error: any) {
     console.warn(`ensureBusinessDocInFirestore failed for ${biz.id}:`, error);
@@ -657,7 +700,7 @@ export async function saveUserProfileToFirestore(user: {
   businessId?: string | null;
   displayName?: string;
 }): Promise<boolean> {
-  if (!db || !auth.currentUser) return false;
+  if (!db || !auth.currentUser || !isCurrentUserEmailVerifiedOrSuperAdmin()) return false;
   const path = `users/${user.uid}`;
   try {
     await setDoc(

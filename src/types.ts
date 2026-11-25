@@ -534,6 +534,9 @@ export interface DigitaxEtimsData {
   lastAttemptAt?: string;
   lastError?: string;
   isPartnerVerified?: boolean;
+  overrideReason?: string;
+  overriddenByEmail?: string;
+  overriddenAt?: string;
 }
 
 export interface DigitaxCreditNoteData {
@@ -554,6 +557,9 @@ export interface DigitaxCreditNoteData {
   attemptCount?: number;
   lastAttemptAt?: string;
   lastError?: string;
+  overrideReason?: string;
+  overriddenByEmail?: string;
+  overriddenAt?: string;
 }
 
 export interface Cashier {
@@ -606,8 +612,8 @@ export interface SuperAdminAuditEntry {
   adminEmail: string;
   businessId: string;
   businessName: string;
-  action: 'create' | 'update' | 'delete' | 'switch_tenant' | 'provision_business';
-  recordType: 'product' | 'transaction' | 'user' | 'location' | 'business' | 'stock';
+  action: 'create' | 'update' | 'delete' | 'switch_tenant' | 'provision_business' | 'reconcile' | 'retry' | 'override';
+  recordType: 'product' | 'transaction' | 'user' | 'location' | 'business' | 'stock' | 'payment' | 'etims';
   recordId: string;
   description: string;
   beforeValue: unknown;

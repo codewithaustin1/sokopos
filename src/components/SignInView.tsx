@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Monitor,
   ArrowRight,
   Zap,
   Check,
@@ -15,6 +14,13 @@ import {
   Loader2,
   Phone,
   ShieldCheck,
+  Smartphone,
+  CreditCard,
+  Printer,
+  WifiOff,
+  Building2,
+  Store,
+  KeyRound,
 } from 'lucide-react';
 import { DEFAULT_PRICING_TIERS } from '../types/pricing';
 import { usePos } from '../context/PosContext';
@@ -23,9 +29,8 @@ import { soundFx } from '../utils/audio';
 import { LegalTab } from '../data/legalContent';
 import { LegalPageView } from './LegalPageView';
 import { WhatsAppFloatingButton } from './landing/WhatsAppFloatingButton';
-import { AppLogo } from './common/AppLogo';
+import { PublicSiteHeader } from './common/PublicSiteHeader';
 import { AppFooter } from './common/AppFooter';
-import { MobileHeaderNav } from './common/MobileHeaderNav';
 import { InteractiveGradientMesh } from './common/InteractiveGradientMesh';
 import { scrollToTop } from '../utils/scrollUtils';
 import {
@@ -33,7 +38,6 @@ import {
   normalizePathname,
   resolveLegacyHashToPath,
 } from '../utils/seoConfig';
-import { PWAInstallButton } from './PWAInstallButton';
 import { AffiliatePortalModal } from './AffiliatePortalModal';
 import {
   enrollAffiliate,
@@ -42,11 +46,13 @@ import {
   EmailOtpCapabilities,
   requestLoginOtp,
   verifyLoginOtp,
+  confirmPasswordResetWithToken,
 } from '../lib/affiliateService';
 import { auth } from '../lib/firebase';
 import { trackPlatformEvent } from '../lib/telemetryService';
 import { SolutionsGallery } from './landing/SolutionsGallery';
-import heroKenyanPos from '../assets/images/hero_kenyan_pos_1794857444336.jpg';
+import { HeroCounterPreview } from './landing/KenyanCounterSimulators';
+import { LifecycleShowcase } from './landing/LifecycleShowcase';
 
 // Isolated Animated Counter Subcomponent: Keeps main-thread 60fps by updating the DOM ref directly without React state churn
 const AnimatedMetricCounter: React.FC<{ target?: number; duration?: number }> = React.memo(
@@ -121,7 +127,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     pricingTiers,
     isAffiliateModalOpen,
     setIsAffiliateModalOpen,
-    loginBgGraphic,
   } = usePos();
 
   const [activeTab, setActiveTab] = useState<'owner' | 'partner' | 'staff' | 'register'>('owner');
@@ -210,10 +215,23 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const [emailAuthError, setEmailAuthError] = useState<string | null>(null);
   const [isAuthenticatingEmail, setIsAuthenticatingEmail] = useState<boolean>(false);
 
-  // Password reset state
+  // Password reset state (Email-based Resend OTP -> Reset Token -> New Password)
   const [isForgotPasswordMode, setIsForgotPasswordMode] = useState<boolean>(false);
+  const [forgotPasswordStep, setForgotPasswordStep] = useState<'email' | 'otp' | 'new_password' | 'done'>('email');
   const [resetEmailSuccessMessage, setResetEmailSuccessMessage] = useState<string | null>(null);
   const [isSendingResetEmail, setIsSendingResetEmail] = useState<boolean>(false);
+  const [resetOtpCode, setResetOtpCode] = useState<string>('');
+  const [resetOtpError, setResetOtpError] = useState<string | null>(null);
+  const [resetOtpRemainingAttempts, setResetOtpRemainingAttempts] = useState<number | null>(null);
+  const [resetOtpExpirySeconds, setResetOtpExpirySeconds] = useState<number>(600);
+  const [resetOtpResendCooldownSec, setResetOtpResendCooldownSec] = useState<number>(0);
+  const [isVerifyingResetOtp, setIsVerifyingResetOtp] = useState<boolean>(false);
+  const [verifiedResetToken, setVerifiedResetToken] = useState<string | null>(null);
+  const [resetNewPassword, setResetNewPassword] = useState<string>('');
+  const [resetConfirmPassword, setResetConfirmPassword] = useState<string>('');
+  const [showResetNewPassword, setShowResetNewPassword] = useState<boolean>(false);
+  const [showResetConfirmPassword, setShowResetConfirmPassword] = useState<boolean>(false);
+  const [isConfirmingPasswordReset, setIsConfirmingPasswordReset] = useState<boolean>(false);
 
   // Partner tab authentication state
   const [partnerMode, setPartnerMode] = useState<'signin' | 'register'>('signin');
@@ -246,13 +264,19 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const [otpCapabilities, setOtpCapabilities] = useState<EmailOtpCapabilities | null>(null);
 
   useEffect(() => {
-    if (!pendingOtpEmail) return;
+    if (!pendingOtpEmail && !(isForgotPasswordMode && forgotPasswordStep === 'otp')) return;
     const timer = window.setInterval(() => {
-      setOtpResendCooldownSec((prev) => (prev > 0 ? prev - 1 : 0));
-      setOtpExpirySeconds((prev) => (prev > 0 ? prev - 1 : 0));
+      if (pendingOtpEmail) {
+        setOtpResendCooldownSec((prev) => (prev > 0 ? prev - 1 : 0));
+        setOtpExpirySeconds((prev) => (prev > 0 ? prev - 1 : 0));
+      }
+      if (isForgotPasswordMode && forgotPasswordStep === 'otp') {
+        setResetOtpResendCooldownSec((prev) => (prev > 0 ? prev - 1 : 0));
+        setResetOtpExpirySeconds((prev) => (prev > 0 ? prev - 1 : 0));
+      }
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [pendingOtpEmail]);
+  }, [pendingOtpEmail, isForgotPasswordMode, forgotPasswordStep]);
 
   const formatCountdownClock = (totalSeconds: number) => {
     const mins = Math.floor(Math.max(0, totalSeconds) / 60);
@@ -395,7 +419,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           }
         });
       },
-      { threshold: 0.1, rootMargin: '0px 0px -40px 0px' }
+      { threshold: 0.04, rootMargin: '0px 0px -20px 0px' }
     );
 
     const elements = document.querySelectorAll('.sp-reveal');
@@ -487,10 +511,27 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     await cancelEmailVerification();
   };
 
+  const resetForgotPasswordFlowState = () => {
+    setForgotPasswordStep('email');
+    setResetEmailSuccessMessage(null);
+    setEmailAuthError(null);
+    setResetOtpCode('');
+    setResetOtpError(null);
+    setResetOtpRemainingAttempts(null);
+    setResetOtpExpirySeconds(600);
+    setResetOtpResendCooldownSec(0);
+    setVerifiedResetToken(null);
+    setResetNewPassword('');
+    setResetConfirmPassword('');
+    setShowResetNewPassword(false);
+    setShowResetConfirmPassword(false);
+  };
+
   const handlePasswordResetSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const email = ownerEmailInput.trim();
+    const email = ownerEmailInput.trim().toLowerCase();
     setEmailAuthError(null);
+    setResetOtpError(null);
     setResetEmailSuccessMessage(null);
 
     if (!email) {
@@ -500,16 +541,180 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
     setIsSendingResetEmail(true);
     try {
+      const res = await requestLoginOtp(email, 'password_reset');
+      if (res.success) {
+        setOwnerEmailInput(email);
+        setResetOtpCode('');
+        setResetOtpError(null);
+        setResetOtpRemainingAttempts(null);
+        setVerifiedResetToken(null);
+        setResetOtpResendCooldownSec(res.resendCooldownSeconds || 60);
+        setResetOtpExpirySeconds(res.expiresInSeconds || 600);
+        setForgotPasswordStep('otp');
+        soundFx.playSuccess();
+        showToast(`6-digit reset code dispatched to ${email}.`, 'info');
+      } else {
+        if (typeof res.retryAfterSeconds === 'number' && res.retryAfterSeconds > 0) {
+          setResetOtpResendCooldownSec(res.retryAfterSeconds);
+        }
+        setEmailAuthError(res.error || 'Failed to send 6-digit password reset code.');
+        soundFx.playError();
+      }
+    } catch (err: any) {
+      setEmailAuthError(err?.message || 'Failed to send password reset code.');
+      soundFx.playError();
+    } finally {
+      setIsSendingResetEmail(false);
+    }
+  };
+
+  const handleVerifyResetOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = ownerEmailInput.trim().toLowerCase();
+    const cleanOtp = resetOtpCode.replace(/\D/g, '').trim();
+    if (!email) {
+      setForgotPasswordStep('email');
+      return;
+    }
+    if (cleanOtp.length !== 6) {
+      setResetOtpError('Please enter the full 6-digit verification code sent to your email.');
+      return;
+    }
+
+    setIsVerifyingResetOtp(true);
+    setResetOtpError(null);
+    try {
+      const res = await verifyLoginOtp(email, cleanOtp, 'password_reset');
+      if (!res.success || !res.verified || !res.resetToken) {
+        if (typeof res.remainingAttempts === 'number') {
+          setResetOtpRemainingAttempts(res.remainingAttempts);
+        }
+        setResetOtpError(res.error || 'Incorrect 6-digit reset code. Please check your inbox and try again.');
+        soundFx.playError();
+        return;
+      }
+
+      setVerifiedResetToken(res.resetToken);
+      setResetOtpError(null);
+      setResetOtpRemainingAttempts(null);
+      setResetNewPassword('');
+      setResetConfirmPassword('');
+      setForgotPasswordStep('new_password');
+      soundFx.playSuccess();
+    } catch (err: any) {
+      setResetOtpError(err?.message || 'Verification failed. Please check the code and try again.');
+      soundFx.playError();
+    } finally {
+      setIsVerifyingResetOtp(false);
+    }
+  };
+
+  const handleResendResetOtp = async () => {
+    const email = ownerEmailInput.trim().toLowerCase();
+    if (!email || resetOtpResendCooldownSec > 0) return;
+    setIsSendingResetEmail(true);
+    setResetOtpError(null);
+    try {
+      const res = await requestLoginOtp(email, 'password_reset');
+      if (res.success) {
+        setResetOtpCode('');
+        setResetOtpRemainingAttempts(null);
+        setResetOtpResendCooldownSec(res.resendCooldownSeconds || 60);
+        setResetOtpExpirySeconds(res.expiresInSeconds || 600);
+        soundFx.playSuccess();
+        showToast(`New 6-digit reset code sent to ${email}.`, 'info');
+      } else {
+        if (typeof res.retryAfterSeconds === 'number' && res.retryAfterSeconds > 0) {
+          setResetOtpResendCooldownSec(res.retryAfterSeconds);
+        }
+        setResetOtpError(res.error || 'Could not resend verification code. Please try again.');
+        soundFx.playError();
+      }
+    } catch (err: any) {
+      setResetOtpError(err?.message || 'Could not resend verification code.');
+      soundFx.playError();
+    } finally {
+      setIsSendingResetEmail(false);
+    }
+  };
+
+  const handleConfirmNewPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = ownerEmailInput.trim().toLowerCase();
+    setEmailAuthError(null);
+
+    if (!verifiedResetToken) {
+      setEmailAuthError('Your verification session expired. Please verify a fresh 6-digit code.');
+      setForgotPasswordStep('email');
+      return;
+    }
+
+    if (resetNewPassword.trim().length < 8 || resetNewPassword.length > 128) {
+      setEmailAuthError('Password must be between 8 and 128 characters long.');
+      soundFx.playError();
+      return;
+    }
+
+    if (resetNewPassword !== resetConfirmPassword) {
+      setEmailAuthError('Passwords do not match. Please re-enter the same password.');
+      soundFx.playError();
+      return;
+    }
+
+    setIsConfirmingPasswordReset(true);
+    try {
+      const res = await confirmPasswordResetWithToken(email, verifiedResetToken, resetNewPassword);
+      if (res.success) {
+        setVerifiedResetToken(null);
+        setResetNewPassword('');
+        setResetConfirmPassword('');
+        setOwnerPasswordInput('');
+        setResetEmailSuccessMessage(
+          res.message || 'Your password has been reset. You can now sign in with your new credentials.'
+        );
+        setForgotPasswordStep('done');
+        soundFx.playSuccess();
+        showToast('Password updated! Sign in with your new password.', 'success');
+      } else {
+        setEmailAuthError(res.error || 'Could not update your password. Please try again.');
+        soundFx.playError();
+        if (
+          res.code === 'INVALID_OR_EXPIRED_RESET_TOKEN' ||
+          res.code === 'RESET_TOKEN_ALREADY_USED' ||
+          res.code === 'MISSING_RESET_TOKEN'
+        ) {
+          setVerifiedResetToken(null);
+          setForgotPasswordStep('email');
+        }
+      }
+    } catch (err: any) {
+      setEmailAuthError(err?.message || 'Network error updating password.');
+      soundFx.playError();
+    } finally {
+      setIsConfirmingPasswordReset(false);
+    }
+  };
+
+  const handleFallbackPasswordResetLink = async () => {
+    const email = ownerEmailInput.trim();
+    setEmailAuthError(null);
+    setResetEmailSuccessMessage(null);
+    if (!email) {
+      setEmailAuthError('Please enter your account email address first.');
+      return;
+    }
+    setIsSendingResetEmail(true);
+    try {
       const res = await sendPasswordResetEmailAction(email);
       if (res.success) {
         setResetEmailSuccessMessage(res.message || `Password reset link sent to ${email}.`);
         soundFx.playSuccess();
       } else {
-        setEmailAuthError(res.error || 'Failed to send password reset email.');
+        setEmailAuthError(res.error || 'Failed to send password reset link.');
         soundFx.playError();
       }
     } catch (err: any) {
-      setEmailAuthError(err?.message || 'Failed to send password reset email.');
+      setEmailAuthError(err?.message || 'Failed to send password reset link.');
       soundFx.playError();
     } finally {
       setIsSendingResetEmail(false);
@@ -613,8 +818,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     setStaffCredentialInput('');
     setIsEditingStaffId(false);
     setIsForgotPasswordMode(false);
-    setResetEmailSuccessMessage(null);
-    setEmailAuthError(null);
+    resetForgotPasswordFlowState();
     setPartnerAuthError(null);
     setPendingOtpEmail(null);
     setLoginOtpCode('');
@@ -628,8 +832,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     setPinError(null);
     setEnteredPin('');
     setIsForgotPasswordMode(false);
-    setResetEmailSuccessMessage(null);
-    setEmailAuthError(null);
+    resetForgotPasswordFlowState();
     setPartnerAuthError(null);
     setPendingOtpEmail(null);
     setLoginOtpCode('');
@@ -1928,191 +2131,76 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
         }
       `}</style>
 
-      {/* PRESERVED HEADER (Preserved structure, logo, navigation anchors, actions & mobile hamburger menu in light mode) */}
-      <header
-        className="px-4 sm:px-8 py-3.5 border-b border-[#d9e1e6] bg-[#f4f7f6]/95 backdrop-blur-md shadow-xs flex items-center justify-between shrink-0 sticky top-0 z-50 transition-colors"
-      >
-        {/* Brand */}
-        <AppLogo theme="light" size="md" onClick={() => scrollToTop(true)} />
+      {/* SHARED PUBLIC HEADER */}
+      <PublicSiteHeader
+        currentPage="landing"
+        isLoggedIn={Boolean(currentUser)}
+        onBrandClick={() => scrollToTop(true)}
+        onNavigateSection={scrollToSection}
+        onNavigatePricing={navigateToPricing}
+        onAuthAction={() => {
+          if (currentUser) {
+            onLoginSuccess?.();
+          } else {
+            openAuthModal('owner');
+          }
+        }}
+        loginButtonId="top-nav-login-btn"
+        terminalButtonId="top-nav-pos-terminal-btn"
+      />
 
-        {/* Quick Nav Anchors for Desktop Visitors */}
-        <nav className="hidden lg:flex items-center gap-6 text-xs font-semibold text-[#4c5a6b]">
-          <a
-            href="#solutions"
-            onClick={(e) => {
-              e.preventDefault();
-              scrollToSection('solutions');
-            }}
-            className="hover:text-[#28a745] transition cursor-pointer whitespace-nowrap shrink-0"
-          >
-            Your Shop
-          </a>
-          <a
-            href="#payments"
-            onClick={(e) => {
-              e.preventDefault();
-              scrollToSection('payments');
-            }}
-            className="hover:text-[#28a745] transition cursor-pointer whitespace-nowrap shrink-0"
-          >
-            M-Pesa &amp; eTIMS
-          </a>
-          <a
-            href="#hardware"
-            onClick={(e) => {
-              e.preventDefault();
-              scrollToSection('hardware');
-            }}
-            className="hover:text-[#28a745] transition cursor-pointer whitespace-nowrap shrink-0"
-          >
-            Use Your Hardware
-          </a>
-          <a
-            href="#compare"
-            onClick={(e) => {
-              e.preventDefault();
-              scrollToSection('compare');
-            }}
-            className="hover:text-[#28a745] transition cursor-pointer whitespace-nowrap shrink-0"
-          >
-            Why Switch
-          </a>
-          <a
-            href="/pricing"
-            onClick={(e) => {
-              e.preventDefault();
-              navigateToPricing();
-            }}
-            className="hover:text-[#28a745] transition cursor-pointer whitespace-nowrap shrink-0"
-          >
-            Pricing
-          </a>
-        </nav>
-
-        {/* Action Buttons & Mobile Hamburger Menu */}
-        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-          <PWAInstallButton variant="compact" />
-
-          {currentUser ? (
-            <button
-              type="button"
-              id="top-nav-pos-terminal-btn"
-              onClick={onLoginSuccess}
-              className="px-3.5 py-2 min-h-[40px] rounded-xl bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <Monitor className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden sm:inline">Open Till</span>
-              <span className="sm:hidden">Till</span>
-              <ArrowRight className="w-3.5 h-3.5 shrink-0" />
-            </button>
-          ) : (
-            /* Desktop View: Text Login Button in header (opens modal) */
-            <button
-              type="button"
-              id="top-nav-login-btn"
-              onClick={() => openAuthModal('owner')}
-              className="hidden sm:inline-flex items-center px-4 py-2 min-h-[40px] rounded-xl bg-[#28a745] hover:bg-[#218838] text-white font-bold text-xs shadow-md shadow-emerald-500/20 transition cursor-pointer whitespace-nowrap shrink-0"
-            >
-              Sign In
-            </button>
-          )}
-
-          {/* Mobile Hamburger Menu with animated 2-bar toggle icon */}
-          <MobileHeaderNav
-            onNavigateSection={scrollToSection}
-            onNavigatePricing={navigateToPricing}
-            onAuthAction={() => {
-              if (currentUser) {
-                onLoginSuccess?.();
-              } else {
-                openAuthModal('owner');
-              }
-            }}
-            isLoggedIn={Boolean(currentUser)}
-            currentPage="landing"
-            theme="light"
-          />
-        </div>
-      </header>
-
-      {/* MAIN BODY: Strictly Light Mode UI Layout from Attached Design */}
+      {/* MAIN BODY: Editorial Kenyan Retail Landing Page */}
       <main id="top" className="flex-1 w-full">
-        {/* HERO SECTION: Split Layout with Framed Kenyan POS Terminal Showcase */}
-        <section className="sp-hero">
+        {/* HERO SECTION: Contained Emerald-Sky-Amber Mesh Canvas with Overlapping Live Counter Preview */}
+        <section className="pt-5 sm:pt-7 pb-6">
           <div className="sp-wrap">
-            <div className="sp-hero-grid">
-              {/* Left Column: Value Proposition & Stats */}
-              <div className="sp-hero-left flex flex-col items-center lg:items-start text-center lg:text-left">
-                <h1 className="sp-h1 text-balance sp-hero-enter" style={{ '--hero-delay': 0 } as React.CSSProperties}>
-                  The fastest way to <span className="sp-hl-money">close your till</span> in Kenya.
-                </h1>
-                <p className="sp-lead text-balance sp-hero-enter" style={{ '--hero-delay': 1 } as React.CSSProperties}>
-                  Seamlessly match M-Pesa, cash, and receipts on hardware you already own.
-                </p>
-                <div className="sp-cta sp-hero-enter" style={{ '--hero-delay': 2 } as React.CSSProperties}>
-                  <button
-                    type="button"
-                    className="sp-btn sp-btn-blue min-h-[44px] whitespace-nowrap shrink-0"
-                    id="demo"
-                    onClick={handleLaunchDemoSandbox}
-                  >
-                    <Zap className="w-4 h-4 fill-white shrink-0" />
-                    <span>Switch to Test Mode</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="sp-btn sp-btn-ghost min-h-[44px] whitespace-nowrap shrink-0"
-                    onClick={() => openAuthModal('owner')}
-                  >
-                    <span>Create free shop account</span>
-                    <ArrowRight className="w-4 h-4 shrink-0" />
-                  </button>
+            <div className="relative rounded-3xl border border-emerald-200/75 bg-gradient-to-br from-emerald-100/90 via-sky-100/80 to-amber-100/85 px-6 py-10 sm:px-10 sm:py-14 lg:px-14 lg:py-16 shadow-sm overflow-visible">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-8 items-center">
+                {/* Left Column: Indispensable Kenyan Retail Value Proposition */}
+                <div className="lg:col-span-6 flex flex-col items-center lg:items-start text-center lg:text-left sp-hero-enter" style={{ '--hero-delay': 0 } as React.CSSProperties}>
+                  <h1 className="text-[clamp(2.25rem,4.4vw,3.65rem)] font-extrabold tracking-[-0.035em] leading-[1.05] text-[#090d16] text-balance mb-5">
+                    Software built for how{' '}
+                    <span className="text-[#28a745]">Kenyan counters</span>{' '}
+                    actually close.
+                  </h1>
+
+                  <p className="text-base sm:text-lg text-[#334155] leading-relaxed max-w-[46ch] mb-7">
+                    Shopkeepers rarely love POS software—they rely on what survives the evening rush. SokoPoS solves M-Pesa matching, KRA eTIMS receipts, and offline stability seamlessly.
+                  </p>
+
+                  <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3 mb-4">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-2 px-6 py-3 min-h-[44px] rounded-full bg-[#28a745] hover:bg-[#218838] text-white text-sm font-bold shadow-md shadow-emerald-950/15 transition cursor-pointer whitespace-nowrap shrink-0"
+                      id="demo"
+                      onClick={handleLaunchDemoSandbox}
+                    >
+                      <Zap className="w-4 h-4 fill-white shrink-0" />
+                      <span>Switch to Test Mode</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-2 px-6 py-3 min-h-[44px] rounded-full bg-white/90 hover:bg-white text-[#090d16] border border-[#090d16] text-sm font-bold transition cursor-pointer whitespace-nowrap shrink-0"
+                      onClick={() => openAuthModal('owner')}
+                    >
+                      <span>Create free shop account</span>
+                      <ArrowRight className="w-4 h-4 shrink-0" />
+                    </button>
+                  </div>
+
+                  <p className="text-xs sm:text-[13px] font-medium text-[#475569]">
+                    Opens in 5 seconds · Sample stock loaded · Works on phone, tablet, or PC
+                  </p>
                 </div>
-                <p className="sp-fine sp-hero-enter" style={{ '--hero-delay': 3 } as React.CSSProperties}>
-                  Opens in 5 seconds · Sample stock loaded · No card needed
-                </p>
 
-                <div className="sp-stats sp-hero-enter" style={{ '--hero-delay': 4 } as React.CSSProperties}>
-                  <div>
-                    <b className="font-mono tabular-nums">KES <AnimatedMetricCounter target={25} />M+</b>
-                    <span>Rung up monthly</span>
-                  </div>
-                  <div>
-                    <b className="font-mono tabular-nums">100%</b>
-                    <span>Keeps selling offline</span>
-                  </div>
-                  <div>
-                    <b className="font-mono tabular-nums">&lt; 18s</b>
-                    <span>Per customer checkout</span>
-                  </div>
-                  <div>
-                    <b>eTIMS</b>
-                    <span>Receipt-ready via Digitax</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Column: High-Resolution Kenyan POS Showcase Frame */}
-              <div className="w-full sp-hero-enter" style={{ '--hero-delay': 2 } as React.CSSProperties}>
-                <div className="relative rounded-2xl md:rounded-3xl border border-[#e2e8f0] bg-white shadow-xl shadow-slate-950/5 overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-emerald-950/10">
-                  {/* Top Header Strip */}
-                  <div className="px-4 py-2.5 bg-[#f8fafc] border-b border-[#e2e8f0] flex items-center justify-between text-xs">
-                    <span className="font-semibold text-[#090d16]">
-                      Counter Checkout Preview
-                    </span>
-                    <span className="text-[11px] text-[#475569]">
-                      Phone, Tablet &amp; PC
-                    </span>
-                  </div>
-
-                  {/* High-Resolution Hero Visual with Admin Override Support */}
-                  <div className="relative aspect-[16/10] sm:aspect-[4/3] lg:aspect-[16/11] bg-slate-900 overflow-hidden group">
-                    <img
-                      src={loginBgGraphic || heroKenyanPos}
-                      alt="Shop cashier completing an M-Pesa and barcode sale on a tablet POS counter"
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
-                    />
+                {/* Right Column: Interactive Counter Terminal Preview */}
+                <div
+                  className="lg:col-span-6 relative sp-hero-enter"
+                  style={{ '--hero-delay': 1 } as React.CSSProperties}
+                >
+                  <div className="relative z-10 lg:mr-[-1rem]">
+                    <HeroCounterPreview onLaunchDemo={handleLaunchDemoSandbox} />
                   </div>
                 </div>
               </div>
@@ -2120,49 +2208,125 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           </div>
         </section>
 
-        {/* SECTION 1: PAYMENTS & eTIMS (#payments) */}
-        <section className="sp-s sp-reveal" id="payments">
+        {/* MONOCHROME KENYAN ECOSYSTEM TRUST STRIP */}
+        <section aria-label="Supported Kenyan counter workflows" className="py-7 sm:py-9">
           <div className="sp-wrap">
-            <h2 className="sp-t text-balance">
-              No more <span className="sp-hl-money">M-Pesa guesswork or KRA eTIMS</span> headaches.
-            </h2>
-            <p className="sp-sub">
-              Every shilling your customer sends or hands over is tied to its exact receipt—and stays safe in your records even if your internet cuts out.
-            </p>
-            <div className="sp-grid3">
-              <div className="sp-card sp-stagger-item" style={{ '--stagger-index': 0 } as React.CSSProperties}>
-                <span className="sp-tag sp-hl-money">M-Pesa</span>
-                <h3>Match M-Pesa to the sale</h3>
-                <p>Stop scrolling through confirmation SMS messages at closing time. Confirm Till or STK payments right at the counter.</p>
+            <div className="flex flex-wrap items-center justify-center lg:justify-between gap-x-8 gap-y-4 text-[#475569]">
+              <div className="flex items-center gap-2 text-xs sm:text-sm font-bold tracking-tight whitespace-nowrap opacity-85">
+                <Smartphone className="w-4 h-4 shrink-0" />
+                <span>Safaricom M-Pesa STK &amp; Till</span>
               </div>
-              <div className="sp-card sp-stagger-item" style={{ '--stagger-index': 1 } as React.CSSProperties}>
-                <span className="sp-tag sp-hl-calm">eTIMS</span>
-                <h3>Print tax-ready receipts</h3>
-                <p>Send eTIMS-ready receipts with KRA verification QR codes through Digitax without re-typing sales at night.</p>
+              <div className="flex items-center gap-2 text-xs sm:text-sm font-bold tracking-tight whitespace-nowrap opacity-85">
+                <ShieldCheck className="w-4 h-4 shrink-0" />
+                <span>KRA eTIMS · Digitax CU</span>
               </div>
-              <div className="sp-card sp-stagger-item" style={{ '--stagger-index': 2 } as React.CSSProperties}>
-                <span className="sp-tag sp-hl-speed">Offline</span>
-                <h3>Never stall a busy queue</h3>
-                <p>When Wi-Fi or fiber drops, your cashier keeps scanning items and printing receipts. Every sale syncs when signal returns.</p>
+              <div className="flex items-center gap-2 text-xs sm:text-sm font-bold tracking-tight whitespace-nowrap opacity-85">
+                <WifiOff className="w-4 h-4 shrink-0" />
+                <span>Offline IndexedDB Queue</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs sm:text-sm font-bold tracking-tight whitespace-nowrap opacity-85">
+                <Printer className="w-4 h-4 shrink-0" />
+                <span>58mm &amp; 80mm Thermal</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs sm:text-sm font-bold tracking-tight whitespace-nowrap opacity-85">
+                <CreditCard className="w-4 h-4 shrink-0" />
+                <span>Cash, Card &amp; Credit Tabs</span>
               </div>
             </div>
           </div>
         </section>
 
-        {/* SECTION 2: INDUSTRY SOLUTIONS GALLERY (#solutions) */}
-        <section className="sp-s sp-reveal" id="solutions">
-          <div className="sp-wrap">
-            <h2 className="sp-t text-balance">
-              Fix what <span className="sp-hl-speed">slows down</span> your kind of shop.
-            </h2>
-            <p className="sp-sub">
-              Supermarkets, minimarts, agrovets, hardware &amp; wholesale shops, pharmacies, bars, wines &amp; spirits, and restaurants lose cash in different ways. Pick your counter type below.
-            </p>
+        {/* SECTION 1: ROUNDED WHITE LIFECYCLE SHOWCASE (#payments) */}
+        <LifecycleShowcase onLaunchDemo={handleLaunchDemoSandbox} />
+
+        {/* EDITORIAL PULL-QUOTE #1 (Netlify Oversized Typographic Quote + Floating Badge) */}
+        <section aria-label="Merchant reconciliation story" className="py-12 sm:py-16">
+          <div className="sp-wrap max-w-4xl mx-auto text-center space-y-6">
+            <blockquote className="text-2xl sm:text-4xl lg:text-[2.65rem] font-extrabold tracking-[-0.03em] leading-[1.15] text-[#090d16] text-balance">
+              &ldquo;Cut our stock reconciliation time from 3 hours to{' '}
+              <span className="text-[#28a745]">within 5 minutes</span> with real-time M-Pesa syncing. Zero discrepancies at closing time.&rdquo;
+            </blockquote>
+
+            <div className="inline-flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-white border border-[#e2e8f0] shadow-xs text-left">
+              <div className="w-9 h-9 rounded-full bg-emerald-100 text-[#28a745] font-extrabold text-xs flex items-center justify-center shrink-0">
+                GW
+              </div>
+              <div className="text-xs">
+                <strong className="block font-bold text-[#090d16]">Grace Wanjiku</strong>
+                <span className="text-[#475569]">Owner, Ngara Mini-Supermarket · Nairobi</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* SECTION 2: PEEKING INDUSTRY CAROUSEL (#solutions) */}
+        <section className="py-12 sm:py-16" id="solutions">
+          <div className="sp-wrap space-y-8">
+            <div className="text-center max-w-2xl mx-auto space-y-3">
+              <h2 className="text-3xl sm:text-4xl lg:text-[2.75rem] font-extrabold tracking-tight leading-[1.08] text-[#090d16] text-balance">
+                Focus on your counter.{' '}
+                <span className="text-[#0284c7]">Not everything around it.</span>
+              </h2>
+              <p className="text-sm sm:text-base text-[#475569] leading-relaxed">
+                Supermarkets, minimarts, agrovets, hardware shops, bars, wines &amp; spirits, and pharmacies lose money in different ways. Pick your counter type below.
+              </p>
+            </div>
 
             <SolutionsGallery
               onLaunchDemo={handleLaunchDemoSandbox}
               onCreateAccount={() => openAuthModal('register')}
             />
+          </div>
+        </section>
+
+        {/* THREE-CARD METRIC PROOF TRIO + EDITORIAL PULL-QUOTE #2 */}
+        <section aria-label="Verified platform performance" className="py-10 sm:py-14 sp-reveal" id="success-stories">
+          <div className="sp-wrap max-w-4xl mx-auto space-y-12 sm:space-y-14">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-5">
+              <div className="rounded-2xl bg-white border border-[#e2e8f0] p-6 text-center shadow-xs sp-stagger-item" style={{ '--stagger-index': 0 } as React.CSSProperties}>
+                <b className="block text-3xl sm:text-4xl font-extrabold font-mono text-[#090d16] tabular-nums tracking-tight">
+                  KES <AnimatedMetricCounter target={25} />M+
+                </b>
+                <span className="block mt-1.5 text-xs font-semibold text-[#475569]">
+                  Monthly retail till volume
+                </span>
+              </div>
+
+              <div className="rounded-2xl bg-white border border-[#e2e8f0] p-6 text-center shadow-xs sp-stagger-item" style={{ '--stagger-index': 1 } as React.CSSProperties}>
+                <b className="block text-3xl sm:text-4xl font-extrabold font-mono text-[#090d16] tabular-nums tracking-tight">
+                  100%
+                </b>
+                <span className="block mt-1.5 text-xs font-semibold text-[#475569]">
+                  Offline checkout continuity
+                </span>
+              </div>
+
+              <div className="rounded-2xl bg-white border border-[#e2e8f0] p-6 text-center shadow-xs sp-stagger-item" style={{ '--stagger-index': 2 } as React.CSSProperties}>
+                <b className="block text-3xl sm:text-4xl font-extrabold font-mono text-[#090d16] tabular-nums tracking-tight">
+                  &lt; 18s
+                </b>
+                <span className="block mt-1.5 text-xs font-semibold text-[#475569]">
+                  Average customer checkout
+                </span>
+              </div>
+            </div>
+
+            <div className="text-center space-y-6">
+              <blockquote className="text-2xl sm:text-4xl lg:text-[2.5rem] font-extrabold tracking-[-0.03em] leading-[1.15] text-[#090d16] text-balance">
+                &ldquo;We processed{' '}
+                <span className="text-[#0284c7]">150+ offline sales</span> during a fiber outage, and every shilling synced the moment connection returned.&rdquo;
+              </blockquote>
+
+              <div className="inline-flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-white border border-[#e2e8f0] shadow-xs text-left">
+                <div className="w-9 h-9 rounded-full bg-sky-100 text-[#0284c7] font-extrabold text-xs flex items-center justify-center shrink-0">
+                  HO
+                </div>
+                <div className="text-xs">
+                  <strong className="block font-bold text-[#090d16]">Hassan Omar</strong>
+                  <span className="text-[#475569]">Director, Mombasa Coast Hardware · Mombasa</span>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -2243,105 +2407,75 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           </div>
         </section>
 
-        {/* SECTION: CUSTOMER SUCCESS STORIES & TRUST BADGES */}
-        <section className="sp-s sp-reveal" id="success-stories">
+        {/* SECTION 5: DUAL-PATH DECISION CARDS (Netlify Bottom Split) */}
+        <section className="py-14 sm:py-18 sp-reveal" id="get-started">
           <div className="sp-wrap">
-            <h2 className="sp-t text-balance">
-              What happens when you <span className="sp-hl-calm">stop guessing at closing time.</span>
-            </h2>
-            <p className="sp-sub">
-              How shop owners across Nairobi, Mombasa, Kisumu, Nakuru, and Eldoret fixed till shortages, survived fiber outages, and got their evenings back.
-            </p>
-
-            <div className="sp-grid3 mb-10">
-              <div className="sp-card sp-stagger-item flex flex-col justify-between" style={{ '--stagger-index': 0 } as React.CSSProperties}>
-                <div>
-                  <div className="flex items-center gap-1 text-amber-500 mb-3 font-bold">
-                    ★★★★★
-                  </div>
-                  <p className="italic text-[#0e1a2b] mb-4 text-sm font-medium">
-                    &ldquo;Cut our stock reconciliation time from 3 hours to 5 minutes with real-time M-Pesa push syncing. Zero discrepancies at end-of-day!&rdquo;
-                  </p>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {/* Path 1: Single Shop / Counter */}
+              <div className="rounded-3xl bg-white border border-[#e2e8f0] p-6 sm:p-7 shadow-xs flex flex-col sm:flex-row items-start gap-5 sp-stagger-item" style={{ '--stagger-index': 0 } as React.CSSProperties}>
+                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br from-emerald-400 via-teal-400 to-amber-300 flex items-center justify-center text-white shrink-0 shadow-xs">
+                  <Store className="w-9 h-9" />
                 </div>
-                <div className="border-t border-[#d9e1e6] pt-3 flex items-center justify-between text-xs gap-2">
-                  <div>
-                    <strong className="block text-[#0e1a2b] font-bold">Grace Wanjiku</strong>
-                    <span className="text-[#4c5a6b]">Ngara Mini-Supermarket, Nairobi</span>
+
+                <div className="flex-1 space-y-3">
+                  <h3 className="text-xl font-extrabold tracking-tight text-[#090d16]">
+                    Already running a counter?
+                  </h3>
+                  <p className="text-sm text-[#475569] leading-relaxed">
+                    Launch Test Mode with sample Kenyan stock in 5 seconds, or create your shop account without changing your existing hardware.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                    <button
+                      type="button"
+                      id="demo2"
+                      onClick={handleLaunchDemoSandbox}
+                      className="px-4 py-2 min-h-[40px] rounded-full bg-[#28a745] hover:bg-[#218838] text-white text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      Switch to Test Mode
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openAuthModal('owner')}
+                      className="px-4 py-2 min-h-[40px] rounded-full bg-white hover:bg-[#f8fafc] text-[#090d16] border border-[#090d16] text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      Create free shop account
+                    </button>
                   </div>
-                  <span className="text-emerald-700 font-semibold whitespace-nowrap shrink-0">Shop Owner</span>
                 </div>
               </div>
 
-              <div className="sp-card sp-stagger-item flex flex-col justify-between" style={{ '--stagger-index': 1 } as React.CSSProperties}>
-                <div>
-                  <div className="flex items-center gap-1 text-amber-500 mb-3 font-bold">
-                    ★★★★★
-                  </div>
-                  <p className="italic text-[#0e1a2b] mb-4 text-sm font-medium">
-                    &ldquo;Offline mode saved our business during fiber outages. We processed over 150 sales without internet and everything synced instantly when connection returned.&rdquo;
-                  </p>
+              {/* Path 2: Multi-Branch / Team Decision */}
+              <div className="rounded-3xl bg-white border border-[#e2e8f0] p-6 sm:p-7 shadow-xs flex flex-col sm:flex-row items-start gap-5 sp-stagger-item" style={{ '--stagger-index': 1 } as React.CSSProperties}>
+                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br from-sky-400 via-emerald-400 to-teal-300 flex items-center justify-center text-white shrink-0 shadow-xs">
+                  <Building2 className="w-9 h-9" />
                 </div>
-                <div className="border-t border-[#d9e1e6] pt-3 flex items-center justify-between text-xs gap-2">
-                  <div>
-                    <strong className="block text-[#0e1a2b] font-bold">Hassan Omar</strong>
-                    <span className="text-[#4c5a6b]">Mombasa Coast Hardware, Mombasa</span>
-                  </div>
-                  <span className="text-emerald-700 font-semibold whitespace-nowrap shrink-0">Shop Owner</span>
-                </div>
-              </div>
 
-              <div className="sp-card sp-stagger-item flex flex-col justify-between" style={{ '--stagger-index': 2 } as React.CSSProperties}>
-                <div>
-                  <div className="flex items-center gap-1 text-amber-500 mb-3 font-bold">
-                    ★★★★★
-                  </div>
-                  <p className="italic text-[#0e1a2b] mb-4 text-sm font-medium">
-                    &ldquo;Cashier PINs and shift reports give me total peace of mind even when I am away traveling. Sales jumped 35% in our first month!&rdquo;
+                <div className="flex-1 space-y-3">
+                  <h3 className="text-xl font-extrabold tracking-tight text-[#090d16]">
+                    Deciding for a multi-branch team?
+                  </h3>
+                  <p className="text-sm text-[#475569] leading-relaxed">
+                    Compare branch pricing tiers, set blind cashier PIN handovers, or enroll in the SokoPoS Partner Program.
                   </p>
-                </div>
-                <div className="border-t border-[#d9e1e6] pt-3 flex items-center justify-between text-xs gap-2">
-                  <div>
-                    <strong className="block text-[#0e1a2b] font-bold">Mercy Chebet</strong>
-                    <span className="text-[#4c5a6b]">Rift Valley Agrovet, Nakuru</span>
+                  <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                    <button
+                      type="button"
+                      onClick={navigateToPricing}
+                      className="px-4 py-2 min-h-[40px] rounded-full bg-white hover:bg-[#f8fafc] text-[#090d16] border border-[#090d16] text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      Compare Plans
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsAffiliateModalOpen(true)}
+                      className="px-4 py-2 min-h-[40px] rounded-full bg-white hover:bg-[#f8fafc] text-[#090d16] border border-[#cbd5e1] hover:border-[#090d16] text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      Partner Program
+                    </button>
                   </div>
-                  <span className="text-emerald-700 font-semibold whitespace-nowrap shrink-0">Shop Owner</span>
                 </div>
               </div>
             </div>
-          </div>
-        </section>
-
-        {/* SECTION 5: FINAL CTA BANNER (Optimized for maximum conversion) */}
-        <section className="sp-s sp-reveal sp-final bg-gradient-to-b from-transparent to-blue-50/40">
-          <div className="sp-wrap max-w-3xl mx-auto">
-            <h2 className="text-balance">
-              See <span className="sp-hl-action">how fast your till moves</span> before you change a thing.
-            </h2>
-            <p className="sp-final-lead text-base text-[#4c5a6b] leading-relaxed">
-              Open a sample shop in 5 seconds, ring up a test M-Pesa payment, and see how a shift closes cleanly—without entering a card or installing software.
-            </p>
-            <div className="flex flex-wrap items-center justify-center gap-3.5 sm:gap-4">
-              <button
-                type="button"
-                className="sp-btn sp-btn-blue px-6 py-3.5 min-h-[48px] text-base shadow-lg shadow-blue-500/25 whitespace-nowrap shrink-0"
-                id="demo2"
-                onClick={handleLaunchDemoSandbox}
-              >
-                <Zap className="w-5 h-5 fill-white shrink-0" />
-                <span>Switch to Test Mode</span>
-              </button>
-              <button
-                type="button"
-                className="sp-btn sp-btn-ghost px-6 py-3.5 min-h-[48px] text-base bg-white whitespace-nowrap shrink-0"
-                onClick={() => openAuthModal('owner')}
-              >
-                <span>Create free shop account</span>
-                <ArrowRight className="w-4 h-4 shrink-0" />
-              </button>
-            </div>
-            <p className="sp-final-fine font-medium px-2">
-              Free to start &middot; Set up your shop in 2 minutes &middot; Works on your existing phone or PC
-            </p>
           </div>
         </section>
       </main>
@@ -2830,88 +2964,379 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             {activeTab === 'owner' && (
               <div id="p-owner">
                 {isForgotPasswordMode ? (
-                  <div>
-                    <h2
-                      id="auth-modal-title"
-                      className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-1 text-left"
-                    >
-                      Forgot your password?
-                    </h2>
-                    <p className="text-xs text-[#556375] mb-4 text-left">
-                      Enter your shop email and we&apos;ll send a link to set a new password right away.
-                    </p>
-
-                    <form onSubmit={handlePasswordResetSubmit} className="space-y-3 mb-4">
+                  <div id="p-forgot-password-otp" className="text-left">
+                    {forgotPasswordStep === 'email' && (
                       <div>
-                        <label htmlFor="reset-email-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
-                          Your shop email
-                        </label>
-                        <div className="relative flex items-center">
-                          <input
-                            ref={emailInputRef}
-                            type="email"
-                            id="reset-email-input"
-                            placeholder="yourname@gmail.com"
-                            aria-label="Account Email address for Password Reset"
-                            autoComplete="email"
-                            required
-                            value={ownerEmailInput}
-                            onChange={(e) => {
-                              setOwnerEmailInput(e.target.value);
-                              setEmailAuthError(null);
-                              setResetEmailSuccessMessage(null);
-                            }}
-                            className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors"
-                          />
-                          <Mail className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
-                        </div>
+                        <h2
+                          id="auth-modal-title"
+                          className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-1 text-left"
+                        >
+                          Reset your password
+                        </h2>
+                        <p className="text-xs text-[#556375] mb-4 text-left">
+                          Enter your account email and we&apos;ll send a 6-digit verification code via Resend to securely reset your password.
+                        </p>
+
+                        {otpCapabilities &&
+                          (!otpCapabilities.emailProviderConfigured || !otpCapabilities.customTokenConfigured) && (
+                            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-xs leading-relaxed mb-3.5">
+                              <span className="font-bold text-[#090d16] block mb-0.5">
+                                Email OTP reset requires server secrets
+                              </span>
+                              {!otpCapabilities.emailProviderConfigured
+                                ? 'Configure RESEND_API_KEY in AI Studio Secrets, or use the standard reset link below.'
+                                : 'Configure FIREBASE_SERVICE_ACCOUNT_JSON in AI Studio Secrets, or use the standard reset link below.'}
+                            </div>
+                          )}
+
+                        <form onSubmit={handlePasswordResetSubmit} className="space-y-3 mb-4">
+                          <div>
+                            <label htmlFor="reset-email-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
+                              Your account email
+                            </label>
+                            <div className="relative flex items-center">
+                              <input
+                                ref={emailInputRef}
+                                type="email"
+                                id="reset-email-input"
+                                placeholder="yourname@gmail.com"
+                                aria-label="Account Email address for Password Reset"
+                                autoComplete="email"
+                                required
+                                value={ownerEmailInput}
+                                onChange={(e) => {
+                                  setOwnerEmailInput(e.target.value);
+                                  setEmailAuthError(null);
+                                  setResetEmailSuccessMessage(null);
+                                }}
+                                className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors"
+                              />
+                              <Mail className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
+                            </div>
+                          </div>
+
+                          {emailAuthError && (
+                            <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
+                              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                              <span>{emailAuthError}</span>
+                            </div>
+                          )}
+
+                          {resetEmailSuccessMessage && (
+                            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
+                              <Check className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+                              <span>{resetEmailSuccessMessage}</span>
+                            </div>
+                          )}
+
+                          <button
+                            type="submit"
+                            disabled={isSendingResetEmail}
+                            className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-2 whitespace-nowrap"
+                          >
+                            {isSendingResetEmail ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>Sending 6-digit code...</span>
+                              </>
+                            ) : (
+                              <>
+                                <span>Send 6-digit reset code</span>
+                                <ArrowRight className="w-4 h-4" />
+                              </>
+                            )}
+                          </button>
+
+                          <div className="flex items-center justify-between pt-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsForgotPasswordMode(false);
+                                resetForgotPasswordFlowState();
+                              }}
+                              className="text-xs font-bold text-[#28a745] hover:underline cursor-pointer"
+                            >
+                              ← Back to sign in
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isSendingResetEmail}
+                              onClick={handleFallbackPasswordResetLink}
+                              className="text-xs font-semibold text-[#556375] hover:text-[#0e1a2b] hover:underline cursor-pointer disabled:opacity-50"
+                            >
+                              Send reset link instead
+                            </button>
+                          </div>
+                        </form>
                       </div>
+                    )}
 
-                      {/* Error alert banner */}
-                      {emailAuthError && (
-                        <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
-                          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
-                          <span>{emailAuthError}</span>
+                    {forgotPasswordStep === 'otp' && (
+                      <div className="space-y-4 pt-1">
+                        <div className="w-11 h-11 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#28a745]">
+                          <ShieldCheck className="w-5 h-5" />
                         </div>
-                      )}
-
-                      {/* Success alert banner */}
-                      {resetEmailSuccessMessage && (
-                        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
-                          <Check className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
-                          <span>{resetEmailSuccessMessage}</span>
+                        <div>
+                          <h2
+                            id="auth-modal-title"
+                            className="text-xl sm:text-[22px] font-extrabold text-[#090d16] tracking-tight mb-1"
+                          >
+                            Enter verification code
+                          </h2>
+                          <p className="text-xs sm:text-[13px] text-[#475569] leading-relaxed">
+                            Type the 6-digit reset code we sent to{' '}
+                            <span className="font-bold text-[#090d16]">{ownerEmailInput.trim().toLowerCase()}</span>.
+                          </p>
+                          <p className="text-[11px] font-medium text-[#64748b] mt-1 font-mono tabular-nums">
+                            {resetOtpExpirySeconds > 0
+                              ? `Expires in ${formatCountdownClock(resetOtpExpirySeconds)}`
+                              : 'Code expired · Request a fresh code below'}
+                          </p>
                         </div>
-                      )}
 
-                      <button
-                        type="submit"
-                        disabled={isSendingResetEmail}
-                        className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-2 whitespace-nowrap"
-                      >
-                        {isSendingResetEmail ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            <span>Sending link...</span>
-                          </>
-                        ) : (
-                          <span>Send reset link</span>
+                        {resetOtpError && (
+                          <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2">
+                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                            <div className="min-w-0">
+                              <span>{resetOtpError}</span>
+                              {typeof resetOtpRemainingAttempts === 'number' && resetOtpRemainingAttempts > 0 && (
+                                <span className="block text-[11px] text-red-700 font-semibold mt-0.5 tabular-nums">
+                                  Tries left before lock: {resetOtpRemainingAttempts}
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         )}
-                      </button>
 
-                      <div className="pt-2 text-center">
+                        <form onSubmit={handleVerifyResetOtpSubmit} className="space-y-3.5">
+                          <div>
+                            <label
+                              htmlFor="reset-otp-code-input"
+                              className="block text-xs font-bold text-[#0e1a2b] mb-1.5"
+                            >
+                              6-Digit Reset Code
+                            </label>
+                            <input
+                              id="reset-otp-code-input"
+                              type="text"
+                              inputMode="numeric"
+                              autoComplete="one-time-code"
+                              maxLength={6}
+                              value={resetOtpCode}
+                              onChange={(e) => {
+                                setResetOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6));
+                                setResetOtpError(null);
+                              }}
+                              placeholder="000000"
+                              className="w-full h-13 px-4 rounded-xl border border-[#d9e1e6] bg-[#f8fafc] text-center font-mono tabular-nums text-2xl tracking-[0.4em] font-extrabold text-[#090d16] focus:outline-none focus:border-[#28a745] focus:bg-white transition"
+                              autoFocus
+                            />
+                          </div>
+
+                          <button
+                            type="submit"
+                            disabled={isVerifyingResetOtp || resetOtpCode.length !== 6 || resetOtpExpirySeconds <= 0}
+                            className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap"
+                          >
+                            {isVerifyingResetOtp ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>Verifying code...</span>
+                              </>
+                            ) : (
+                              <>
+                                <span>Verify &amp; continue</span>
+                                <ArrowRight className="w-4 h-4" />
+                              </>
+                            )}
+                          </button>
+
+                          <div className="flex items-center justify-between pt-1">
+                            <button
+                              type="button"
+                              onClick={handleResendResetOtp}
+                              disabled={isSendingResetEmail || resetOtpResendCooldownSec > 0}
+                              className="text-xs font-bold text-[#28a745] hover:underline cursor-pointer disabled:text-slate-400 disabled:no-underline disabled:cursor-not-allowed font-mono tabular-nums"
+                            >
+                              {isSendingResetEmail
+                                ? 'Sending code...'
+                                : resetOtpResendCooldownSec > 0
+                                ? `Resend code in ${formatCountdownClock(resetOtpResendCooldownSec)}`
+                                : 'Send a new code'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setForgotPasswordStep('email');
+                                setResetOtpCode('');
+                                setResetOtpError(null);
+                                setResetOtpRemainingAttempts(null);
+                              }}
+                              className="text-xs font-bold text-slate-500 hover:text-slate-900 cursor-pointer"
+                            >
+                              Change email
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                    )}
+
+                    {forgotPasswordStep === 'new_password' && (
+                      <div className="space-y-4 pt-1">
+                        <div className="w-11 h-11 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#28a745]">
+                          <KeyRound className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h2
+                            id="auth-modal-title"
+                            className="text-xl sm:text-[22px] font-extrabold text-[#090d16] tracking-tight mb-1"
+                          >
+                            Create a new password
+                          </h2>
+                          <p className="text-xs text-[#475569] leading-relaxed">
+                            Identity verified for{' '}
+                            <span className="font-bold text-[#090d16]">{ownerEmailInput.trim().toLowerCase()}</span>. Choose a strong new password (at least 8 characters).
+                          </p>
+                        </div>
+
+                        <form onSubmit={handleConfirmNewPasswordSubmit} className="space-y-3.5">
+                          <div>
+                            <label htmlFor="reset-new-password-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
+                              New password
+                            </label>
+                            <div className="relative flex items-center">
+                              <input
+                                id="reset-new-password-input"
+                                type={showResetNewPassword ? 'text' : 'password'}
+                                placeholder="Minimum 8 characters"
+                                autoComplete="new-password"
+                                required
+                                minLength={8}
+                                maxLength={128}
+                                value={resetNewPassword}
+                                onChange={(e) => {
+                                  setResetNewPassword(e.target.value);
+                                  setEmailAuthError(null);
+                                }}
+                                className="w-full h-11 pl-3.5 pr-10 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors"
+                                autoFocus
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowResetNewPassword((prev) => !prev)}
+                                aria-label={showResetNewPassword ? 'Hide new password' : 'Show new password'}
+                                className="absolute right-2.5 p-1 text-[#556375] hover:text-[#0e1a2b] transition cursor-pointer"
+                              >
+                                {showResetNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label htmlFor="reset-confirm-password-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
+                              Confirm new password
+                            </label>
+                            <div className="relative flex items-center">
+                              <input
+                                id="reset-confirm-password-input"
+                                type={showResetConfirmPassword ? 'text' : 'password'}
+                                placeholder="Re-enter new password"
+                                autoComplete="new-password"
+                                required
+                                minLength={8}
+                                maxLength={128}
+                                value={resetConfirmPassword}
+                                onChange={(e) => {
+                                  setResetConfirmPassword(e.target.value);
+                                  setEmailAuthError(null);
+                                }}
+                                className="w-full h-11 pl-3.5 pr-10 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowResetConfirmPassword((prev) => !prev)}
+                                aria-label={showResetConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                                className="absolute right-2.5 p-1 text-[#556375] hover:text-[#0e1a2b] transition cursor-pointer"
+                              >
+                                {showResetConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              </button>
+                            </div>
+                          </div>
+
+                          {emailAuthError && (
+                            <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
+                              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                              <span>{emailAuthError}</span>
+                            </div>
+                          )}
+
+                          <button
+                            type="submit"
+                            disabled={isConfirmingPasswordReset || resetNewPassword.length < 8 || resetConfirmPassword.length < 8}
+                            className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap"
+                          >
+                            {isConfirmingPasswordReset ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>Updating password...</span>
+                              </>
+                            ) : (
+                              <>
+                                <span>Reset password</span>
+                                <Check className="w-4 h-4" />
+                              </>
+                            )}
+                          </button>
+
+                          <div className="pt-1 text-center">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsForgotPasswordMode(false);
+                                resetForgotPasswordFlowState();
+                              }}
+                              className="text-xs font-bold text-slate-500 hover:text-slate-900 cursor-pointer"
+                            >
+                              Cancel &amp; return to sign in
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                    )}
+
+                    {forgotPasswordStep === 'done' && (
+                      <div className="space-y-4 pt-1">
+                        <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#28a745]">
+                          <Check className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <h2
+                            id="auth-modal-title"
+                            className="text-xl sm:text-[22px] font-extrabold text-[#090d16] tracking-tight mb-1"
+                          >
+                            Password updated
+                          </h2>
+                          <p className="text-xs sm:text-[13px] text-[#475569] leading-relaxed">
+                            {resetEmailSuccessMessage ||
+                              `Your credentials for ${ownerEmailInput.trim().toLowerCase()} have been reset. Sign in below using your new password.`}
+                          </p>
+                        </div>
+
                         <button
                           type="button"
                           onClick={() => {
                             setIsForgotPasswordMode(false);
-                            setEmailAuthError(null);
-                            setResetEmailSuccessMessage(null);
+                            setOwnerLoginMethod('password');
+                            setOwnerPasswordInput('');
+                            resetForgotPasswordFlowState();
                           }}
-                          className="text-xs font-bold text-[#28a745] hover:underline cursor-pointer"
+                          className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap"
                         >
-                          ← Back to sign in
+                          <span>Back to sign in</span>
+                          <ArrowRight className="w-4 h-4" />
                         </button>
                       </div>
-                    </form>
+                    )}
                   </div>
                 ) : (
                   <div>
@@ -3005,9 +3430,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                             <button
                               type="button"
                               onClick={() => {
+                                resetForgotPasswordFlowState();
                                 setIsForgotPasswordMode(true);
-                                setEmailAuthError(null);
-                                setResetEmailSuccessMessage(null);
                               }}
                               className="text-[11px] font-bold text-[#28a745] hover:underline cursor-pointer"
                             >
@@ -3271,6 +3695,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         <button
                           type="button"
                           onClick={() => {
+                            resetForgotPasswordFlowState();
                             setActiveTab('owner');
                             setIsForgotPasswordMode(true);
                             setOwnerEmailInput(partnerEmailInput);

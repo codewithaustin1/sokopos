@@ -28,6 +28,7 @@ export interface RetailIndustryItem {
   imageAlt: string;
   metricLabel: string;
   metricValue: string;
+  accentGradient: string;
   icon: React.ComponentType<{ className?: string }>;
   overview: string;
   capabilities: string[];
@@ -48,6 +49,7 @@ export const RETAIL_INDUSTRIES: RetailIndustryItem[] = [
       'Kenyan retail shop, agrovet, and hardware cashier scanning items at an M-Pesa POS counter in Nairobi',
     metricLabel: 'Barcode scan speed',
     metricValue: '< 2s / item',
+    accentGradient: 'from-emerald-500/90 via-teal-600/85 to-slate-900',
     icon: Store,
     overview:
       'Built for neighborhood dukas, agrovets, hardware stores, and wholesale depots across Nairobi, Mombasa, Kisumu, Nakuru, and Eldoret. Know before fast-moving staples or farm inputs run out, replace torn paper daftari books with digital balances, and match every Lipa na M-Pesa payment automatically.',
@@ -76,6 +78,7 @@ export const RETAIL_INDUSTRIES: RetailIndustryItem[] = [
       'Kenyan bar, wines and spirits counter, and restaurant using touch POS software for table bills and M-Pesa',
     metricLabel: 'Tab split & settle',
     metricValue: 'Instant STK',
+    accentGradient: 'from-amber-500/90 via-emerald-700/85 to-slate-900',
     icon: Wine,
     overview:
       'Keep evening rush orders organized across wines and spirits shops, lounges, restaurants, and sports bars in Nairobi, Mombasa, Kisumu, Nakuru, and Eldoret. Staff open table tabs, route drink slips to the bar and kitchen orders cleanly, and track 25ml or 50ml tot pours against 750ml bottles.',
@@ -104,6 +107,7 @@ export const RETAIL_INDUSTRIES: RetailIndustryItem[] = [
       'Kenyan supermarket and minimart express lane cashier scanning groceries with offline POS software',
     metricLabel: 'Express lane pace',
     metricValue: '45+ tx / hr',
+    accentGradient: 'from-sky-500/90 via-emerald-600/85 to-slate-900',
     icon: ShoppingCart,
     overview:
       'Made for peak weekend queues, minimarts, and multi-aisle Kenyan supermarkets in Nairobi, Mombasa, Kisumu, Nakuru, and Eldoret. Cashiers scan 50+ item baskets quickly with keyboard shortcuts, declare blind cash totals at shift close, and keep ringing up sales even when fiber drops.',
@@ -132,6 +136,7 @@ export const RETAIL_INDUSTRIES: RetailIndustryItem[] = [
       'Kenyan community pharmacy and chemist counter running SokoPoS terminal with batch expiry tracking',
     metricLabel: 'Batch traceability',
     metricValue: '100% audit',
+    accentGradient: 'from-teal-500/90 via-sky-700/85 to-slate-900',
     icon: Pill,
     overview:
       'Avoid throwing away expired stock and keep patient dispensing clean across community chemists throughout Kenya. Track batch numbers from supplier delivery to the counter, get early 30/60/90-day expiry warnings, and break boxes into single blister strips without messing up inventory.',
@@ -160,146 +165,239 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
   onCreateAccount,
 }) => {
   const { industryImages } = usePos();
-  const [selectedIndustryId, setSelectedIndustryId] = useState<RetailIndustryItem['id'] | null>(
-    null
-  );
+  const [focusedIndex, setFocusedIndex] = useState<number>(0);
+  const [modalIndustryId, setModalIndustryId] = useState<RetailIndustryItem['id'] | null>(null);
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     setFailedImages({});
   }, [industryImages]);
 
-  const activeIndustry =
-    RETAIL_INDUSTRIES.find((item) => item.id === selectedIndustryId) || null;
-  const activeIndustryImage = activeIndustry
-    ? industryImages[activeIndustry.id]?.url || activeIndustry.image
+  const currentIndustry = RETAIL_INDUSTRIES[focusedIndex];
+  const prevIndex = (focusedIndex - 1 + RETAIL_INDUSTRIES.length) % RETAIL_INDUSTRIES.length;
+  const nextIndex = (focusedIndex + 1) % RETAIL_INDUSTRIES.length;
+  const prevIndustry = RETAIL_INDUSTRIES[prevIndex];
+  const nextIndustry = RETAIL_INDUSTRIES[nextIndex];
+
+  const activeModalIndustry =
+    RETAIL_INDUSTRIES.find((item) => item.id === modalIndustryId) || null;
+  const activeModalImage = activeModalIndustry
+    ? industryImages[activeModalIndustry.id]?.url || activeModalIndustry.image
     : '';
-  const activeIndex = activeIndustry
-    ? RETAIL_INDUSTRIES.findIndex((item) => item.id === activeIndustry.id)
+  const activeModalIndex = activeModalIndustry
+    ? RETAIL_INDUSTRIES.findIndex((item) => item.id === activeModalIndustry.id)
     : -1;
 
   // Close details modal cleanly with Escape key
   useEffect(() => {
-    if (!activeIndustry) return;
+    if (!activeModalIndustry) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setSelectedIndustryId(null);
-      } else if (e.key === 'ArrowRight' && activeIndex >= 0) {
-        const nextIdx = (activeIndex + 1) % RETAIL_INDUSTRIES.length;
-        setSelectedIndustryId(RETAIL_INDUSTRIES[nextIdx].id);
-      } else if (e.key === 'ArrowLeft' && activeIndex >= 0) {
-        const prevIdx = (activeIndex - 1 + RETAIL_INDUSTRIES.length) % RETAIL_INDUSTRIES.length;
-        setSelectedIndustryId(RETAIL_INDUSTRIES[prevIdx].id);
+        setModalIndustryId(null);
+      } else if (e.key === 'ArrowRight' && activeModalIndex >= 0) {
+        const nextIdx = (activeModalIndex + 1) % RETAIL_INDUSTRIES.length;
+        setModalIndustryId(RETAIL_INDUSTRIES[nextIdx].id);
+        setFocusedIndex(nextIdx);
+      } else if (e.key === 'ArrowLeft' && activeModalIndex >= 0) {
+        const prevIdx =
+          (activeModalIndex - 1 + RETAIL_INDUSTRIES.length) % RETAIL_INDUSTRIES.length;
+        setModalIndustryId(RETAIL_INDUSTRIES[prevIdx].id);
+        setFocusedIndex(prevIdx);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeIndustry, activeIndex]);
+  }, [activeModalIndustry, activeModalIndex]);
 
   const markImageFailed = (id: string) => {
     setFailedImages((prev) => ({ ...prev, [id]: true }));
   };
 
-  const handleStepIndustry = (direction: -1 | 1) => {
-    if (activeIndex < 0) return;
+  const handleStepModalIndustry = (direction: -1 | 1) => {
+    if (activeModalIndex < 0) return;
     const nextIdx =
-      (activeIndex + direction + RETAIL_INDUSTRIES.length) % RETAIL_INDUSTRIES.length;
-    setSelectedIndustryId(RETAIL_INDUSTRIES[nextIdx].id);
+      (activeModalIndex + direction + RETAIL_INDUSTRIES.length) % RETAIL_INDUSTRIES.length;
+    setModalIndustryId(RETAIL_INDUSTRIES[nextIdx].id);
+    setFocusedIndex(nextIdx);
   };
 
+  const CurrentIcon = currentIndustry.icon;
+  const currentResolvedImage =
+    industryImages[currentIndustry.id]?.url || currentIndustry.image;
+  const isCurrentFailed = Boolean(failedImages[currentIndustry.id]);
+
   return (
-    <div className="w-full">
-      {/* 2x2 Editorial Industry Gallery Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {RETAIL_INDUSTRIES.map((industry, idx) => {
-          const Icon = industry.icon;
-          const isFailed = Boolean(failedImages[industry.id]);
-          const isSelected = selectedIndustryId === industry.id;
-          const resolvedImage = industryImages[industry.id]?.url || industry.image;
-
-          return (
-            <article
-              key={industry.id}
-              style={{ '--stagger-index': idx } as React.CSSProperties}
-              className={`sp-stagger-item group bg-white rounded-2xl border overflow-hidden flex flex-col hover:-translate-y-0.5 hover:shadow-lg hover:shadow-slate-900/5 ${
-                isSelected
-                  ? 'border-[#28a745] ring-2 ring-[#28a745]/25'
-                  : 'border-[#e2e8f0] hover:border-slate-300'
-              }`}
-            >
-              {/* Framed Kenyan Retail Photography (4:3) */}
-              <div className="relative aspect-[4/3] w-full overflow-hidden bg-slate-100 border-b border-[#e2e8f0]">
-                {isFailed ? (
-                  <div className="w-full h-full bg-gradient-to-br from-slate-100 via-slate-50 to-emerald-50 flex flex-col items-center justify-center p-6 text-center">
-                    <div className="w-12 h-12 rounded-xl bg-white border border-[#e2e8f0] flex items-center justify-center text-[#28a745] mb-3">
-                      <Icon className="w-6 h-6" />
-                    </div>
-                    <span className="text-sm font-bold text-[#090d16]">{industry.name}</span>
-                    <span className="text-xs text-[#475569] mt-0.5">{industry.sectorLabel}</span>
-                  </div>
-                ) : (
-                  <img
-                    src={resolvedImage}
-                    alt={industry.imageAlt}
-                    referrerPolicy="no-referrer"
-                    loading="lazy"
-                    onError={() => markImageFailed(industry.id)}
-                    className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
-                  />
-                )}
-                {/* Subtle bottom contrast gradient strictly for optical separation */}
-                <div
-                  className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/35 via-black/10 to-transparent pointer-events-none"
-                  aria-hidden="true"
-                />
-              </div>
-
-              {/* Card Body */}
-              <div className="p-6 flex-1 flex flex-col justify-between gap-5">
-                <div>
-                  {/* Quiet Unboxed Metadata Kicker */}
-                  <div className="flex items-center gap-2 text-xs font-medium text-[#475569] mb-2">
-                    <span className="font-semibold text-[#28a745]">{industry.name}</span>
-                    <span aria-hidden="true">·</span>
-                    <span className="truncate">{industry.sectorLabel}</span>
-                  </div>
-
-                  <h3 className="text-xl font-extrabold text-[#090d16] tracking-tight leading-snug mb-2">
-                    {industry.headline}
-                  </h3>
-
-                  <p className="text-sm text-[#475569] leading-relaxed">{industry.summary}</p>
-                </div>
-
-                {/* Metric & Learn More Action Row */}
-                <div className="pt-4 border-t border-[#e2e8f0] flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <span className="block text-[11px] text-[#475569] truncate">
-                      {industry.metricLabel}
-                    </span>
-                    <span className="block text-sm font-bold text-[#090d16] font-mono tabular-nums">
-                      {industry.metricValue}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    id={`solutions-learn-more-${industry.id}`}
-                    onClick={() => setSelectedIndustryId(industry.id)}
-                    className="inline-flex items-center gap-2 px-4 py-2 min-h-[40px] rounded-xl bg-[#f8fafc] hover:bg-[#28a745] text-[#090d16] hover:text-white border border-[#e2e8f0] hover:border-[#28a745] text-xs font-bold transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#28a745]"
-                  >
-                    <span>Learn More</span>
-                    <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
-                  </button>
-                </div>
-              </div>
-            </article>
-          );
-        })}
+    <div className="w-full space-y-8">
+      {/* Horizontal Segmented Industry Switcher Bar (Netlify pattern) */}
+      <div className="flex justify-center">
+        <div
+          role="tablist"
+          aria-label="Shop vertical categories"
+          className="inline-flex flex-wrap items-center justify-center gap-1.5 p-1.5 rounded-2xl bg-white border border-[#e2e8f0] shadow-xs"
+        >
+          {RETAIL_INDUSTRIES.map((industry, idx) => {
+            const Icon = industry.icon;
+            const isSelected = focusedIndex === idx;
+            return (
+              <button
+                key={industry.id}
+                type="button"
+                role="tab"
+                aria-selected={isSelected}
+                onClick={() => setFocusedIndex(idx)}
+                className={`inline-flex items-center gap-2 px-4 py-2 min-h-[40px] rounded-xl text-xs sm:text-sm font-bold transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#28a745] ${
+                  isSelected
+                    ? 'bg-[#090d16] text-white shadow-xs'
+                    : 'text-[#475569] hover:text-[#090d16] hover:bg-[#f8fafc]'
+                }`}
+              >
+                <Icon className="w-4 h-4 shrink-0" />
+                <span>{industry.name}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Industry Details Modal (Rendered in Portal on "Learn More") */}
-      {activeIndustry &&
+      {/* Peeking Horizontal Showcase Stage */}
+      <div className="relative flex items-stretch justify-center gap-5 overflow-hidden py-2">
+        {/* Left Peeking Adjacent Gradient Card (Desktop) */}
+        <button
+          type="button"
+          onClick={() => setFocusedIndex(prevIndex)}
+          aria-label={`View ${prevIndustry.name}`}
+          className={`hidden xl:flex w-44 shrink-0 rounded-3xl bg-gradient-to-br ${prevIndustry.accentGradient} p-6 flex-col justify-between text-left text-white opacity-75 hover:opacity-95 transition-all duration-200 -rotate-1 hover:rotate-0 cursor-pointer shadow-md`}
+        >
+          <span className="text-xs font-bold tracking-tight opacity-85">Previous vertical</span>
+          <div>
+            <span className="block text-lg font-extrabold leading-tight">{prevIndustry.name}</span>
+            <span className="mt-1 inline-flex items-center gap-1 text-xs font-semibold opacity-90">
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Switch</span>
+            </span>
+          </div>
+        </button>
+
+        {/* Center Active Vertical Showcase Card */}
+        <article className="w-full max-w-5xl rounded-3xl border border-[#e2e8f0] bg-[#090d16] text-white overflow-hidden shadow-xl shadow-slate-950/15 grid grid-cols-1 lg:grid-cols-12 items-stretch">
+          {/* Left Narrative & CTA Surface */}
+          <div className="lg:col-span-6 p-6 sm:p-9 lg:p-10 flex flex-col justify-between gap-6 bg-gradient-to-br from-[#090d16] via-[#0f172a] to-[#064e3b]/80">
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-xs font-medium text-emerald-300">
+                <span className="font-bold">{currentIndustry.name}</span>
+                <span aria-hidden="true">·</span>
+                <span className="text-slate-300 truncate">{currentIndustry.sectorLabel}</span>
+              </div>
+
+              <h3 className="text-2xl sm:text-3xl font-extrabold tracking-tight leading-[1.15] text-white text-balance">
+                {currentIndustry.headline}
+              </h3>
+
+              <p className="text-sm sm:text-[15px] text-slate-300 leading-relaxed">
+                {currentIndustry.summary}
+              </p>
+
+              {/* Sample Kenyan Counter Receipt Preview */}
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-2">
+                <div className="flex items-center justify-between text-[11px] text-slate-300">
+                  <span className="font-semibold">Sample Counter Ticket</span>
+                  <span className="font-mono text-emerald-300 tabular-nums">
+                    {currentIndustry.metricLabel}: {currentIndustry.metricValue}
+                  </span>
+                </div>
+                <div className="space-y-1.5 pt-2 border-t border-white/10">
+                  {currentIndustry.sampleItems.slice(0, 2).map((row) => (
+                    <div
+                      key={row.item}
+                      className="flex items-center justify-between gap-3 text-xs"
+                    >
+                      <span className="text-slate-200 truncate">
+                        {row.item} <span className="text-slate-400">({row.qty})</span>
+                      </span>
+                      <span className="font-mono font-bold text-white tabular-nums shrink-0">
+                        {row.totalKes}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 pt-2">
+              <button
+                type="button"
+                id={`solutions-learn-more-${currentIndustry.id}`}
+                onClick={() => setModalIndustryId(currentIndustry.id)}
+                className="inline-flex items-center gap-2 px-5 py-2.5 min-h-[42px] rounded-full bg-white text-[#090d16] hover:bg-emerald-50 text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <span>Read the workflow</span>
+                <ArrowRight className="w-4 h-4 shrink-0" />
+              </button>
+
+              {onLaunchDemo && (
+                <button
+                  type="button"
+                  onClick={onLaunchDemo}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[42px] rounded-full border border-white/25 text-white hover:bg-white/10 text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  <Zap className="w-3.5 h-3.5 shrink-0" />
+                  <span>Test in Demo</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Right Full-Bleed Shop Photography with Scrim & Fallback */}
+          <div className="lg:col-span-6 relative min-h-[260px] lg:min-h-[400px] bg-slate-900 overflow-hidden">
+            {isCurrentFailed ? (
+              <div
+                className={`w-full h-full bg-gradient-to-br ${currentIndustry.accentGradient} flex flex-col items-center justify-center p-8 text-center text-white`}
+              >
+                <div className="w-14 h-14 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center mb-4">
+                  <CurrentIcon className="w-7 h-7" />
+                </div>
+                <span className="text-lg font-extrabold">{currentIndustry.name}</span>
+                <span className="text-xs text-white/80 mt-1">{currentIndustry.sectorLabel}</span>
+              </div>
+            ) : (
+              <img
+                src={currentResolvedImage}
+                alt={currentIndustry.imageAlt}
+                referrerPolicy="no-referrer"
+                onError={() => markImageFailed(currentIndustry.id)}
+                className="w-full h-full object-cover transition-transform duration-500 motion-reduce:transition-none"
+              />
+            )}
+            <div
+              className="absolute inset-0 bg-gradient-to-t from-slate-950/75 via-slate-950/20 to-transparent pointer-events-none"
+              aria-hidden="true"
+            />
+            <div className="absolute bottom-4 left-5 right-5 flex items-center justify-between gap-3 text-xs text-white/90">
+              <span className="font-semibold truncate">{currentIndustry.hardwareSetup}</span>
+            </div>
+          </div>
+        </article>
+
+        {/* Right Peeking Adjacent Gradient Card (Desktop) */}
+        <button
+          type="button"
+          onClick={() => setFocusedIndex(nextIndex)}
+          aria-label={`View ${nextIndustry.name}`}
+          className={`hidden xl:flex w-44 shrink-0 rounded-3xl bg-gradient-to-br ${nextIndustry.accentGradient} p-6 flex-col justify-between text-left text-white opacity-75 hover:opacity-95 transition-all duration-200 rotate-1 hover:rotate-0 cursor-pointer shadow-md`}
+        >
+          <span className="text-xs font-bold tracking-tight opacity-85">Next vertical</span>
+          <div>
+            <span className="block text-lg font-extrabold leading-tight">{nextIndustry.name}</span>
+            <span className="mt-1 inline-flex items-center gap-1 text-xs font-semibold opacity-90">
+              <span>Explore</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </span>
+          </div>
+        </button>
+      </div>
+
+      {/* Industry Details Modal (Rendered in Portal on "Read the workflow") */}
+      {activeModalIndustry &&
         typeof document !== 'undefined' &&
         createPortal(
           <div
@@ -307,7 +405,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
             role="presentation"
             onMouseDown={(e) => {
               if (e.target === e.currentTarget) {
-                setSelectedIndustryId(null);
+                setModalIndustryId(null);
               }
             }}
             className="fixed inset-0 z-[110] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in duration-150"
@@ -325,16 +423,16 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
               <div className="px-5 sm:px-6 py-4 bg-[#f8fafc] border-b border-[#e2e8f0] flex items-center justify-between gap-4">
                 <div className="flex items-center gap-2 text-xs font-medium text-[#475569] min-w-0">
                   <span className="font-bold text-[#28a745] whitespace-nowrap shrink-0">
-                    {activeIndustry.name}
+                    {activeModalIndustry.name}
                   </span>
                   <span aria-hidden="true">·</span>
-                  <span className="truncate">{activeIndustry.sectorLabel}</span>
+                  <span className="truncate">{activeModalIndustry.sectorLabel}</span>
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
                   <button
                     type="button"
-                    onClick={() => handleStepIndustry(-1)}
+                    onClick={() => handleStepModalIndustry(-1)}
                     aria-label="Previous industry"
                     className="w-9 h-9 rounded-lg border border-[#e2e8f0] bg-white hover:bg-slate-50 flex items-center justify-center text-[#090d16] transition cursor-pointer"
                   >
@@ -342,7 +440,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleStepIndustry(1)}
+                    onClick={() => handleStepModalIndustry(1)}
                     aria-label="Next industry"
                     className="w-9 h-9 rounded-lg border border-[#e2e8f0] bg-white hover:bg-slate-50 flex items-center justify-center text-[#090d16] transition cursor-pointer"
                   >
@@ -351,7 +449,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
                   <button
                     type="button"
                     id="solutions-detail-close-btn"
-                    onClick={() => setSelectedIndustryId(null)}
+                    onClick={() => setModalIndustryId(null)}
                     aria-label="Close industry details"
                     className="w-9 h-9 rounded-lg border border-[#e2e8f0] bg-white hover:bg-slate-100 flex items-center justify-center text-[#090d16] transition cursor-pointer"
                   >
@@ -365,19 +463,19 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
                 {/* Left Column: High-Res Visual + Sample Counter Basket */}
                 <div className="md:col-span-5 bg-[#f8fafc] border-b md:border-b-0 md:border-r border-[#e2e8f0] flex flex-col justify-between">
                   <div className="relative aspect-[4/3] w-full bg-slate-100 overflow-hidden border-b border-[#e2e8f0]">
-                    {failedImages[activeIndustry.id] ? (
+                    {failedImages[activeModalIndustry.id] ? (
                       <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-slate-100">
                         <ShoppingBag className="w-8 h-8 text-[#28a745] mb-2" />
                         <span className="text-sm font-bold text-[#090d16]">
-                          {activeIndustry.name}
+                          {activeModalIndustry.name}
                         </span>
                       </div>
                     ) : (
                       <img
-                        src={activeIndustryImage}
-                        alt={activeIndustry.imageAlt}
+                        src={activeModalImage}
+                        alt={activeModalIndustry.imageAlt}
                         referrerPolicy="no-referrer"
-                        onError={() => markImageFailed(activeIndustry.id)}
+                        onError={() => markImageFailed(activeModalIndustry.id)}
                         className="w-full h-full object-cover"
                       />
                     )}
@@ -389,11 +487,11 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
                       <div className="text-[11px] font-semibold text-[#475569] mb-2.5 flex items-center justify-between">
                         <span>Typical Kenyan Till Receipt</span>
                         <span className="font-mono text-[#28a745] tabular-nums">
-                          {activeIndustry.metricValue}
+                          {activeModalIndustry.metricValue}
                         </span>
                       </div>
                       <div className="space-y-2 border-t border-[#e2e8f0] pt-2.5">
-                        {activeIndustry.sampleItems.map((row) => (
+                        {activeModalIndustry.sampleItems.map((row) => (
                           <div
                             key={row.item}
                             className="flex items-center justify-between gap-2 text-xs"
@@ -414,7 +512,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
 
                     <div className="pt-3 border-t border-[#e2e8f0] text-[11px] text-[#475569]">
                       <strong className="text-[#090d16] block mb-0.5">Recommended Counter</strong>
-                      <span>{activeIndustry.hardwareSetup}</span>
+                      <span>{activeModalIndustry.hardwareSetup}</span>
                     </div>
                   </div>
                 </div>
@@ -427,10 +525,10 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
                         id="solution-detail-title"
                         className="text-2xl font-extrabold text-[#090d16] tracking-tight text-balance"
                       >
-                        {activeIndustry.headline}
+                        {activeModalIndustry.headline}
                       </h3>
                       <p className="text-sm text-[#475569] mt-2 leading-relaxed">
-                        {activeIndustry.overview}
+                        {activeModalIndustry.overview}
                       </p>
                     </div>
 
@@ -439,7 +537,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
                         How this helps your counter run smoothly
                       </h4>
                       <ul className="space-y-2.5">
-                        {activeIndustry.capabilities.map((cap) => (
+                        {activeModalIndustry.capabilities.map((cap) => (
                           <li key={cap} className="flex items-start gap-2.5 text-sm text-[#090d16]">
                             <span className="w-5 h-5 rounded-md bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#28a745] shrink-0 mt-0.5">
                               <Check className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -458,7 +556,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
                         <button
                           type="button"
                           onClick={() => {
-                            setSelectedIndustryId(null);
+                            setModalIndustryId(null);
                             onLaunchDemo();
                           }}
                           className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[42px] rounded-xl bg-[#28a745] hover:bg-[#218838] text-white text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0"
@@ -471,7 +569,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
                         <button
                           type="button"
                           onClick={() => {
-                            setSelectedIndustryId(null);
+                            setModalIndustryId(null);
                             onCreateAccount();
                           }}
                           className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[42px] rounded-xl bg-white hover:bg-[#f8fafc] text-[#090d16] border border-[#e2e8f0] hover:border-slate-300 text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0"
@@ -484,7 +582,7 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
 
                     <button
                       type="button"
-                      onClick={() => setSelectedIndustryId(null)}
+                      onClick={() => setModalIndustryId(null)}
                       className="text-xs font-semibold text-[#475569] hover:text-[#090d16] px-2 py-1.5 cursor-pointer whitespace-nowrap"
                     >
                       Close
