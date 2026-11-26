@@ -6,6 +6,7 @@
 
 import { Transaction, Location } from '../types';
 import { getItemDiscountedUnitPrice } from '../utils/discountUtils';
+import { isTransactionEtimsVerified } from '../utils/etimsDisplay';
 
 // Common Web Bluetooth UUIDs for Thermal Printers
 const PRINTER_SERVICE_UUID = '000018f0-0000-1000-8000-00805f9b34fb';
@@ -116,6 +117,7 @@ class BluetoothPrinterService {
       format?: '58mm' | '80mm';
       headerNote?: string;
       footerNote?: string;
+      etimsRelayEnabled?: boolean;
     } = {}
   ) {
     if (!this.activePrinter) {
@@ -194,19 +196,20 @@ class BluetoothPrinterService {
     if (options.headerNote) printData += options.headerNote + '\n';
     if (options.footerNote) printData += options.footerNote + '\n';
 
+    const etimsRelayEnabled = options.etimsRelayEnabled !== false;
     const etims = transaction.etimsData;
-    const isEtimsVerified =
-      etims?.status === 'COMPLETED' &&
-      Boolean(etims?.isPartnerVerified || etims?.receiptSignature || etims?.cuInvoiceNumber);
+    const isEtimsVerified = isTransactionEtimsVerified(etims);
 
     if (isEtimsVerified) {
       printData += 'KRA eTIMS Verified (Digitax)\n';
       if (etims?.cuSerialNumber) printData += `CU Serial: ${etims.cuSerialNumber}\n`;
       if (etims?.cuInvoiceNumber !== undefined) printData += `CU Inv: ${etims.cuInvoiceNumber}\n`;
-    } else if (etims?.status === 'FAILED') {
-      printData += 'KRA eTIMS: SYNC ATTENTION REQ\n';
-    } else {
-      printData += 'KRA eTIMS: PENDING SYNC\n';
+    } else if (etimsRelayEnabled) {
+      if (etims?.status === 'FAILED') {
+        printData += 'KRA eTIMS: SYNC ATTENTION REQ\n';
+      } else {
+        printData += 'KRA eTIMS: PENDING SYNC\n';
+      }
     }
     printData += 'Powered by SokoPoS\n';
     printData += 'Asante kwa kununua na sisi!\n';

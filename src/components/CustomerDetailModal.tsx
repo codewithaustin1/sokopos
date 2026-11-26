@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   X,
   Phone,
@@ -16,9 +16,21 @@ import {
   Edit2,
   Trash2,
   Plus,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  FileCheck,
 } from 'lucide-react';
 import { Customer } from '../types';
 import { usePos } from '../context/PosContext';
+import {
+  canViewUnmaskedCustomerPii,
+  isCustomerAnonymized,
+  maskPhoneNumber,
+  maskEmailAddress,
+  maskAddress,
+  maskKraPin,
+} from '../utils/privacyAndKraSecurity';
 
 interface CustomerDetailModalProps {
   isOpen: boolean;
@@ -44,6 +56,10 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
     redeemCustomerLoyaltyPoints,
     showToast,
     deleteCustomer,
+    anonymizeCustomer,
+    currentUser,
+    isSuperAdmin,
+    logAdminActivity,
     loyaltySettings,
     requireCapability,
   } = usePos();
@@ -52,6 +68,13 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
   const [pointsToRedeemInput, setPointsToRedeemInput] = useState('');
   const [isRedeemingPoints, setIsRedeemingPoints] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const [isPiiRevealed, setIsPiiRevealed] = useState(false);
+  const [isAnonymizing, setIsAnonymizing] = useState(false);
+
+  useEffect(() => {
+    setIsPiiRevealed(false);
+    setIsConfirmingDelete(false);
+  }, [customer?.id, isOpen]);
 
   // Filter transactions for this customer
   const customerTransactions = useMemo(() => {
@@ -67,9 +90,53 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
   const isDebt = currentBalance < 0;
   const creditLimit = customer.creditLimit || 0;
   const availableCredit = Math.max(0, creditLimit + currentBalance);
+  const canRevealPii = canViewUnmaskedCustomerPii(currentUser?.role, isSuperAdmin);
+  const anonymized = isCustomerAnonymized(customer);
+  const showUnmasked = canRevealPii && isPiiRevealed && !anonymized;
+  const hasProtectedHistory =
+    (customer.visitCount || 0) > 0 ||
+    (customer.totalSpent || 0) > 0 ||
+    (customer.ledger?.length || 0) > 0 ||
+    customerTransactions.length > 0;
+
+  const displayPhone = anonymized
+    ? customer.phone
+    : showUnmasked
+    ? customer.phone
+    : maskPhoneNumber(customer.phone);
+  const displayEmail = anonymized
+    ? ''
+    : showUnmasked
+    ? customer.email || ''
+    : maskEmailAddress(customer.email);
+  const displayAddress = anonymized
+    ? ''
+    : showUnmasked
+    ? customer.address || ''
+    : maskAddress(customer.address);
+  const displayKraPin = anonymized
+    ? ''
+    : showUnmasked
+    ? customer.kraPin || ''
+    : maskKraPin(customer.kraPin);
 
   // Average basket value
   const avgBasket = customer.visitCount > 0 ? customer.totalSpent / customer.visitCount : 0;
+
+  const handleToggleRevealPii = () => {
+    if (!canRevealPii || anonymized) return;
+    const next = !isPiiRevealed;
+    setIsPiiRevealed(next);
+    if (next) {
+      logAdminActivity({
+        category: 'customer',
+        action: 'reveal_customer_pii',
+        description: `Revealed unmasked PII in profile for ${customer.name}`,
+        recordType: 'customer',
+        recordId: customer.id,
+      });
+    }
+  };
 
   const handleRedeemPoints = async () => {
     if (!requireCapability('loyaltyAndStoreCredit')) return;
@@ -95,10 +162,18 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
     }
   };
 
-  const handleDelete = async () => {
-    const ok = await deleteCustomer(customer.id);
-    if (ok) {
-      onClose();
+  const handleDeleteOrAnonymize = async () => {
+    setIsAnonymizing(true);
+    try {
+      const ok = hasProtectedHistory
+        ? await anonymizeCustomer(customer.id)
+        : await deleteCustomer(customer.id);
+      if (ok) {
+        setIsConfirmingDelete(false);
+        onClose();
+      }
+    } finally {
+      setIsAnonymizing(false);
     }
   };
 
@@ -139,18 +214,24 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
                 <div className="flex items-center gap-4 text-xs text-slate-300 mt-1 flex-wrap">
                   <span className="flex items-center gap-1 font-mono">
                     <Phone className="w-3.5 h-3.5 text-emerald-400" />
-                    {customer.phone}
+                    {displayPhone}
                   </span>
-                  {customer.email && (
+                  {displayEmail && (
                     <span className="flex items-center gap-1">
                       <Mail className="w-3.5 h-3.5 text-slate-400" />
-                      {customer.email}
+                      {displayEmail}
                     </span>
                   )}
-                  {customer.address && (
+                  {displayAddress && (
                     <span className="flex items-center gap-1">
                       <MapPin className="w-3.5 h-3.5 text-rose-400" />
-                      {customer.address}
+                      {displayAddress}
+                    </span>
+                  )}
+                  {displayKraPin && (
+                    <span className="flex items-center gap-1 font-mono">
+                      <FileCheck className="w-3.5 h-3.5 text-blue-300" />
+                      PIN: {displayKraPin}
                     </span>
                   )}
                 </div>
@@ -158,16 +239,34 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
             </div>
 
             {/* Quick Actions */}
-            <div className="flex items-center gap-2 self-end sm:self-auto">
-              <button
-                type="button"
-                onClick={() => onAssignToCart(customer)}
-                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
-                title="Assign this customer to current cart and open register"
-              >
-                <ShoppingCart className="w-3.5 h-3.5" />
-                <span>Ring Up Sale</span>
-              </button>
+            <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+              {canRevealPii && !anonymized && (
+                <button
+                  type="button"
+                  onClick={handleToggleRevealPii}
+                  className={`px-3 py-2 font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer border ${
+                    showUnmasked
+                      ? 'bg-amber-500/20 border-amber-400/50 text-amber-200 hover:bg-amber-500/30'
+                      : 'bg-white/10 border-white/20 text-white hover:bg-white/20'
+                  }`}
+                  title={showUnmasked ? 'Mask personal contact details' : 'Reveal personal contact details (audited)'}
+                >
+                  {showUnmasked ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  <span>{showUnmasked ? 'Hide PII' : 'Reveal PII'}</span>
+                </button>
+              )}
+
+              {!anonymized && (
+                <button
+                  type="button"
+                  onClick={() => onAssignToCart(customer)}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                  title="Assign this customer to current cart and open register"
+                >
+                  <ShoppingCart className="w-3.5 h-3.5" />
+                  <span>Ring Up Sale</span>
+                </button>
+              )}
 
               <button
                 type="button"
@@ -179,14 +278,16 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
                 <span>Record Payment</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => onEditCustomer(customer)}
-                className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition cursor-pointer"
-                title="Edit Customer Profile"
-              >
-                <Edit2 className="w-4 h-4" />
-              </button>
+              {!anonymized && (
+                <button
+                  type="button"
+                  onClick={() => onEditCustomer(customer)}
+                  className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition cursor-pointer"
+                  title="Edit Customer Profile"
+                >
+                  <Edit2 className="w-4 h-4" />
+                </button>
+              )}
 
               <button
                 type="button"
@@ -248,6 +349,17 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
         <div className="flex-1 overflow-y-auto p-5">
           {activeTab === 'overview' && (
             <div className="space-y-5">
+              {anonymized && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-slate-700">
+                  <ShieldCheck className="w-4 h-4 text-slate-600 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold text-slate-900">Anonymized under Kenya DPA 2019</div>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      Personal identifiers (name, phone, email, address, notes, KRA PIN) have been permanently redacted. Accounting totals and eTIMS fiscal records remain intact.
+                    </p>
+                  </div>
+                </div>
+              )}
               {/* Stat Cards Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
@@ -498,32 +610,55 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
                 </div>
               </div>
 
-              {/* Delete Safeguard */}
-              <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs">
+              {/* Delete / DPA 2019 Anonymize Safeguard */}
+              <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
                 <span className="text-slate-400">Client ID: {customer.id}</span>
-                {!isConfirmingDelete ? (
+                {anonymized ? (
+                  <span className="inline-flex items-center gap-1.5 text-slate-600 font-semibold">
+                    <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Anonymized under Kenya DPA 2019</span>
+                  </span>
+                ) : !isConfirmingDelete ? (
                   <button
                     type="button"
                     onClick={() => setIsConfirmingDelete(true)}
                     className="text-red-600 hover:text-red-700 font-bold flex items-center gap-1 transition cursor-pointer"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Remove Profile</span>
+                    {hasProtectedHistory ? (
+                      <>
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        <span>Anonymize Customer (DPA 2019)</span>
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Remove Profile</span>
+                      </>
+                    )}
                   </button>
                 ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="text-red-600 font-bold">Confirm removal?</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-red-600 font-bold">
+                      {hasProtectedHistory
+                        ? 'Scrub personal PII & retain fiscal totals?'
+                        : 'Confirm removal?'}
+                    </span>
                     <button
                       type="button"
-                      onClick={handleDelete}
-                      className="px-2.5 py-1 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition"
+                      disabled={isAnonymizing}
+                      onClick={handleDeleteOrAnonymize}
+                      className="px-2.5 py-1 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition cursor-pointer disabled:opacity-50"
                     >
-                      Yes, Remove
+                      {isAnonymizing
+                        ? 'Processing...'
+                        : hasProtectedHistory
+                        ? 'Yes, Anonymize'
+                        : 'Yes, Remove'}
                     </button>
                     <button
                       type="button"
                       onClick={() => setIsConfirmingDelete(false)}
-                      className="px-2.5 py-1 bg-slate-200 text-slate-700 font-bold rounded-lg hover:bg-slate-300 transition"
+                      className="px-2.5 py-1 bg-slate-200 text-slate-700 font-bold rounded-lg hover:bg-slate-300 transition cursor-pointer"
                     >
                       Cancel
                     </button>

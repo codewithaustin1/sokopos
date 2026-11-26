@@ -23,6 +23,11 @@ import {
 } from '../../utils/reportCalculations';
 import { ReportPrintData } from './ReportPrintModal';
 import { isSuperAdminEmail } from '../../data/initialData';
+import {
+  redactPiiInText,
+  maskEmailAddress,
+  maskPhoneNumber,
+} from '../../utils/privacyAndKraSecurity';
 
 interface UseActiveReportPayloadParams {
   activeReportId: ReportType;
@@ -493,11 +498,11 @@ export function useActiveReportPayload({
           'Last Visit',
         ];
         const rows = [
-          ['+254 712 345 678 (Kariuki N.)', 14, (38450).toFixed(2), 'Flour & Grains', 'Today 11:20 AM'],
-          ['+254 722 890 123 (Wanjiru M.)', 9, (24180).toFixed(2), 'Dairy & Bakery', 'Yesterday 04:15 PM'],
-          ['+254 733 456 789 (Otieno D.)', 7, (18900).toFixed(2), 'Pantry & Oil', '3 days ago'],
-          ['+254 798 112 233 (Mutiso P.)', 5, (12600).toFixed(2), 'Beverages', '5 days ago'],
-          ['+254 701 556 778 (Chebet L.)', 4, (9450).toFixed(2), 'Personal Care', 'Last week'],
+          [`${maskPhoneNumber('+254 712 345 678')} (Kariuki N.)`, 14, (38450).toFixed(2), 'Flour & Grains', 'Today 11:20 AM'],
+          [`${maskPhoneNumber('+254 722 890 123')} (Wanjiru M.)`, 9, (24180).toFixed(2), 'Dairy & Bakery', 'Yesterday 04:15 PM'],
+          [`${maskPhoneNumber('+254 733 456 789')} (Otieno D.)`, 7, (18900).toFixed(2), 'Pantry & Oil', '3 days ago'],
+          [`${maskPhoneNumber('+254 798 112 233')} (Mutiso P.)`, 5, (12600).toFixed(2), 'Beverages', '5 days ago'],
+          [`${maskPhoneNumber('+254 701 556 778')} (Chebet L.)`, 4, (9450).toFixed(2), 'Personal Care', 'Last week'],
         ];
 
         return {
@@ -750,7 +755,9 @@ export function useActiveReportPayload({
         const combinedList: UnifiedAuditRow[] = [];
 
         adminActivityLogs.forEach((a) => {
-          const maskedEmail = isSuperAdminEmail(a.adminEmail) ? 'support@sokopos.co.ke' : a.adminEmail;
+          const maskedEmail = isSuperAdminEmail(a.adminEmail)
+            ? 'support@sokopos.co.ke'
+            : maskEmailAddress(a.adminEmail);
           const maskedRole = a.adminRole === 'super_admin' ? 'Platform Support' : a.adminRole;
           combinedList.push({
             timestamp: a.timestamp,
@@ -758,7 +765,7 @@ export function useActiveReportPayload({
             actor: `${a.adminName} (${maskedEmail}) [${maskedRole}]`,
             supervisor: 'N/A (Admin Initiated)',
             action: `${a.category.toUpperCase()}:${a.action.toUpperCase()}`,
-            description: `${a.description} [${a.recordType} #${a.recordId.slice(-6)}] • EXCLUDED FROM SHIFT ACTIVITY`,
+            description: `${redactPiiInText(a.description)} [${a.recordType} #${a.recordId.slice(-6)}] • EXCLUDED FROM SHIFT ACTIVITY`,
           });
         });
 
@@ -769,7 +776,7 @@ export function useActiveReportPayload({
             actor: `${s.performingOperatorName} (${s.performingOperatorRole})`,
             supervisor: `${s.authorizingSupervisorName} (${s.authorizingSupervisorRole})`,
             action: `OVERRIDE_${s.overrideType.toUpperCase()}`,
-            description: `Reason: ${s.reason}${s.transactionId ? ` | Tx: ${s.transactionId.slice(-8)}` : ''}${
+            description: `Reason: ${redactPiiInText(s.reason)}${s.transactionId ? ` | Tx: ${s.transactionId.slice(-8)}` : ''}${
               s.details.amount ? ` | Amount: ${currency} ${s.details.amount}` : ''
             }`,
           });
@@ -779,10 +786,12 @@ export function useActiveReportPayload({
           combinedList.push({
             timestamp: l.timestamp,
             classification: 'Security & Tenant Ledger',
-            actor: isSuperAdminEmail(l.adminEmail) ? 'support@sokopos.co.ke' : l.adminEmail,
+            actor: isSuperAdminEmail(l.adminEmail)
+              ? 'support@sokopos.co.ke'
+              : maskEmailAddress(l.adminEmail),
             supervisor: 'System / Platform Support',
             action: l.action.toUpperCase(),
-            description: `${l.description} [${l.recordType}:${l.recordId}]`,
+            description: `${redactPiiInText(l.description)} [${l.recordType}:${l.recordId}]`,
           });
         });
 

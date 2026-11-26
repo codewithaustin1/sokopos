@@ -169,7 +169,69 @@ service cloud.firestore {
         (!('acceptedByName' in lc) || (lc.acceptedByName is string && lc.acceptedByName.size() <= 160));
     }
 
-    // Businesses Collection (Tenants - billing, status, and Paystack subaccount fields protected)
+    function isValidKraPinOrEmpty(val) {
+      return val == null ||
+             val == '' ||
+             (val is string && val.size() == 11 && val.matches('^[AP][0-9]{9}[A-Z]$'));
+    }
+
+    function isOwnerOrBusinessOwnerRole(bizId) {
+      return isSuperAdmin() ||
+             isOwnerOf(bizId) ||
+             (
+               exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.businessId == bizId &&
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'business_owner'
+             );
+    }
+
+    function isValidBusinessTaxFields(data) {
+      return (!('taxNumber' in data) || isValidKraPinOrEmpty(data.taxNumber)) &&
+             (!('taxSettings' in data) || (
+               data.taxSettings == null ||
+               (
+                 data.taxSettings is map &&
+                 (!('taxNumber' in data.taxSettings) || isValidKraPinOrEmpty(data.taxSettings.taxNumber))
+               )
+             ));
+    }
+
+    function isValidTransactionEtimsPins(data) {
+      return !('etimsData' in data) ||
+             data.etimsData == null ||
+             (
+               data.etimsData is map &&
+               (!('taxPin' in data.etimsData) || isValidKraPinOrEmpty(data.etimsData.taxPin)) &&
+               (!('customerTin' in data.etimsData) || isValidKraPinOrEmpty(data.etimsData.customerTin))
+             );
+    }
+
+    function isValidCustomer(data) {
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+             data.businessId is string && data.businessId.size() > 0 && data.businessId.size() <= 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 120 &&
+             data.phone is string && data.phone.size() > 0 && data.phone.size() <= 32 &&
+             (!('email' in data) || data.email == null || (data.email is string && data.email.size() <= 160)) &&
+             (!('address' in data) || data.address == null || (data.address is string && data.address.size() <= 250)) &&
+             (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 500)) &&
+             (!('kraPin' in data) || isValidKraPinOrEmpty(data.kraPin)) &&
+             (!('isAnonymized' in data) || data.isAnonymized is bool);
+    }
+
+    function isValidSupplier(data) {
+      return data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+             data.businessId is string && data.businessId.size() > 0 && data.businessId.size() <= 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 160 &&
+             data.phone is string && data.phone.size() > 0 && data.phone.size() <= 32 &&
+             (!('contactPerson' in data) || data.contactPerson == null || (data.contactPerson is string && data.contactPerson.size() <= 120)) &&
+             (!('email' in data) || data.email == null || (data.email is string && data.email.size() <= 160)) &&
+             (!('address' in data) || data.address == null || (data.address is string && data.address.size() <= 250)) &&
+             (!('city' in data) || data.city == null || (data.city is string && data.city.size() <= 100)) &&
+             (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 500)) &&
+             (!('kraPin' in data) || isValidKraPinOrEmpty(data.kraPin));
+    }
+
+    // Businesses Collection (Tenants - billing, status, taxNumber/taxSettings, and Paystack subaccount fields protected)
     match /businesses/{businessId} {
       allow get: if isSignedIn() && isValidId(businessId) && (
         isSuperAdmin() ||
@@ -182,7 +244,7 @@ service cloud.firestore {
       );
       allow create: if isEmailVerified() && isValidId(businessId) && (
         !('legalConsent' in request.resource.data) || isValidLegalConsent(request.resource.data.legalConsent)
-      ) && (
+      ) && isValidBusinessTaxFields(request.resource.data) && (
         isSuperAdmin() ||
         (
           businessId != 'biz-demo' &&
@@ -200,12 +262,16 @@ service cloud.firestore {
         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['legalConsent']) ||
         ('legalConsent' in request.resource.data && isValidLegalConsent(request.resource.data.legalConsent))
       ) && (
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['taxNumber', 'taxSettings']) ||
+        isValidBusinessTaxFields(request.resource.data)
+      ) && (
         isSuperAdmin() ||
         (
           (
             (resource != null && hasTokenEmail() && resource.data.ownerEmail is string && resource.data.ownerEmail.lower() == request.auth.token.email.lower()) ||
             hasTenantAccess(businessId)
           ) &&
+          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['taxNumber', 'taxSettings']) || isOwnerOrBusinessOwnerRole(businessId)) &&
           !request.resource.data.diff(resource.data).affectedKeys().hasAny([
             'plan',
             'status',
@@ -356,19 +422,21 @@ service cloud.firestore {
         (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
       allow list: if hasTenantListAccess(resource.data.businessId);
-      allow create: if isEmailVerified() && isValidId(transactionId) && (
-        isSuperAdmin() ||
-        (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
-      );
-      allow update: if isEmailVerified() && isValidId(transactionId) && (
-        isSuperAdmin() ||
-        (
-          resource != null &&
-          resource.data.businessId is string &&
-          hasTenantAccess(resource.data.businessId) &&
-          request.resource.data.businessId == resource.data.businessId
-        )
-      );
+      allow create: if isEmailVerified() && isValidId(transactionId) &&
+        isValidTransactionEtimsPins(request.resource.data) && (
+          isSuperAdmin() ||
+          (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
+        );
+      allow update: if isEmailVerified() && isValidId(transactionId) &&
+        isValidTransactionEtimsPins(request.resource.data) && (
+          isSuperAdmin() ||
+          (
+            resource != null &&
+            resource.data.businessId is string &&
+            hasTenantAccess(resource.data.businessId) &&
+            request.resource.data.businessId == resource.data.businessId
+          )
+        );
       allow delete: if isEmailVerified() && isValidId(transactionId) && (
         isSuperAdmin() ||
         (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
@@ -382,19 +450,22 @@ service cloud.firestore {
         (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
       allow list: if hasTenantListAccess(resource.data.businessId);
-      allow create: if isEmailVerified() && isValidId(customerId) && (
-        isSuperAdmin() ||
-        (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
-      );
-      allow update: if isEmailVerified() && isValidId(customerId) && (
-        isSuperAdmin() ||
-        (
-          resource != null &&
-          resource.data.businessId is string &&
-          hasTenantAccess(resource.data.businessId) &&
-          request.resource.data.businessId == resource.data.businessId
-        )
-      );
+      allow create: if isEmailVerified() && isValidId(customerId) &&
+        isValidCustomer(request.resource.data) && (
+          isSuperAdmin() ||
+          (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
+        );
+      allow update: if isEmailVerified() && isValidId(customerId) &&
+        isValidCustomer(request.resource.data) &&
+        (!('isAnonymized' in resource.data) || resource.data.isAnonymized != true || isSuperAdmin() || (request.resource.data.isAnonymized == true && request.resource.data.name == 'Anonymized Customer')) && (
+          isSuperAdmin() ||
+          (
+            resource != null &&
+            resource.data.businessId is string &&
+            hasTenantAccess(resource.data.businessId) &&
+            request.resource.data.businessId == resource.data.businessId
+          )
+        );
       allow delete: if isEmailVerified() && isValidId(customerId) && (
         isSuperAdmin() ||
         (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
@@ -408,19 +479,21 @@ service cloud.firestore {
         (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))
       );
       allow list: if hasTenantListAccess(resource.data.businessId);
-      allow create: if isEmailVerified() && isValidId(supplierId) && (
-        isSuperAdmin() ||
-        (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
-      );
-      allow update: if isEmailVerified() && isValidId(supplierId) && (
-        isSuperAdmin() ||
-        (
-          resource != null &&
-          resource.data.businessId is string &&
-          hasTenantAccess(resource.data.businessId) &&
-          request.resource.data.businessId == resource.data.businessId
-        )
-      );
+      allow create: if isEmailVerified() && isValidId(supplierId) &&
+        isValidSupplier(request.resource.data) && (
+          isSuperAdmin() ||
+          (request.resource.data.businessId is string && request.resource.data.businessId.size() > 0 && request.resource.data.businessId != 'biz-demo' && hasTenantAccess(request.resource.data.businessId))
+        );
+      allow update: if isEmailVerified() && isValidId(supplierId) &&
+        isValidSupplier(request.resource.data) && (
+          isSuperAdmin() ||
+          (
+            resource != null &&
+            resource.data.businessId is string &&
+            hasTenantAccess(resource.data.businessId) &&
+            request.resource.data.businessId == resource.data.businessId
+          )
+        );
       allow delete: if isEmailVerified() && isValidId(supplierId) && (
         isSuperAdmin() ||
         (resource != null && resource.data.businessId is string && hasTenantAccess(resource.data.businessId))

@@ -28,6 +28,7 @@ interface ReceiptShareModalProps {
   location: Location;
   businessName?: string;
   businessTaxNumber?: string;
+  etimsRelayEnabled?: boolean;
   showToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
@@ -42,6 +43,7 @@ export const ReceiptShareModal: React.FC<ReceiptShareModalProps> = ({
   location,
   businessName,
   businessTaxNumber,
+  etimsRelayEnabled = true,
   showToast,
 }) => {
   // Pre-fill phone if available on payment details or defaultPhone
@@ -57,10 +59,16 @@ export const ReceiptShareModal: React.FC<ReceiptShareModalProps> = ({
   const receiptText = useMemo(() => {
     if (customText) return customText;
     if (transaction) {
-      return formatTransactionReceiptText(transaction, location, businessName, businessTaxNumber);
+      return formatTransactionReceiptText(
+        transaction,
+        location,
+        businessName,
+        businessTaxNumber,
+        { etimsRelayEnabled }
+      );
     }
     return '';
-  }, [customText, transaction, location, businessName, businessTaxNumber]);
+  }, [customText, transaction, location, businessName, businessTaxNumber, etimsRelayEnabled]);
 
   const receiptTitle = customTitle || (transaction ? `Receipt #${transaction.receiptNumber}` : 'Digital Receipt');
   const receiptSubtitle =
@@ -83,6 +91,7 @@ export const ReceiptShareModal: React.FC<ReceiptShareModalProps> = ({
       customTitle: receiptTitle,
       customSubtitle: receiptSubtitle,
       customText: customText || receiptText,
+      etimsRelayEnabled,
     });
   };
 

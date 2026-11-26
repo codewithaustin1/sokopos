@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Customer } from '../types';
 import { usePos } from '../context/PosContext';
+import { validateKraPinStrict } from '../utils/privacyAndKraSecurity';
 
 interface CustomerFormModalProps {
   isOpen: boolean;
@@ -38,6 +39,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [address, setAddress] = useState('');
+  const [kraPin, setKraPin] = useState('');
   const [notes, setNotes] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [customTagInput, setCustomTagInput] = useState('');
@@ -54,6 +56,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
       setPhone(initialCustomer.phone || '');
       setEmail(initialCustomer.email || '');
       setAddress(initialCustomer.address || '');
+      setKraPin(initialCustomer.kraPin || '');
       setNotes(initialCustomer.notes || '');
       setTags(initialCustomer.tags || []);
       setIsCreditAllowed(initialCustomer.isCreditAllowed ?? true);
@@ -64,6 +67,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
       setPhone('+254 ');
       setEmail('');
       setAddress('');
+      setKraPin('');
       setNotes('');
       setTags(['Regular']);
       setIsCreditAllowed(true);
@@ -195,6 +199,15 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
       return;
     }
 
+    const pinCheck = validateKraPinStrict(kraPin, {
+      required: false,
+      allowPlaceholderInSandbox: false,
+    });
+    if (!pinCheck.isValid) {
+      setErrorMessage(pinCheck.reason || 'Invalid KRA PIN format.');
+      return;
+    }
+
     const parsedCreditLimit = parseFloat(creditLimit) || 0;
     const parsedStoreCreditBalance = parseFloat(storeCreditBalance) || 0;
 
@@ -206,6 +219,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
           phone: cleanPhone,
           email: email.trim() || undefined,
           address: address.trim() || undefined,
+          kraPin: pinCheck.normalized,
           notes: notes.trim() || undefined,
           tags,
           isCreditAllowed,
@@ -218,6 +232,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
           phone: cleanPhone,
           email: email.trim() || undefined,
           address: address.trim() || undefined,
+          kraPin: pinCheck.normalized,
           notes: notes.trim() || undefined,
           tags,
           isCreditAllowed,
@@ -231,6 +246,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
           phone: cleanPhone,
           email: email.trim() || undefined,
           address: address.trim() || undefined,
+          kraPin: pinCheck.normalized,
           notes: notes.trim() || undefined,
           tags,
           isCreditAllowed,
@@ -328,6 +344,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
               <input
                 type="text"
                 required
+                maxLength={120}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Grace Wanjiku"
@@ -343,6 +360,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
               <input
                 type="text"
                 required
+                maxLength={32}
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="+254 7XX XXX XXX"
@@ -351,7 +369,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
             </div>
           </div>
 
-          {/* Email & Physical Address */}
+          {/* Email, Physical Address & Buyer KRA PIN */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
@@ -360,6 +378,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
               </label>
               <input
                 type="email"
+                maxLength={160}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="client@example.com"
@@ -374,12 +393,36 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
               </label>
               <input
                 type="text"
+                maxLength={250}
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
                 placeholder="e.g. Kilimani, Argwings Kodhek"
                 className="w-full px-3 py-2 text-xs font-medium rounded-xl border border-slate-300 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+              <FileText className="w-3.5 h-3.5 text-blue-600" />
+              <span>Buyer KRA PIN (Optional — eTIMS B2B Invoices)</span>
+            </label>
+            <input
+              type="text"
+              maxLength={11}
+              value={kraPin}
+              onChange={(e) => setKraPin(e.target.value.toUpperCase())}
+              placeholder="e.g. A011001890C (leave blank for walk-in)"
+              className="w-full px-3 py-2 text-xs font-mono uppercase font-medium rounded-xl border border-slate-300 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+            />
+            {kraPin.trim() && (() => {
+              const check = validateKraPinStrict(kraPin, { required: false, allowPlaceholderInSandbox: false });
+              return !check.isValid ? (
+                <p className="mt-1 text-[11px] font-medium text-red-600">{check.reason}</p>
+              ) : (
+                <p className="mt-1 text-[11px] font-medium text-emerald-700">Valid KRA PIN format</p>
+              );
+            })()}
           </div>
 
           {/* Tags */}
@@ -500,6 +543,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
             </label>
             <textarea
               rows={2}
+              maxLength={500}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="e.g. Settles credit every Friday afternoon via M-Pesa. Primary contact for wholesale orders."

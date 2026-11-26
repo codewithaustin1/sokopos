@@ -1,10 +1,13 @@
 import { Transaction, Location } from '../types';
+import { isTransactionEtimsVerified, isCreditNoteEtimsVerified } from './etimsDisplay';
+import { maskPhoneNumber, maskKraPin } from './privacyAndKraSecurity';
 
 export function formatTransactionReceiptText(
   transaction: Transaction,
   location: Location,
   businessName?: string,
-  businessTaxNumber?: string
+  businessTaxNumber?: string,
+  options?: { etimsRelayEnabled?: boolean }
 ): string {
   const store = businessName || 'SokoPoS Retail';
   const currency = location.currency || 'KES';
@@ -28,7 +31,12 @@ export function formatTransactionReceiptText(
     ...(transaction.customerName
       ? [
           `Customer: ${transaction.customerName}`,
-          ...(transaction.customerPhone ? [`Phone: ${transaction.customerPhone}`] : []),
+          ...(transaction.customerPhone
+            ? [`Phone: ${maskPhoneNumber(transaction.customerPhone)}`]
+            : []),
+          ...(transaction.etimsData?.customerTin
+            ? [`Buyer PIN: ${maskKraPin(transaction.etimsData.customerTin)}`]
+            : []),
           ...(transaction.customerPreviousPoints !== undefined ||
           transaction.customerCurrentPoints !== undefined ||
           (transaction.loyaltyPointsEarned !== undefined && transaction.loyaltyPointsEarned > 0)
@@ -108,10 +116,9 @@ export function formatTransactionReceiptText(
   }
 
   lines.push('----------------------------------------');
+  const etimsRelayEnabled = options?.etimsRelayEnabled !== false;
   const etims = transaction.etimsData;
-  const isEtimsVerified =
-    etims?.status === 'COMPLETED' &&
-    Boolean(etims?.isPartnerVerified || etims?.receiptSignature || etims?.cuInvoiceNumber);
+  const isEtimsVerified = isTransactionEtimsVerified(etims);
 
   if (isEtimsVerified) {
     lines.push('KRA eTIMS FISCAL RECEIPT (VERIFIED)');
@@ -123,15 +130,21 @@ export function formatTransactionReceiptText(
       lines.push(`KRA Verify: ${etims.etimsUrl || etims.offlineUrl}`);
     }
     lines.push('Verified via Digitax Technologies (KRA Partner)');
-  } else if (etims?.status === 'FAILED') {
-    lines.push('KRA eTIMS: SYNC ATTENTION REQUIRED');
-    lines.push(`Trader Invoice: ${etims?.traderInvoiceNumber || transaction.receiptNumber}`);
-  } else {
-    lines.push('KRA eTIMS: PENDING FISCALIZATION (Queued)');
-    lines.push(`Trader Invoice: ${etims?.traderInvoiceNumber || transaction.receiptNumber}`);
+  } else if (etimsRelayEnabled) {
+    if (etims?.status === 'FAILED') {
+      lines.push('KRA eTIMS: SYNC ATTENTION REQUIRED');
+      lines.push(`Trader Invoice: ${etims?.traderInvoiceNumber || transaction.receiptNumber}`);
+    } else {
+      lines.push('KRA eTIMS: PENDING FISCALIZATION (Queued)');
+      lines.push(`Trader Invoice: ${etims?.traderInvoiceNumber || transaction.receiptNumber}`);
+    }
   }
   lines.push('Thank you for shopping with us! • Asante!');
-  lines.push('Powered by SokoPoS in partnership with Digitax');
+  lines.push(
+    isEtimsVerified || etimsRelayEnabled
+      ? 'Powered by SokoPoS in partnership with Digitax'
+      : 'Powered by SokoPoS'
+  );
 
   return lines.join('\n');
 }
@@ -166,7 +179,8 @@ export function formatRefundVoucherText(
   },
   location: Location,
   businessName?: string,
-  businessTaxNumber?: string
+  businessTaxNumber?: string,
+  options?: { etimsRelayEnabled?: boolean }
 ): string {
   const store = businessName || 'SokoPoS Retail';
   const currency = location.currency || 'KES';
@@ -188,7 +202,11 @@ export function formatRefundVoucherText(
   ];
 
   if (refund.customerName) {
-    lines.push(`Customer: ${refund.customerName} ${refund.customerPhone ? `(${refund.customerPhone})` : ''}`);
+    lines.push(
+      `Customer: ${refund.customerName} ${
+        refund.customerPhone ? `(${maskPhoneNumber(refund.customerPhone)})` : ''
+      }`
+    );
   }
 
   lines.push('----------------------------------------');
@@ -201,18 +219,22 @@ export function formatRefundVoucherText(
   lines.push('----------------------------------------');
   lines.push(`TOTAL REFUNDED: -${currency} ${refund.totalRefund.toFixed(2)}`);
   lines.push('----------------------------------------');
+  const etimsRelayEnabled = options?.etimsRelayEnabled !== false;
   const cn = refund.etimsCreditNote;
-  if (cn?.status === 'COMPLETED' && (cn.cuInvoiceNumber || cn.receiptSignature || cn.etimsUrl)) {
+  const isCnVerified = isCreditNoteEtimsVerified(cn);
+  if (isCnVerified && cn) {
     lines.push('KRA eTIMS CREDIT NOTE (VERIFIED)');
     if (cn.cuSerialNumber) lines.push(`CU Serial: ${cn.cuSerialNumber}`);
     if (cn.cuInvoiceNumber !== undefined) lines.push(`CU Credit Note: ${cn.cuInvoiceNumber}`);
     if (cn.reasonCode) lines.push(`KRA Reason Code: ${cn.reasonCode}`);
     if (cn.receiptSignature) lines.push(`KRA Signature: ${cn.receiptSignature}`);
     if (cn.etimsUrl || cn.offlineUrl) lines.push(`KRA Verify: ${cn.etimsUrl || cn.offlineUrl}`);
-  } else if (cn?.status === 'FAILED') {
-    lines.push('KRA CREDIT NOTE: SYNC ATTENTION REQUIRED');
-  } else if (cn?.status === 'PENDING') {
-    lines.push('KRA CREDIT NOTE: PENDING FISCALIZATION');
+  } else if (etimsRelayEnabled) {
+    if (cn?.status === 'FAILED') {
+      lines.push('KRA CREDIT NOTE: SYNC ATTENTION REQUIRED');
+    } else if (cn?.status === 'PENDING') {
+      lines.push('KRA CREDIT NOTE: PENDING FISCALIZATION');
+    }
   }
   lines.push('Customer copy');
   lines.push('Powered by Sokoplus Horizon');

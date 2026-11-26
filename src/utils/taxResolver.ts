@@ -60,7 +60,7 @@ export const DEFAULT_TAX_RULES: TaxRule[] = [
 export const DEFAULT_TAX_SETTINGS: BusinessTaxSettings = {
   taxLabel: 'VAT',
   defaultTaxRate: 0.16,
-  taxNumber: 'P051234567Z',
+  taxNumber: '',
   pricingType: 'inclusive',
   enableDynamicCategoryTax: true,
   enableDynamicRegionalTax: true,

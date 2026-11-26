@@ -278,6 +278,63 @@ export async function clearAllLargeBrandingKv(): Promise<void> {
   await txDonePromise(tx);
 }
 
+const TENANT_COLLECTION_KEYS: CollectionStoreKey[] = [
+  'businesses',
+  'sync_logs',
+  'sales_backups',
+  'super_admin_audit',
+  'admin_activity_logs',
+  'supervisor_overrides',
+  'void_records',
+  'bi_rollups',
+  'bi_targets',
+  'bi_saved_views',
+];
+
+/**
+ * Clears all cached tenant operational entities, tenant collections, and delta sync cursors
+ * on logout or account switch while preserving `sync_outbox` (business-scoped) and branding/pricing.
+ */
+export async function clearTenantTerminalCacheKeepOutbox(): Promise<void> {
+  if (!isIndexedDbAvailable()) {
+    for (const storeName of NORMALIZED_STORES) {
+      memoryFallbackStore.delete(`norm:${storeName}`);
+    }
+    for (const colKey of TENANT_COLLECTION_KEYS) {
+      memoryFallbackStore.delete(`col:${colKey}`);
+    }
+    for (const key of Array.from(memoryFallbackStore.keys())) {
+      if (key.startsWith('meta:productDeltaCursor:')) {
+        memoryFallbackStore.delete(key);
+      }
+    }
+    return;
+  }
+
+  const db = await openTerminalDb();
+  const storesToAccess = [...NORMALIZED_STORES, 'collections', 'terminal_meta'];
+  const tx = db.transaction(storesToAccess, 'readwrite');
+
+  for (const storeName of NORMALIZED_STORES) {
+    tx.objectStore(storeName).clear();
+  }
+
+  const colStore = tx.objectStore('collections');
+  for (const colKey of TENANT_COLLECTION_KEYS) {
+    colStore.delete(colKey);
+  }
+
+  const metaStore = tx.objectStore('terminal_meta');
+  const metaKeys = (await reqToPromise(metaStore.getAllKeys())) as string[];
+  for (const metaKey of metaKeys) {
+    if (typeof metaKey === 'string' && metaKey.startsWith('productDeltaCursor:')) {
+      metaStore.delete(metaKey);
+    }
+  }
+
+  await txDonePromise(tx);
+}
+
 /**
  * Atomic dual-write: commits an entity record to its normalized object store AND inserts/coalesces
  * the corresponding mutation job in `sync_outbox` inside a single IndexedDB transaction.

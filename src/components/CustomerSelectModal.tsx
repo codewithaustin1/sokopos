@@ -11,6 +11,7 @@ import {
 import { Customer } from '../types';
 import { usePos } from '../context/PosContext';
 import { CustomerFormModal } from './CustomerFormModal';
+import { maskPhoneNumber, isCustomerAnonymized } from '../utils/privacyAndKraSecurity';
 
 interface CustomerSelectModalProps {
   isOpen: boolean;
@@ -29,11 +30,12 @@ export const CustomerSelectModal: React.FC<CustomerSelectModalProps> = ({
   const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
 
   const filteredCustomers = useMemo(() => {
+    const activeCustomers = customers.filter((c) => !isCustomerAnonymized(c));
     if (!searchQuery.trim()) {
-      return customers;
+      return activeCustomers;
     }
     const q = searchQuery.toLowerCase().trim();
-    return customers.filter(
+    return activeCustomers.filter(
       (c) =>
         c.name.toLowerCase().includes(q) ||
         c.phone.toLowerCase().includes(q) ||
@@ -192,7 +194,7 @@ export const CustomerSelectModal: React.FC<CustomerSelectModalProps> = ({
                       <div className="flex items-center gap-3 text-[11px] text-slate-500 font-mono mt-0.5">
                         <span className="flex items-center gap-1">
                           <Phone className="w-3 h-3 text-emerald-600" />
-                          {c.phone}
+                          {maskPhoneNumber(c.phone)}
                         </span>
                         {c.loyaltyPoints !== undefined && (
                           <span className="flex items-center gap-1 text-amber-700 font-bold">

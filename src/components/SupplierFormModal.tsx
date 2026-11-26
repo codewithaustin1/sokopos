@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Supplier, SupplierPaymentTerms } from '../types';
 import { usePos } from '../context/PosContext';
+import { validateKraPinStrict } from '../utils/privacyAndKraSecurity';
 
 interface SupplierFormModalProps {
   isOpen: boolean;
@@ -289,6 +290,15 @@ export const SupplierFormModal: React.FC<SupplierFormModalProps> = ({
       return;
     }
 
+    const pinCheck = validateKraPinStrict(kraPin, {
+      required: false,
+      allowPlaceholderInSandbox: false,
+    });
+    if (!pinCheck.isValid) {
+      setErrorMessage(pinCheck.reason || 'Invalid Supplier KRA PIN format.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const parsedLead = parseInt(leadTimeDays, 10);
@@ -302,7 +312,7 @@ export const SupplierFormModal: React.FC<SupplierFormModalProps> = ({
         category: category.trim() || undefined,
         address: address.trim() || undefined,
         city: city.trim() || undefined,
-        kraPin: kraPin.trim() || undefined,
+        kraPin: pinCheck.normalized,
         paymentTerms,
         bankName: bankName.trim() || undefined,
         bankAccount: bankAccount.trim() || undefined,
@@ -620,12 +630,19 @@ export const SupplierFormModal: React.FC<SupplierFormModalProps> = ({
                   <input
                     id={kraPinId}
                     type="text"
-                    placeholder="P051234567X"
+                    maxLength={11}
+                    placeholder="A011001890C"
                     value={kraPin}
                     onChange={(e) => setKraPin(e.target.value.toUpperCase())}
                     className="w-full min-h-[42px] bg-slate-50 border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-xs sm:text-sm font-mono font-semibold uppercase text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white focus-visible:outline-2 focus-visible:outline-blue-600"
                   />
                 </div>
+                {kraPin.trim() && (() => {
+                  const check = validateKraPinStrict(kraPin, { required: false, allowPlaceholderInSandbox: false });
+                  return !check.isValid ? (
+                    <p className="mt-1 text-[11px] text-red-600 font-medium">{check.reason}</p>
+                  ) : null;
+                })()}
               </div>
             </div>
 

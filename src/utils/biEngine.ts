@@ -9,9 +9,11 @@ import {
   AnalyticsDailyRollup,
   AnalyticsTarget,
   BranchBenchmarkRow,
+  BranchTargetScorecardRow,
   CategoryProfitabilityRow,
   DateRange,
   ExecutivePLSummary,
+  MonthlyTargetPacing,
   SkuProfitabilityRow,
   TenderMixRow,
 } from '../types/reporting';
@@ -1129,6 +1131,352 @@ export function evaluateTargetPacing(
     discountLeakagePct,
     discountBreached,
   };
+}
+
+export function getDaysInPeriodMonth(periodKey: string): {
+  year: number;
+  monthIndex: number;
+  daysInMonth: number;
+} {
+  const match = /^(\d{4})-(\d{2})$/.exec(String(periodKey || '').trim());
+  const fallbackNow = new Date();
+  const year = match ? Number(match[1]) : fallbackNow.getFullYear();
+  const monthIndex = match
+    ? Math.min(11, Math.max(0, Number(match[2]) - 1))
+    : fallbackNow.getMonth();
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  return { year, monthIndex, daysInMonth };
+}
+
+export function resolveEffectiveTargetForBranch(
+  targets: AnalyticsTarget[],
+  locationId: string,
+  periodKey: string,
+  allowStoreFallback: boolean = true
+): { target: AnalyticsTarget | null; isStoreFallback: boolean } {
+  const exact = targets.find(
+    (t) => t.locationId === locationId && t.periodKey === periodKey
+  );
+  if (exact) {
+    return { target: exact, isStoreFallback: false };
+  }
+  if (allowStoreFallback && locationId !== 'all') {
+    const storeAll = targets.find(
+      (t) => t.locationId === 'all' && t.periodKey === periodKey
+    );
+    if (storeAll) {
+      return { target: storeAll, isStoreFallback: true };
+    }
+  }
+  return { target: null, isStoreFallback: false };
+}
+
+export function calculateMonthlyTargetPacing(params: {
+  periodKey: string;
+  selectedLocationId: string;
+  targets: AnalyticsTarget[];
+  transactions: Transaction[];
+  rollups: AnalyticsDailyRollup[];
+  products: Product[];
+  shifts: ShiftSession[];
+  now?: Date;
+  allowStoreFallback?: boolean;
+}): MonthlyTargetPacing {
+  const {
+    periodKey,
+    selectedLocationId,
+    targets,
+    transactions,
+    rollups,
+    products,
+    shifts,
+    now = new Date(),
+    allowStoreFallback = true,
+  } = params;
+
+  const { year, monthIndex, daysInMonth } = getDaysInPeriodMonth(periodKey);
+  const currentMonthKey = getPeriodKey(now);
+  const isCurrentMonth = periodKey === currentMonthKey;
+  const isPastMonth = periodKey < currentMonthKey;
+  const isFutureMonth = periodKey > currentMonthKey;
+
+  const monthStart = new Date(year, monthIndex, 1, 0, 0, 0, 0);
+  const monthEnd = isCurrentMonth
+    ? new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+    : new Date(year, monthIndex + 1, 0, 23, 59, 59, 999);
+
+  const monthRange: DateRange = {
+    start: monthStart,
+    end: monthEnd,
+    label: periodKey,
+    preset: 'custom',
+  };
+
+  const productMap = new Map<string, Product>();
+  for (const p of products) productMap.set(p.id, p);
+
+  const mtdTotals = isFutureMonth
+    ? {
+        grossSales: 0,
+        refundsTotal: 0,
+        discountsTotal: 0,
+        netRevenue: 0,
+        taxTotal: 0,
+        cogsTotal: 0,
+        grossProfit: 0,
+        operatingExpenses: 0,
+        ordersCount: 0,
+        refundedOrdersCount: 0,
+        unitsSold: 0,
+        uncostedRevenue: 0,
+        usedRollupHistory: false,
+      }
+    : aggregateRangeTotals({
+        range: monthRange,
+        selectedLocationId,
+        transactions,
+        rollups,
+        shifts,
+        productMap,
+      });
+
+  // Calculate today's net revenue for current month run-rate tracking
+  const todayDateKey = toLocalDateKey(now);
+  let todayNetRevenue = 0;
+  if (isCurrentMonth) {
+    let coveredTodayLocs = false;
+    for (const tx of transactions) {
+      if (selectedLocationId !== 'all' && tx.locationId !== selectedLocationId) continue;
+      if (toLocalDateKey(tx.timestamp) === todayDateKey) {
+        coveredTodayLocs = true;
+        todayNetRevenue += computeTransactionFinancials(tx, productMap).netSales;
+      }
+    }
+    if (!coveredTodayLocs) {
+      for (const r of rollups) {
+        if (selectedLocationId !== 'all' && r.locationId !== selectedLocationId) continue;
+        if (r.dateKey === todayDateKey) {
+          todayNetRevenue += r.netSales || 0;
+        }
+      }
+    }
+    todayNetRevenue = round2(todayNetRevenue);
+  }
+
+  const mtdNetRevenue = round2(mtdTotals.netRevenue);
+  const mtdGrossSales = round2(mtdTotals.grossSales);
+  const mtdDiscountsTotal = round2(mtdTotals.discountsTotal);
+  const mtdGrossProfit = round2(mtdTotals.grossProfit);
+  const mtdGrossMarginPct =
+    mtdNetRevenue > 0 ? round2((mtdGrossProfit / mtdNetRevenue) * 100) : 0;
+  const mtdCostCoveragePct =
+    mtdNetRevenue > 0
+      ? round2(Math.max(0, Math.min(100, ((mtdNetRevenue - mtdTotals.uncostedRevenue) / mtdNetRevenue) * 100)))
+      : 100;
+
+  const daysElapsed = isFutureMonth
+    ? 0
+    : isPastMonth
+      ? daysInMonth
+      : Math.min(daysInMonth, Math.max(1, now.getDate()));
+  const daysRemaining = isFutureMonth
+    ? daysInMonth
+    : isPastMonth
+      ? 0
+      : Math.max(1, daysInMonth - daysElapsed + 1); // Remaining days including today
+
+  const { target, isStoreFallback } = resolveEffectiveTargetForBranch(
+    targets,
+    selectedLocationId,
+    periodKey,
+    allowStoreFallback
+  );
+
+  const discountLeakagePct =
+    mtdGrossSales > 0 ? round2((mtdDiscountsTotal / mtdGrossSales) * 100) : 0;
+
+  const actualDailyAvg =
+    daysElapsed > 0 ? round2(mtdNetRevenue / daysElapsed) : 0;
+  const projectedMonthEnd = isPastMonth
+    ? mtdNetRevenue
+    : isFutureMonth
+      ? 0
+      : round2(actualDailyAvg * daysInMonth);
+
+  const hasRevenueTarget = Boolean(target && target.revenueTarget > 0);
+  if (!target || target.revenueTarget <= 0) {
+    let marginStatus: MonthlyTargetPacing['marginStatus'] = 'unset';
+    if (target && target.grossMarginTargetPct > 0 && mtdNetRevenue > 0) {
+      if (mtdGrossMarginPct < target.grossMarginTargetPct - 5) marginStatus = 'behind';
+      else if (mtdGrossMarginPct < target.grossMarginTargetPct) marginStatus = 'watch';
+      else marginStatus = 'on_track';
+    }
+
+    let discountStatus: MonthlyTargetPacing['discountStatus'] = 'unset';
+    let discountBreached = false;
+    if (target && target.maxDiscountPct > 0) {
+      if (discountLeakagePct > target.maxDiscountPct) {
+        discountStatus = 'breached';
+        discountBreached = true;
+      } else if (discountLeakagePct >= target.maxDiscountPct * 0.8) {
+        discountStatus = 'watch';
+      } else {
+        discountStatus = 'healthy';
+      }
+    }
+
+    return {
+      periodKey,
+      locationId: selectedLocationId,
+      target,
+      isStoreFallback,
+      hasRevenueTarget: false,
+      isCurrentMonth,
+      isPastMonth,
+      isFutureMonth,
+      daysInMonth,
+      daysElapsed,
+      daysRemaining,
+      mtdNetRevenue,
+      mtdGrossSales,
+      mtdDiscountsTotal,
+      mtdGrossProfit,
+      mtdGrossMarginPct,
+      mtdCostCoveragePct,
+      todayNetRevenue,
+      revenuePct: 0,
+      expectedPacePct: round2((daysElapsed / daysInMonth) * 100),
+      revenueRemaining: 0,
+      actualDailyAvg,
+      requiredDailyRunRate: 0,
+      baselineDailyTarget: 0,
+      projectedMonthEnd,
+      revenueStatus: 'unset',
+      marginStatus,
+      discountLeakagePct,
+      discountStatus,
+      discountBreached,
+    };
+  }
+
+  const revenuePct = round2((mtdNetRevenue / target.revenueTarget) * 100);
+  const expectedPacePct = round2((daysElapsed / daysInMonth) * 100);
+  const revenueRemaining = round2(Math.max(0, target.revenueTarget - mtdNetRevenue));
+  const baselineDailyTarget = round2(target.revenueTarget / daysInMonth);
+
+  // Stable intraday daily run-rate: remaining target from start of today divided by remaining days including today
+  const mtdBeforeToday = isCurrentMonth
+    ? Math.max(0, mtdNetRevenue - todayNetRevenue)
+    : mtdNetRevenue;
+  const requiredDailyRunRate =
+    revenueRemaining <= 0
+      ? 0
+      : isPastMonth
+        ? revenueRemaining
+        : round2(Math.max(0, target.revenueTarget - mtdBeforeToday) / Math.max(1, daysRemaining));
+
+  let revenueStatus: MonthlyTargetPacing['revenueStatus'] = 'on_track';
+  if (mtdNetRevenue >= target.revenueTarget) {
+    revenueStatus = 'achieved';
+  } else if (isFutureMonth) {
+    revenueStatus = 'on_track';
+  } else if (isPastMonth) {
+    revenueStatus = revenuePct >= 95 ? 'watch' : 'behind';
+  } else if (revenuePct < expectedPacePct * 0.75) {
+    revenueStatus = 'behind';
+  } else if (revenuePct < expectedPacePct * 0.94) {
+    revenueStatus = 'watch';
+  }
+
+  let marginStatus: MonthlyTargetPacing['marginStatus'] = 'unset';
+  if (target.grossMarginTargetPct > 0) {
+    if (mtdGrossMarginPct < target.grossMarginTargetPct - 5) marginStatus = 'behind';
+    else if (mtdGrossMarginPct < target.grossMarginTargetPct) marginStatus = 'watch';
+    else marginStatus = 'on_track';
+  }
+
+  let discountStatus: MonthlyTargetPacing['discountStatus'] = 'unset';
+  let discountBreached = false;
+  if (target.maxDiscountPct > 0) {
+    if (discountLeakagePct > target.maxDiscountPct) {
+      discountStatus = 'breached';
+      discountBreached = true;
+    } else if (discountLeakagePct >= target.maxDiscountPct * 0.8) {
+      discountStatus = 'watch';
+    } else {
+      discountStatus = 'healthy';
+    }
+  }
+
+  return {
+    periodKey,
+    locationId: selectedLocationId,
+    target,
+    isStoreFallback,
+    hasRevenueTarget,
+    isCurrentMonth,
+    isPastMonth,
+    isFutureMonth,
+    daysInMonth,
+    daysElapsed,
+    daysRemaining,
+    mtdNetRevenue,
+    mtdGrossSales,
+    mtdDiscountsTotal,
+    mtdGrossProfit,
+    mtdGrossMarginPct,
+    mtdCostCoveragePct,
+    todayNetRevenue,
+    revenuePct,
+    expectedPacePct,
+    revenueRemaining,
+    actualDailyAvg,
+    requiredDailyRunRate,
+    baselineDailyTarget,
+    projectedMonthEnd,
+    revenueStatus,
+    marginStatus,
+    discountLeakagePct,
+    discountStatus,
+    discountBreached,
+  };
+}
+
+export function calculateBranchTargetScorecards(params: {
+  periodKey: string;
+  locations: Location[];
+  targets: AnalyticsTarget[];
+  transactions: Transaction[];
+  rollups: AnalyticsDailyRollup[];
+  products: Product[];
+  shifts: ShiftSession[];
+  now?: Date;
+}): BranchTargetScorecardRow[] {
+  const { periodKey, locations, targets, transactions, rollups, products, shifts, now } = params;
+
+  return locations.map((loc) => {
+    const explicitTarget =
+      targets.find((t) => t.locationId === loc.id && t.periodKey === periodKey) || null;
+    const pacing = calculateMonthlyTargetPacing({
+      periodKey,
+      selectedLocationId: loc.id,
+      targets,
+      transactions,
+      rollups,
+      products,
+      shifts,
+      now,
+      allowStoreFallback: false,
+    });
+    return {
+      locationId: loc.id,
+      locationName: loc.name,
+      code: loc.code,
+      target: explicitTarget,
+      hasExplicitTarget: Boolean(explicitTarget && explicitTarget.revenueTarget > 0),
+      pacing,
+    };
+  });
 }
 
 function escapeCsvCell(val: unknown): string {

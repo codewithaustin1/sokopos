@@ -13,6 +13,7 @@ import {
   Loader2,
   Lock,
   RotateCcw,
+  RefreshCw,
   Palette,
   CreditCard,
   AlertTriangle,
@@ -24,8 +25,10 @@ import {
   Activity,
   ShieldCheck,
   Receipt,
+  Download,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
+import { triggerCsvDownload } from '../utils/inventoryCsv';
 import { PaystackSubaccountPanel } from './common/PaystackSubaccountPanel';
 import { SettingsSectionHeader } from './common/SettingsSectionHeader';
 import { isSuperAdminEmail } from '../data/initialData';
@@ -115,6 +118,8 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
     platformFavicon,
     performSystemCleanup,
     isRealGoogleAccount,
+    isValidBusinessOwnerEmail,
+    isGoogleEmailAccount,
     updateBusinessStatus,
     updateBusinessPlan,
     pricingTiers,
@@ -124,6 +129,9 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
     updatePricingTier,
     resetPricingTiersToDefault,
     refreshAllBusinessesForSuperAdmin,
+    isTenantsLoading,
+    tenantsLoadError,
+    showToast,
     isDemoSession,
   } = usePos();
 
@@ -146,6 +154,9 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
   const [newFeatureText, setNewFeatureText] = useState<{ [tierId: string]: string }>({});
   const [confirmResetPricing, setConfirmResetPricing] = useState(false);
 
+  // Business Tenants Search State
+  const [tenantSearchQuery, setTenantSearchQuery] = useState('');
+
   // Subscriptions & Plan Override State
   const [subSearchQuery, setSubSearchQuery] = useState('');
   const [subStatusFilter, setSubStatusFilter] = useState<'all' | 'active' | 'suspended'>('all');
@@ -163,7 +174,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
 
   useEffect(() => {
     if (isOpen !== false && isSuperAdminUser) {
-      refreshAllBusinessesForSuperAdmin(false).catch(() => {});
+      refreshAllBusinessesForSuperAdmin(true).catch(() => {});
     }
   }, [isOpen, isSuperAdminUser, refreshAllBusinessesForSuperAdmin]);
 
@@ -323,6 +334,82 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
     return matchQuery && matchStatus && matchPlan;
   });
 
+  const cleanTenantQuery = tenantSearchQuery.trim().toLowerCase();
+  const filteredTenants = businesses.filter((biz) => {
+    if (!cleanTenantQuery) return true;
+    return (
+      (biz.name || '').toLowerCase().includes(cleanTenantQuery) ||
+      (biz.code || '').toLowerCase().includes(cleanTenantQuery) ||
+      (biz.ownerEmail || '').toLowerCase().includes(cleanTenantQuery)
+    );
+  });
+
+  const escapeAuditCsvCell = (val: unknown): string => {
+    const raw = val === null || val === undefined ? '' : String(val);
+    const trimmedStart = raw.replace(/^[\u0000-\u0020]+/, '');
+    const safe = /^[=+\-@\t\r]/.test(trimmedStart) ? `'${raw}` : raw;
+    if (/[",\n\r]/.test(safe)) {
+      return `"${safe.replace(/"/g, '""')}"`;
+    }
+    return safe;
+  };
+
+  const exportTenantsAuditCsv = (rowsToExport: typeof businesses, scopeLabel: 'filtered' | 'all') => {
+    if (rowsToExport.length === 0) return;
+    const headers = [
+      'Tenant ID',
+      'Business Code',
+      'Store Name',
+      'Owner Email',
+      'Owner Name',
+      'Account Type',
+      'Plan',
+      'Status',
+      'Tax PIN (KRA)',
+      'Phone',
+      'Currency',
+      'Paystack Subaccount',
+      'Paystack Status',
+      'Subscription Status',
+      'Subscription Expires At',
+      'Created At',
+      'Last Login At',
+    ];
+    const rows = rowsToExport.map((biz) => {
+      const accountType = isGoogleEmailAccount(biz.ownerEmail)
+        ? 'Google Account'
+        : isValidBusinessOwnerEmail(biz.ownerEmail) || isRealGoogleAccount(biz.ownerEmail)
+          ? 'Email Account'
+          : 'Invalid Email';
+      return [
+        biz.id,
+        biz.code,
+        biz.name,
+        biz.ownerEmail,
+        biz.ownerName,
+        accountType,
+        biz.plan,
+        biz.status,
+        biz.taxNumber,
+        biz.phone || '',
+        biz.currency || 'KES',
+        biz.paystackSubaccountCode || '',
+        biz.paystackSubaccountStatus || 'unconfigured',
+        biz.subscription?.status || '',
+        biz.subscription?.expiresAt || '',
+        biz.createdAt || '',
+        biz.lastLoginAt || '',
+      ];
+    });
+    const csv = [headers, ...rows].map((row) => row.map(escapeAuditCsvCell).join(',')).join('\r\n');
+    const dateTag = new Date().toISOString().slice(0, 10);
+    triggerCsvDownload(csv, `sokopos-tenants-audit-${scopeLabel}-${dateTag}.csv`);
+    showToast(
+      `Exported ${rowsToExport.length} ${rowsToExport.length === 1 ? 'tenant' : 'tenants'} to CSV`,
+      'success'
+    );
+  };
+
   return (
     <div
       id="pos-superadmin-view"
@@ -453,13 +540,29 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                   description="Each tenant is strictly isolated with independent product catalogs, locations, sales, and system users."
                   meta={
                     <>
-                      <span>{businesses.length} tenants</span>
+                      <span className="tabular-nums">
+                        {cleanTenantQuery ? `${filteredTenants.length} of ${businesses.length}` : businesses.length}{' '}
+                        tenants
+                      </span>
                       <span aria-hidden="true">·</span>
-                      <span>{businesses.filter((b) => b.status === 'active').length} active</span>
+                      <span className="tabular-nums">{businesses.filter((b) => b.status === 'active').length} active</span>
                     </>
                   }
                   actions={
                     <>
+                      <button
+                        id="btn-refresh-tenants"
+                        type="button"
+                        onClick={() => {
+                          refreshAllBusinessesForSuperAdmin(true).catch(() => {});
+                        }}
+                        disabled={isTenantsLoading}
+                        className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 text-slate-700 dark:text-slate-200 text-xs font-medium transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                        title="Reload all registered tenants from cloud database"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isTenantsLoading ? 'animate-spin' : ''}`} />
+                        <span>{isTenantsLoading ? 'Refreshing...' : 'Refresh'}</span>
+                      </button>
                       <button
                         type="button"
                         onClick={async () => {
@@ -471,8 +574,8 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                           }
                         }}
                         disabled={isCleaningUp}
-                        className="px-3 py-1.5 rounded-lg border border-amber-300 dark:border-amber-800/70 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-950/60 disabled:opacity-50 text-amber-800 dark:text-amber-300 text-xs font-medium transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-                        title="Remove all business owner accounts that lack a real Google account"
+                        className="px-3 py-1.5 rounded-lg border border-amber-300 dark:border-amber-800/70 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-950/60 disabled:opacity-50 text-amber-800 dark:text-amber-300 text-xs font-medium transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                        title="Remove mock, invalid, or duplicate tenant accounts"
                       >
                         {isCleaningUp ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -484,7 +587,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                       <button
                         type="button"
                         onClick={() => setActiveTab('provision')}
-                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
                       >
                         <PlusCircle className="w-3.5 h-3.5" />
                         <span>Provision New Tenant</span>
@@ -493,10 +596,157 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                   }
                 />
 
+                {tenantsLoadError && (
+                  <div
+                    role="alert"
+                    className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/70 rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="flex items-start gap-2.5 text-xs text-rose-800 dark:text-rose-200 min-w-0">
+                      <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <p className="font-semibold">Unable to refresh full tenant directory</p>
+                        <p className="text-rose-700 dark:text-rose-300 mt-0.5 break-words">{tenantsLoadError}</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        refreshAllBusinessesForSuperAdmin(true).catch(() => {});
+                      }}
+                      disabled={isTenantsLoading}
+                      className="px-3 py-1.5 rounded-lg border border-rose-300 dark:border-rose-700 bg-white dark:bg-slate-900 hover:bg-rose-100 dark:hover:bg-rose-950/60 disabled:opacity-50 text-rose-700 dark:text-rose-300 text-xs font-medium transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 self-start sm:self-center"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isTenantsLoading ? 'animate-spin' : ''}`} />
+                      <span>Retry</span>
+                    </button>
+                  </div>
+                )}
+
+                {isTenantsLoading && businesses.length <= 1 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4" aria-label="Loading registered tenants">
+                    {[0, 1, 2, 3].map((slot) => (
+                      <div
+                        key={slot}
+                        className="bg-white dark:bg-slate-900 rounded-xl p-5 border border-slate-200 dark:border-slate-800 animate-pulse space-y-3"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="space-y-2 flex-1">
+                            <div className="h-3 w-28 bg-slate-200 dark:bg-slate-800 rounded" />
+                            <div className="h-4 w-48 bg-slate-200 dark:bg-slate-800 rounded" />
+                          </div>
+                          <div className="h-7 w-28 bg-slate-200 dark:bg-slate-800 rounded-lg" />
+                        </div>
+                        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                          <div className="h-3 w-full bg-slate-100 dark:bg-slate-800/80 rounded" />
+                          <div className="h-3 w-3/4 bg-slate-100 dark:bg-slate-800/80 rounded" />
+                          <div className="h-3 w-2/3 bg-slate-100 dark:bg-slate-800/80 rounded" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Search Toolbar */}
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="relative flex-1">
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none" />
+                    <input
+                      id="tenant-search-input"
+                      type="text"
+                      value={tenantSearchQuery}
+                      onChange={(e) => setTenantSearchQuery(e.target.value)}
+                      placeholder="Search tenants by store name, business code, or owner email..."
+                      aria-label="Search tenants by store name, business code, or owner email"
+                      className="pl-8 pr-8 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
+                    />
+                    {tenantSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setTenantSearchQuery('')}
+                        aria-label="Clear tenant search"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                    {cleanTenantQuery && (
+                      <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 px-1 shrink-0 whitespace-nowrap">
+                        <span className="font-mono tabular-nums">
+                          {filteredTenants.length} {filteredTenants.length === 1 ? 'match' : 'matches'}
+                        </span>
+                        <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">·</span>
+                        <button
+                          type="button"
+                          onClick={() => setTenantSearchQuery('')}
+                          className="font-medium text-blue-600 dark:text-blue-400 hover:underline cursor-pointer whitespace-nowrap shrink-0"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    )}
+                    <button
+                      id="btn-export-tenants-csv"
+                      type="button"
+                      onClick={() => exportTenantsAuditCsv(filteredTenants, cleanTenantQuery ? 'filtered' : 'all')}
+                      disabled={filteredTenants.length === 0}
+                      className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 dark:text-slate-200 text-xs font-medium transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                      title={
+                        cleanTenantQuery
+                          ? `Download CSV of ${filteredTenants.length} filtered tenant(s) for auditing`
+                          : `Download CSV of all ${filteredTenants.length} tenant(s) for auditing`
+                      }
+                    >
+                      <Download className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 shrink-0" />
+                      <span>Export CSV</span>
+                      <span className="font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                        ({filteredTenants.length})
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {!(isTenantsLoading && businesses.length <= 1) && filteredTenants.length === 0 ? (
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-8 text-center">
+                    <Search className="w-6 h-6 text-slate-400 dark:text-slate-500 mx-auto mb-2.5" />
+                    <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      {cleanTenantQuery
+                        ? `No tenants match "${tenantSearchQuery.trim()}"`
+                        : 'No registered tenants found'}
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
+                      {cleanTenantQuery
+                        ? 'Try searching by a different store name, business code, or owner email address.'
+                        : 'Provision a new business tenant to manage it from this console.'}
+                    </p>
+                    <div className="mt-4">
+                      {cleanTenantQuery ? (
+                        <button
+                          type="button"
+                          onClick={() => setTenantSearchQuery('')}
+                          className="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-medium transition cursor-pointer whitespace-nowrap shrink-0"
+                        >
+                          Clear Search
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('provision')}
+                          className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-4 py-2 rounded-lg transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                        >
+                          <PlusCircle className="w-3.5 h-3.5" />
+                          <span>Provision New Tenant</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {businesses.map((biz) => {
+                  {filteredTenants.map((biz) => {
                     const isActive = biz.id === activeBusinessId;
-                    const googleVerified = isRealGoogleAccount(biz.ownerEmail);
+                    const isGoogleAccount = isGoogleEmailAccount(biz.ownerEmail);
+                    const isValidOwner = isValidBusinessOwnerEmail(biz.ownerEmail) || isRealGoogleAccount(biz.ownerEmail);
                     return (
                       <div
                         key={biz.id}
@@ -549,7 +799,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
 
                         <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2 text-xs text-slate-600 dark:text-slate-400">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="text-slate-500 dark:text-slate-400 shrink-0">Google Owner</span>
+                            <span className="text-slate-500 dark:text-slate-400 shrink-0">Owner Account</span>
                             <div className="flex items-center gap-1.5 min-w-0">
                               <span className="font-medium text-slate-800 dark:text-slate-200 truncate">
                                 {biz.ownerEmail}
@@ -557,12 +807,14 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                               <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">·</span>
                               <span
                                 className={`shrink-0 font-medium ${
-                                  googleVerified
+                                  isGoogleAccount
                                     ? 'text-emerald-600 dark:text-emerald-400'
-                                    : 'text-rose-600 dark:text-rose-400'
+                                    : isValidOwner
+                                      ? 'text-blue-600 dark:text-blue-400'
+                                      : 'text-rose-600 dark:text-rose-400'
                                 }`}
                               >
-                                {googleVerified ? 'Verified' : 'No Google'}
+                                {isGoogleAccount ? 'Google Account' : isValidOwner ? 'Email Account' : 'Invalid Email'}
                               </span>
                             </div>
                           </div>
@@ -625,6 +877,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                     );
                   })}
                 </div>
+                )}
               </div>
             )}
 
@@ -639,16 +892,75 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                     description="Monitor subscriber billing tiers and manually toggle terminal access on or off for missed payments or administrative holds."
                     meta={<span>Manual oversight controls</span>}
                     actions={
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('provision')}
-                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-                      >
-                        <PlusCircle className="w-3.5 h-3.5" />
-                        <span>Add New Subscriber</span>
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            refreshAllBusinessesForSuperAdmin(true).catch(() => {});
+                          }}
+                          disabled={isTenantsLoading}
+                          className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 text-slate-700 dark:text-slate-200 text-xs font-medium transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isTenantsLoading ? 'animate-spin' : ''}`} />
+                          <span>{isTenantsLoading ? 'Refreshing...' : 'Refresh'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            exportTenantsAuditCsv(
+                              filteredSubscriptionBusinesses,
+                              subSearchQuery.trim() || subStatusFilter !== 'all' || subPlanFilter !== 'all'
+                                ? 'filtered'
+                                : 'all'
+                            )
+                          }
+                          disabled={filteredSubscriptionBusinesses.length === 0}
+                          className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 dark:text-slate-200 text-xs font-medium transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                          title="Download filtered subscriber list as CSV for auditing"
+                        >
+                          <Download className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 shrink-0" />
+                          <span>Export CSV</span>
+                          <span className="font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                            ({filteredSubscriptionBusinesses.length})
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('provision')}
+                          className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                        >
+                          <PlusCircle className="w-3.5 h-3.5" />
+                          <span>Add New Subscriber</span>
+                        </button>
+                      </>
                     }
                   />
+
+                  {tenantsLoadError && (
+                    <div
+                      role="alert"
+                      className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/70 rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div className="flex items-start gap-2.5 text-xs text-rose-800 dark:text-rose-200 min-w-0">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <p className="font-semibold">Unable to refresh full subscriber list</p>
+                          <p className="text-rose-700 dark:text-rose-300 mt-0.5 break-words">{tenantsLoadError}</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          refreshAllBusinessesForSuperAdmin(true).catch(() => {});
+                        }}
+                        disabled={isTenantsLoading}
+                        className="px-3 py-1.5 rounded-lg border border-rose-300 dark:border-rose-700 bg-white dark:bg-slate-900 hover:bg-rose-100 dark:hover:bg-rose-950/60 disabled:opacity-50 text-rose-700 dark:text-rose-300 text-xs font-medium transition inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 self-start sm:self-center"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isTenantsLoading ? 'animate-spin' : ''}`} />
+                        <span>Retry</span>
+                      </button>
+                    </div>
+                  )}
 
                   {/* Hairline KPI Strip */}
                   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 sm:divide-x divide-slate-200 dark:divide-slate-800">
@@ -1777,7 +2089,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
               <div className="max-w-2xl mx-auto space-y-5">
                 <SettingsSectionHeader
                   title="Provision New Business Tenant"
-                  description="Associates a new isolated enterprise tenant with a designated Google Account. The owner receives administrative ownership upon signing in."
+                  description="Associates a new isolated enterprise tenant with a designated Google or Email Account. The owner receives administrative ownership upon signing in."
                 />
 
                 <div className="bg-white dark:bg-slate-900 rounded-xl p-6 border border-slate-200 dark:border-slate-800">
@@ -1799,7 +2111,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                          Business Owner Google Email *
+                          Business Owner Email *
                         </label>
                         <input
                           type="email"
@@ -1810,7 +2122,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                           className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                         <span className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 block">
-                          Must match their Google Account login
+                          Must match their Google or Email login
                         </span>
                       </div>
 

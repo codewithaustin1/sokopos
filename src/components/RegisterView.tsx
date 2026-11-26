@@ -20,6 +20,7 @@ import {
   Keyboard,
   PauseCircle,
   Trash2,
+  Target,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { CartItem } from '../types';
@@ -31,6 +32,7 @@ import { ShiftSessionClosedCard } from './shift/ShiftSessionClosedCard';
 import { ShiftInitializationCard } from './shift/ShiftInitializationCard';
 import { Haptics } from '../utils/haptics';
 import { roundCashHalfUp, hasCents } from '../utils/cashRounding';
+import { calculateMonthlyTargetPacing, getPeriodKey } from '../utils/biEngine';
 
 interface RegisterViewProps {
   onProceedToPayment: () => void;
@@ -70,6 +72,10 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
     holdActiveCart,
     resumeHeldOrder,
     discardHeldOrder,
+    transactions,
+    analyticsRollups,
+    analyticsTargets,
+    shiftHistory,
     t,
   } = usePos();
 
@@ -86,6 +92,40 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
   const [isQuickActionsOpen, setIsQuickActionsOpen] = useState<boolean>(false);
   const [isHeldOrdersOpen, setIsHeldOrdersOpen] = useState<boolean>(false);
   const [isBreakdownOpen, setIsBreakdownOpen] = useState<boolean>(false);
+  const [isPaceBannerDismissed, setIsPaceBannerDismissed] = useState<boolean>(false);
+
+  const activePeriodKey = getPeriodKey();
+  const registerTargetPacing = useMemo(
+    () =>
+      calculateMonthlyTargetPacing({
+        periodKey: activePeriodKey,
+        selectedLocationId: currentLocation.id,
+        targets: analyticsTargets,
+        transactions: transactions || [],
+        rollups: analyticsRollups || [],
+        products: products || [],
+        shifts: shiftHistory || [],
+        allowStoreFallback: true,
+      }),
+    [
+      activePeriodKey,
+      currentLocation.id,
+      analyticsTargets,
+      transactions,
+      analyticsRollups,
+      products,
+      shiftHistory,
+    ]
+  );
+
+  const cartGrossBeforeDiscount = cartSubtotal + cartDiscount;
+  const cartEffectiveDiscountPct =
+    cartGrossBeforeDiscount > 0 ? (cartDiscount / cartGrossBeforeDiscount) * 100 : 0;
+  const branchDiscountCeilingPct = registerTargetPacing.target?.maxDiscountPct ?? 0;
+  const isCartOverDiscountCeiling =
+    branchDiscountCeilingPct > 0 &&
+    cartDiscount > 0 &&
+    cartEffectiveDiscountPct > branchDiscountCeilingPct;
 
   // Void Management Modal State (Edge Case 1)
   const [voidModalState, setVoidModalState] = useState<{
@@ -603,6 +643,62 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
           </div>
         </div>
 
+        {/* Non-Blocking Daily Target Pacing Strip (Revenue Only, No Margin Exposure) */}
+        {registerTargetPacing.hasRevenueTarget && !isPaceBannerDismissed && (
+          <div
+            className={`px-3 py-1.5 rounded-lg border flex items-center justify-between gap-2 text-xs shrink-0 ${
+              registerTargetPacing.revenueStatus === 'behind'
+                ? 'bg-rose-50/70 border-rose-200 text-rose-900'
+                : registerTargetPacing.revenueStatus === 'watch'
+                ? 'bg-amber-50/70 border-amber-200 text-amber-900'
+                : 'bg-white border-slate-200 text-slate-700'
+            }`}
+          >
+            <div className="flex items-center gap-2 min-w-0 flex-wrap">
+              <Target
+                className={`w-3.5 h-3.5 shrink-0 ${
+                  registerTargetPacing.revenueStatus === 'behind'
+                    ? 'text-rose-600'
+                    : registerTargetPacing.revenueStatus === 'watch'
+                    ? 'text-amber-600'
+                    : 'text-emerald-600'
+                }`}
+              />
+              <span className="font-semibold truncate">{currentLocation.name} Pace</span>
+              <span className="text-slate-300" aria-hidden="true">·</span>
+              <span className="font-mono tabular-nums">
+                {registerTargetPacing.revenueRemaining <= 0
+                  ? `Month goal met (${registerTargetPacing.revenuePct.toFixed(0)}%)`
+                  : `Today ${currentLocation.currency} ${registerTargetPacing.todayNetRevenue.toLocaleString(
+                      undefined,
+                      { maximumFractionDigits: 0 }
+                    )} / ${currentLocation.currency} ${registerTargetPacing.requiredDailyRunRate.toLocaleString(
+                      undefined,
+                      { maximumFractionDigits: 0 }
+                    )} daily target`}
+              </span>
+              <span className="text-slate-300 hidden sm:inline" aria-hidden="true">·</span>
+              <span className="font-semibold hidden sm:inline whitespace-nowrap">
+                {registerTargetPacing.revenueStatus === 'achieved'
+                  ? 'Goal Achieved'
+                  : registerTargetPacing.revenueStatus === 'on_track'
+                  ? 'On Pace'
+                  : registerTargetPacing.revenueStatus === 'watch'
+                  ? 'Watch Pace'
+                  : 'Behind Pace'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsPaceBannerDismissed(true)}
+              aria-label="Dismiss daily pace indicator"
+              className="p-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer shrink-0"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* Category Filter Tabs */}
         <div className="flex gap-2 overflow-x-auto pb-0.5 shrink-0 scrollbar-none touch-pan-x">
           {categories.map((cat) => (
@@ -986,6 +1082,25 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               </span>
             </div>
           )}
+
+          {cartDiscount > 0 &&
+            (isCartOverDiscountCeiling || registerTargetPacing.discountBreached) &&
+            branchDiscountCeilingPct > 0 && (
+              <div
+                className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-medium flex items-center gap-1.5 ${
+                  isCartOverDiscountCeiling
+                    ? 'bg-rose-50 border-rose-200 text-rose-800'
+                    : 'bg-amber-50 border-amber-200 text-amber-900'
+                }`}
+              >
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate font-mono tabular-nums">
+                  {isCartOverDiscountCeiling
+                    ? `Order discount ${cartEffectiveDiscountPct.toFixed(1)}% exceeds ${branchDiscountCeilingPct.toFixed(1)}% branch ceiling`
+                    : `Branch MTD discount rate ${registerTargetPacing.discountLeakagePct.toFixed(1)}% exceeds ${branchDiscountCeilingPct.toFixed(1)}% ceiling`}
+                </span>
+              </div>
+            )}
 
           {/* Progressive Tax & Rounding Breakdown */}
           {isBreakdownOpen && (

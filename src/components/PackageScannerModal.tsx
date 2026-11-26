@@ -114,7 +114,7 @@ export const PackageScannerModal: React.FC<PackageScannerModalProps> = ({
 
     try {
       setAnalysisStatus('Reading packaging labels, barcode symbols, and product claims...');
-      const result = await parseProductPackageWithAi(base64, mimeType);
+      const result = await parseProductPackageWithAi(base64, mimeType, currentBusiness?.id);
       setParsedResult(result);
       soundFx?.playSuccess?.();
       showToast(`Parsed package: ${result.productName}`, 'success');

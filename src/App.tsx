@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { PosProvider, usePos } from './context/PosContext';
 import { Header } from './components/Header';
 import { SuperAdminBanner } from './components/SuperAdminBanner';
@@ -48,6 +48,7 @@ import { isSuperAdminEmail } from './data/initialData';
 import { MobileBentoMenuOverlay } from './components/common/MobileBentoMenuOverlay';
 import { ToastContainer } from './components/common/ToastContainer';
 import { PendingSubscriptionBanner } from './components/common/PendingSubscriptionBanner';
+import { ForeignOutboxWarningBanner } from './components/common/ForeignOutboxWarningBanner';
 import {
   verifyServerPayment,
   loadPendingSubscriptionCheckout,
@@ -106,6 +107,7 @@ function PosAppContent() {
     requireCapability,
     requiresLegalConsent,
     isSellingMode,
+    sessionEpoch,
   } = usePos();
 
   // URL Path Routing: Keep clean public paths indexable while protecting private /pos routes
@@ -429,6 +431,34 @@ function PosAppContent() {
   const [paymentInitialMethod, setPaymentInitialMethod] = useState<PaymentMethod>('mpesa');
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
   const [superAdminModalDefaultTab, setSuperAdminModalDefaultTab] = useState<'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding' | 'traffic'>('tenants');
+  const lastHandledSessionEpochRef = useRef<number>(0);
+
+  // Strict session isolation: reset workspace & modal overlays on logout or fresh login epoch,
+  // and open the Super Admin Portal cleanly for super-admin fresh logins.
+  useEffect(() => {
+    if (!currentUser) {
+      setIsPaymentOpen(false);
+      setIsScannerOpen(false);
+      setIsSignOutModalOpen(false);
+      setSuperAdminModalDefaultTab('tenants');
+      setCurrentTab('register');
+      return;
+    }
+
+    if (sessionEpoch > 0 && lastHandledSessionEpochRef.current !== sessionEpoch) {
+      lastHandledSessionEpochRef.current = sessionEpoch;
+      setIsPaymentOpen(false);
+      setIsScannerOpen(false);
+      setIsSignOutModalOpen(false);
+      setSuperAdminModalDefaultTab('tenants');
+
+      if (currentUser.role === 'super_admin' && !isDemoSession) {
+        setCurrentTab('super-admin');
+      } else {
+        setCurrentTab('register');
+      }
+    }
+  }, [currentUser, sessionEpoch, isDemoSession]);
 
   const handleOpenSuperAdmin = (tab?: 'tenants' | 'subscriptions' | 'pricing' | 'audit' | 'provision' | 'branding' | 'traffic') => {
     if (isSellingMode || isDemoSession || !isSuperAdmin) return;
@@ -709,6 +739,9 @@ function PosAppContent() {
 
       {/* Recoverable Pending / Verified Subscription Banner */}
       <PendingSubscriptionBanner />
+
+      {/* Cross-account Preserved Offline Outbox Warning Banner */}
+      <ForeignOutboxWarningBanner />
 
       {/* Alert Banner if current tenant is suspended (Authenticated Sessions Only) */}
       {!isDemoSession && currentBusiness?.status === 'suspended' && isSuperAdmin && (

@@ -33,6 +33,9 @@ export interface Customer {
   lastVisitAt: string;
   kraPin?: string; // KRA Tax PIN for eTIMS customer invoices
   ledger?: CustomerCreditLedgerEntry[];
+  isAnonymized?: boolean; // True when personal identifiers were scrubbed under Kenya DPA 2019
+  anonymizedAt?: string;
+  anonymizedBy?: string;
   createdAt: string;
   updatedAt?: string;
   isPendingCloudSync?: boolean;
@@ -140,6 +143,10 @@ export interface BusinessTaxSettings {
   rules: TaxRule[];
   digitaxEnvironment?: 'sandbox' | 'production';
   autoTransmitEtims?: boolean;
+  generateKraQr?: boolean;
+  taxPinVerificationStatus?: 'verified' | 'mismatch' | 'unverified' | 'sandbox_placeholder';
+  taxPinVerifiedAt?: string;
+  taxPinVerifiedCuPin?: string;
   updatedAt?: string;
   updatedBy?: string;
 }

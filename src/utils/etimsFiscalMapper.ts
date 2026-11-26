@@ -9,6 +9,7 @@ import type {
 } from '../types';
 import { getItemDiscountedUnitPrice } from './discountUtils';
 import { resolveDynamicTaxRate } from './taxResolver';
+import { validateKraPinStrict } from './privacyAndKraSecurity';
 
 export const VALID_KRA_TAX_CODES: readonly KraTaxTypeCode[] = ['A', 'B', 'C', 'D', 'E'] as const;
 export const VALID_CREDIT_NOTE_REASONS = ['01', '02', '03', '04', '05', '06'] as const;
@@ -85,19 +86,19 @@ export function roundCurrency2(val: number): number {
 }
 
 /**
- * Validates standard Kenyan KRA PIN format: e.g. A011001890C or P051289192M
+ * Validates standard Kenyan KRA PIN format and blocks placeholder/repeated-digit PINs:
+ * e.g. A011001890C or P051289192M
  */
 export function normalizeAndValidateKraPin(pin?: string | null): {
   normalized?: string;
   isValid: boolean;
+  reason?: string;
 } {
-  if (!pin || !pin.trim()) {
-    return { normalized: undefined, isValid: true };
-  }
-  const normalized = pin.trim().toUpperCase().replace(/\s+/g, '');
+  const check = validateKraPinStrict(pin, { required: false, allowPlaceholderInSandbox: false });
   return {
-    normalized,
-    isValid: /^[AP]\d{9}[A-Z]$/.test(normalized),
+    normalized: check.normalized,
+    isValid: check.isValid,
+    reason: check.reason,
   };
 }
 

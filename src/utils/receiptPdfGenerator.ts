@@ -1,6 +1,8 @@
 import { jsPDF } from 'jspdf';
 import { Transaction, Location } from '../types';
 import { getItemDiscountedUnitPrice } from './discountUtils';
+import { isTransactionEtimsVerified } from './etimsDisplay';
+import { maskPhoneNumber, maskKraPin } from './privacyAndKraSecurity';
 
 export interface GenerateReceiptPdfOptions {
   transaction?: Transaction | null;
@@ -10,6 +12,7 @@ export interface GenerateReceiptPdfOptions {
   customTitle?: string;
   customSubtitle?: string;
   customText?: string;
+  etimsRelayEnabled?: boolean;
 }
 
 /**
@@ -23,6 +26,7 @@ export function generateReceiptPdf({
   businessTaxNumber,
   customTitle,
   customText,
+  etimsRelayEnabled = true,
 }: GenerateReceiptPdfOptions): {
   doc: jsPDF;
   blob: Blob;
@@ -30,7 +34,7 @@ export function generateReceiptPdf({
   fileName: string;
 } {
   const storeName = (businessName || 'SokoPoS Retail').toUpperCase();
-  const taxId = businessTaxNumber || location.taxId || 'P000000000X';
+  const taxId = businessTaxNumber || location.taxId || 'Unconfigured';
   const currency = location.currency || 'KES';
   const receiptNum = transaction?.receiptNumber || 'RCP-' + Date.now().toString().slice(-6);
   const fileName = `Receipt_${receiptNum}.pdf`;
@@ -105,7 +109,10 @@ export function generateReceiptPdf({
     if (transaction.customerName) {
       printRow('Customer:', transaction.customerName, 7.5, true);
       if (transaction.customerPhone) {
-        printRow('Phone:', transaction.customerPhone, 7.5, false);
+        printRow('Phone:', maskPhoneNumber(transaction.customerPhone), 7.5, false);
+      }
+      if (transaction.etimsData?.customerTin) {
+        printRow('Buyer PIN:', maskKraPin(transaction.etimsData.customerTin), 7.5, false);
       }
       if (
         transaction.customerPreviousPoints !== undefined ||
@@ -239,9 +246,7 @@ export function generateReceiptPdf({
   // 6. Honest Fiscal eTIMS Footer
   y += 1;
   const etims = transaction?.etimsData;
-  const isEtimsVerified =
-    etims?.status === 'COMPLETED' &&
-    Boolean(etims?.isPartnerVerified || etims?.receiptSignature || etims?.cuInvoiceNumber);
+  const isEtimsVerified = Boolean(transaction && isTransactionEtimsVerified(etims));
 
   if (isEtimsVerified) {
     doc.setTextColor(5, 150, 105);
@@ -253,7 +258,7 @@ export function generateReceiptPdf({
     if (etims?.receiptSignature) {
       printCenter(`KRA Sig: ${etims.receiptSignature}`, 6, false);
     }
-  } else if (transaction) {
+  } else if (transaction && etimsRelayEnabled) {
     doc.setTextColor(180, 83, 9);
     printCenter(
       etims?.status === 'FAILED'
@@ -267,7 +272,13 @@ export function generateReceiptPdf({
   }
   y += 0.5;
   doc.setTextColor(100, 116, 139);
-  printCenter('Powered by SokoPoS in partnership with Digitax', 7, false);
+  printCenter(
+    isEtimsVerified || etimsRelayEnabled
+      ? 'Powered by SokoPoS in partnership with Digitax'
+      : 'Powered by SokoPoS',
+    7,
+    false
+  );
   printCenter('Asante kwa kununua na sisi!', 7.5, true);
 
   // Generate blob and object URL

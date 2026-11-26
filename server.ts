@@ -39,6 +39,13 @@ import {
   verifyDigitaxSalePayloadServerSide,
 } from './src/utils/etimsFiscalMapper';
 import { resolveDynamicTaxRate } from './src/utils/taxResolver';
+import {
+  ANONYMIZED_CUSTOMER_NAME,
+  buildAnonymizedPhoneToken,
+  redactPiiForLogs,
+  redactPiiInText,
+  validateKraPinStrict,
+} from './src/utils/privacyAndKraSecurity';
 
 async function startServer() {
   const app = express();
@@ -240,6 +247,7 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
   }
 
   const SUPER_ADMIN_EMAIL = 'upfrontretaile@gmail.com';
+  const SUPER_ADMIN_UID = 'ulGLrKgcsrWyqcGRJ6DzvHoEYY12';
 
   // Server-side HMAC key for signing Daraja callback URLs even when DARAJA_CALLBACK_SECRET is unset
   const DARAJA_CALLBACK_HMAC_KEY =
@@ -327,7 +335,9 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
       });
       return null;
     }
-    const isSuperAdmin = verified.email === SUPER_ADMIN_EMAIL && verified.emailVerified;
+    const isSuperAdmin =
+      verified.uid === SUPER_ADMIN_UID ||
+      (verified.email === SUPER_ADMIN_EMAIL && verified.emailVerified);
     if (!verified.emailVerified && !isSuperAdmin) {
       res.status(options?.unverifiedStatus ?? 403).json({
         code: 'EMAIL_VERIFICATION_REQUIRED',
@@ -526,36 +536,228 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
     return 'free';
   }
 
-  const SERVER_TIER_STAFF_LIMIT: Record<CanonicalServerTier, number> = {
-    free: 1,
-    starter: 2,
-    business: 10,
-    premium: -1,
+  type ServerCapabilityKey =
+    | 'unlimitedProducts'
+    | 'multiBranch'
+    | 'stockTransfers'
+    | 'suppliers'
+    | 'loyaltyAndStoreCredit'
+    | 'advancedTaxRules'
+    | 'advancedReportsAndExport'
+    | 'returnsAndRefunds'
+    | 'analytics'
+    | 'granularRbac'
+    | 'customReceiptBranding'
+    | 'multiCurrency'
+    | 'enterpriseAudit';
+
+  const SERVER_TIER_RANK: Record<CanonicalServerTier, number> = {
+    free: 0,
+    starter: 1,
+    business: 2,
+    premium: 3,
   };
 
-  function resolveEffectiveServerPlanTier(bizDoc?: Record<string, any> | null): CanonicalServerTier {
-    if (!bizDoc) return 'free';
+  const DEFAULT_SERVER_TIER_LIMITS: Record<
+    CanonicalServerTier,
+    { maxBranches: number; maxStaffUsers: number; maxProducts: number }
+  > = {
+    free: { maxBranches: 1, maxStaffUsers: 1, maxProducts: 250 },
+    starter: { maxBranches: 1, maxStaffUsers: 2, maxProducts: -1 },
+    business: { maxBranches: 3, maxStaffUsers: 10, maxProducts: -1 },
+    premium: { maxBranches: -1, maxStaffUsers: -1, maxProducts: -1 },
+  };
+
+  const SERVER_CAPABILITY_MIN_TIER: Record<ServerCapabilityKey, CanonicalServerTier> = {
+    unlimitedProducts: 'starter',
+    multiBranch: 'business',
+    stockTransfers: 'business',
+    suppliers: 'business',
+    loyaltyAndStoreCredit: 'business',
+    advancedTaxRules: 'business',
+    advancedReportsAndExport: 'business',
+    returnsAndRefunds: 'business',
+    analytics: 'business',
+    granularRbac: 'premium',
+    customReceiptBranding: 'premium',
+    multiCurrency: 'premium',
+    enterpriseAudit: 'premium',
+  };
+
+  const SERVER_PRICING_TIERS_TTL_MS = 30 * 1000;
+  let cachedServerPricingLimits: {
+    limits: Record<CanonicalServerTier, { maxBranches: number; maxStaffUsers: number; maxProducts: number }>;
+    fetchedAt: number;
+  } | null = null;
+
+  function invalidateServerPricingTiersCache(): void {
+    cachedServerPricingLimits = null;
+  }
+
+  async function getServerPricingTierLimitsMap(
+    preferredBearerToken?: string
+  ): Promise<Record<CanonicalServerTier, { maxBranches: number; maxStaffUsers: number; maxProducts: number }>> {
+    if (
+      cachedServerPricingLimits &&
+      Date.now() - cachedServerPricingLimits.fetchedAt < SERVER_PRICING_TIERS_TTL_MS
+    ) {
+      return cachedServerPricingLimits.limits;
+    }
+
+    const nextLimits: Record<
+      CanonicalServerTier,
+      { maxBranches: number; maxStaffUsers: number; maxProducts: number }
+    > = {
+      free: { ...DEFAULT_SERVER_TIER_LIMITS.free },
+      starter: { ...DEFAULT_SERVER_TIER_LIMITS.starter },
+      business: { ...DEFAULT_SERVER_TIER_LIMITS.business },
+      premium: { ...DEFAULT_SERVER_TIER_LIMITS.premium },
+    };
+
+    try {
+      const doc = await getFirestoreDoc('platform_settings', 'pricing_tiers', preferredBearerToken);
+      const rawTiers = Array.isArray(doc?.tiers) ? doc.tiers : [];
+      for (const t of rawTiers) {
+        if (!t || typeof t !== 'object') continue;
+        const id = normalizeServerPlanTier(t.id, null);
+        if (!t.id) continue;
+        const def = DEFAULT_SERVER_TIER_LIMITS[id];
+        nextLimits[id] = {
+          maxBranches:
+            typeof t.maxBranches === 'number' && Number.isFinite(t.maxBranches)
+              ? t.maxBranches
+              : def.maxBranches,
+          maxStaffUsers:
+            typeof t.maxStaffUsers === 'number' && Number.isFinite(t.maxStaffUsers)
+              ? t.maxStaffUsers
+              : def.maxStaffUsers,
+          maxProducts: def.maxProducts,
+        };
+      }
+      if (rawTiers.length > 0) {
+        cachedServerPricingLimits = { limits: nextLimits, fetchedAt: Date.now() };
+      }
+    } catch {
+      // Fall back safely to defaults when Firestore pricing doc is unreachable
+    }
+
+    return nextLimits;
+  }
+
+  function resolveEffectiveServerPlanTier(bizDoc?: Record<string, any> | null): {
+    tierId: CanonicalServerTier;
+    isSuspended: boolean;
+    isExpired: boolean;
+    isPrivileged: boolean;
+  } {
+    if (!bizDoc) {
+      return { tierId: 'free', isSuspended: false, isExpired: false, isPrivileged: false };
+    }
     const bizId = String(bizDoc.id || '').trim();
     const ownerEmail = String(bizDoc.ownerEmail || '').trim().toLowerCase();
     if (bizId === 'biz-demo' || bizId === 'biz-upfront' || ownerEmail === SUPER_ADMIN_EMAIL) {
-      return 'premium';
+      return { tierId: 'premium', isSuspended: false, isExpired: false, isPrivileged: true };
     }
     const baseTier = normalizeServerPlanTier(bizDoc.plan, bizDoc.subscription?.planId);
-    if (bizDoc.status === 'suspended') {
-      return 'free';
-    }
+    const isSuspended = bizDoc.status === 'suspended';
+    let isExpired = false;
     if (bizDoc.subscription && baseTier !== 'free') {
       if (bizDoc.subscription.status === 'expired') {
-        return 'free';
-      }
-      if (bizDoc.subscription.expiresAt) {
+        isExpired = true;
+      } else if (bizDoc.subscription.expiresAt) {
         const expMs = new Date(String(bizDoc.subscription.expiresAt)).getTime();
         if (Number.isFinite(expMs) && expMs < Date.now()) {
-          return 'free';
+          isExpired = true;
         }
       }
     }
-    return baseTier;
+    const tierId: CanonicalServerTier = isSuspended || isExpired ? 'free' : baseTier;
+    return { tierId, isSuspended, isExpired, isPrivileged: false };
+  }
+
+  async function resolveServerTierEntitlements(
+    bizDoc?: Record<string, any> | null,
+    preferredBearerToken?: string
+  ): Promise<{
+    tierId: CanonicalServerTier;
+    isSuspended: boolean;
+    isExpired: boolean;
+    isPrivileged: boolean;
+    limits: { maxBranches: number; maxStaffUsers: number; maxProducts: number };
+    capabilities: Record<ServerCapabilityKey, boolean>;
+  }> {
+    const resolved = resolveEffectiveServerPlanTier(bizDoc);
+    const limitsMap = await getServerPricingTierLimitsMap(preferredBearerToken);
+    const limits = limitsMap[resolved.tierId] || DEFAULT_SERVER_TIER_LIMITS[resolved.tierId];
+    const capabilities = {} as Record<ServerCapabilityKey, boolean>;
+    (Object.keys(SERVER_CAPABILITY_MIN_TIER) as ServerCapabilityKey[]).forEach((cap) => {
+      capabilities[cap] =
+        resolved.isPrivileged ||
+        SERVER_TIER_RANK[resolved.tierId] >= SERVER_TIER_RANK[SERVER_CAPABILITY_MIN_TIER[cap]];
+    });
+    return {
+      ...resolved,
+      limits,
+      capabilities,
+    };
+  }
+
+  async function enforceServerTenantEntitlement(
+    caller: AuthenticatedCaller,
+    requestedBusinessId: unknown,
+    requiredCapability: ServerCapabilityKey | null,
+    res: express.Response
+  ): Promise<boolean> {
+    if (caller.isSuperAdmin) return true;
+
+    let targetBizId = String(requestedBusinessId || '').trim();
+    if (!targetBizId) {
+      const userDoc = await getFirestoreDoc('users', caller.uid, caller.bearerToken);
+      targetBizId = String(userDoc?.businessId || '').trim();
+    }
+    if (!targetBizId || targetBizId === 'biz-demo' || targetBizId === 'biz-upfront') {
+      return true;
+    }
+
+    const access = await verifyTenantCallerAccess(caller, targetBizId, false);
+    if (!access.allowed) {
+      if (access.reason === 'store_not_synced') {
+        return true;
+      }
+      res.status(403).json({
+        success: false,
+        code: 'TENANT_ACCESS_DENIED',
+        error: 'Access denied for this store tenant.',
+      });
+      return false;
+    }
+
+    if (!access.bizDoc) {
+      return true;
+    }
+
+    const entitlements = await resolveServerTierEntitlements(access.bizDoc, caller.bearerToken);
+    if (entitlements.isSuspended) {
+      res.status(403).json({
+        success: false,
+        code: 'SUBSCRIPTION_SUSPENDED',
+        error: 'Terminal access for this store is currently suspended.',
+      });
+      return false;
+    }
+
+    if (requiredCapability && !entitlements.capabilities[requiredCapability]) {
+      const minTier = SERVER_CAPABILITY_MIN_TIER[requiredCapability];
+      res.status(403).json({
+        success: false,
+        code: 'TIER_UPGRADE_REQUIRED',
+        requiredTier: minTier,
+        error: `This feature requires the ${minTier.toUpperCase()} plan or higher.`,
+      });
+      return false;
+    }
+
+    return true;
   }
 
   let cachedAdcToken: { token: string; expiresAt: number } | null = null;
@@ -1340,22 +1542,48 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
 
       const isExemptAccount =
         cleanBizId === 'biz-upfront' ||
+        cleanBizId === 'biz-demo' ||
         caller.isSuperAdmin;
 
-      if (!existingCred && !isExemptAccount) {
-        if (bizDoc) {
-          const docOwnerEmail = String(bizDoc.ownerEmail || '').trim().toLowerCase();
-          if (docOwnerEmail !== SUPER_ADMIN_EMAIL) {
-            const effectiveTier = resolveEffectiveServerPlanTier(bizDoc);
-            const staffLimit = SERVER_TIER_STAFF_LIMIT[effectiveTier];
-            const currentStaffCount = Object.values(creds).filter(
-              (c) => c.businessId === cleanBizId
-            ).length;
-            if (staffLimit > 0 && currentStaffCount >= staffLimit) {
+      if (!isExemptAccount && bizDoc) {
+        const entitlements = await resolveServerTierEntitlements(bizDoc, caller.bearerToken);
+        if (entitlements.isSuspended) {
+          return res.status(403).json({
+            success: false,
+            code: 'SUBSCRIPTION_SUSPENDED',
+            error: 'Store access is currently suspended. Reactivate your subscription to manage staff accounts.',
+          });
+        }
+
+        if (!existingCred && !entitlements.isPrivileged) {
+          const staffLimit = entitlements.limits.maxStaffUsers;
+          if (staffLimit > 0) {
+            const seatIds = new Set<string>();
+            Object.values(creds).forEach((c) => {
+              if (c.businessId === cleanBizId && c.cashierId && c.cashierId !== cashierId) {
+                seatIds.add(c.cashierId);
+              }
+            });
+            const remoteCashiers = await queryFirestoreDocsWithToken(
+              'cashiers',
+              'businessId',
+              cleanBizId,
+              250,
+              caller.bearerToken
+            ).catch(() => []);
+            remoteCashiers.forEach((doc) => {
+              if (doc?.id && doc.id !== cashierId) {
+                seatIds.add(String(doc.id));
+              }
+            });
+
+            if (seatIds.size >= staffLimit) {
               return res.status(403).json({
                 success: false,
                 code: 'QUOTA_EXCEEDED',
-                error: `Your ${effectiveTier.toUpperCase()} subscription supports up to ${staffLimit} staff seat${staffLimit === 1 ? '' : 's'}. Upgrade your package to add more team members.`,
+                used: seatIds.size,
+                limit: staffLimit,
+                error: `Your ${entitlements.tierId.toUpperCase()} subscription supports up to ${staffLimit} staff seat${staffLimit === 1 ? '' : 's'}. Upgrade your package to add more team members.`,
               });
             }
           }
@@ -1433,22 +1661,45 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
         return res.status(400).json({ error: 'cashiers must be an array' });
       }
       const creds = await hydrateStaffCredentialsFromFirestore();
-      const verifiedBizCache = new Map<string, boolean>();
+      const verifiedBizCache = new Map<string, { allowed: boolean; maxStaffUsers: number; isSuspended: boolean; isPrivileged: boolean }>();
       let count = 0;
 
       for (const c of cashiers.slice(0, 100)) {
         if (c.id && c.pin && c.pin !== '••••••••' && !c.pin.startsWith('[PROTECTED')) {
           const targetBizId = String(c.businessId || 'biz-upfront').trim();
-          let allowed = verifiedBizCache.get(targetBizId);
-          if (allowed === undefined) {
+          let cachedBiz = verifiedBizCache.get(targetBizId);
+          if (!cachedBiz) {
             const access = await verifyTenantCallerAccess(caller, targetBizId, true);
-            allowed = access.allowed;
-            verifiedBizCache.set(targetBizId, allowed);
+            const ent = access.allowed && access.bizDoc
+              ? await resolveServerTierEntitlements(access.bizDoc, caller.bearerToken)
+              : null;
+            cachedBiz = {
+              allowed: access.allowed,
+              maxStaffUsers: ent ? ent.limits.maxStaffUsers : -1,
+              isSuspended: Boolean(ent?.isSuspended),
+              isPrivileged: Boolean(
+                caller.isSuperAdmin ||
+                  targetBizId === 'biz-upfront' ||
+                  targetBizId === 'biz-demo' ||
+                  ent?.isPrivileged
+              ),
+            };
+            verifiedBizCache.set(targetBizId, cachedBiz);
           }
-          if (!allowed) continue;
+          if (!cachedBiz.allowed) continue;
+          if (!cachedBiz.isPrivileged && cachedBiz.isSuspended) continue;
 
           if (creds[c.id] && creds[c.id].businessId && creds[c.id].businessId !== targetBizId) {
             continue;
+          }
+
+          if (!creds[c.id] && !cachedBiz.isPrivileged && cachedBiz.maxStaffUsers > 0) {
+            const currentSeatCount = Object.values(creds).filter(
+              (existing) => existing.businessId === targetBizId
+            ).length;
+            if (currentSeatCount >= cachedBiz.maxStaffUsers) {
+              continue;
+            }
           }
 
           const normUsername = c.username ? String(c.username).trim().toLowerCase() : undefined;
@@ -2363,7 +2614,9 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
       const caller = await requireVerifiedCaller(req, res);
       if (!caller) return;
 
-      const { imageBase64, mimeType = 'image/jpeg', existingProducts = [] } = req.body;
+      const { imageBase64, mimeType = 'image/jpeg', existingProducts = [], businessId } = req.body;
+      const entitled = await enforceServerTenantEntitlement(caller, businessId, 'suppliers', res);
+      if (!entitled) return;
 
       if (!imageBase64 || typeof imageBase64 !== 'string') {
         return res.status(400).json({ error: 'imageBase64 string is required' });
@@ -2493,7 +2746,9 @@ Instructions:
       const caller = await requireVerifiedCaller(req, res);
       if (!caller) return;
 
-      const { imageBase64, mimeType = 'image/jpeg' } = req.body;
+      const { imageBase64, mimeType = 'image/jpeg', businessId } = req.body;
+      const entitled = await enforceServerTenantEntitlement(caller, businessId, null, res);
+      if (!entitled) return;
 
       if (!imageBase64 || typeof imageBase64 !== 'string') {
         return res.status(400).json({ error: 'imageBase64 string is required' });
@@ -2668,8 +2923,122 @@ Extract:
       }
       return res.status(response.status).json({ ...data, environment });
     } catch (err: any) {
-      console.error('Error proxying Digitax etims-info:', err);
-      return res.status(500).json({ error: err.message || 'Digitax etims-info proxy failed' });
+      console.error('Error proxying Digitax etims-info:', redactPiiInText(String(err?.message || err)));
+      return res.status(500).json({ error: redactPiiInText(err.message || 'Digitax etims-info proxy failed') });
+    }
+  });
+
+  app.post('/api/digitax/verify-tax-pin', async (req, res) => {
+    try {
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
+      const cleanBizId = String(req.body?.businessId || req.headers['x-business-id'] || '').trim();
+      if (cleanBizId && cleanBizId !== 'biz-demo') {
+        const access = await verifyTenantCallerAccess(caller, cleanBizId, true);
+        if (!access.allowed && access.reason !== 'store_not_synced') {
+          return res.status(403).json({
+            success: false,
+            code: 'TENANT_ACCESS_DENIED',
+            error: 'Only store owners or managers may verify tax registration settings.',
+          });
+        }
+      }
+
+      const { apiKey, environment } = resolveServerDigitaxKey(req);
+      const rawTaxPin = typeof req.body?.taxPin === 'string' ? req.body.taxPin : '';
+      const pinCheck = validateKraPinStrict(rawTaxPin, {
+        required: true,
+        allowPlaceholderInSandbox: environment === 'sandbox',
+      });
+
+      if (environment === 'sandbox' && pinCheck.isPlaceholder) {
+        return res.json({
+          success: true,
+          validFormat: true,
+          isPlaceholder: true,
+          matchedCuPin: false,
+          remoteCuPin: null,
+          status: 'sandbox_placeholder',
+          environment,
+          normalizedPin: pinCheck.normalized,
+          message: 'Sandbox test KRA PIN accepted for non-fiscal testing.',
+        });
+      }
+
+      if (!pinCheck.isValid || !pinCheck.normalized) {
+        return res.status(422).json({
+          success: false,
+          validFormat: false,
+          isPlaceholder: pinCheck.isPlaceholder,
+          matchedCuPin: false,
+          remoteCuPin: null,
+          status: 'unverified',
+          environment,
+          code: pinCheck.isPlaceholder ? 'PLACEHOLDER_TAX_PIN' : 'INVALID_TAX_PIN_FORMAT',
+          error: pinCheck.reason || 'Valid Kenyan KRA PIN is required.',
+        });
+      }
+
+      if (!apiKey) {
+        return res.json({
+          success: true,
+          validFormat: true,
+          isPlaceholder: false,
+          matchedCuPin: false,
+          remoteCuPin: null,
+          status: 'unverified',
+          environment,
+          normalizedPin: pinCheck.normalized,
+          message: 'Format verified. Configure Digitax API key to cross-check live Control Unit PIN.',
+        });
+      }
+
+      const remotePin = await resolveVerifiedDigitaxTaxPin(apiKey);
+      if (remotePin && remotePin !== pinCheck.normalized) {
+        return res.status(422).json({
+          success: false,
+          validFormat: true,
+          isPlaceholder: false,
+          matchedCuPin: false,
+          remoteCuPin: remotePin,
+          status: 'mismatch',
+          environment,
+          normalizedPin: pinCheck.normalized,
+          code: 'TAX_PIN_MISMATCH',
+          error: `Entered KRA PIN (${pinCheck.normalized}) does not match active Digitax Control Unit PIN (${remotePin}).`,
+        });
+      }
+
+      if (remotePin && remotePin === pinCheck.normalized) {
+        return res.json({
+          success: true,
+          validFormat: true,
+          isPlaceholder: false,
+          matchedCuPin: true,
+          remoteCuPin: remotePin,
+          status: 'verified',
+          verifiedAt: new Date().toISOString(),
+          environment,
+          normalizedPin: pinCheck.normalized,
+          message: `Verified against Digitax Control Unit PIN (${remotePin}).`,
+        });
+      }
+
+      return res.json({
+        success: true,
+        validFormat: true,
+        isPlaceholder: false,
+        matchedCuPin: false,
+        remoteCuPin: null,
+        status: 'unverified',
+        environment,
+        normalizedPin: pinCheck.normalized,
+        message: 'KRA PIN format validated. Digitax Control Unit PIN lookup unavailable right now.',
+      });
+    } catch (err: any) {
+      console.error('Error in /api/digitax/verify-tax-pin:', redactPiiInText(String(err?.message || err)));
+      return res.status(500).json({ success: false, error: 'Failed to verify store KRA PIN.' });
     }
   });
 
@@ -2799,6 +3168,14 @@ Extract:
       const caller = await requireVerifiedCaller(req, res);
       if (!caller) return;
 
+      const entitled = await enforceServerTenantEntitlement(
+        caller,
+        req.headers['x-business-id'],
+        null,
+        res
+      );
+      if (!entitled) return;
+
       const { apiKey, environment } = resolveServerDigitaxKey(req);
       if (!apiKey) {
         return res.status(503).json({
@@ -2817,20 +3194,35 @@ Extract:
         });
       }
 
-      // Verify tenant KRA PIN alignment if merchant configured a non-placeholder live PIN
-      const tenantTaxPin = String(req.headers['x-tenant-tax-pin'] || '')
+      // Verify authoritative tenant KRA PIN alignment (Firestore doc first, header fallback)
+      const headerBizId = String(req.headers['x-business-id'] || '').trim();
+      const bizDocForPin =
+        headerBizId && headerBizId !== 'biz-demo'
+          ? await getFirestoreDoc('businesses', headerBizId, caller.bearerToken).catch(() => null)
+          : null;
+      const tenantTaxPin = String(
+        bizDocForPin?.taxSettings?.taxNumber ||
+          bizDocForPin?.taxNumber ||
+          req.headers['x-tenant-tax-pin'] ||
+          ''
+      )
         .trim()
         .toUpperCase();
-      if (
-        environment === 'production' &&
-        tenantTaxPin &&
-        tenantTaxPin !== 'P051234567Z' &&
-        tenantTaxPin !== 'P000000000X'
-      ) {
-        const remotePin = await resolveVerifiedDigitaxTaxPin(apiKey);
-        if (remotePin && remotePin !== tenantTaxPin) {
+      if (environment === 'production' && tenantTaxPin) {
+        const tenantPinCheck = validateKraPinStrict(tenantTaxPin, {
+          required: false,
+          allowPlaceholderInSandbox: false,
+        });
+        if (!tenantPinCheck.isValid) {
           return res.status(422).json({
-            error: `Tenant KRA PIN (${tenantTaxPin}) does not match active Digitax CU Tax PIN (${remotePin}).`,
+            error: tenantPinCheck.reason || 'Invalid or placeholder merchant KRA PIN in production.',
+            code: 'INVALID_TENANT_TAX_PIN',
+          });
+        }
+        const remotePin = await resolveVerifiedDigitaxTaxPin(apiKey);
+        if (remotePin && remotePin !== tenantPinCheck.normalized) {
+          return res.status(422).json({
+            error: `Tenant KRA PIN (${tenantPinCheck.normalized}) does not match active Digitax CU Tax PIN (${remotePin}).`,
             code: 'TAX_PIN_MISMATCH',
           });
         }
@@ -2867,8 +3259,8 @@ Extract:
       const data = await response.json().catch(() => ({}));
       return res.status(response.status).json(data);
     } catch (err: any) {
-      console.error('Error proxying Digitax create sale:', err);
-      return res.status(500).json({ error: err.message || 'Digitax create sale proxy failed' });
+      console.error('Error proxying Digitax create sale:', redactPiiInText(String(err?.message || err)));
+      return res.status(500).json({ error: redactPiiInText(err.message || 'Digitax create sale proxy failed') });
     }
   });
 
@@ -2909,6 +3301,14 @@ Extract:
       const caller = await requireVerifiedCaller(req, res);
       if (!caller) return;
 
+      const entitled = await enforceServerTenantEntitlement(
+        caller,
+        req.headers['x-business-id'],
+        'returnsAndRefunds',
+        res
+      );
+      if (!entitled) return;
+
       const { apiKey, environment } = resolveServerDigitaxKey(req);
       if (!apiKey) {
         return res.status(503).json({
@@ -2927,19 +3327,34 @@ Extract:
         });
       }
 
-      const tenantTaxPin = String(req.headers['x-tenant-tax-pin'] || '')
+      const headerBizId = String(req.headers['x-business-id'] || '').trim();
+      const bizDocForPin =
+        headerBizId && headerBizId !== 'biz-demo'
+          ? await getFirestoreDoc('businesses', headerBizId, caller.bearerToken).catch(() => null)
+          : null;
+      const tenantTaxPin = String(
+        bizDocForPin?.taxSettings?.taxNumber ||
+          bizDocForPin?.taxNumber ||
+          req.headers['x-tenant-tax-pin'] ||
+          ''
+      )
         .trim()
         .toUpperCase();
-      if (
-        environment === 'production' &&
-        tenantTaxPin &&
-        tenantTaxPin !== 'P051234567Z' &&
-        tenantTaxPin !== 'P000000000X'
-      ) {
-        const remotePin = await resolveVerifiedDigitaxTaxPin(apiKey);
-        if (remotePin && remotePin !== tenantTaxPin) {
+      if (environment === 'production' && tenantTaxPin) {
+        const tenantPinCheck = validateKraPinStrict(tenantTaxPin, {
+          required: false,
+          allowPlaceholderInSandbox: false,
+        });
+        if (!tenantPinCheck.isValid) {
           return res.status(422).json({
-            error: `Tenant KRA PIN (${tenantTaxPin}) does not match active Digitax CU Tax PIN (${remotePin}).`,
+            error: tenantPinCheck.reason || 'Invalid or placeholder merchant KRA PIN in production.',
+            code: 'INVALID_TENANT_TAX_PIN',
+          });
+        }
+        const remotePin = await resolveVerifiedDigitaxTaxPin(apiKey);
+        if (remotePin && remotePin !== tenantPinCheck.normalized) {
+          return res.status(422).json({
+            error: `Tenant KRA PIN (${tenantPinCheck.normalized}) does not match active Digitax CU Tax PIN (${remotePin}).`,
             code: 'TAX_PIN_MISMATCH',
           });
         }
@@ -2979,8 +3394,8 @@ Extract:
       const data = await response.json().catch(() => ({}));
       return res.status(response.status).json(data);
     } catch (err: any) {
-      console.error('Error proxying Digitax credit note:', err);
-      return res.status(500).json({ error: err.message || 'Digitax credit note proxy failed' });
+      console.error('Error proxying Digitax credit note:', redactPiiInText(String(err?.message || err)));
+      return res.status(500).json({ error: redactPiiInText(err.message || 'Digitax credit note proxy failed') });
     }
   });
 
@@ -3011,8 +3426,64 @@ Extract:
       const data = await response.json().catch(() => ({}));
       return res.status(response.status).json(data);
     } catch (err: any) {
-      console.error('Error proxying Digitax credit note details:', err);
-      return res.status(500).json({ error: err.message || 'Digitax credit note details proxy failed' });
+      console.error('Error proxying Digitax credit note details:', redactPiiInText(String(err?.message || err)));
+      return res.status(500).json({ error: redactPiiInText(err.message || 'Digitax credit note details proxy failed') });
+    }
+  });
+
+  // Kenya DPA 2019 Customer Anonymization Endpoint (scrubs PII while retaining financial ledger integrity)
+  app.post('/api/privacy/anonymize-customer', async (req, res) => {
+    try {
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
+      const businessId = String(req.body?.businessId || req.headers['x-business-id'] || '').trim();
+      const customerId = String(req.body?.customerId || '').trim();
+      if (!/^[a-zA-Z0-9_.\-]{1,128}$/.test(businessId) || !/^[a-zA-Z0-9_.\-]{1,128}$/.test(customerId)) {
+        return res.status(400).json({ success: false, error: 'Valid businessId and customerId are required.' });
+      }
+
+      const access = await verifyTenantCallerAccess(caller, businessId, true);
+      if (!access.allowed && access.reason !== 'store_not_synced') {
+        return res.status(403).json({
+          success: false,
+          code: 'TENANT_ACCESS_DENIED',
+          error: 'Only store owners or managers can anonymize customer records.',
+        });
+      }
+
+      const nowIso = new Date().toISOString();
+      const anonymizedPhone = buildAnonymizedPhoneToken(customerId);
+      const patchPayload = {
+        name: ANONYMIZED_CUSTOMER_NAME,
+        phone: anonymizedPhone,
+        email: '',
+        address: '',
+        notes: 'Personal identifiers scrubbed under Kenya DPA 2019.',
+        kraPin: '',
+        isAnonymized: true,
+        anonymizedAt: nowIso,
+        anonymizedBy: caller.email || caller.uid,
+        updatedAt: nowIso,
+      };
+
+      const cloudPatched = await patchFirestoreDoc(
+        'customers',
+        customerId,
+        patchPayload,
+        Object.keys(patchPayload),
+        caller.bearerToken
+      );
+
+      return res.json({
+        success: true,
+        cloudPatched,
+        anonymizedPhone,
+        anonymizedAt: nowIso,
+      });
+    } catch (err: any) {
+      console.error('Error in /api/privacy/anonymize-customer:', redactPiiInText(String(err?.message || err)));
+      return res.status(500).json({ success: false, error: 'Failed to process customer anonymization.' });
     }
   });
 
@@ -3089,6 +3560,7 @@ Extract:
       const biz = bizMap.get(bizId);
       if (biz?.isDemo === true) continue;
 
+      const tenantRelayEnabled = biz?.taxSettings?.autoTransmitEtims !== false;
       const env: 'sandbox' | 'production' =
         biz?.taxSettings?.digitaxEnvironment === 'production' ? 'production' : 'sandbox';
       const configuredTaxPin = String(
@@ -3118,55 +3590,57 @@ Extract:
 
       const txItems = Array.isArray(tx.items) ? tx.items : [];
 
-      items.push({
-        outboxId: `sale:${tx.id}`,
-        kind: 'sale',
-        transactionId: String(tx.id),
-        businessId: bizId,
-        businessName,
-        businessCode,
-        ownerEmail,
-        environment: env,
-        configuredTaxPin,
-        receiptNumber: String(tx.receiptNumber || tx.id),
-        traderInvoiceNumber: String(
-          saleEtims?.traderInvoiceNumber || formatTraderInvoiceNumber(String(tx.receiptNumber || tx.id))
-        ),
-        timestamp: String(tx.timestamp || ''),
-        amountKes: Number(tx.total || 0),
-        taxAmountKes: Number(tx.taxAmount || 0),
-        paymentMethod: String(tx.paymentMethod || 'cash'),
-        status: saleStatus,
-        digitaxId: saleEtims?.saleId ? String(saleEtims.saleId) : undefined,
-        cuSerialNumber: saleEtims?.cuSerialNumber ? String(saleEtims.cuSerialNumber) : undefined,
-        cuInvoiceNumber: saleEtims?.cuInvoiceNumber ?? undefined,
-        fiscalReceiptNumber: saleEtims?.receiptNumber ?? undefined,
-        receiptSignature: saleEtims?.receiptSignature ? String(saleEtims.receiptSignature) : undefined,
-        etimsUrl: saleEtims?.etimsUrl ? String(saleEtims.etimsUrl) : undefined,
-        attemptCount: Number(saleEtims?.attemptCount || 0),
-        lastAttemptAt: saleEtims?.lastAttemptAt ? String(saleEtims.lastAttemptAt) : undefined,
-        lastError: saleEtims?.lastError
-          ? String(saleEtims.lastError)
-          : saleStatus === 'MISSING'
-          ? 'No eTIMS fiscalization attempt recorded on this receipt yet.'
-          : undefined,
-        errorCategory: saleErrorCategory,
-        itemCount: txItems.length,
-        itemsSummary: txItems.slice(0, 12).map((it: any) => ({
-          productId: String(it?.productId || ''),
-          productName: String(it?.productName || 'Item'),
-          sku: String(it?.sku || ''),
-          quantity: Number(it?.quantity || 0),
-          unitPrice: Number(it?.unitPrice || 0),
-          taxTypeCode: it?.taxTypeCode ? String(it.taxTypeCode) : undefined,
-          hasDigitaxItemId: Boolean(it?.digitaxItemId),
-        })),
-        overrideReason: saleEtims?.overrideReason ? String(saleEtims.overrideReason) : undefined,
-        overriddenByEmail: saleEtims?.overriddenByEmail
-          ? String(saleEtims.overriddenByEmail)
-          : undefined,
-        overriddenAt: saleEtims?.overriddenAt ? String(saleEtims.overriddenAt) : undefined,
-      });
+      if (tenantRelayEnabled || saleEtims) {
+        items.push({
+          outboxId: `sale:${tx.id}`,
+          kind: 'sale',
+          transactionId: String(tx.id),
+          businessId: bizId,
+          businessName,
+          businessCode,
+          ownerEmail,
+          environment: env,
+          configuredTaxPin,
+          receiptNumber: String(tx.receiptNumber || tx.id),
+          traderInvoiceNumber: String(
+            saleEtims?.traderInvoiceNumber || formatTraderInvoiceNumber(String(tx.receiptNumber || tx.id))
+          ),
+          timestamp: String(tx.timestamp || ''),
+          amountKes: Number(tx.total || 0),
+          taxAmountKes: Number(tx.taxAmount || 0),
+          paymentMethod: String(tx.paymentMethod || 'cash'),
+          status: saleStatus,
+          digitaxId: saleEtims?.saleId ? String(saleEtims.saleId) : undefined,
+          cuSerialNumber: saleEtims?.cuSerialNumber ? String(saleEtims.cuSerialNumber) : undefined,
+          cuInvoiceNumber: saleEtims?.cuInvoiceNumber ?? undefined,
+          fiscalReceiptNumber: saleEtims?.receiptNumber ?? undefined,
+          receiptSignature: saleEtims?.receiptSignature ? String(saleEtims.receiptSignature) : undefined,
+          etimsUrl: saleEtims?.etimsUrl ? String(saleEtims.etimsUrl) : undefined,
+          attemptCount: Number(saleEtims?.attemptCount || 0),
+          lastAttemptAt: saleEtims?.lastAttemptAt ? String(saleEtims.lastAttemptAt) : undefined,
+          lastError: saleEtims?.lastError
+            ? String(saleEtims.lastError)
+            : saleStatus === 'MISSING'
+            ? 'No eTIMS fiscalization attempt recorded on this receipt yet.'
+            : undefined,
+          errorCategory: saleErrorCategory,
+          itemCount: txItems.length,
+          itemsSummary: txItems.slice(0, 12).map((it: any) => ({
+            productId: String(it?.productId || ''),
+            productName: String(it?.productName || 'Item'),
+            sku: String(it?.sku || ''),
+            quantity: Number(it?.quantity || 0),
+            unitPrice: Number(it?.unitPrice || 0),
+            taxTypeCode: it?.taxTypeCode ? String(it.taxTypeCode) : undefined,
+            hasDigitaxItemId: Boolean(it?.digitaxItemId),
+          })),
+          overrideReason: saleEtims?.overrideReason ? String(saleEtims.overrideReason) : undefined,
+          overriddenByEmail: saleEtims?.overriddenByEmail
+            ? String(saleEtims.overriddenByEmail)
+            : undefined,
+          overriddenAt: saleEtims?.overriddenAt ? String(saleEtims.overriddenAt) : undefined,
+        });
+      }
 
       const parentSaleReady = Boolean(
         saleEtims?.saleId || saleEtims?.cuInvoiceNumber || saleStatus === 'COMPLETED'
@@ -3179,6 +3653,7 @@ Extract:
           refund.etimsCreditNote && typeof refund.etimsCreditNote === 'object'
             ? refund.etimsCreditNote
             : null;
+        if (!tenantRelayEnabled && !cn) continue;
         const cnRaw = String(cn?.status || '').toUpperCase();
         let cnStatus: NormalizedOutboxStatus;
         if (cnRaw === 'COMPLETED') {
@@ -3720,14 +4195,13 @@ Extract:
       .toUpperCase();
     const attemptIso = new Date().toISOString();
 
-    if (
-      env === 'production' &&
-      configuredTaxPin &&
-      configuredTaxPin !== 'P051234567Z' &&
-      configuredTaxPin !== 'P000000000X'
-    ) {
+    const tenantPinCheck = validateKraPinStrict(configuredTaxPin, {
+      required: false,
+      allowPlaceholderInSandbox: env === 'sandbox',
+    });
+    if (env === 'production' && configuredTaxPin && tenantPinCheck.isValid) {
       const remotePin = await resolveVerifiedDigitaxTaxPin(apiKey);
-      if (remotePin && remotePin !== configuredTaxPin) {
+      if (remotePin && remotePin !== tenantPinCheck.normalized) {
         const errMsg = `Tenant KRA PIN (${configuredTaxPin}) does not match active Digitax CU Tax PIN (${remotePin}).`;
         if (refundId) {
           const refunds = Array.isArray(tx.refunds) ? [...tx.refunds] : [];
@@ -4389,8 +4863,8 @@ Extract:
           ok: outcome.ok,
           status: outcome.status || 'FAILED',
           message: outcome.message || outcome.error || 'Replay completed',
-          beforeValue: outcome.beforeValue ?? null,
-          afterValue: outcome.afterValue ?? null,
+          beforeValue: outcome.beforeValue ? redactPiiForLogs(outcome.beforeValue) : null,
+          afterValue: outcome.afterValue ? redactPiiForLogs(outcome.afterValue) : null,
         });
       }
 
@@ -4509,8 +4983,8 @@ Extract:
         return res.json({
           success: true,
           status: targetStatus,
-          beforeValue,
-          afterValue: updatedCn,
+          beforeValue: beforeValue ? redactPiiForLogs(beforeValue) : null,
+          afterValue: redactPiiForLogs(updatedCn),
           message: `Credit Note ${refund.refundNumber} manually updated to ${targetStatus}.`,
         });
       }
@@ -4550,8 +5024,8 @@ Extract:
       return res.json({
         success: true,
         status: targetStatus,
-        beforeValue,
-        afterValue: updatedEtims,
+        beforeValue: beforeValue ? redactPiiForLogs(beforeValue) : null,
+        afterValue: redactPiiForLogs(updatedEtims),
         message: `Invoice ${tx.receiptNumber} manually updated to ${targetStatus}.`,
       });
     } catch (err: any) {
@@ -5038,6 +5512,266 @@ Extract:
         success: false,
         records: [],
         error: err?.message || 'Failed to load cross-tenant payment records.',
+      });
+    }
+  });
+
+  app.get('/api/admin/businesses', async (req, res) => {
+    try {
+      const caller = await requireSuperAdminCaller(req, res);
+      if (!caller) return;
+
+      const candidates = await resolveFirestoreCandidateTokens(caller.bearerToken);
+      if (candidates.length === 0) {
+        return res.status(503).json({
+          success: false,
+          businesses: [],
+          error: 'No server Firestore credentials available to query tenants.',
+        });
+      }
+
+      let lastStatusError: string | null = null;
+      for (let i = 0; i < candidates.length; i++) {
+        const { token, source } = candidates[i];
+        const collected: Record<string, any>[] = [];
+        let pageToken: string | undefined;
+        let failed = false;
+
+        try {
+          while (collected.length < 1000) {
+            const batchSize = Math.min(500, 1000 - collected.length);
+            const qp = new URLSearchParams({ pageSize: String(batchSize) });
+            if (pageToken) qp.set('pageToken', pageToken);
+            const url = `${firestoreCollectionUrl('businesses')}?${qp.toString()}`;
+            const resp = await fetch(url, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!resp.ok) {
+              if ((resp.status === 401 || resp.status === 403) && source === 'adc') {
+                cachedAdcToken = null;
+                gcpTokenFirestoreCooldownUntil = Date.now() + GCP_FIRESTORE_DENIED_COOLDOWN_MS;
+              }
+              const errText = await resp.text().catch(() => '');
+              lastStatusError = `Firestore returned HTTP ${resp.status}${errText ? `: ${errText.slice(0, 160)}` : ''}`;
+              failed = true;
+              break;
+            }
+            const json: any = await resp.json().catch(() => ({}));
+            const docs = Array.isArray(json.documents) ? json.documents : [];
+            for (const d of docs) {
+              const parsed = fromFirestoreDoc(d);
+              if (parsed) collected.push(parsed);
+            }
+            if (!json.nextPageToken || docs.length === 0) {
+              return res.json({
+                success: true,
+                businesses: collected,
+                count: collected.length,
+                source,
+              });
+            }
+            pageToken = String(json.nextPageToken);
+          }
+          if (!failed) {
+            return res.json({
+              success: true,
+              businesses: collected,
+              count: collected.length,
+              source,
+            });
+          }
+        } catch (err: any) {
+          lastStatusError = err?.message || 'Network error querying Firestore businesses.';
+        }
+      }
+
+      return res.status(502).json({
+        success: false,
+        businesses: [],
+        error: lastStatusError || 'Unable to load tenant directory from Firestore.',
+      });
+    } catch (err: any) {
+      console.error('Error in GET /api/admin/businesses:', err);
+      return res.status(500).json({
+        success: false,
+        businesses: [],
+        error: err?.message || 'Failed to load tenant directory.',
+      });
+    }
+  });
+
+  app.post('/api/admin/pricing-tiers/invalidate-cache', async (req, res) => {
+    try {
+      const caller = await requireSuperAdminCaller(req, res);
+      if (!caller) return;
+      invalidateServerPricingTiersCache();
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Failed to invalidate pricing cache.' });
+    }
+  });
+
+  app.post('/api/entitlements/check-quota', async (req, res) => {
+    try {
+      const caller = await requireVerifiedCaller(req, res);
+      if (!caller) return;
+
+      const cleanBizId = String(req.body?.businessId || '').trim();
+      const resource = String(req.body?.resource || '').trim() as 'branch' | 'product' | 'staff';
+      const additionalCount = Math.max(1, Math.min(5000, Math.floor(Number(req.body?.additionalCount || 1))));
+      const docId = req.body?.docId ? String(req.body.docId).trim() : undefined;
+
+      if (!cleanBizId || !['branch', 'product', 'staff'].includes(resource)) {
+        return res.status(400).json({
+          allowed: false,
+          error: 'Valid businessId and resource (branch | product | staff) are required.',
+        });
+      }
+
+      if (caller.isSuperAdmin || cleanBizId === 'biz-demo' || cleanBizId === 'biz-upfront') {
+        return res.json({
+          allowed: true,
+          tierId: 'premium',
+          used: 0,
+          limit: -1,
+        });
+      }
+
+      const access = await verifyTenantCallerAccess(caller, cleanBizId, false);
+      if (!access.allowed) {
+        return res.status(403).json({
+          allowed: false,
+          code: 'TENANT_ACCESS_DENIED',
+          error: 'Unauthorized to verify quotas for this business.',
+        });
+      }
+
+      if (!access.bizDoc) {
+        return res.json({
+          allowed: true,
+          tierId: 'free',
+          used: 0,
+          limit: -1,
+        });
+      }
+
+      const entitlements = await resolveServerTierEntitlements(access.bizDoc, caller.bearerToken);
+      if (entitlements.isSuspended) {
+        return res.status(403).json({
+          allowed: false,
+          code: 'SUBSCRIPTION_SUSPENDED',
+          tierId: entitlements.tierId,
+          isSuspended: true,
+          error: 'Store access is currently suspended. Complete subscription payment to continue.',
+        });
+      }
+
+      if (entitlements.isPrivileged) {
+        return res.json({
+          allowed: true,
+          tierId: entitlements.tierId,
+          used: 0,
+          limit: -1,
+        });
+      }
+
+      const limit =
+        resource === 'branch'
+          ? entitlements.limits.maxBranches
+          : resource === 'staff'
+            ? entitlements.limits.maxStaffUsers
+            : entitlements.limits.maxProducts;
+
+      if (limit < 0) {
+        return res.json({
+          allowed: true,
+          tierId: entitlements.tierId,
+          used: 0,
+          limit: -1,
+        });
+      }
+
+      const collectionName =
+        resource === 'branch' ? 'locations' : resource === 'staff' ? 'cashiers' : 'products';
+      const existingDocs = await queryFirestoreDocsWithToken(
+        collectionName,
+        'businessId',
+        cleanBizId,
+        Math.max(limit + 50, 500),
+        caller.bearerToken
+      );
+
+      if (docId && existingDocs.some((d) => String(d?.id || '') === docId)) {
+        return res.json({
+          allowed: true,
+          tierId: entitlements.tierId,
+          used: existingDocs.length,
+          limit,
+        });
+      }
+
+      let used = existingDocs.length;
+      if (resource === 'staff') {
+        const seatIds = new Set(existingDocs.map((d) => String(d?.id || '')).filter(Boolean));
+        const creds = await hydrateStaffCredentialsFromFirestore();
+        Object.values(creds).forEach((c) => {
+          if (c.businessId === cleanBizId && c.cashierId) {
+            seatIds.add(c.cashierId);
+          }
+        });
+        if (docId && seatIds.has(docId)) {
+          return res.json({
+            allowed: true,
+            tierId: entitlements.tierId,
+            used: seatIds.size,
+            limit,
+          });
+        }
+        used = seatIds.size;
+      }
+
+      if (used + additionalCount > limit) {
+        const targetCount = used + additionalCount;
+        const requiredTier: CanonicalServerTier =
+          resource === 'branch'
+            ? targetCount <= 3
+              ? 'business'
+              : 'premium'
+            : resource === 'staff'
+              ? targetCount <= 2
+                ? 'starter'
+                : targetCount <= 10
+                  ? 'business'
+                  : 'premium'
+              : 'starter';
+
+        return res.status(403).json({
+          allowed: false,
+          code: 'QUOTA_EXCEEDED',
+          tierId: entitlements.tierId,
+          used,
+          limit,
+          requiredTier,
+          error:
+            resource === 'branch'
+              ? `Your ${entitlements.tierId.toUpperCase()} plan allows up to ${limit} store branch${limit === 1 ? '' : 'es'}. Upgrade to add more branches.`
+              : resource === 'staff'
+                ? `Your ${entitlements.tierId.toUpperCase()} plan allows up to ${limit} staff seat${limit === 1 ? '' : 's'}. Upgrade to add more team members.`
+                : `Free Advisory accounts allow up to ${limit} inventory SKUs. Upgrade to Starter or higher for unlimited products.`,
+        });
+      }
+
+      return res.json({
+        allowed: true,
+        tierId: entitlements.tierId,
+        used,
+        limit,
+      });
+    } catch (err: any) {
+      console.error('Error in POST /api/entitlements/check-quota:', err);
+      return res.status(500).json({
+        allowed: false,
+        error: err?.message || 'Unable to verify plan quota.',
       });
     }
   });

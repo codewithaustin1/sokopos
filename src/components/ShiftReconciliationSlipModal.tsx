@@ -137,7 +137,7 @@ Total Transactions:       ${shift.transactionCount}
                 {currentLocation.address} • Tel: {currentBusiness?.phone || '+254 700 000 000'}
               </p>
               <p className="text-[10px] text-slate-500 font-sans">
-                Tax PIN: {currentBusiness?.taxNumber || 'P051234567X'}
+                Tax PIN: {currentBusiness?.taxNumber || 'Not configured'}
               </p>
               <div className="mt-2 inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-900 text-white font-sans">
                 {isMidShiftXReport

@@ -30,6 +30,7 @@ import { safeConfetti } from '../utils/confetti';
 import QRCode from 'qrcode';
 import { PaymentMethod, SplitPaymentTender } from '../types';
 import { usePos } from '../context/PosContext';
+import { maskPhoneNumber, maskEmailAddress } from '../utils/privacyAndKraSecurity';
 import { auth } from '../lib/firebase';
 import { calculatePaymentGuardrails, roundCashHalfUp } from '../utils/cashRounding';
 import { CustomerFacingMpesaQrModal } from './CustomerFacingMpesaQrModal';
@@ -982,7 +983,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                     </span>
                     {selectedCustomer?.phone && (
                       <span className="text-[11px] font-mono tabular-nums text-slate-500">
-                        · {selectedCustomer.phone}
+                        · {maskPhoneNumber(selectedCustomer.phone)}
                       </span>
                     )}
                   </div>
@@ -1690,7 +1691,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                           type="email"
                           value={cardCustomerEmail}
                           onChange={(e) => setCardCustomerEmail(e.target.value)}
-                          placeholder={selectedCustomer?.email || 'customer@email.com'}
+                          placeholder={selectedCustomer?.email ? maskEmailAddress(selectedCustomer.email) : 'customer@email.com'}
                           className="w-full bg-slate-50 border border-slate-300 text-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-hidden focus:border-blue-500"
                         />
                       </div>

@@ -198,7 +198,7 @@ export const SupplierInvoiceModal: React.FC<SupplierInvoiceModalProps> = ({
 
     try {
       setAnalysisStep('Parsing paper delivery invoice, extracting line items & quantities...');
-      const parsed = await parseSupplierInvoiceWithAi(base64, mimeType, products);
+      const parsed = await parseSupplierInvoiceWithAi(base64, mimeType, products, currentBusiness?.id);
       setAnalysisStep('Matching line items to existing store SKUs & COGS valuation...');
       setParsedInvoice(parsed);
       audio?.playSuccess?.();

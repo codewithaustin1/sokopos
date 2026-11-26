@@ -20,6 +20,9 @@ import {
   BarChart3,
   LayoutDashboard,
   Trash2,
+  CheckCircle2,
+  TrendingDown,
+  ShieldAlert,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import { isSuperAdminEmail } from '../data/initialData';
@@ -38,12 +41,13 @@ import {
 import {
   buildExecutiveTrendSeries,
   calculateBranchBenchmarks,
+  calculateBranchTargetScorecards,
   calculateCategoryProfitability,
   calculateExecutivePLSummary,
+  calculateMonthlyTargetPacing,
   calculateSkuProfitability,
   calculateTenderMix,
   computeTransactionFinancials,
-  evaluateTargetPacing,
   exportBiTableToCsv,
   getPeriodKey,
 } from '../utils/biEngine';
@@ -95,6 +99,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     analyticsRollups,
     analyticsTargets,
     analyticsSavedViews,
+    canEditAnalyticsTargets,
+    lockedAnalyticsLocationId,
     isBiSyncing,
     isBiDataLoading,
     biLastSyncedAt,
@@ -123,12 +129,22 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   const [viewMode, setViewMode] = useState<'overview' | 'reports'>('overview');
 
   // Filter & Slice Controls
-  const [selectedLocationId, setSelectedLocationId] = useState<string>('all');
+  const [selectedLocationId, setSelectedLocationId] = useState<string>(
+    () => lockedAnalyticsLocationId || 'all'
+  );
+  const [targetPeriodKey, setTargetPeriodKey] = useState<string>(() => getPeriodKey());
   const [dateRange, setDateRange] = useState<DateRange>(() => calculateDateRange('last_30d'));
   const [focusTab, setFocusTab] = useState<BiFocusTab>('sku_margin');
   const [chartMetric, setChartMetric] = useState<BiChartMetric>('net_sales');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSavedViewId, setActiveSavedViewId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (lockedAnalyticsLocationId && selectedLocationId !== lockedAnalyticsLocationId) {
+      setSelectedLocationId(lockedAnalyticsLocationId);
+      setActiveSavedViewId(null);
+    }
+  }, [lockedAnalyticsLocationId, selectedLocationId]);
 
   // Sorting state per ledger mode
   const [skuSort, setSkuSort] = useState<{ field: SkuSortField; dir: 'asc' | 'desc' }>({
@@ -148,8 +164,15 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   const [isToolsMenuOpen, setIsToolsMenuOpen] = useState(false);
   const [inspectorTarget, setInspectorTarget] = useState<BiInspectorTarget>(null);
   const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
+  const [targetModalLocationId, setTargetModalLocationId] = useState<string>('all');
   const [isSaveViewModalOpen, setIsSaveViewModalOpen] = useState(false);
   const [printData, setPrintData] = useState<ReportPrintData | null>(null);
+
+  const openTargetModalForLocation = (locId?: string) => {
+    if (!canEditAnalyticsTargets) return;
+    setTargetModalLocationId(locId || selectedLocationId || 'all');
+    setIsTargetModalOpen(true);
+  };
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const toolsMenuRef = useRef<HTMLDivElement>(null);
@@ -282,21 +305,51 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     [dateRange, selectedLocationId, transactions, analyticsRollups, products]
   );
 
-  // Active target for current month & branch scope
-  const activePeriodKey = getPeriodKey();
-  const activeTarget = useMemo(() => {
-    return (
-      analyticsTargets.find(
-        (t) => t.locationId === selectedLocationId && t.periodKey === activePeriodKey
-      ) ||
-      analyticsTargets.find((t) => t.locationId === 'all' && t.periodKey === activePeriodKey)
-    );
-  }, [analyticsTargets, selectedLocationId, activePeriodKey]);
-
+  // True calendar Month-to-Date target pacing & daily run-rate for active branch scope
   const targetPacing = useMemo(
-    () => evaluateTargetPacing(summary, activeTarget),
-    [summary, activeTarget]
+    () =>
+      calculateMonthlyTargetPacing({
+        periodKey: targetPeriodKey,
+        selectedLocationId,
+        targets: analyticsTargets,
+        transactions: transactions || [],
+        rollups: analyticsRollups || [],
+        products: products || [],
+        shifts: shiftHistory || [],
+        allowStoreFallback: selectedLocationId !== 'all',
+      }),
+    [
+      targetPeriodKey,
+      selectedLocationId,
+      analyticsTargets,
+      transactions,
+      analyticsRollups,
+      products,
+      shiftHistory,
+    ]
   );
+
+  const branchTargetScorecards = useMemo(() => {
+    if (selectedLocationId !== 'all' || (locations || []).length <= 1) return [];
+    return calculateBranchTargetScorecards({
+      periodKey: targetPeriodKey,
+      locations: locations || [],
+      targets: analyticsTargets,
+      transactions: transactions || [],
+      rollups: analyticsRollups || [],
+      products: products || [],
+      shifts: shiftHistory || [],
+    });
+  }, [
+    selectedLocationId,
+    locations,
+    targetPeriodKey,
+    analyticsTargets,
+    transactions,
+    analyticsRollups,
+    products,
+    shiftHistory,
+  ]);
 
   // Search + Sort for each ledger tab
   const q = searchQuery.trim().toLowerCase();
@@ -381,7 +434,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
     const view = analyticsSavedViews.find((v) => v.id === viewId);
     if (!view) return;
     setActiveSavedViewId(view.id);
-    setSelectedLocationId(view.locationId || 'all');
+    setSelectedLocationId(lockedAnalyticsLocationId || view.locationId || 'all');
     setDateRange(calculateDateRange(view.preset, view.customStartIso, view.customEndIso));
     setFocusTab(view.focusTab);
     setChartMetric(
@@ -393,7 +446,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   };
 
   const handleResetFilters = () => {
-    setSelectedLocationId('all');
+    setSelectedLocationId(lockedAnalyticsLocationId || 'all');
     setDateRange(calculateDateRange('last_30d'));
     setSearchQuery('');
     setActiveSavedViewId(null);
@@ -542,7 +595,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   };
 
   const isFiltered =
-    selectedLocationId !== 'all' ||
+    selectedLocationId !== (lockedAnalyticsLocationId || 'all') ||
     dateRange.preset !== 'last_30d' ||
     searchQuery.trim().length > 0;
 
@@ -624,17 +677,19 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   <Bookmark className="w-3.5 h-3.5 text-slate-500" />
                   <span>Save Current BI View</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsToolsMenuOpen(false);
-                    setIsTargetModalOpen(true);
-                  }}
-                  className="w-full px-3.5 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 cursor-pointer"
-                >
-                  <Target className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Set Monthly Goals &amp; Floor</span>
-                </button>
+                {canEditAnalyticsTargets && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsToolsMenuOpen(false);
+                      openTargetModalForLocation();
+                    }}
+                    className="w-full px-3.5 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 cursor-pointer"
+                  >
+                    <Target className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Set Monthly Goals &amp; Floor</span>
+                  </button>
+                )}
                 {!isDemoSession && (
                   <button
                     type="button"
@@ -708,19 +763,36 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         <div className="bg-white rounded-xl border border-slate-200 p-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 flex-wrap">
             {/* Branch Selector */}
-            <div className="min-h-[40px] inline-flex items-center gap-1.5 bg-white border border-slate-200 hover:border-slate-300 rounded-lg px-2.5 py-1.5 transition">
-              <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <div
+              className={`min-h-[40px] inline-flex items-center gap-1.5 border rounded-lg px-2.5 py-1.5 transition ${
+                lockedAnalyticsLocationId
+                  ? 'bg-slate-50 border-slate-200'
+                  : 'bg-white border-slate-200 hover:border-slate-300'
+              }`}
+            >
+              {lockedAnalyticsLocationId ? (
+                <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              ) : (
+                <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              )}
               <select
                 aria-label="Filter by branch"
                 value={selectedLocationId}
+                disabled={Boolean(lockedAnalyticsLocationId)}
                 onChange={(e) => {
+                  if (lockedAnalyticsLocationId) return;
                   setSelectedLocationId(e.target.value);
                   setActiveSavedViewId(null);
                 }}
-                className="text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+                className="text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer disabled:cursor-default disabled:text-slate-600"
               >
-                <option value="all">All Locations ({locations.length})</option>
-                {locations.map((loc) => (
+                {!lockedAnalyticsLocationId && (
+                  <option value="all">All Locations ({locations.length})</option>
+                )}
+                {(lockedAnalyticsLocationId
+                  ? locations.filter((l) => l.id === lockedAnalyticsLocationId)
+                  : locations
+                ).map((loc) => (
                   <option key={loc.id} value={loc.id}>
                     {loc.name}
                   </option>
@@ -813,10 +885,10 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         ) : (
           <>
             {/* ----------------------------------------------------------------
-                1. Saved Views & Monthly Target Pacing Strip
+                1. Saved Views Strip
                ---------------------------------------------------------------- */}
-            <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 lg:pb-0">
+            <div className="bg-white rounded-xl border border-slate-200 px-4 py-2.5 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
                 <span className="text-xs font-semibold text-slate-500 whitespace-nowrap shrink-0">
                   Saved Views:
                 </span>
@@ -864,20 +936,148 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                   })
                 )}
               </div>
+              <button
+                type="button"
+                onClick={() => setIsSaveViewModalOpen(true)}
+                className="text-xs font-medium text-slate-600 hover:text-blue-600 transition cursor-pointer whitespace-nowrap shrink-0"
+              >
+                + Save View
+              </button>
+            </div>
 
-              <div className="flex items-center gap-3 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100 shrink-0">
-                {activeTarget && activeTarget.revenueTarget > 0 ? (
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <div className="min-w-[170px]">
-                      <div className="flex items-center justify-between text-[11px] font-medium text-slate-600 mb-1">
-                        <span>{activePeriodKey} Target Pace</span>
-                        <span className="font-mono tabular-nums font-semibold text-slate-900">
-                          {targetPacing.revenuePct.toFixed(0)}% of {fmtMoney(activeTarget.revenueTarget)}
+            {/* ----------------------------------------------------------------
+                1b. Branch Monthly Target & Daily Run-Rate Scorecard
+               ---------------------------------------------------------------- */}
+            <section
+              aria-label="Branch Monthly Targets and Daily Run-Rate"
+              className="bg-white rounded-xl border border-slate-200 overflow-hidden"
+            >
+              <div className="px-4 sm:px-5 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Target className="w-4 h-4 text-blue-600 shrink-0" />
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Branch Target &amp; Run-Rate Scorecard
+                    </h3>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                    <span>{selectedLocationName}</span>
+                    <span aria-hidden="true">·</span>
+                    <span>
+                      {targetPacing.isStoreFallback
+                        ? 'Using store-wide monthly target'
+                        : canEditAnalyticsTargets
+                        ? 'Owner editable'
+                        : 'Assigned branch read-only view'}
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span className="font-mono tabular-nums">
+                      Day {targetPacing.daysElapsed}/{targetPacing.daysInMonth}
+                    </span>
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <input
+                    type="month"
+                    aria-label="Target Month"
+                    value={targetPeriodKey}
+                    onChange={(e) => {
+                      if (e.target.value) setTargetPeriodKey(e.target.value);
+                    }}
+                    className="min-h-[36px] px-2.5 py-1 text-xs font-mono tabular-nums bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {canEditAnalyticsTargets && (
+                    <button
+                      type="button"
+                      onClick={() => openTargetModalForLocation()}
+                      className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      <Target className="w-3.5 h-3.5 text-blue-600" />
+                      <span>
+                        {targetPacing.hasRevenueTarget && !targetPacing.isStoreFallback
+                          ? 'Edit Target'
+                          : 'Set Target'}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {!targetPacing.target || !targetPacing.hasRevenueTarget ? (
+                <div className="p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">
+                      No monthly goal configured for {selectedLocationName} ({targetPeriodKey})
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1 max-w-xl">
+                      {canEditAnalyticsTargets
+                        ? 'Set a monthly net revenue target, gross margin floor, and discount ceiling to unlock daily run-rate guidance and live register warnings.'
+                        : 'Monthly branch goals are configured by the store owner. Once set, your required daily run-rate and margin health will appear here.'}
+                    </p>
+                  </div>
+                  {canEditAnalyticsTargets && (
+                    <button
+                      type="button"
+                      onClick={() => openTargetModalForLocation()}
+                      className="min-h-[40px] inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition cursor-pointer whitespace-nowrap shrink-0 self-start sm:self-auto"
+                    >
+                      <Target className="w-3.5 h-3.5" />
+                      <span>Set {targetPeriodKey} Target</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
+                    {/* Column 1: Monthly Revenue & Required Daily Run-Rate */}
+                    <div className="p-4 sm:p-5 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-slate-500">
+                          Monthly Revenue &amp; Daily Run-Rate
+                        </span>
+                        <span
+                          className={`inline-flex items-center gap-1 text-xs font-semibold ${
+                            targetPacing.revenueStatus === 'achieved' ||
+                            targetPacing.revenueStatus === 'on_track'
+                              ? 'text-emerald-700'
+                              : targetPacing.revenueStatus === 'watch'
+                              ? 'text-amber-700'
+                              : 'text-rose-700'
+                          }`}
+                        >
+                          {targetPacing.revenueStatus === 'achieved' ||
+                          targetPacing.revenueStatus === 'on_track' ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                          ) : targetPacing.revenueStatus === 'watch' ? (
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                          ) : (
+                            <TrendingDown className="w-3.5 h-3.5 shrink-0" />
+                          )}
+                          <span>
+                            {targetPacing.revenueStatus === 'achieved'
+                              ? 'Goal Achieved'
+                              : targetPacing.revenueStatus === 'on_track'
+                              ? 'On Pace'
+                              : targetPacing.revenueStatus === 'watch'
+                              ? 'Watch Pace'
+                              : 'Behind Pace'}
+                          </span>
                         </span>
                       </div>
+
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className="text-lg sm:text-xl font-bold text-slate-900 font-mono tabular-nums tracking-tight">
+                          {fmtMoney(targetPacing.mtdNetRevenue)}
+                        </p>
+                        <span className="text-xs font-mono tabular-nums text-slate-500">
+                          {targetPacing.revenuePct.toFixed(1)}% of {fmtMoney(targetPacing.target.revenueTarget)}
+                        </span>
+                      </div>
+
                       <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                         <div
                           className={`h-full transition-all ${
+                            targetPacing.revenueStatus === 'achieved' ||
                             targetPacing.revenueStatus === 'on_track'
                               ? 'bg-emerald-600'
                               : targetPacing.revenueStatus === 'watch'
@@ -887,27 +1087,281 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                           style={{ width: `${Math.min(100, targetPacing.revenuePct)}%` }}
                         />
                       </div>
+
+                      <div className="pt-0.5 text-xs text-slate-600 space-y-1 font-mono tabular-nums">
+                        <p className="font-semibold text-slate-900">
+                          {targetPacing.revenueRemaining <= 0
+                            ? `Surplus +${fmtMoney(
+                                Math.max(
+                                  0,
+                                  targetPacing.mtdNetRevenue - targetPacing.target.revenueTarget
+                                )
+                              )} above goal`
+                            : targetPacing.isPastMonth
+                            ? `Shortfall ${fmtMoney(targetPacing.revenueRemaining)} at month close`
+                            : `Need ${fmtMoney(targetPacing.requiredDailyRunRate)}/day for ${
+                                targetPacing.daysRemaining
+                              } remaining day${targetPacing.daysRemaining === 1 ? '' : 's'}`}
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          Avg {fmtMoney(targetPacing.actualDailyAvg)}/day
+                          {targetPacing.isCurrentMonth && (
+                            <>
+                              {' '}· Today {fmtMoney(targetPacing.todayNetRevenue)} · Est. close{' '}
+                              {fmtMoney(targetPacing.projectedMonthEnd)}
+                            </>
+                          )}
+                        </p>
+                      </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setIsTargetModalOpen(true)}
-                      className="text-xs font-medium text-blue-600 hover:text-blue-700 cursor-pointer whitespace-nowrap"
-                    >
-                      Edit Goal
-                    </button>
+
+                    {/* Column 2: Gross Margin Floor */}
+                    <div className="p-4 sm:p-5 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-slate-500">
+                          Gross Margin Floor
+                        </span>
+                        <span
+                          className={`inline-flex items-center gap-1 text-xs font-semibold ${
+                            !canViewCost || targetPacing.marginStatus === 'unset'
+                              ? 'text-slate-500'
+                              : targetPacing.marginStatus === 'on_track'
+                              ? 'text-emerald-700'
+                              : targetPacing.marginStatus === 'watch'
+                              ? 'text-amber-700'
+                              : 'text-rose-700'
+                          }`}
+                        >
+                          {canViewCost && targetPacing.marginStatus !== 'unset' && (
+                            targetPacing.marginStatus === 'on_track' ? (
+                              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                            ) : (
+                              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                            )
+                          )}
+                          <span>
+                            {!canViewCost
+                              ? 'Restricted'
+                              : targetPacing.marginStatus === 'unset'
+                              ? 'No Floor Set'
+                              : targetPacing.marginStatus === 'on_track'
+                              ? 'Above Floor'
+                              : targetPacing.marginStatus === 'watch'
+                              ? 'Below Floor'
+                              : 'Margin Alert'}
+                          </span>
+                        </span>
+                      </div>
+
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className="text-lg sm:text-xl font-bold text-slate-900 font-mono tabular-nums tracking-tight">
+                          {canViewCost ? `${targetPacing.mtdGrossMarginPct.toFixed(1)}%` : '••••'}
+                        </p>
+                        <span className="text-xs font-mono tabular-nums text-slate-500">
+                          Floor {targetPacing.target.grossMarginTargetPct.toFixed(1)}%
+                        </span>
+                      </div>
+
+                      <div className="text-xs text-slate-600 font-mono tabular-nums space-y-1">
+                        {canViewCost ? (
+                          <>
+                            <p>
+                              MTD Gross Profit {fmtMoney(targetPacing.mtdGrossProfit)} ·{' '}
+                              {targetPacing.mtdGrossMarginPct -
+                                targetPacing.target.grossMarginTargetPct >=
+                              0
+                                ? `+${(
+                                    targetPacing.mtdGrossMarginPct -
+                                    targetPacing.target.grossMarginTargetPct
+                                  ).toFixed(1)} pts`
+                                : `${(
+                                    targetPacing.mtdGrossMarginPct -
+                                    targetPacing.target.grossMarginTargetPct
+                                  ).toFixed(1)} pts`}
+                            </p>
+                            {targetPacing.mtdNetRevenue > 0 &&
+                              targetPacing.mtdCostCoveragePct < 50 && (
+                                <p className="text-[11px] text-amber-700">
+                                  Cost verified on only {targetPacing.mtdCostCoveragePct.toFixed(0)}% of MTD sales
+                                </p>
+                              )}
+                          </>
+                        ) : (
+                          <p className="text-[11px] text-slate-500">
+                            Margin visibility restricted by role permission
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Column 3: Discount Ceiling & Leakage */}
+                    <div className="p-4 sm:p-5 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-slate-500">
+                          Discount Ceiling &amp; Leakage
+                        </span>
+                        <span
+                          className={`inline-flex items-center gap-1 text-xs font-semibold ${
+                            targetPacing.discountStatus === 'unset'
+                              ? 'text-slate-500'
+                              : targetPacing.discountStatus === 'healthy'
+                              ? 'text-emerald-700'
+                              : targetPacing.discountStatus === 'watch'
+                              ? 'text-amber-700'
+                              : 'text-rose-700'
+                          }`}
+                        >
+                          {targetPacing.discountStatus === 'healthy' ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                          ) : targetPacing.discountStatus === 'watch' ? (
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                          ) : targetPacing.discountStatus === 'breached' ? (
+                            <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                          ) : null}
+                          <span>
+                            {targetPacing.discountStatus === 'unset'
+                              ? 'No Ceiling Set'
+                              : targetPacing.discountStatus === 'healthy'
+                              ? 'Within Ceiling'
+                              : targetPacing.discountStatus === 'watch'
+                              ? 'Near Ceiling'
+                              : 'Ceiling Exceeded'}
+                          </span>
+                        </span>
+                      </div>
+
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className="text-lg sm:text-xl font-bold text-slate-900 font-mono tabular-nums tracking-tight">
+                          {targetPacing.discountLeakagePct.toFixed(2)}%
+                        </p>
+                        <span className="text-xs font-mono tabular-nums text-slate-500">
+                          Max {targetPacing.target.maxDiscountPct.toFixed(1)}%
+                        </span>
+                      </div>
+
+                      <div className="text-xs text-slate-600 font-mono tabular-nums space-y-1">
+                        <p>
+                          Discounts {fmtMoney(targetPacing.mtdDiscountsTotal)} on{' '}
+                          {fmtMoney(targetPacing.mtdGrossSales)} gross
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          {targetPacing.discountBreached
+                            ? 'Register warnings active for branch discounts'
+                            : 'Monitored live during checkout discounts'}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setIsTargetModalOpen(true)}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-blue-600 transition cursor-pointer whitespace-nowrap"
-                  >
-                    <Target className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Set {activePeriodKey} Revenue &amp; Margin Target</span>
-                  </button>
-                )}
-              </div>
-            </div>
+              )}
+
+                  {/* Multi-Branch Target Leaderboard (Owner view when viewing All Locations) */}
+                  {branchTargetScorecards.length > 0 && (
+                    <div className="border-t border-slate-200 overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-semibold text-slate-500">
+                            <th className="py-2.5 px-4">Branch</th>
+                            <th className="py-2.5 px-3 text-right">Monthly Goal</th>
+                            <th className="py-2.5 px-3 text-right">MTD Achieved</th>
+                            <th className="py-2.5 px-3 text-right">Required / Day</th>
+                            {canViewCost && <th className="py-2.5 px-3 text-right">Gross Margin</th>}
+                            <th className="py-2.5 px-3 text-right">Discount Rate</th>
+                            {canEditAnalyticsTargets && (
+                              <th className="py-2.5 px-4 text-right">Target</th>
+                            )}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-xs">
+                          {branchTargetScorecards.map((row) => (
+                            <tr
+                              key={row.locationId}
+                              onClick={() => {
+                                if (!lockedAnalyticsLocationId) {
+                                  setSelectedLocationId(row.locationId);
+                                  setActiveSavedViewId(null);
+                                }
+                              }}
+                              className="hover:bg-slate-50 transition cursor-pointer"
+                            >
+                              <td className="py-2.5 px-4 font-semibold text-slate-900">
+                                {row.locationName}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-mono tabular-nums text-slate-700">
+                                {row.hasExplicitTarget && row.target
+                                  ? fmtMoney(row.target.revenueTarget)
+                                  : 'Unset'}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-mono tabular-nums">
+                                <span className="font-semibold text-slate-900">
+                                  {fmtMoney(row.pacing.mtdNetRevenue)}
+                                </span>
+                                {row.hasExplicitTarget && (
+                                  <span
+                                    className={`ml-1.5 text-[11px] ${
+                                      row.pacing.revenueStatus === 'achieved' ||
+                                      row.pacing.revenueStatus === 'on_track'
+                                        ? 'text-emerald-700'
+                                        : row.pacing.revenueStatus === 'watch'
+                                        ? 'text-amber-700'
+                                        : 'text-rose-700'
+                                    }`}
+                                  >
+                                    ({row.pacing.revenuePct.toFixed(0)}%)
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-mono tabular-nums font-semibold text-slate-900">
+                                {!row.hasExplicitTarget
+                                  ? '—'
+                                  : row.pacing.revenueRemaining <= 0
+                                  ? 'Goal Met'
+                                  : `${fmtMoney(row.pacing.requiredDailyRunRate)}/d`}
+                              </td>
+                              {canViewCost && (
+                                <td
+                                  className={`py-2.5 px-3 text-right font-mono tabular-nums ${
+                                    row.pacing.marginStatus === 'behind'
+                                      ? 'text-rose-700 font-semibold'
+                                      : row.pacing.marginStatus === 'watch'
+                                      ? 'text-amber-700 font-semibold'
+                                      : 'text-slate-700'
+                                  }`}
+                                >
+                                  {row.pacing.mtdGrossMarginPct.toFixed(1)}%
+                                </td>
+                              )}
+                              <td
+                                className={`py-2.5 px-3 text-right font-mono tabular-nums ${
+                                  row.pacing.discountBreached
+                                    ? 'text-rose-700 font-semibold'
+                                    : row.pacing.discountStatus === 'watch'
+                                    ? 'text-amber-700 font-semibold'
+                                    : 'text-slate-700'
+                                }`}
+                              >
+                                {row.pacing.discountLeakagePct.toFixed(2)}%
+                              </td>
+                              {canEditAnalyticsTargets && (
+                                <td
+                                  className="py-2.5 px-4 text-right"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => openTargetModalForLocation(row.locationId)}
+                                    className="text-xs font-semibold text-blue-600 hover:text-blue-700 cursor-pointer whitespace-nowrap"
+                                  >
+                                    {row.hasExplicitTarget ? 'Edit' : 'Set Target'}
+                                  </button>
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+            </section>
 
             {/* ----------------------------------------------------------------
                 2. Executive P&L 4-Column Hairline Grid (Single Elevation)
@@ -1102,11 +1556,12 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                         <button
                           key={b.locationId}
                           type="button"
-                          onClick={() =>
+                          onClick={() => {
+                            if (lockedAnalyticsLocationId) return;
                             setSelectedLocationId((prev) =>
                               prev === b.locationId ? 'all' : b.locationId
-                            )
-                          }
+                            );
+                          }}
                           className={`w-full py-2 flex items-center justify-between text-left hover:bg-slate-50 px-1.5 -mx-1.5 rounded transition cursor-pointer ${
                             selectedLocationId === b.locationId ? 'bg-blue-50/70' : ''
                           }`}
@@ -1781,7 +2236,9 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
         isOpen={isTargetModalOpen}
         onClose={() => setIsTargetModalOpen(false)}
         locations={locations}
-        selectedLocationId={selectedLocationId}
+        selectedLocationId={targetModalLocationId}
+        initialPeriodKey={targetPeriodKey}
+        canEdit={canEditAnalyticsTargets}
         currency={currency}
         existingTargets={analyticsTargets}
         onSave={saveAnalyticsTarget}

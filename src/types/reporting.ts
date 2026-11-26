@@ -202,6 +202,48 @@ export interface AnalyticsTarget {
   updatedByEmail?: string;
 }
 
+export interface MonthlyTargetPacing {
+  periodKey: string;
+  locationId: string;
+  target: AnalyticsTarget | null;
+  isStoreFallback: boolean;
+  hasRevenueTarget: boolean;
+  isCurrentMonth: boolean;
+  isPastMonth: boolean;
+  isFutureMonth: boolean;
+  daysInMonth: number;
+  daysElapsed: number;
+  daysRemaining: number;
+  mtdNetRevenue: number;
+  mtdGrossSales: number;
+  mtdDiscountsTotal: number;
+  mtdGrossProfit: number;
+  mtdGrossMarginPct: number;
+  mtdCostCoveragePct: number;
+  todayNetRevenue: number;
+  revenuePct: number;
+  expectedPacePct: number;
+  revenueRemaining: number;
+  actualDailyAvg: number;
+  requiredDailyRunRate: number;
+  baselineDailyTarget: number;
+  projectedMonthEnd: number;
+  revenueStatus: 'achieved' | 'on_track' | 'watch' | 'behind' | 'unset';
+  marginStatus: 'on_track' | 'watch' | 'behind' | 'unset';
+  discountLeakagePct: number;
+  discountStatus: 'healthy' | 'watch' | 'breached' | 'unset';
+  discountBreached: boolean;
+}
+
+export interface BranchTargetScorecardRow {
+  locationId: string;
+  locationName: string;
+  code: string;
+  target: AnalyticsTarget | null;
+  hasExplicitTarget: boolean;
+  pacing: MonthlyTargetPacing;
+}
+
 export interface AnalyticsSavedView {
   id: string;
   businessId: string;

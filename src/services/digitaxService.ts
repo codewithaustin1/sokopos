@@ -137,6 +137,7 @@ class DigitaxService {
     includeJson?: boolean;
     environment?: 'sandbox' | 'production';
     expectedTaxPin?: string;
+    businessId?: string;
   } = {}): Promise<Record<string, string>> {
     const headers: Record<string, string> = {};
     if (options.includeJson) {
@@ -147,6 +148,9 @@ class DigitaxService {
     }
     if (options.expectedTaxPin) {
       headers['X-Tenant-Tax-Pin'] = options.expectedTaxPin;
+    }
+    if (options.businessId) {
+      headers['X-Business-Id'] = options.businessId;
     }
     const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
     if (idToken) {
@@ -162,6 +166,7 @@ class DigitaxService {
       includeJson?: boolean;
       environment?: 'sandbox' | 'production';
       expectedTaxPin?: string;
+      businessId?: string;
     } = {}
   ): Promise<T> {
     let res: Response;
@@ -203,6 +208,41 @@ class DigitaxService {
       '/api/digitax/etims-info',
       { method: 'GET' },
       { environment }
+    );
+  }
+
+  /**
+   * Verify store KRA PIN format, anti-placeholder check, and Digitax Control Unit alignment
+   */
+  async verifyTaxPin(params: {
+    taxPin: string;
+    businessId?: string;
+    environment?: 'sandbox' | 'production';
+  }): Promise<{
+    success: boolean;
+    validFormat: boolean;
+    isPlaceholder: boolean;
+    matchedCuPin: boolean;
+    remoteCuPin: string | null;
+    status: 'verified' | 'mismatch' | 'unverified' | 'sandbox_placeholder';
+    verifiedAt?: string;
+    normalizedPin?: string;
+    message?: string;
+  }> {
+    return this.requestJson(
+      '/api/digitax/verify-tax-pin',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          taxPin: params.taxPin,
+          businessId: params.businessId,
+        }),
+      },
+      {
+        includeJson: true,
+        environment: params.environment,
+        businessId: params.businessId,
+      }
     );
   }
 
@@ -454,7 +494,7 @@ class DigitaxService {
    */
   async createSale(
     params: DigitaxSalePayload,
-    options: { environment?: 'sandbox' | 'production'; expectedTaxPin?: string } = {}
+    options: { environment?: 'sandbox' | 'production'; expectedTaxPin?: string; businessId?: string } = {}
   ): Promise<DigitaxSaleResponse> {
     return this.requestJson<DigitaxSaleResponse>(
       '/api/digitax/sales',
@@ -469,6 +509,7 @@ class DigitaxService {
         includeJson: true,
         environment: options.environment,
         expectedTaxPin: options.expectedTaxPin,
+        businessId: options.businessId,
       }
     );
   }
@@ -515,7 +556,7 @@ class DigitaxService {
    */
   async createCreditNote(
     params: DigitaxCreditNotePayload,
-    options: { environment?: 'sandbox' | 'production'; expectedTaxPin?: string } = {}
+    options: { environment?: 'sandbox' | 'production'; expectedTaxPin?: string; businessId?: string } = {}
   ): Promise<DigitaxCreditNoteResponse> {
     return this.requestJson<DigitaxCreditNoteResponse>(
       '/api/digitax/credit-notes',
@@ -527,6 +568,7 @@ class DigitaxService {
         includeJson: true,
         environment: options.environment,
         expectedTaxPin: options.expectedTaxPin,
+        businessId: options.businessId,
       }
     );
   }

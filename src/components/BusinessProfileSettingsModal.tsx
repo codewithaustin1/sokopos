@@ -72,6 +72,8 @@ import {
   getRequiredTierForBranchCount,
   isQuotaAtOrAboveLimit,
 } from '../utils/subscriptionEntitlements';
+import { validateKraPinStrict } from '../utils/privacyAndKraSecurity';
+import { digitaxService } from '../services/digitaxService';
 
 export type BusinessSettingsTabId =
   | 'profile'
@@ -285,6 +287,14 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
   const [profileTaxNumber, setProfileTaxNumber] = useState(currentBusiness?.taxNumber || '');
   const [profileCurrency, setProfileCurrency] = useState(currentBusiness?.currency || 'KES');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [taxPinError, setTaxPinError] = useState<string | null>(null);
+  const [isVerifyingTaxPin, setIsVerifyingTaxPin] = useState(false);
+  const [cuPinResult, setCuPinResult] = useState<{
+    status: 'verified' | 'mismatch' | 'unverified' | 'sandbox_placeholder';
+    remoteCuPin?: string | null;
+    message?: string;
+    verifiedAt?: string;
+  } | null>(null);
 
   // Store Branding Logo Upload State
   const brandLogoInputRef = React.useRef<HTMLInputElement>(null);
@@ -342,33 +352,134 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
   }, [currentBusiness]);
 
   const handleSaveReceiptBranding = () => {
+    const effectiveEnv = currentBusiness?.taxSettings?.digitaxEnvironment || 'sandbox';
+    const pinCheck = validateKraPinStrict(receiptTaxPin, {
+      required: false,
+      allowPlaceholderInSandbox: effectiveEnv === 'sandbox',
+    });
+    if (!pinCheck.isValid) {
+      showToast(pinCheck.reason || 'Invalid KRA eTIMS Tax PIN.', 'error');
+      return;
+    }
+    const cleanPin = pinCheck.normalized || '';
     updateBusinessProfile({
-      taxNumber: receiptTaxPin.trim(),
+      taxNumber: cleanPin,
+      ...(currentBusiness?.taxSettings
+        ? {
+            taxSettings: {
+              ...currentBusiness.taxSettings,
+              taxNumber: cleanPin,
+              taxPinVerificationStatus: pinCheck.isPlaceholder ? 'sandbox_placeholder' : 'unverified',
+            },
+          }
+        : {}),
       hardwareSettings: {
         ...(currentBusiness?.hardwareSettings || {}),
         printerHeaderNote: receiptHeaderNote.trim(),
         printerFooterNote: receiptFooterNote.trim(),
       },
     });
-    showToast('Receipt branding and tax settings saved successfully!', 'success');
+  };
+
+  const handleVerifyStoreKraPin = async () => {
+    setTaxPinError(null);
+    const effectiveEnv = currentBusiness?.taxSettings?.digitaxEnvironment || 'sandbox';
+    const localCheck = validateKraPinStrict(profileTaxNumber, {
+      required: true,
+      allowPlaceholderInSandbox: effectiveEnv === 'sandbox',
+    });
+    if (!localCheck.isValid || !localCheck.normalized) {
+      setTaxPinError(localCheck.reason || 'Enter a valid Kenyan KRA PIN before verifying.');
+      showToast(localCheck.reason || 'Invalid KRA PIN format.', 'error');
+      return;
+    }
+
+    setIsVerifyingTaxPin(true);
+    try {
+      const res = await digitaxService.verifyTaxPin({
+        taxPin: localCheck.normalized,
+        businessId: currentBusiness?.id,
+        environment: effectiveEnv,
+      });
+      setCuPinResult({
+        status: res.status,
+        remoteCuPin: res.remoteCuPin,
+        message: res.message,
+        verifiedAt: res.verifiedAt,
+      });
+      if (res.status === 'verified' && currentBusiness?.taxSettings) {
+        updateBusinessProfile({
+          taxNumber: localCheck.normalized,
+          taxSettings: {
+            ...currentBusiness.taxSettings,
+            taxNumber: localCheck.normalized,
+            taxPinVerificationStatus: 'verified',
+            taxPinVerifiedAt: res.verifiedAt || new Date().toISOString(),
+            taxPinVerifiedCuPin: res.remoteCuPin || localCheck.normalized,
+          },
+        });
+      }
+      showToast(res.message || 'Store KRA PIN checked.', res.status === 'verified' ? 'success' : 'info');
+    } catch (err: any) {
+      const msg = err?.message || 'KRA PIN verification failed.';
+      setTaxPinError(msg);
+      if (String(err?.code || '') === 'TAX_PIN_MISMATCH') {
+        const cuMatch = msg.match(/\(([AP]\d{9}[A-Z])\)/);
+        setCuPinResult({
+          status: 'mismatch',
+          remoteCuPin: cuMatch ? cuMatch[1] : null,
+          message: msg,
+        });
+      }
+      showToast(msg, 'error');
+    } finally {
+      setIsVerifyingTaxPin(false);
+    }
   };
 
   // Handle Profile Update
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    setTaxPinError(null);
     if (!profileName.trim()) {
       showToast('Business name cannot be empty', 'error');
       return;
     }
+    const effectiveEnv = currentBusiness?.taxSettings?.digitaxEnvironment || 'sandbox';
+    const pinCheck = validateKraPinStrict(profileTaxNumber, {
+      required: effectiveEnv === 'production',
+      allowPlaceholderInSandbox: effectiveEnv === 'sandbox',
+    });
+    if (!pinCheck.isValid) {
+      setTaxPinError(pinCheck.reason || 'Invalid Store KRA PIN.');
+      showToast(pinCheck.reason || 'Invalid Store KRA PIN.', 'error');
+      return;
+    }
+
     setIsSavingProfile(true);
     try {
+      const cleanPin = pinCheck.normalized || '';
+      const nextStatus =
+        cuPinResult?.status === 'verified' && cuPinResult.remoteCuPin === cleanPin
+          ? 'verified'
+          : pinCheck.isPlaceholder
+          ? 'sandbox_placeholder'
+          : 'unverified';
       updateBusinessProfile({
         name: profileName.trim(),
         code: profileCode.trim().toUpperCase(),
-        taxNumber: profileTaxNumber.trim(),
+        taxNumber: cleanPin,
         currency: profileCurrency,
+        ...(currentBusiness?.taxSettings
+          ? {
+              taxSettings: {
+                ...currentBusiness.taxSettings,
+                taxNumber: cleanPin,
+                taxPinVerificationStatus: nextStatus,
+              },
+            }
+          : {}),
       });
-      showToast('Business profile updated successfully', 'success');
     } catch {
       showToast('Failed to update business profile', 'error');
     } finally {
@@ -977,22 +1088,73 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                     </div>
 
                     <div>
-                      <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center justify-between mb-1.5 gap-2">
                         <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
                           Tax / KRA PIN / VAT Number
                         </label>
-                        <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                          Digitax eTIMS
-                        </span>
+                        <button
+                          type="button"
+                          onClick={handleVerifyStoreKraPin}
+                          disabled={isVerifyingTaxPin}
+                          className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer disabled:opacity-50"
+                        >
+                          {isVerifyingTaxPin ? 'Checking CU...' : 'Verify with eTIMS CU'}
+                        </button>
                       </div>
                       <input
                         id="input-business-tax"
                         type="text"
+                        maxLength={11}
                         value={profileTaxNumber}
-                        onChange={(e) => setProfileTaxNumber(e.target.value)}
+                        onChange={(e) => {
+                          setProfileTaxNumber(e.target.value.toUpperCase());
+                          setTaxPinError(null);
+                          setCuPinResult(null);
+                        }}
                         className="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase"
-                        placeholder="e.g., P051234567Z"
+                        placeholder="e.g., A011001890C"
                       />
+                      {taxPinError && (
+                        <p className="mt-1 text-[11px] font-medium text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 shrink-0" />
+                          <span>{taxPinError}</span>
+                        </p>
+                      )}
+                      {!taxPinError && (cuPinResult || currentBusiness?.taxSettings?.taxPinVerificationStatus) && (
+                        <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                          {(cuPinResult?.status || currentBusiness?.taxSettings?.taxPinVerificationStatus) === 'verified' ? (
+                            <span className="text-emerald-700 dark:text-emerald-400 font-medium inline-flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3 shrink-0" />
+                              <span>Verified against Digitax CU</span>
+                            </span>
+                          ) : (cuPinResult?.status || currentBusiness?.taxSettings?.taxPinVerificationStatus) === 'mismatch' ? (
+                            <span className="text-rose-600 dark:text-rose-400 font-medium inline-flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3 shrink-0" />
+                              <span>Mismatch with active CU PIN ({cuPinResult?.remoteCuPin || 'check Tax tab'})</span>
+                            </span>
+                          ) : (cuPinResult?.status || currentBusiness?.taxSettings?.taxPinVerificationStatus) === 'sandbox_placeholder' ? (
+                            <span className="text-amber-700 dark:text-amber-400 font-medium">
+                              Sandbox test PIN · Blocked in live production
+                            </span>
+                          ) : (
+                            <span className="text-slate-500 dark:text-slate-400">
+                              Format valid · Click &ldquo;Verify with eTIMS CU&rdquo; to lock
+                            </span>
+                          )}
+                          {cuPinResult?.status === 'mismatch' && cuPinResult.remoteCuPin && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setProfileTaxNumber(cuPinResult.remoteCuPin!);
+                                setTaxPinError(null);
+                              }}
+                              className="text-blue-600 dark:text-blue-400 font-semibold hover:underline cursor-pointer"
+                            >
+                              Sync CU PIN ({cuPinResult.remoteCuPin})
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div>
@@ -2711,11 +2873,33 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                         </label>
                         <input
                           type="text"
+                          maxLength={11}
                           value={receiptTaxPin}
-                          onChange={(e) => setReceiptTaxPin(e.target.value)}
-                          placeholder="e.g. P051234567X"
-                          className="w-full px-3 py-2 text-xs font-mono font-medium rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                          onChange={(e) => setReceiptTaxPin(e.target.value.toUpperCase())}
+                          placeholder="e.g. A011001890C"
+                          className="w-full px-3 py-2 text-xs font-mono font-medium uppercase rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
                         />
+                        {(() => {
+                          const rCheck = validateKraPinStrict(receiptTaxPin, {
+                            required: false,
+                            allowPlaceholderInSandbox: (currentBusiness?.taxSettings?.digitaxEnvironment || 'sandbox') === 'sandbox',
+                          });
+                          if (!rCheck.isValid) {
+                            return (
+                              <p className="mt-1 text-[11px] font-medium text-rose-600 dark:text-rose-400">
+                                {rCheck.reason}
+                              </p>
+                            );
+                          }
+                          if (rCheck.isPlaceholder) {
+                            return (
+                              <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+                                Sandbox test PIN (blocked in live production mode).
+                              </p>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
 
                       <div>
@@ -2816,7 +3000,10 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                             {currentLocation.name} · {currentLocation.phone || '+254 700 000000'}
                           </div>
                           <div className="text-[9px] text-slate-500">
-                            KRA PIN: {receiptTaxPin.trim() || 'P051234567X'}
+                            KRA PIN: {receiptTaxPin.trim() || 'Not Configured'}
+                            {currentBusiness?.taxSettings?.taxPinVerificationStatus !== 'verified' && receiptTaxPin.trim()
+                              ? ' (Unverified)'
+                              : ''}
                           </div>
                           {receiptHeaderNote.trim() && (
                             <div className="text-[10px] font-bold text-slate-700 pt-1">
@@ -2864,7 +3051,11 @@ export const BusinessProfileSettingsModal: React.FC<BusinessProfileSettingsViewP
                           ) : (
                             <p>Goods once sold cannot be returned after 7 days.</p>
                           )}
-                          <p className="text-slate-400">Powered by SokoPoS & Digitax eTIMS</p>
+                          <p className="text-slate-400">
+                            {currentBusiness?.taxSettings?.autoTransmitEtims !== false
+                              ? 'Powered by SokoPoS & Digitax eTIMS'
+                              : 'Powered by SokoPoS'}
+                          </p>
                         </div>
                       </div>
                     </div>

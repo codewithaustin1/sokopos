@@ -127,6 +127,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     pricingTiers,
     isAffiliateModalOpen,
     setIsAffiliateModalOpen,
+    isAuthTransitioning,
   } = usePos();
 
   const [activeTab, setActiveTab] = useState<'owner' | 'partner' | 'staff' | 'register'>('owner');
@@ -844,6 +845,18 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       previousFocusRef.current?.focus();
     }, 50);
   };
+
+  // Ensure stale error/verification/OTP states are scrubbed whenever user signs out
+  useEffect(() => {
+    if (!currentUser) {
+      setEmailAuthError(null);
+      setPartnerAuthError(null);
+      setPinError(null);
+      setVerificationError(null);
+      setVerificationFeedback(null);
+      setEnteredPin('');
+    }
+  }, [currentUser]);
 
   useEffect(() => {
     if (checkoutAuthRequested && !currentUser) {
@@ -2755,13 +2768,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
                   <button
                     type="submit"
-                    disabled={isVerifyingLoginOtp || loginOtpCode.length !== 6 || otpExpirySeconds <= 0}
+                    disabled={isAuthTransitioning || isVerifyingLoginOtp || loginOtpCode.length !== 6 || otpExpirySeconds <= 0}
                     className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap"
                   >
-                    {isVerifyingLoginOtp ? (
+                    {isAuthTransitioning || isVerifyingLoginOtp ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Opening your shop...</span>
+                        <span>{isAuthTransitioning ? 'Clearing previous session...' : 'Opening your shop...'}</span>
                       </>
                     ) : (
                       <>
@@ -3474,13 +3487,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
                         <button
                           type="submit"
-                          disabled={isAuthenticatingEmail}
+                          disabled={isAuthTransitioning || isAuthenticatingEmail}
                           className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1 whitespace-nowrap"
                         >
-                          {isAuthenticatingEmail ? (
+                          {isAuthTransitioning || isAuthenticatingEmail ? (
                             <>
                               <Loader2 className="w-4 h-4 animate-spin" />
-                              <span>Opening your shop...</span>
+                              <span>{isAuthTransitioning ? 'Clearing previous session...' : 'Opening your shop...'}</span>
                             </>
                           ) : (
                             <>
@@ -3815,13 +3828,19 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
                   <button
                     type="submit"
-                    disabled={isAuthenticatingPartner}
+                    disabled={isAuthTransitioning || isAuthenticatingPartner}
                     className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1"
                   >
-                    {isAuthenticatingPartner ? (
+                    {isAuthTransitioning || isAuthenticatingPartner ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>{partnerMode === 'register' ? 'Creating account...' : 'Signing in...'}</span>
+                        <span>
+                          {isAuthTransitioning
+                            ? 'Clearing previous session...'
+                            : partnerMode === 'register'
+                            ? 'Creating account...'
+                            : 'Signing in...'}
+                        </span>
                       </>
                     ) : (
                       <span>
@@ -4018,7 +4037,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     <span className="text-xs text-[#556375] font-semibold">Individual cashier PIN</span>
                   )}
                   <span className="text-[11px] text-[#718096]">
-                    {isSubmittingTerminal ? 'Opening your till...' : 'Opens on 4th digit'}
+                    {isAuthTransitioning
+                      ? 'Clearing previous session...'
+                      : isSubmittingTerminal
+                      ? 'Opening your till...'
+                      : 'Opens on 4th digit'}
                   </span>
                 </div>
               </div>
@@ -4168,13 +4191,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
                   <button
                     type="submit"
-                    disabled={isAuthenticatingEmail}
+                    disabled={isAuthTransitioning || isAuthenticatingEmail}
                     className="w-full h-12 bg-[#28a745] hover:bg-[#218838] active:scale-[0.99] disabled:opacity-60 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs mt-1 whitespace-nowrap"
                   >
-                    {isAuthenticatingEmail ? (
+                    {isAuthTransitioning || isAuthenticatingEmail ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Setting up your shop...</span>
+                        <span>{isAuthTransitioning ? 'Clearing previous session...' : 'Setting up your shop...'}</span>
                       </>
                     ) : (
                       <>

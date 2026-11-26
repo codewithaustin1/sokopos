@@ -11,15 +11,25 @@ import {
   Download,
   Wallet,
   Eye,
+  EyeOff,
   Edit2,
   RefreshCw,
   Lock,
+  ShieldCheck,
 } from 'lucide-react';
 import { Customer } from '../types';
 import { usePos } from '../context/PosContext';
 import { CustomerFormModal } from './CustomerFormModal';
 import { CustomerCreditAdjustmentModal } from './CustomerCreditAdjustmentModal';
 import { CustomerDetailModal } from './CustomerDetailModal';
+import {
+  canViewUnmaskedCustomerPii,
+  isCustomerAnonymized,
+  maskPhoneNumber,
+  maskEmailAddress,
+  maskAddress,
+  maskKraPin,
+} from '../utils/privacyAndKraSecurity';
 
 interface CustomerManagementViewProps {
   onAssignCustomerToCart?: (customer: Customer) => void;
@@ -40,10 +50,15 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
     isCustomersLoading,
     entitlements,
     isSuperAdmin,
+    currentUser,
+    logAdminActivity,
     requireCapability,
   } = usePos();
 
   const hasLoyaltyAndCredit = isSuperAdmin || entitlements.capabilities.loyaltyAndStoreCredit;
+  const canRevealPii = canViewUnmaskedCustomerPii(currentUser?.role, isSuperAdmin);
+  const [showUnmaskedContacts, setShowUnmaskedContacts] = useState(false);
+  const isPiiRevealed = canRevealPii && showUnmaskedContacts;
 
   useEffect(() => {
     refreshTenantCustomers(false).catch(() => {});
@@ -171,13 +186,31 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
     onAssignCustomerToCart?.(cust);
   };
 
+  const handleToggleContactReveal = () => {
+    if (!canRevealPii) return;
+    const next = !showUnmaskedContacts;
+    setShowUnmaskedContacts(next);
+    if (next) {
+      logAdminActivity({
+        category: 'customer',
+        action: 'reveal_customer_pii',
+        description: 'Revealed unmasked customer contacts in customer directory',
+        recordType: 'customer_directory',
+        recordId: currentBusiness?.id || 'directory',
+      });
+    }
+  };
+
   const handleExportCsv = () => {
+    const canExportUnmasked = isSuperAdmin || currentUser?.role === 'business_owner';
     const headers = [
       'ID',
       'Name',
       'Phone',
       'Email',
       'Address',
+      'KRA PIN',
+      'DPA Status',
       'Tags',
       'Credit Allowed',
       'Credit Limit',
@@ -189,22 +222,48 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
       'Last Visit',
     ];
 
-    const rows = customers.map((c) => [
-      c.id,
-      `"${c.name.replace(/"/g, '""')}"`,
-      `"${c.phone}"`,
-      `"${c.email || ''}"`,
-      `"${(c.address || '').replace(/"/g, '""')}"`,
-      `"${(c.tags || []).join(', ')}"`,
-      c.isCreditAllowed ? 'Yes' : 'No',
-      c.creditLimit || 0,
-      c.storeCreditBalance || 0,
-      c.loyaltyPoints || 0,
-      c.totalSpent || 0,
-      c.visitCount || 0,
-      c.firstVisitAt || '',
-      c.lastVisitAt || '',
-    ]);
+    const rows = customerList.map((c) => {
+      const anonymized = isCustomerAnonymized(c);
+      const exportPhone = anonymized
+        ? c.phone
+        : canExportUnmasked
+        ? c.phone
+        : maskPhoneNumber(c.phone);
+      const exportEmail = anonymized
+        ? ''
+        : canExportUnmasked
+        ? c.email || ''
+        : maskEmailAddress(c.email);
+      const exportAddress = anonymized
+        ? ''
+        : canExportUnmasked
+        ? c.address || ''
+        : maskAddress(c.address);
+      const exportKraPin = anonymized
+        ? ''
+        : canExportUnmasked
+        ? c.kraPin || ''
+        : maskKraPin(c.kraPin);
+
+      return [
+        c.id,
+        `"${c.name.replace(/"/g, '""')}"`,
+        `"${exportPhone.replace(/"/g, '""')}"`,
+        `"${exportEmail.replace(/"/g, '""')}"`,
+        `"${exportAddress.replace(/"/g, '""')}"`,
+        `"${exportKraPin.replace(/"/g, '""')}"`,
+        anonymized ? 'Anonymized (DPA 2019)' : 'Active',
+        `"${(c.tags || []).join(', ')}"`,
+        c.isCreditAllowed ? 'Yes' : 'No',
+        c.creditLimit || 0,
+        c.storeCreditBalance || 0,
+        c.loyaltyPoints || 0,
+        c.totalSpent || 0,
+        c.visitCount || 0,
+        c.firstVisitAt || '',
+        c.lastVisitAt || '',
+      ];
+    });
 
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -215,7 +274,21 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    showToast('Customer directory exported to CSV', 'success');
+    logAdminActivity({
+      category: 'customer',
+      action: 'export_customers_csv',
+      description: canExportUnmasked
+        ? 'Exported customer directory CSV (owner full access)'
+        : 'Exported customer directory CSV (PII masked)',
+      recordType: 'customer_directory',
+      recordId: currentBusiness?.id || 'directory',
+    });
+    showToast(
+      canExportUnmasked
+        ? 'Customer directory exported to CSV'
+        : 'Customer directory exported to CSV (PII masked)',
+      'success'
+    );
   };
 
   return (
@@ -426,6 +499,26 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
               <option value="recent">Recently Active</option>
             </select>
           </div>
+
+          {canRevealPii && (
+            <button
+              type="button"
+              onClick={handleToggleContactReveal}
+              className={`min-h-[40px] px-3 py-1.5 rounded-lg border text-xs font-semibold inline-flex items-center gap-1.5 transition cursor-pointer shrink-0 whitespace-nowrap ${
+                isPiiRevealed
+                  ? 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100'
+                  : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+              }`}
+              title={
+                isPiiRevealed
+                  ? 'Mask customer phone numbers and contact details'
+                  : 'Reveal full customer phone numbers (audited action)'
+              }
+            >
+              {isPiiRevealed ? <EyeOff className="w-3.5 h-3.5 shrink-0" /> : <Eye className="w-3.5 h-3.5 shrink-0" />}
+              <span>{isPiiRevealed ? 'Hide Contacts' : 'Show Contacts'}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -526,6 +619,12 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
                       const hasDebt = balance < 0;
                       const isSelected = selectedCustomer?.id === cust.id;
                       const creditLimit = cust.creditLimit || 0;
+                      const anonymized = isCustomerAnonymized(cust);
+                      const displayPhone = anonymized
+                        ? cust.phone
+                        : isPiiRevealed
+                        ? cust.phone
+                        : maskPhoneNumber(cust.phone);
 
                       return (
                         <tr
@@ -535,16 +634,24 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
                           }`}
                         >
                           <td className="py-2.5 pl-5 pr-3 align-middle">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCustomerForDetail(cust);
-                                setIsDetailModalOpen(true);
-                              }}
-                              className="font-semibold text-slate-900 hover:text-blue-700 hover:underline text-left cursor-pointer"
-                            >
-                              {cust.name}
-                            </button>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCustomerForDetail(cust);
+                                  setIsDetailModalOpen(true);
+                                }}
+                                className="font-semibold text-slate-900 hover:text-blue-700 hover:underline text-left cursor-pointer"
+                              >
+                                {cust.name}
+                              </button>
+                              {anonymized && (
+                                <span className="text-[11px] font-medium text-slate-500 inline-flex items-center gap-1">
+                                  <ShieldCheck className="w-3 h-3 text-slate-400" />
+                                  Anonymized (DPA 2019)
+                                </span>
+                              )}
+                            </div>
                             {cust.tags && cust.tags.length > 0 && (
                               <div className="text-[11px] text-slate-500 mt-0.5 truncate max-w-[220px]">
                                 {cust.tags.join(' · ')}
@@ -553,7 +660,7 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
                           </td>
 
                           <td className="py-2.5 px-3 align-middle font-mono tabular-nums text-slate-700 whitespace-nowrap">
-                            {cust.phone}
+                            {displayPhone}
                           </td>
 
                           <td className="py-2.5 px-3 align-middle whitespace-nowrap">
@@ -594,19 +701,21 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
 
                           <td className="py-2.5 pl-3 pr-5 align-middle text-right whitespace-nowrap">
                             <div className="inline-flex items-center justify-end gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleAssignAndCheckout(cust)}
-                                className={`min-h-[34px] px-2.5 py-1 rounded-md text-xs font-semibold inline-flex items-center gap-1 transition cursor-pointer ${
-                                  isSelected
-                                    ? 'bg-blue-600 text-white'
-                                    : 'text-blue-700 hover:bg-blue-50'
-                                }`}
-                                title="Assign customer to cart and open checkout"
-                              >
-                                <ShoppingCart className="w-3.5 h-3.5 shrink-0" />
-                                <span>{isSelected ? 'Active' : 'Assign'}</span>
-                              </button>
+                              {!anonymized && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAssignAndCheckout(cust)}
+                                  className={`min-h-[34px] px-2.5 py-1 rounded-md text-xs font-semibold inline-flex items-center gap-1 transition cursor-pointer ${
+                                    isSelected
+                                      ? 'bg-blue-600 text-white'
+                                      : 'text-blue-700 hover:bg-blue-50'
+                                  }`}
+                                  title="Assign customer to cart and open checkout"
+                                >
+                                  <ShoppingCart className="w-3.5 h-3.5 shrink-0" />
+                                  <span>{isSelected ? 'Active' : 'Assign'}</span>
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => {
@@ -632,18 +741,20 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
                               >
                                 <Eye className="w-3.5 h-3.5" />
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setCustomerToEdit(cust);
-                                  setIsFormModalOpen(true);
-                                }}
-                                className="min-w-[34px] min-h-[34px] inline-flex items-center justify-center rounded-md text-slate-500 hover:text-blue-700 hover:bg-blue-50 transition cursor-pointer"
-                                title="Edit Customer Profile"
-                                aria-label={`Edit ${cust.name}`}
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
+                              {!anonymized && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCustomerToEdit(cust);
+                                    setIsFormModalOpen(true);
+                                  }}
+                                  className="min-w-[34px] min-h-[34px] inline-flex items-center justify-center rounded-md text-slate-500 hover:text-blue-700 hover:bg-blue-50 transition cursor-pointer"
+                                  title="Edit Customer Profile"
+                                  aria-label={`Edit ${cust.name}`}
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -661,6 +772,12 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
                 const hasDebt = balance < 0;
                 const isSelected = selectedCustomer?.id === cust.id;
                 const creditLimit = cust.creditLimit || 0;
+                const anonymized = isCustomerAnonymized(cust);
+                const displayPhone = anonymized
+                  ? cust.phone
+                  : isPiiRevealed
+                  ? cust.phone
+                  : maskPhoneNumber(cust.phone);
 
                 return (
                   <article
@@ -673,20 +790,28 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCustomerForDetail(cust);
-                            setIsDetailModalOpen(true);
-                          }}
-                          className="text-sm font-bold text-slate-900 hover:text-blue-700 text-left cursor-pointer"
-                        >
-                          {cust.name}
-                        </button>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCustomerForDetail(cust);
+                              setIsDetailModalOpen(true);
+                            }}
+                            className="text-sm font-bold text-slate-900 hover:text-blue-700 text-left cursor-pointer"
+                          >
+                            {cust.name}
+                          </button>
+                          {anonymized && (
+                            <span className="text-[11px] font-medium text-slate-500 inline-flex items-center gap-1">
+                              <ShieldCheck className="w-3 h-3 text-slate-400" />
+                              Anonymized (DPA 2019)
+                            </span>
+                          )}
+                        </div>
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500 mt-0.5">
                           <span className="inline-flex items-center gap-1 font-mono tabular-nums text-slate-700">
                             <Phone className="w-3 h-3 text-emerald-600 shrink-0" />
-                            {cust.phone}
+                            {displayPhone}
                           </span>
                           <span aria-hidden="true">·</span>
                           <span>
@@ -739,18 +864,20 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
                     </div>
 
                     <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleAssignAndCheckout(cust)}
-                        className={`flex-1 min-h-[44px] px-3 py-2 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                          isSelected
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200'
-                        }`}
-                      >
-                        <ShoppingCart className="w-3.5 h-3.5 shrink-0" />
-                        <span>{isSelected ? 'Active in Cart' : 'Assign'}</span>
-                      </button>
+                      {!anonymized && (
+                        <button
+                          type="button"
+                          onClick={() => handleAssignAndCheckout(cust)}
+                          className={`flex-1 min-h-[44px] px-3 py-2 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                            isSelected
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200'
+                          }`}
+                        >
+                          <ShoppingCart className="w-3.5 h-3.5 shrink-0" />
+                          <span>{isSelected ? 'Active in Cart' : 'Assign'}</span>
+                        </button>
+                      )}
 
                       <button
                         type="button"
@@ -779,18 +906,20 @@ export const CustomerManagementView: React.FC<CustomerManagementViewProps> = ({
                         <Eye className="w-4 h-4" />
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCustomerToEdit(cust);
-                          setIsFormModalOpen(true);
-                        }}
-                        className="min-w-[44px] min-h-[44px] rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 inline-flex items-center justify-center transition cursor-pointer"
-                        title="Edit Customer Profile"
-                        aria-label={`Edit ${cust.name}`}
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
+                      {!anonymized && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomerToEdit(cust);
+                            setIsFormModalOpen(true);
+                          }}
+                          className="min-w-[44px] min-h-[44px] rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 inline-flex items-center justify-center transition cursor-pointer"
+                          title="Edit Customer Profile"
+                          aria-label={`Edit ${cust.name}`}
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </article>
                 );

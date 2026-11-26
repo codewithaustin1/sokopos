@@ -20,6 +20,17 @@ import { getItemDiscountedUnitPrice, formatDiscountBadge } from '../utils/discou
 import { ReceiptShareModal } from './ReceiptShareModal';
 import { generateReceiptPdf } from '../utils/receiptPdfGenerator';
 import { bluetoothPrinterService } from '../services/bluetoothPrinterService';
+import {
+  isEtimsRelayEnabled,
+  isKraQrEnabled,
+  isTransactionEtimsVerified,
+  shouldShowSaleEtimsInfo,
+} from '../utils/etimsDisplay';
+import {
+  maskPhoneNumber,
+  maskKraPin,
+  isPlaceholderOrRepeatedKraPin,
+} from '../utils/privacyAndKraSecurity';
 
 export const ReceiptModal: React.FC = () => {
   const {
@@ -51,6 +62,8 @@ export const ReceiptModal: React.FC = () => {
       currentUser?.isDemoSession ||
       (activeReceipt && isDemoBusinessId(activeReceipt.businessId))
   );
+  const etimsRelayEnabled = isEtimsRelayEnabled(currentBusiness?.taxSettings);
+  const kraQrEnabled = isKraQrEnabled(currentBusiness?.taxSettings);
 
   // Generate KRA eTIMS verification QR code ONLY from a genuinely verified Digitax/KRA URL
   useEffect(() => {
@@ -60,10 +73,9 @@ export const ReceiptModal: React.FC = () => {
     }
 
     const etims = activeReceipt.etimsData;
-    const isVerified =
-      etims?.status === 'COMPLETED' &&
-      Boolean(etims?.isPartnerVerified || etims?.receiptSignature || etims?.cuInvoiceNumber);
-    const qrTargetUrl = isVerified ? etims?.etimsUrl || etims?.offlineUrl || '' : '';
+    const isVerified = isTransactionEtimsVerified(etims);
+    const canShowQr = isVerified && (etimsRelayEnabled ? kraQrEnabled : true);
+    const qrTargetUrl = canShowQr ? etims?.etimsUrl || etims?.offlineUrl || '' : '';
 
     if (!qrTargetUrl) {
       setQrCodeDataUrl('');
@@ -80,7 +92,7 @@ export const ReceiptModal: React.FC = () => {
     })
       .then((url) => setQrCodeDataUrl(url))
       .catch((err) => console.warn('KRA QR Code generation error:', err));
-  }, [activeReceipt, isDemoReceipt]);
+  }, [activeReceipt, isDemoReceipt, etimsRelayEnabled, kraQrEnabled]);
 
   // Dedicated Thermal Receipt Print Handler:
   // Adds print-isolation CSS class, invokes native window.print() or dispatches to Bluetooth, and cleans up
@@ -93,6 +105,7 @@ export const ReceiptModal: React.FC = () => {
         await bluetoothPrinterService.printReceipt(activeReceipt, currentLocation, {
           businessName: currentBusiness?.name,
           format: receiptFormat === 'standard' ? '80mm' : receiptFormat,
+          etimsRelayEnabled,
         });
         showToast('Receipt sent to Bluetooth printer', 'success');
       } catch (err) {
@@ -191,6 +204,7 @@ export const ReceiptModal: React.FC = () => {
       location: currentLocation,
       businessName: currentBusiness?.name,
       businessTaxNumber: currentBusiness?.taxNumber,
+      etimsRelayEnabled,
     });
     const link = document.createElement('a');
     link.href = url;
@@ -230,12 +244,11 @@ export const ReceiptModal: React.FC = () => {
   const isPartiallyRefunded = activeReceipt.status === 'partially_refunded';
   const hasRefunds = (activeReceipt.refunds && activeReceipt.refunds.length > 0) || (activeReceipt.totalRefunded && activeReceipt.totalRefunded > 0);
   const etims = activeReceipt.etimsData;
-  const isEtimsVerified = Boolean(
-    !isDemoReceipt &&
-      etims?.status === 'COMPLETED' &&
-      (etims.isPartnerVerified || etims.receiptSignature || etims.cuInvoiceNumber)
-  );
+  const isEtimsVerified = Boolean(!isDemoReceipt && isTransactionEtimsVerified(etims));
   const isEtimsFailed = Boolean(!isDemoReceipt && etims?.status === 'FAILED');
+  const showEtimsSection = shouldShowSaleEtimsInfo(etims, etimsRelayEnabled, isDemoReceipt);
+  const showDemoEtimsNote = Boolean(isDemoReceipt && etimsRelayEnabled);
+  const showDigitaxFooter = isEtimsVerified || etimsRelayEnabled;
 
   // Paper width styling based on user hardware preference
   const receiptMaxWidthClass =
@@ -348,7 +361,17 @@ export const ReceiptModal: React.FC = () => {
               {currentLocation.name} • {currentLocation.address}
             </p>
             <p className="text-[10px] text-slate-500">
-              KRA PIN: {currentBusiness?.taxNumber || currentLocation.taxId} • Tel: {currentLocation.phone}
+              KRA PIN: {currentBusiness?.taxNumber || currentLocation.taxId}
+              {isDemoReceipt
+                ? ' (Demo)'
+                : isPlaceholderOrRepeatedKraPin(currentBusiness?.taxNumber || currentLocation.taxId)
+                ? ' (Sample PIN)'
+                : currentBusiness?.taxSettings?.taxPinVerificationStatus === 'mismatch'
+                ? ' (CU Mismatch)'
+                : currentBusiness?.taxSettings?.taxPinVerificationStatus === 'unverified'
+                ? ' (Unverified)'
+                : ''}{' '}
+              • Tel: {currentLocation.phone}
             </p>
             {currentBusiness?.hardwareSettings?.printerHeaderNote && (
               <p className="text-[10px] font-bold text-slate-700 pt-0.5">
@@ -394,7 +417,17 @@ export const ReceiptModal: React.FC = () => {
                 {activeReceipt.customerPhone && (
                   <div className="flex justify-between">
                     <span className="text-slate-500">Phone:</span>
-                    <span className="font-mono text-slate-700">{activeReceipt.customerPhone}</span>
+                    <span className="font-mono text-slate-700">
+                      {maskPhoneNumber(activeReceipt.customerPhone)}
+                    </span>
+                  </div>
+                )}
+                {activeReceipt.etimsData?.customerTin && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Buyer PIN:</span>
+                    <span className="font-mono text-slate-700">
+                      {maskKraPin(activeReceipt.etimsData.customerTin)}
+                    </span>
                   </div>
                 )}
 
@@ -682,101 +715,103 @@ export const ReceiptModal: React.FC = () => {
             ) : null}
 
             {/* Honest Fiscal eTIMS & Digitax Status Block */}
-            <div className="mt-2.5 pt-2.5 border-t border-dashed border-slate-200 text-center w-full max-w-[260px] space-y-1">
-              {isEtimsVerified ? (
-                <>
-                  <div className="text-[10px] font-bold text-slate-900 flex items-center justify-center gap-1.5">
-                    <Check className="w-3 h-3 text-emerald-600 shrink-0" />
-                    <span>KRA eTIMS Verified</span>
-                    <span className="text-slate-300" aria-hidden="true">·</span>
-                    <span className="text-blue-600 font-semibold">Digitax</span>
-                  </div>
-                  <div className="text-[9px] font-mono text-slate-600 flex justify-between px-1 tabular-nums">
-                    <span>CU Serial:</span>
-                    <span className="font-bold text-slate-900">{etims?.cuSerialNumber || '—'}</span>
-                  </div>
-                  <div className="text-[9px] font-mono text-slate-600 flex justify-between px-1 tabular-nums">
-                    <span>CU Invoice:</span>
-                    <span className="font-bold text-slate-900">{etims?.cuInvoiceNumber ?? '—'}</span>
-                  </div>
-                  {etims?.receiptNumber && (
+            {(showEtimsSection || showDemoEtimsNote) && (
+              <div className="mt-2.5 pt-2.5 border-t border-dashed border-slate-200 text-center w-full max-w-[260px] space-y-1">
+                {isEtimsVerified ? (
+                  <>
+                    <div className="text-[10px] font-bold text-slate-900 flex items-center justify-center gap-1.5">
+                      <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                      <span>KRA eTIMS Verified</span>
+                      <span className="text-slate-300" aria-hidden="true">·</span>
+                      <span className="text-blue-600 font-semibold">Digitax</span>
+                    </div>
                     <div className="text-[9px] font-mono text-slate-600 flex justify-between px-1 tabular-nums">
-                      <span>Fiscal Receipt:</span>
-                      <span className="font-bold text-slate-900">{etims.receiptNumber}</span>
+                      <span>CU Serial:</span>
+                      <span className="font-bold text-slate-900">{etims?.cuSerialNumber || '—'}</span>
                     </div>
-                  )}
-                  {etims?.receiptSignature && (
-                    <div className="text-[8px] font-mono text-slate-500 truncate px-1 pt-0.5 border-t border-slate-100">
-                      KRA Sig: {etims.receiptSignature}
-                    </div>
-                  )}
-                </>
-              ) : isDemoReceipt ? (
-                <div className="space-y-1">
-                  <div className="text-[10px] font-bold text-slate-700 flex items-center justify-center gap-1.5">
-                    <Clock className="w-3 h-3 text-slate-500 shrink-0" />
-                    <span>Demo Sandbox Receipt</span>
-                  </div>
-                  <p className="text-[9px] font-sans text-slate-500 leading-snug">
-                    Sandbox demonstration only · Not transmitted to KRA eTIMS
-                  </p>
-                </div>
-              ) : isEtimsFailed ? (
-                <div className="space-y-1.5">
-                  <div className="text-[10px] font-bold text-rose-700 flex items-center justify-center gap-1.5">
-                    <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
-                    <span>Fiscal Sync Attention Required</span>
-                  </div>
-                  {etims?.traderInvoiceNumber && (
                     <div className="text-[9px] font-mono text-slate-600 flex justify-between px-1 tabular-nums">
-                      <span>Invoice Ref:</span>
-                      <span className="font-bold text-slate-800">{etims.traderInvoiceNumber}</span>
+                      <span>CU Invoice:</span>
+                      <span className="font-bold text-slate-900">{etims?.cuInvoiceNumber ?? '—'}</span>
                     </div>
-                  )}
-                  {etims?.lastError && (
-                    <p className="text-[9px] font-sans text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1 text-left break-words">
-                      {etims.lastError}
+                    {etims?.receiptNumber && (
+                      <div className="text-[9px] font-mono text-slate-600 flex justify-between px-1 tabular-nums">
+                        <span>Fiscal Receipt:</span>
+                        <span className="font-bold text-slate-900">{etims.receiptNumber}</span>
+                      </div>
+                    )}
+                    {etims?.receiptSignature && (
+                      <div className="text-[8px] font-mono text-slate-500 truncate px-1 pt-0.5 border-t border-slate-100">
+                        KRA Sig: {etims.receiptSignature}
+                      </div>
+                    )}
+                  </>
+                ) : isDemoReceipt ? (
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-bold text-slate-700 flex items-center justify-center gap-1.5">
+                      <Clock className="w-3 h-3 text-slate-500 shrink-0" />
+                      <span>Demo Sandbox Receipt</span>
+                    </div>
+                    <p className="text-[9px] font-sans text-slate-500 leading-snug">
+                      Sandbox demonstration only · Not transmitted to KRA eTIMS
                     </p>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleRetryEtims}
-                    disabled={isRetryingEtims}
-                    className="no-print w-full py-1.5 px-2.5 rounded-lg border border-rose-300 bg-rose-50 hover:bg-rose-100 disabled:opacity-60 text-rose-800 font-sans font-semibold text-[10px] inline-flex items-center justify-center gap-1.5 cursor-pointer transition"
-                  >
-                    <RefreshCw className={`w-3 h-3 ${isRetryingEtims ? 'animate-spin' : ''}`} />
-                    <span>{isRetryingEtims ? 'Retrying KRA Signing...' : 'Retry KRA Signing'}</span>
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  <div className="text-[10px] font-bold text-amber-800 flex items-center justify-center gap-1.5">
-                    <Clock className="w-3 h-3 text-amber-600 shrink-0" />
-                    <span>Pending KRA Fiscalization</span>
                   </div>
-                  <div className="text-[9px] font-mono text-slate-600 flex justify-between px-1 tabular-nums">
-                    <span>Trader Inv:</span>
-                    <span className="font-bold text-slate-800">
-                      {etims?.traderInvoiceNumber || activeReceipt.receiptNumber}
-                    </span>
+                ) : isEtimsFailed ? (
+                  <div className="space-y-1.5">
+                    <div className="text-[10px] font-bold text-rose-700 flex items-center justify-center gap-1.5">
+                      <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
+                      <span>Fiscal Sync Attention Required</span>
+                    </div>
+                    {etims?.traderInvoiceNumber && (
+                      <div className="text-[9px] font-mono text-slate-600 flex justify-between px-1 tabular-nums">
+                        <span>Invoice Ref:</span>
+                        <span className="font-bold text-slate-800">{etims.traderInvoiceNumber}</span>
+                      </div>
+                    )}
+                    {etims?.lastError && (
+                      <p className="text-[9px] font-sans text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1 text-left break-words">
+                        {etims.lastError}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleRetryEtims}
+                      disabled={isRetryingEtims}
+                      className="no-print w-full py-1.5 px-2.5 rounded-lg border border-rose-300 bg-rose-50 hover:bg-rose-100 disabled:opacity-60 text-rose-800 font-sans font-semibold text-[10px] inline-flex items-center justify-center gap-1.5 cursor-pointer transition"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isRetryingEtims ? 'animate-spin' : ''}`} />
+                      <span>{isRetryingEtims ? 'Retrying KRA Signing...' : 'Retry KRA Signing'}</span>
+                    </button>
                   </div>
-                  {etims?.lastError && (
-                    <p className="text-[9px] font-sans text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 text-left break-words">
-                      {etims.lastError}
-                    </p>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleRetryEtims}
-                    disabled={isRetryingEtims}
-                    className="no-print w-full py-1.5 px-2.5 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 disabled:opacity-60 text-amber-900 font-sans font-semibold text-[10px] inline-flex items-center justify-center gap-1.5 cursor-pointer transition"
-                  >
-                    <RefreshCw className={`w-3 h-3 ${isRetryingEtims ? 'animate-spin' : ''}`} />
-                    <span>{isRetryingEtims ? 'Transmitting to KRA...' : 'Retry KRA Signing'}</span>
-                  </button>
-                </div>
-              )}
-            </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <div className="text-[10px] font-bold text-amber-800 flex items-center justify-center gap-1.5">
+                      <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                      <span>Pending KRA Fiscalization</span>
+                    </div>
+                    <div className="text-[9px] font-mono text-slate-600 flex justify-between px-1 tabular-nums">
+                      <span>Trader Inv:</span>
+                      <span className="font-bold text-slate-800">
+                        {etims?.traderInvoiceNumber || activeReceipt.receiptNumber}
+                      </span>
+                    </div>
+                    {etims?.lastError && (
+                      <p className="text-[9px] font-sans text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 text-left break-words">
+                        {etims.lastError}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleRetryEtims}
+                      disabled={isRetryingEtims}
+                      className="no-print w-full py-1.5 px-2.5 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 disabled:opacity-60 text-amber-900 font-sans font-semibold text-[10px] inline-flex items-center justify-center gap-1.5 cursor-pointer transition"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isRetryingEtims ? 'animate-spin' : ''}`} />
+                      <span>{isRetryingEtims ? 'Transmitting to KRA...' : 'Retry KRA Signing'}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Direct External Link to KRA / Digitax portal verification */}
             {isEtimsVerified && (etims?.etimsUrl || etims?.offlineUrl) && (
@@ -796,7 +831,11 @@ export const ReceiptModal: React.FC = () => {
                 {currentBusiness.hardwareSettings.printerFooterNote}
               </p>
             )}
-            <p className="text-[10px] text-slate-400 mt-2">Powered by SokoPoS in partnership with Digitax</p>
+            <p className="text-[10px] text-slate-400 mt-2">
+              {showDigitaxFooter
+                ? 'Powered by SokoPoS in partnership with Digitax'
+                : 'Powered by SokoPoS'}
+            </p>
             <p className="text-[10px] text-slate-600 font-sans font-bold">
               Asante kwa kununua na sisi!
             </p>
@@ -877,6 +916,7 @@ export const ReceiptModal: React.FC = () => {
         location={currentLocation}
         businessName={currentBusiness?.name}
         businessTaxNumber={currentBusiness?.taxNumber}
+        etimsRelayEnabled={etimsRelayEnabled}
         showToast={showToast}
       />
     </div>

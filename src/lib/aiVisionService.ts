@@ -6,7 +6,8 @@ import { resolveApiUrl } from './apiConfig';
 export async function parseSupplierInvoiceWithAi(
   imageBase64: string,
   mimeType: string,
-  existingProducts: Product[]
+  existingProducts: Product[],
+  businessId?: string
 ): Promise<ParsedSupplierInvoice> {
   const strippedBase64 = imageBase64.replace(/^data:[^;]+;base64,/, '');
   const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
@@ -21,6 +22,7 @@ export async function parseSupplierInvoiceWithAi(
     method: 'POST',
     headers,
     body: JSON.stringify({
+      businessId,
       imageBase64: strippedBase64,
       mimeType: mimeType || 'image/jpeg',
       existingProducts: existingProducts.map((p) => ({
@@ -89,7 +91,8 @@ export async function parseSupplierInvoiceWithAi(
 
 export async function parseProductPackageWithAi(
   imageBase64: string,
-  mimeType: string
+  mimeType: string,
+  businessId?: string
 ): Promise<ParsedProductPackage> {
   const strippedBase64 = imageBase64.replace(/^data:[^;]+;base64,/, '');
   const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
@@ -104,6 +107,7 @@ export async function parseProductPackageWithAi(
     method: 'POST',
     headers,
     body: JSON.stringify({
+      businessId,
       imageBase64: strippedBase64,
       mimeType: mimeType || 'image/jpeg',
     }),

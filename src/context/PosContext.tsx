@@ -66,6 +66,16 @@ import {
   deriveKraCreditNoteReasonCode,
   resolveKraTaxTypeCode,
 } from '../utils/etimsFiscalMapper';
+import {
+  ANONYMIZED_CUSTOMER_NAME,
+  buildAnonymizedPhoneToken,
+  clampStringField,
+  isCustomerAnonymized,
+  maskPhoneNumber,
+  redactPiiForLogs,
+  redactPiiInText,
+  validateKraPinStrict,
+} from '../utils/privacyAndKraSecurity';
 import { normalizePathname, resolveLegacyHashToPath } from '../utils/seoConfig';
 import {
   INITIAL_BUSINESSES,
@@ -176,11 +186,13 @@ import {
   saveCollectionRecords,
   saveLargeKvAsset,
   clearAllLargeBrandingKv,
+  clearTenantTerminalCacheKeepOutbox,
   putEntityAndEnqueueOutbox,
   enqueueOutboxMutations,
   removeOutboxEntries,
   getAllOutboxEntries,
   buildOutboxEntry,
+  createOutboxMutationId,
   estimateBrowserStorageQuota,
   getTerminalMeta,
   setTerminalMeta,
@@ -213,6 +225,7 @@ import {
   getItemDiscountedUnitPrice,
 } from '../utils/discountUtils';
 import {
+  CanonicalTierId,
   SubscriptionCapabilityKey,
   SubscriptionEntitlements,
   UpgradePromptRequest,
@@ -235,9 +248,19 @@ import {
 } from '../lib/paymentService';
 import firebaseConfig from '../../firebase-applet-config.json';
 
+export interface ForeignOutboxSummary {
+  count: number;
+  businessIds: string[];
+  dismissed: boolean;
+}
+
 interface PosContextType {
   // Authentication & Multi-tenancy
   currentUser: AuthUser | null;
+  isAuthTransitioning: boolean;
+  sessionEpoch: number;
+  foreignOutboxSummary: ForeignOutboxSummary;
+  dismissForeignOutboxWarning: () => void;
   pendingVerificationEmail: string | null;
   loginWithFirebaseGoogle: (customStoreName?: string) => Promise<boolean>;
   loginWithFirebaseEmailPassword: (
@@ -272,6 +295,10 @@ interface PosContextType {
   updateBusinessStatus: (businessId: string, status: 'active' | 'suspended') => Promise<void>;
   performSystemCleanup: () => Promise<{ removedCount: number; removedBusinesses: string[] }>;
   refreshAllBusinessesForSuperAdmin: (force?: boolean) => Promise<Business[]>;
+  isTenantsLoading: boolean;
+  tenantsLoadError: string | null;
+  isValidBusinessOwnerEmail: (email?: string | null) => boolean;
+  isGoogleEmailAccount: (email?: string | null) => boolean;
   isRealGoogleAccount: (email?: string | null) => boolean;
   requiresLegalConsent: boolean;
   recordMerchantLegalConsent: () => Promise<BusinessLegalConsent>;
@@ -535,6 +562,7 @@ interface PosContextType {
   addCustomer: (customer: Omit<Customer, 'id' | 'businessId' | 'totalSpent' | 'visitCount' | 'firstVisitAt' | 'lastVisitAt' | 'createdAt'>) => Promise<Customer>;
   updateCustomer: (id: string, updates: Partial<Customer>) => Promise<void>;
   deleteCustomer: (id: string) => Promise<boolean>;
+  anonymizeCustomer: (id: string) => Promise<boolean>;
   adjustCustomerCredit: (customerId: string, amountChange: number, reason: string, referenceId?: string) => Promise<void>;
   redeemCustomerLoyaltyPoints: (customerId: string, pointsToRedeem: number) => Promise<boolean>;
   refreshTenantCustomers: (force?: boolean) => Promise<void>;
@@ -573,6 +601,8 @@ interface PosContextType {
   analyticsRollups: AnalyticsDailyRollup[];
   analyticsTargets: AnalyticsTarget[];
   analyticsSavedViews: AnalyticsSavedView[];
+  canEditAnalyticsTargets: boolean;
+  lockedAnalyticsLocationId: string | null;
   isBiSyncing: boolean;
   isBiDataLoading: boolean;
   biLastSyncedAt: string | null;
@@ -783,41 +813,42 @@ const STORAGE_KEYS = {
     `sokopos_held_orders_${bizId || 'default'}_${locId || 'default'}_v1`,
 };
 
-export function isRealGoogleAccount(email?: string | null): boolean {
+const SUPER_ADMIN_UID = 'ulGLrKgcsrWyqcGRJ6DzvHoEYY12';
+
+const BANNED_MOCK_EMAIL_DOMAINS = new Set([
+  'sokopos.co.ke',
+  'quickchoice.co.ke',
+  'example.com',
+  'example.org',
+  'test.com',
+  'demo.com',
+  'dummy.com',
+]);
+
+export function isValidBusinessOwnerEmail(email?: string | null): boolean {
   if (!email) return false;
   const normalized = email.toLowerCase().trim();
-  if (!normalized.includes('@')) return false;
-
-  // Placeholder/demo domains that lack an authentic Google Account
-  const bannedMockDomains = [
-    'sokopos.co.ke',
-    'quickchoice.co.ke',
-    'example.com',
-    'example.org',
-    'test.com',
-    'demo.com',
-    'dummy.com',
-  ];
-  const domain = normalized.split('@')[1];
-  if (bannedMockDomains.includes(domain)) {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(normalized)) return false;
+  const domain = normalized.split('@')[1] || '';
+  if (BANNED_MOCK_EMAIL_DOMAINS.has(domain)) {
     return false;
   }
+  return true;
+}
 
-  // Authentic Google Account standard domains
+export function isGoogleEmailAccount(email?: string | null): boolean {
+  if (!isValidBusinessOwnerEmail(email)) return false;
+  const normalized = (email || '').toLowerCase().trim();
+
   if (
     normalized.endsWith('@gmail.com') ||
-    normalized.endsWith('@googlemail.com')
+    normalized.endsWith('@googlemail.com') ||
+    normalized === SUPER_ADMIN_EMAIL.toLowerCase()
   ) {
     return true;
   }
 
-  // Upfront platform Super-Admin
-  if (normalized === SUPER_ADMIN_EMAIL.toLowerCase()) {
-    return true;
-  }
-
-  // Active Google OAuth verified account
-  if (auth.currentUser?.email && auth.currentUser.email.toLowerCase() === normalized) {
+  if (auth.currentUser?.email && auth.currentUser.email.toLowerCase().trim() === normalized) {
     const isGoogleProvider = auth.currentUser.providerData?.some(
       (p) => p.providerId === 'google.com'
     );
@@ -825,6 +856,11 @@ export function isRealGoogleAccount(email?: string | null): boolean {
   }
 
   return false;
+}
+
+// Backward-compatible export: validates any real owner email (including custom business domains & non-Gmail providers)
+export function isRealGoogleAccount(email?: string | null): boolean {
+  return isValidBusinessOwnerEmail(email);
 }
 
 export function getStableBusinessIdForEmail(email: string): string {
@@ -844,6 +880,20 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Guard prevents default INITIAL_* state from overwriting IndexedDB before boot hydration completes
   const isIdbHydratedRef = useRef<boolean>(false);
+  const authTransitionEpochRef = useRef<number>(0);
+  const isTearingDownSessionRef = useRef<boolean>(false);
+  const activeManualLoginRef = useRef<boolean>(false);
+  const resetClientSessionStateRef = useRef<
+    (options?: {
+      preserveDemoIntent?: boolean;
+      signOutFirebase?: boolean;
+      markLoggedOut?: boolean;
+      preservePendingCheckout?: boolean;
+    }) => Promise<void>
+  >(async () => {});
+  const [isAuthTransitioning, setIsAuthTransitioning] = useState<boolean>(false);
+  const [sessionEpoch, setSessionEpoch] = useState<number>(0);
+  const [isForeignOutboxDismissed, setIsForeignOutboxDismissed] = useState<boolean>(false);
   const [isStorageHydrated, setIsStorageHydrated] = useState<boolean>(false);
   const [outboxItems, setOutboxItems] = useState<OutboxMutationEntry[]>([]);
   const outboxItemsRef = useRef<OutboxMutationEntry[]>(outboxItems);
@@ -982,6 +1032,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [firebaseEmailVerifiedState, setFirebaseEmailVerifiedState] = useState<boolean>(false);
 
   // When logged out or visiting clean, currentUser is null.
+  // Never optimistically trust a cached Firebase AuthUser in localStorage before onAuthStateChanged verifies live auth.
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
     const isExplicitlyLoggedOut = localStorage.getItem(STORAGE_KEYS.IS_LOGGED_OUT) === 'true';
     if (isExplicitlyLoggedOut) {
@@ -990,13 +1041,19 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const saved = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved) as AuthUser;
+        if (parsed?.authProvider === 'firebase') {
+          return null;
+        }
+        return parsed;
       } catch {
         // fallback
       }
     }
     return null;
   });
+  const currentUserRef = useRef<AuthUser | null>(currentUser);
+  currentUserRef.current = currentUser;
 
   useEffect(() => {
     if (currentUser) {
@@ -1013,14 +1070,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const prioritizeAccountAndPurgeConflicts = async (
     userEmail: string,
     displayName?: string,
-    customStoreName?: string
+    customStoreName?: string,
+    options?: { ignoreCachedBusinesses?: boolean }
   ): Promise<{ winner: Business; purgedCount: number; isExistingAccount: boolean }> => {
     const normalizedEmail = userEmail.toLowerCase().trim();
     const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
     const now = new Date().toISOString();
 
-    // Verify strictly against owner's businesses in Firestore (no full-collection scan or blind ID probe on non-existent docs)
-    let candidateBusinesses = [...businesses];
+    // Verify strictly against owner's businesses in Firestore (never inherit stale cached businesses on fresh login)
+    let candidateBusinesses = options?.ignoreCachedBusinesses ? [] : [...businesses];
     const remoteBusinessIds = new Set<string>();
     try {
       const [ownerMatches, superAdminBiz] = await Promise.all([
@@ -1088,7 +1146,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         plan: 'free',
         status: 'active',
         currency: 'KES',
-        taxNumber: `P0${Math.floor(100000000 + Math.random() * 900000000)}Z`,
+        taxNumber: '',
       };
     }
 
@@ -1160,9 +1218,17 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const unsubscribe = onAuthStateChanged(auth, async (fbUser: FirebaseUser | null) => {
       clearTimeout(watchdogTimer);
+      if (isTearingDownSessionRef.current || activeManualLoginRef.current) {
+        return;
+      }
+      const eventEpoch = authTransitionEpochRef.current;
+
       setFirebaseUser(fbUser);
       setFirebaseEmailVerifiedState(Boolean(fbUser?.emailVerified));
       if (!fbUser || !fbUser.email) {
+        if (currentUserRef.current?.authProvider === 'firebase') {
+          setCurrentUser(null);
+        }
         setIsFirebaseAuthLoading(false);
         return;
       }
@@ -1181,8 +1247,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const normalizedEmail = fbUser.email.toLowerCase().trim();
         const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
 
-        // Enforce email verification gate before granting tenant access or writing to Firestore
-        if (!fbUser.emailVerified && !isSuperAdminEmail) {
+        // Enforce email verification gate before granting tenant/super-admin access or querying Firestore
+        if (!fbUser.emailVerified && fbUser.uid !== SUPER_ADMIN_UID) {
           setPendingVerificationEmail(fbUser.email);
           return;
         }
@@ -1190,10 +1256,16 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setPendingVerificationEmail(null);
 
         let tokenResult = await fbUser.getIdTokenResult();
+        if (authTransitionEpochRef.current !== eventEpoch || isTearingDownSessionRef.current || activeManualLoginRef.current) {
+          return;
+        }
         let idToken = tokenResult.token;
         if (fbUser.emailVerified && tokenResult.claims?.email_verified !== true) {
           idToken = await fbUser.getIdToken(true);
           tokenResult = await fbUser.getIdTokenResult();
+          if (authTransitionEpochRef.current !== eventEpoch || isTearingDownSessionRef.current || activeManualLoginRef.current) {
+            return;
+          }
         }
         const expirationTime = new Date(tokenResult.expirationTime).getTime();
 
@@ -1206,8 +1278,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const { winner: matchedBiz } = await prioritizeAccountAndPurgeConflicts(
           normalizedEmail,
           fbUser.displayName || undefined,
-          pendingStoreName
+          pendingStoreName,
+          { ignoreCachedBusinesses: true }
         );
+        if (authTransitionEpochRef.current !== eventEpoch || isTearingDownSessionRef.current || activeManualLoginRef.current) {
+          return;
+        }
 
         const targetBizId = isSuperAdminEmail ? 'biz-upfront' : matchedBiz.id;
 
@@ -1241,10 +1317,19 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           businessId: targetBizId,
           displayName: fbUser.displayName || '',
         });
+        if (authTransitionEpochRef.current !== eventEpoch || isTearingDownSessionRef.current || activeManualLoginRef.current) {
+          return;
+        }
 
+        const prevUid = currentUserRef.current?.firebaseUid || currentUserRef.current?.id || null;
+        isIdbHydratedRef.current = true;
+        setIsForeignOutboxDismissed(false);
         setCurrentUser(authUser);
         setActiveBusinessIdState(targetBizId);
         localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
+        if (prevUid !== fbUser.uid) {
+          setSessionEpoch((prev) => prev + 1);
+        }
       } catch (tokenErr) {
         console.error('Error obtaining Firebase ID token:', tokenErr);
       } finally {
@@ -1262,6 +1347,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // 3. Active Business Scoping
   const [activeBusinessIdState, setActiveBusinessIdState] = useState<string>(() => {
+    const isExplicitlyLoggedOut = localStorage.getItem(STORAGE_KEYS.IS_LOGGED_OUT) === 'true';
+    if (isExplicitlyLoggedOut) {
+      return INITIAL_BUSINESSES[0].id;
+    }
     const saved = localStorage.getItem(STORAGE_KEYS.ACTIVE_BIZ_ID);
     if (saved && saved !== 'biz-soko' && saved !== 'biz-quickmart') return saved;
     return currentUser?.businessId || INITIAL_BUSINESSES[0].id;
@@ -1273,7 +1362,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const unverifiedIds = new Set<string>();
     businesses.forEach((b) => {
-      if (b.id !== 'biz-demo' && (!isRealGoogleAccount(b.ownerEmail) || b.id === 'biz-soko' || b.id === 'biz-quickmart')) {
+      if (b.id !== 'biz-demo' && (!isValidBusinessOwnerEmail(b.ownerEmail) || b.id === 'biz-soko' || b.id === 'biz-quickmart')) {
         unverifiedIds.add(b.id);
       }
     });
@@ -1528,6 +1617,20 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (res.ok) {
         setPricingSyncStatus('synced');
         setPricingSyncError(null);
+        void (async () => {
+          try {
+            const token = await auth.currentUser?.getIdToken();
+            if (!token) return;
+            await fetch(resolveApiUrl('/api/admin/pricing-tiers/invalidate-cache'), {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            });
+          } catch {
+            // Non-blocking server cache invalidation
+          }
+        })();
         const now = Date.now();
         if (toastMessageText && now - lastPricingToastAtRef.current > 2000) {
           lastPricingToastAtRef.current = now;
@@ -1621,6 +1724,64 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     [isSuperAdmin, entitlements.capabilities]
   );
 
+  const verifyTenantQuotaOnServer = useCallback(
+    async (
+      resource: 'branch' | 'product',
+      additionalCount: number = 1,
+      docId?: string
+    ): Promise<{
+      allowed: boolean;
+      offlineFallback?: boolean;
+      code?: string;
+      error?: string;
+      used?: number;
+      limit?: number;
+      requiredTier?: CanonicalTierId;
+    }> => {
+      if (
+        !isOnlineRef.current ||
+        !auth.currentUser ||
+        isSuperAdmin ||
+        isDemoBusinessId(activeBusinessId)
+      ) {
+        return { allowed: true, offlineFallback: true };
+      }
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        if (!idToken) return { allowed: true, offlineFallback: true };
+        const resp = await fetch(resolveApiUrl('/api/entitlements/check-quota'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            businessId: activeBusinessId,
+            resource,
+            additionalCount,
+            docId,
+          }),
+        });
+        if (resp.status === 403) {
+          const data = await resp.json().catch(() => ({}));
+          return {
+            allowed: false,
+            code: typeof data?.code === 'string' ? data.code : 'QUOTA_EXCEEDED',
+            error: typeof data?.error === 'string' ? data.error : undefined,
+            used: typeof data?.used === 'number' ? data.used : undefined,
+            limit: typeof data?.limit === 'number' ? data.limit : undefined,
+            requiredTier: data?.requiredTier ? normalizePlanTier(data.requiredTier) : undefined,
+          };
+        }
+        return { allowed: true };
+      } catch {
+        // Preserve offline-first resilience when network or server is unreachable
+        return { allowed: true, offlineFallback: true };
+      }
+    },
+    [activeBusinessId, isSuperAdmin]
+  );
+
   // Tenant Loyalty Points Configuration (Controlled by Store Owner)
   const loyaltySettings: BusinessLoyaltySettings = useMemo(() => {
     return {
@@ -1676,9 +1837,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         action,
         recordType,
         recordId,
-        description,
-        beforeValue: beforeValue ? JSON.parse(JSON.stringify(beforeValue)) : null,
-        afterValue: afterValue ? JSON.parse(JSON.stringify(afterValue)) : null,
+        description: redactPiiInText(description),
+        beforeValue: beforeValue ? redactPiiForLogs(JSON.parse(JSON.stringify(beforeValue))) : null,
+        afterValue: afterValue ? redactPiiForLogs(JSON.parse(JSON.stringify(afterValue))) : null,
       };
       setSuperAdminAuditLogs((prev) => [newEntry, ...prev]);
     },
@@ -1717,15 +1878,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         businessName: targetBiz?.name || activeBusinessId,
         category: params.category,
         action: params.action,
-        description: params.description,
+        description: redactPiiInText(params.description),
         adminId: params.adminId || currentUser?.id || 'admin-system',
         adminEmail: params.adminEmail || currentUser?.email || (isSuperAdmin ? SUPER_ADMIN_EMAIL : 'admin@sokopos.co.ke'),
         adminName: params.adminName || currentUser?.name || 'Administrator',
         adminRole: params.adminRole || currentUser?.role || 'business_owner',
         recordType: params.recordType || 'general',
         recordId: params.recordId || 'general',
-        beforeValue: params.beforeValue ? JSON.parse(JSON.stringify(params.beforeValue)) : null,
-        afterValue: params.afterValue ? JSON.parse(JSON.stringify(params.afterValue)) : null,
+        beforeValue: params.beforeValue ? redactPiiForLogs(JSON.parse(JSON.stringify(params.beforeValue))) : null,
+        afterValue: params.afterValue ? redactPiiForLogs(JSON.parse(JSON.stringify(params.afterValue))) : null,
         isAdministrative: true,
       };
       setAdminActivityLogs((prev) => [newEntry, ...prev]);
@@ -2270,6 +2431,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       lastSynced: new Date().toISOString(),
       isPendingCloudSync: !isOnline,
     };
+    const shouldVerifyServerQuota =
+      isOnline && Boolean(auth.currentUser) && !isSuperAdmin && !isDemoBusinessId(activeBusinessId);
+
     setAllLocations((prev) => [...prev, newLoc]);
     void queueMutationToOutbox({
       businessId: activeBusinessId,
@@ -2278,20 +2442,91 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       operation: 'upsert',
       payload: newLoc,
       label: `Branch ${newLoc.name}`,
+      immediateDispatch: !shouldVerifyServerQuota,
     });
-    if (isSuperAdmin) {
-      logSuperAdminAction(activeBusinessId, 'location', newLoc.id, 'create', `Created branch ${newLoc.name}`, null, newLoc);
+
+    const finalizeCreatedBranch = () => {
+      if (isSuperAdmin) {
+        logSuperAdminAction(
+          activeBusinessId,
+          'location',
+          newLoc.id,
+          'create',
+          `Created branch ${newLoc.name}`,
+          null,
+          newLoc
+        );
+      }
+      logAdminActivity({
+        category: 'branch',
+        action: 'create_branch',
+        description: `Created branch store ${newLoc.name} (${newLoc.city}, Code: ${newLoc.code})`,
+        recordType: 'location',
+        recordId: newLoc.id,
+        beforeValue: null,
+        afterValue: newLoc,
+      });
+      showToast(`Branch ${newLoc.name} registered`, 'success');
+    };
+
+    if (!shouldVerifyServerQuota) {
+      finalizeCreatedBranch();
+      return;
     }
-    logAdminActivity({
-      category: 'branch',
-      action: 'create_branch',
-      description: `Created branch store ${newLoc.name} (${newLoc.city}, Code: ${newLoc.code})`,
-      recordType: 'location',
-      recordId: newLoc.id,
-      beforeValue: null,
-      afterValue: newLoc,
-    });
-    showToast(`Branch ${newLoc.name} registered`, 'success');
+
+    void (async () => {
+      const quotaCheck = await verifyTenantQuotaOnServer('branch', 1, newLoc.id);
+      if (!quotaCheck.allowed) {
+        setAllLocations((prev) => prev.filter((l) => l.id !== newLoc.id));
+        const outboxId = createOutboxMutationId('locations', newLoc.id);
+        void removeOutboxEntries([outboxId]);
+        setOutboxItems((prev) => prev.filter((o) => o.id !== outboxId));
+        soundFx.playError();
+        if (quotaCheck.code === 'SUBSCRIPTION_SUSPENDED') {
+          showToast(
+            quotaCheck.error ||
+              'Store access is currently suspended. Complete subscription payment to add branches.',
+            'error'
+          );
+        } else {
+          const usedCount = quotaCheck.used ?? locations.length;
+          const limitCount =
+            typeof quotaCheck.limit === 'number' && quotaCheck.limit > 0
+              ? quotaCheck.limit
+              : entitlements.limits.maxBranches;
+          const nextRequiredTier =
+            quotaCheck.requiredTier || getRequiredTierForBranchCount(usedCount + 1);
+          openUpgradePrompt({
+            title: 'Store Branch Limit Reached',
+            description:
+              quotaCheck.error ||
+              `Your ${entitlements.tierName} plan supports up to ${limitCount} store branch${limitCount === 1 ? '' : 'es'}. Upgrade to ${formatTierDisplayName(nextRequiredTier)} to add another branch.`,
+            requiredTier: nextRequiredTier,
+            featureLabel: 'Multi-Branch Store Locations',
+            quotaMetric:
+              limitCount > 0
+                ? {
+                    label: 'Store Branches',
+                    used: usedCount,
+                    limit: limitCount,
+                  }
+                : undefined,
+          });
+        }
+        return;
+      }
+
+      void queueMutationToOutbox({
+        businessId: activeBusinessId,
+        collectionName: 'locations',
+        docId: newLoc.id,
+        operation: 'upsert',
+        payload: newLoc,
+        label: `Branch ${newLoc.name}`,
+        immediateDispatch: true,
+      });
+      finalizeCreatedBranch();
+    })();
   };
 
   const updateLocation = (id: string, updates: Partial<Location>) => {
@@ -3392,6 +3627,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       isPendingCloudSync: !isOnline,
     };
 
+    const shouldVerifyServerQuota =
+      isOnline && Boolean(auth.currentUser) && !isSuperAdmin && !isDemoBusinessId(activeBusinessId);
+
     setAllProducts((prev) => [newProduct, ...prev.filter((p) => p.id !== newProduct.id)]);
     void queueMutationToOutbox({
       businessId: activeBusinessId,
@@ -3400,83 +3638,146 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       operation: 'upsert',
       payload: newProduct,
       label: `Product ${newProduct.name}`,
+      immediateDispatch: !shouldVerifyServerQuota,
     });
 
-    if (isSuperAdmin) {
-      logSuperAdminAction(
-        activeBusinessId,
-        'product',
-        newProduct.id,
-        'create',
-        `Created product ${newProduct.name}`,
-        null,
-        newProduct
-      );
-    }
-    logAdminActivity({
-      category: 'catalog',
-      action: 'create_product',
-      description: `Added catalog product "${newProduct.name}" (SKU: ${newProduct.sku}, Selling Price: ${newProduct.sellingPrice})`,
-      recordType: 'product',
-      recordId: newProduct.id,
-      beforeValue: null,
-      afterValue: newProduct,
-    });
+    const finalizeCreatedProduct = () => {
+      if (isSuperAdmin) {
+        logSuperAdminAction(
+          activeBusinessId,
+          'product',
+          newProduct.id,
+          'create',
+          `Created product ${newProduct.name}`,
+          null,
+          newProduct
+        );
+      }
+      logAdminActivity({
+        category: 'catalog',
+        action: 'create_product',
+        description: `Added catalog product "${newProduct.name}" (SKU: ${newProduct.sku}, Selling Price: ${newProduct.sellingPrice})`,
+        recordType: 'product',
+        recordId: newProduct.id,
+        beforeValue: null,
+        afterValue: newProduct,
+      });
 
-    if (
-      isOnline &&
-      !isDemoBusinessId(activeBusinessId) &&
-      auth.currentUser &&
-      !newProduct.digitaxItemId
-    ) {
-      const env = currentBusiness?.taxSettings?.digitaxEnvironment || 'sandbox';
-      void digitaxService
-        .ensureProductsRegisteredForSale({
-          items: [
-            {
-              productId: newProduct.id,
-              productName: newProduct.name,
-              sku: newProduct.sku,
-              unitPrice: newProduct.sellingPrice,
-              taxRate: newProduct.taxRate,
-              taxTypeCode: newProduct.taxTypeCode,
-              digitaxItemId: newProduct.digitaxItemId,
-            },
-          ],
-          productsCatalog: [newProduct],
-          locationId: currentLocation.id,
-          taxSettings: currentBusiness?.taxSettings,
-          environment: env,
-        })
-        .then(({ registeredProducts }) => {
-          const reg = registeredProducts[0];
-          if (!reg) return;
-          const syncedProd: Product = {
-            ...newProduct,
-            digitaxItemId: reg.digitaxItemId,
-            etimsItemCode: reg.etimsItemCode ?? newProduct.etimsItemCode,
-            taxTypeCode: reg.taxTypeCode,
-            itemClassCode: reg.itemClassCode ?? newProduct.itemClassCode,
-            packageUnitCode: reg.packageUnitCode ?? newProduct.packageUnitCode,
-            quantityUnitCode: reg.quantityUnitCode ?? newProduct.quantityUnitCode,
-            digitaxSyncedAt: reg.digitaxSyncedAt,
-          };
-          setAllProducts((prev) => prev.map((p) => (p.id === syncedProd.id ? syncedProd : p)));
-          void queueMutationToOutbox({
-            businessId: activeBusinessId,
-            collectionName: 'products',
-            docId: syncedProd.id,
-            operation: 'upsert',
-            payload: syncedProd,
-            label: `Digitax SKU ${syncedProd.name}`,
+      if (
+        isOnline &&
+        !isDemoBusinessId(activeBusinessId) &&
+        auth.currentUser &&
+        !newProduct.digitaxItemId
+      ) {
+        const env = currentBusiness?.taxSettings?.digitaxEnvironment || 'sandbox';
+        void digitaxService
+          .ensureProductsRegisteredForSale({
+            items: [
+              {
+                productId: newProduct.id,
+                productName: newProduct.name,
+                sku: newProduct.sku,
+                unitPrice: newProduct.sellingPrice,
+                taxRate: newProduct.taxRate,
+                taxTypeCode: newProduct.taxTypeCode,
+                digitaxItemId: newProduct.digitaxItemId,
+              },
+            ],
+            productsCatalog: [newProduct],
+            locationId: currentLocation.id,
+            taxSettings: currentBusiness?.taxSettings,
+            environment: env,
+          })
+          .then(({ registeredProducts }) => {
+            const reg = registeredProducts[0];
+            if (!reg) return;
+            const syncedProd: Product = {
+              ...newProduct,
+              digitaxItemId: reg.digitaxItemId,
+              etimsItemCode: reg.etimsItemCode ?? newProduct.etimsItemCode,
+              taxTypeCode: reg.taxTypeCode,
+              itemClassCode: reg.itemClassCode ?? newProduct.itemClassCode,
+              packageUnitCode: reg.packageUnitCode ?? newProduct.packageUnitCode,
+              quantityUnitCode: reg.quantityUnitCode ?? newProduct.quantityUnitCode,
+              digitaxSyncedAt: reg.digitaxSyncedAt,
+            };
+            setAllProducts((prev) => prev.map((p) => (p.id === syncedProd.id ? syncedProd : p)));
+            void queueMutationToOutbox({
+              businessId: activeBusinessId,
+              collectionName: 'products',
+              docId: syncedProd.id,
+              operation: 'upsert',
+              payload: syncedProd,
+              label: `Digitax SKU ${syncedProd.name}`,
+            });
+          })
+          .catch(() => {
+            // Silently defer to just-in-time sale registration if Digitax key/network unavailable
           });
-        })
-        .catch(() => {
-          // Silently defer to just-in-time sale registration if Digitax key/network unavailable
-        });
+      }
+
+      showToast(`Product "${newProduct.name}" added`, 'success');
+    };
+
+    if (!shouldVerifyServerQuota) {
+      finalizeCreatedProduct();
+      return newProduct;
     }
 
-    showToast(`Product "${newProduct.name}" added`, 'success');
+    void (async () => {
+      const quotaCheck = await verifyTenantQuotaOnServer('product', 1, newProduct.id);
+      if (!quotaCheck.allowed) {
+        setAllProducts((prev) => prev.filter((p) => p.id !== newProduct.id));
+        const outboxId = createOutboxMutationId('products', newProduct.id);
+        void removeOutboxEntries([outboxId]);
+        setOutboxItems((prev) => prev.filter((o) => o.id !== outboxId));
+        soundFx.playError();
+        if (quotaCheck.code === 'SUBSCRIPTION_SUSPENDED') {
+          showToast(
+            quotaCheck.error ||
+              'Store access is currently suspended. Complete subscription payment to add products.',
+            'error'
+          );
+        } else {
+          const usedCount = quotaCheck.used ?? products.length;
+          const limitCount =
+            typeof quotaCheck.limit === 'number' && quotaCheck.limit > 0
+              ? quotaCheck.limit
+              : entitlements.limits.maxProducts;
+          const nextRequiredTier =
+            quotaCheck.requiredTier || getRequiredTierForProductCount(usedCount + 1);
+          openUpgradePrompt({
+            title: 'SKU Catalog Limit Reached',
+            description:
+              quotaCheck.error ||
+              `Free Advisory accounts allow up to ${limitCount} inventory SKUs (existing items remain readable). Upgrade to ${formatTierDisplayName(nextRequiredTier)} for an unlimited product catalog.`,
+            requiredTier: nextRequiredTier,
+            featureLabel: 'Unlimited Product Catalog',
+            quotaMetric:
+              limitCount > 0
+                ? {
+                    label: 'Inventory SKUs',
+                    used: usedCount,
+                    limit: limitCount,
+                  }
+                : undefined,
+          });
+        }
+        return;
+      }
+
+      void queueMutationToOutbox({
+        businessId: activeBusinessId,
+        collectionName: 'products',
+        docId: newProduct.id,
+        operation: 'upsert',
+        payload: newProduct,
+        label: `Product ${newProduct.name}`,
+        immediateDispatch: true,
+      });
+      finalizeCreatedProduct();
+    })();
+
     return newProduct;
   };
 
@@ -3719,29 +4020,77 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       void enqueueOutboxMutations(entries);
     };
 
+    const finalizeBulkImportLogsAndToast = () => {
+      logAdminActivity({
+        category: 'catalog',
+        action: 'bulk_create_products',
+        description: `Imported ${createdProducts.length} catalog products via CSV`,
+        recordType: 'product',
+        recordId: activeBusinessId,
+      });
+      showToast(
+        `Imported ${createdProducts.length} product${createdProducts.length === 1 ? '' : 's'}`,
+        'success'
+      );
+    };
+
     if (isOnline && auth.currentUser && !isFirestoreQuotaCooldownActive() && !isDemoBusinessId(activeBusinessId)) {
-      batchSaveProductsToFirestore(createdProducts)
-        .then(() => {
-          setAllProducts((prev) =>
-            prev.map((p) => (createdIds.has(p.id) ? { ...p, isPendingCloudSync: false } : p))
-          );
-        })
-        .catch((err) => {
-          console.warn('Firestore bulk product save failed, queuing in outbox:', err);
-          enqueueBulkCreatedProducts();
-        });
+      void (async () => {
+        if (!isSuperAdmin) {
+          const quotaCheck = await verifyTenantQuotaOnServer('product', createdProducts.length);
+          if (!quotaCheck.allowed) {
+            setAllProducts((prev) => prev.filter((p) => !createdIds.has(p.id)));
+            soundFx.playError();
+            if (quotaCheck.code === 'SUBSCRIPTION_SUSPENDED') {
+              showToast(
+                quotaCheck.error ||
+                  'Store access is currently suspended. Complete subscription payment to import products.',
+                'error'
+              );
+            } else {
+              const usedCount = quotaCheck.used ?? products.length;
+              const limitCount =
+                typeof quotaCheck.limit === 'number' && quotaCheck.limit > 0
+                  ? quotaCheck.limit
+                  : entitlements.limits.maxProducts;
+              openUpgradePrompt({
+                title: 'Bulk Import Exceeds SKU Quota',
+                description:
+                  quotaCheck.error ||
+                  `Importing ${createdProducts.length} products exceeds your ${limitCount}-SKU catalog cap.`,
+                requiredTier: quotaCheck.requiredTier || 'starter',
+                featureLabel: 'Unlimited Product Catalog',
+                quotaMetric:
+                  limitCount > 0
+                    ? {
+                        label: 'Inventory SKUs',
+                        used: usedCount,
+                        limit: limitCount,
+                      }
+                    : undefined,
+              });
+            }
+            return;
+          }
+        }
+
+        finalizeBulkImportLogsAndToast();
+        batchSaveProductsToFirestore(createdProducts)
+          .then(() => {
+            setAllProducts((prev) =>
+              prev.map((p) => (createdIds.has(p.id) ? { ...p, isPendingCloudSync: false } : p))
+            );
+          })
+          .catch((err) => {
+            console.warn('Firestore bulk product save failed, queuing in outbox:', err);
+            enqueueBulkCreatedProducts();
+          });
+      })();
     } else {
       enqueueBulkCreatedProducts();
+      finalizeBulkImportLogsAndToast();
     }
 
-    logAdminActivity({
-      category: 'catalog',
-      action: 'bulk_create_products',
-      description: `Imported ${createdProducts.length} catalog products via CSV`,
-      recordType: 'product',
-      recordId: activeBusinessId,
-    });
-    showToast(`Imported ${createdProducts.length} product${createdProducts.length === 1 ? '' : 's'}`, 'success');
     return createdProducts.length;
   };
 
@@ -4124,10 +4473,29 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const addCustomer = async (
     data: Omit<Customer, 'id' | 'businessId' | 'totalSpent' | 'visitCount' | 'firstVisitAt' | 'lastVisitAt' | 'createdAt'>
   ): Promise<Customer> => {
-    const trimmedName = data.name.trim();
-    const trimmedPhone = data.phone.trim();
+    const trimmedName = clampStringField(data.name, 120);
+    const trimmedPhone = clampStringField(data.phone, 32);
     if (!trimmedName || !trimmedPhone) {
       throw new Error('Customer name and phone number are required');
+    }
+
+    const pinCheck = validateKraPinStrict(data.kraPin, {
+      required: false,
+      allowPlaceholderInSandbox: false,
+    });
+    if (!pinCheck.isValid) {
+      throw new Error(pinCheck.reason || 'Invalid buyer KRA PIN.');
+    }
+    if (pinCheck.normalized) {
+      const duplicatePin = allCustomers.find(
+        (c) =>
+          c.businessId === activeBusinessId &&
+          !isCustomerAnonymized(c) &&
+          c.kraPin?.trim().toUpperCase() === pinCheck.normalized
+      );
+      if (duplicatePin) {
+        throw new Error(`KRA PIN ${pinCheck.normalized} is already linked to customer "${duplicatePin.name}".`);
+      }
     }
 
     const openingBalance = data.storeCreditBalance || 0;
@@ -4135,6 +4503,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...data,
       name: trimmedName,
       phone: trimmedPhone,
+      email: clampStringField(data.email, 160),
+      address: clampStringField(data.address, 250),
+      notes: clampStringField(data.notes, 500),
+      kraPin: pinCheck.normalized,
       id: `cust-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
       businessId: activeBusinessId,
       totalSpent: 0,
@@ -4173,7 +4545,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     logAdminActivity({
       category: 'customer',
       action: 'create_customer',
-      description: `Created customer profile: ${newCust.name} (${newCust.phone})`,
+      description: `Created customer profile: ${newCust.name} (${maskPhoneNumber(newCust.phone)})`,
       recordType: 'customer',
       recordId: newCust.id,
       afterValue: newCust,
@@ -4188,9 +4560,43 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const target = allCustomers.find((c) => c.id === id);
     if (!target) return;
 
+    if (isCustomerAnonymized(target) && !updates.isAnonymized && (updates.name || updates.phone || updates.email || updates.kraPin)) {
+      throw new Error('Anonymized customer records cannot have personal identifiers re-attached under Kenya DPA 2019.');
+    }
+
+    let resolvedKraPin = target.kraPin;
+    if (updates.kraPin !== undefined) {
+      const pinCheck = validateKraPinStrict(updates.kraPin, {
+        required: false,
+        allowPlaceholderInSandbox: false,
+      });
+      if (!pinCheck.isValid) {
+        throw new Error(pinCheck.reason || 'Invalid buyer KRA PIN.');
+      }
+      if (pinCheck.normalized) {
+        const duplicatePin = allCustomers.find(
+          (c) =>
+            c.id !== id &&
+            c.businessId === (target.businessId || activeBusinessId) &&
+            !isCustomerAnonymized(c) &&
+            c.kraPin?.trim().toUpperCase() === pinCheck.normalized
+        );
+        if (duplicatePin) {
+          throw new Error(`KRA PIN ${pinCheck.normalized} is already linked to customer "${duplicatePin.name}".`);
+        }
+      }
+      resolvedKraPin = pinCheck.normalized;
+    }
+
     const updatedCust: Customer = {
       ...target,
       ...updates,
+      name: updates.name !== undefined ? clampStringField(updates.name, 120) || target.name : target.name,
+      phone: updates.phone !== undefined ? clampStringField(updates.phone, 32) || target.phone : target.phone,
+      email: updates.email !== undefined ? clampStringField(updates.email, 160) : target.email,
+      address: updates.address !== undefined ? clampStringField(updates.address, 250) : target.address,
+      notes: updates.notes !== undefined ? clampStringField(updates.notes, 500) : target.notes,
+      kraPin: resolvedKraPin,
       updatedAt: new Date().toISOString(),
     };
 
@@ -4222,9 +4628,118 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     showToast(`Customer "${updatedCust.name}" updated`, 'success');
   };
 
+  const anonymizeCustomer = async (id: string): Promise<boolean> => {
+    const target = allCustomers.find((c) => c.id === id);
+    if (!target) return false;
+    const targetBizId = target.businessId || activeBusinessId;
+    const nowIso = new Date().toISOString();
+    const anonymizedPhone = buildAnonymizedPhoneToken(id);
+
+    const anonymizedCust: Customer = {
+      ...target,
+      name: ANONYMIZED_CUSTOMER_NAME,
+      phone: anonymizedPhone,
+      email: undefined,
+      address: undefined,
+      notes: 'Personal identifiers scrubbed under Kenya DPA 2019.',
+      kraPin: undefined,
+      isAnonymized: true,
+      anonymizedAt: nowIso,
+      anonymizedBy: currentUser?.email || currentUser?.name || 'System Admin',
+      updatedAt: nowIso,
+    };
+
+    setAllCustomers((prev) => prev.map((c) => (c.id === id ? anonymizedCust : c)));
+    if (selectedCustomer?.id === id) {
+      setSelectedCustomer(anonymizedCust);
+    }
+
+    // Scrub customer personal fields on historical receipts while keeping totals & eTIMS fiscal signatures intact
+    const affectedTxs: Transaction[] = [];
+    setAllTransactions((prev) =>
+      prev.map((tx) => {
+        if (tx.businessId === targetBizId && tx.customerId === id) {
+          const scrubbedTx: Transaction = {
+            ...tx,
+            customerName: ANONYMIZED_CUSTOMER_NAME,
+            customerPhone: anonymizedPhone,
+            refunds: tx.refunds?.map((ref) => ({
+              ...ref,
+              customerName: ref.customerName ? ANONYMIZED_CUSTOMER_NAME : ref.customerName,
+              customerPhone: ref.customerPhone ? anonymizedPhone : ref.customerPhone,
+            })),
+          };
+          affectedTxs.push(scrubbedTx);
+          return scrubbedTx;
+        }
+        return tx;
+      })
+    );
+
+    void queueMutationToOutbox({
+      businessId: targetBizId,
+      collectionName: 'customers',
+      docId: id,
+      operation: 'upsert',
+      payload: anonymizedCust,
+      label: `Anonymize customer ${id}`,
+    });
+
+    affectedTxs.forEach((scrubbedTx) => {
+      void queueMutationToOutbox({
+        businessId: targetBizId,
+        collectionName: 'transactions',
+        docId: scrubbedTx.id,
+        operation: 'upsert',
+        payload: scrubbedTx,
+        label: `Scrub PII on receipt ${scrubbedTx.receiptNumber}`,
+      });
+    });
+
+    if (isOnline && auth.currentUser && targetBizId !== 'biz-demo') {
+      auth.currentUser
+        .getIdToken()
+        .then((idToken) =>
+          fetch(resolveApiUrl('/api/privacy/anonymize-customer'), {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({ businessId: targetBizId, customerId: id }),
+          })
+        )
+        .catch(() => {});
+    }
+
+    logAdminActivity({
+      category: 'customer',
+      action: 'anonymize_customer',
+      description: `Anonymized customer record ${id} under Kenya DPA 2019 (scrubbed PII across ${affectedTxs.length} historical receipts)`,
+      recordType: 'customer',
+      recordId: id,
+      beforeValue: target,
+      afterValue: anonymizedCust,
+    });
+
+    showToast('Customer personal data anonymized under Kenya DPA 2019; ledger & tax history preserved.', 'success');
+    return true;
+  };
+
   const deleteCustomer = async (id: string): Promise<boolean> => {
     const target = allCustomers.find((c) => c.id === id);
     if (!target) return false;
+
+    const targetBizId = target.businessId || activeBusinessId;
+    const hasFinancialHistory =
+      (target.visitCount || 0) > 0 ||
+      (target.totalSpent || 0) > 0 ||
+      (target.ledger?.length || 0) > 0 ||
+      allTransactionsRef.current.some((t) => t.businessId === targetBizId && t.customerId === id);
+
+    if (hasFinancialHistory) {
+      return anonymizeCustomer(id);
+    }
 
     setAllCustomers((prev) => prev.filter((c) => c.id !== id));
 
@@ -4233,18 +4748,18 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     void queueMutationToOutbox({
-      businessId: target.businessId || activeBusinessId,
+      businessId: targetBizId,
       collectionName: 'customers',
       docId: id,
       operation: 'delete',
-      payload: { id, businessId: target.businessId || activeBusinessId },
+      payload: { id, businessId: targetBizId },
       label: `Delete customer ${target.name}`,
     });
 
     logAdminActivity({
       category: 'customer',
       action: 'delete_customer',
-      description: `Deleted customer profile: ${target.name} (${target.phone})`,
+      description: `Deleted unused customer profile: ${target.name} (${maskPhoneNumber(target.phone)})`,
       recordType: 'customer',
       recordId: id,
       beforeValue: target,
@@ -4408,16 +4923,30 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!isSuperAdmin && !requireCapability('suppliers')) {
       throw new Error('Upgrade to Business or Premium to add suppliers and purchase orders.');
     }
-    const trimmedName = data.name.trim();
-    const trimmedPhone = data.phone.trim();
+    const trimmedName = clampStringField(data.name, 140);
+    const trimmedPhone = clampStringField(data.phone, 32);
     if (!trimmedName || !trimmedPhone) {
       throw new Error('Supplier company name and phone number are required');
+    }
+
+    const pinCheck = validateKraPinStrict(data.kraPin, {
+      required: false,
+      allowPlaceholderInSandbox: false,
+    });
+    if (!pinCheck.isValid) {
+      throw new Error(pinCheck.reason || 'Invalid supplier KRA PIN.');
     }
 
     const newSupp: Supplier = {
       ...data,
       name: trimmedName,
       phone: trimmedPhone,
+      contactPerson: clampStringField(data.contactPerson, 120),
+      email: clampStringField(data.email, 160),
+      address: clampStringField(data.address, 250),
+      city: clampStringField(data.city, 80),
+      notes: clampStringField(data.notes, 500),
+      kraPin: pinCheck.normalized,
       id: `supp-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
       businessId: activeBusinessId,
       status: data.status || 'active',
@@ -4456,9 +4985,29 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const target = allSuppliers.find((s) => s.id === id);
     if (!target) return;
 
+    let resolvedKraPin = target.kraPin;
+    if (updates.kraPin !== undefined) {
+      const pinCheck = validateKraPinStrict(updates.kraPin, {
+        required: false,
+        allowPlaceholderInSandbox: false,
+      });
+      if (!pinCheck.isValid) {
+        throw new Error(pinCheck.reason || 'Invalid supplier KRA PIN.');
+      }
+      resolvedKraPin = pinCheck.normalized;
+    }
+
     const updatedSupp: Supplier = {
       ...target,
       ...updates,
+      name: updates.name !== undefined ? clampStringField(updates.name, 140) || target.name : target.name,
+      phone: updates.phone !== undefined ? clampStringField(updates.phone, 32) || target.phone : target.phone,
+      contactPerson: updates.contactPerson !== undefined ? clampStringField(updates.contactPerson, 120) : target.contactPerson,
+      email: updates.email !== undefined ? clampStringField(updates.email, 160) : target.email,
+      address: updates.address !== undefined ? clampStringField(updates.address, 250) : target.address,
+      city: updates.city !== undefined ? clampStringField(updates.city, 80) : target.city,
+      notes: updates.notes !== undefined ? clampStringField(updates.notes, 500) : target.notes,
+      kraPin: resolvedKraPin,
       updatedAt: new Date().toISOString(),
     };
 
@@ -4923,6 +5472,29 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     [activeBusinessId, allProducts, allShifts, allLocations, isOnline]
   );
 
+  const canEditAnalyticsTargets = useMemo(
+    () =>
+      Boolean(
+        isSuperAdmin ||
+          currentUser?.role === 'business_owner' ||
+          currentUser?.role === 'super_admin'
+      ),
+    [isSuperAdmin, currentUser?.role]
+  );
+
+  const lockedAnalyticsLocationId = useMemo(() => {
+    if (isSuperAdmin || !currentUser || currentUser.role !== 'manager') {
+      return null;
+    }
+    if (
+      currentUser.assignedLocationId &&
+      locations.some((loc) => loc.id === currentUser.assignedLocationId)
+    ) {
+      return currentUser.assignedLocationId;
+    }
+    return currentLocation.id;
+  }, [isSuperAdmin, currentUser, locations, currentLocation.id]);
+
   const saveAnalyticsTarget = useCallback(
     async (params: {
       locationId: string;
@@ -4931,6 +5503,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       grossMarginTargetPct: number;
       maxDiscountPct: number;
     }): Promise<AnalyticsTarget> => {
+      if (!canEditAnalyticsTargets) {
+        showToast('Only store owners can configure or update monthly branch targets.', 'error');
+        throw new Error('Only store owners can configure or update monthly branch targets.');
+      }
       const nowIso = new Date().toISOString();
       const target: AnalyticsTarget = {
         id: makeTargetDocId(activeBusinessId, params.locationId, params.periodKey),
@@ -4958,10 +5534,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         payload: target,
         label: `BI target ${params.periodKey}`,
       });
-      showToast(`Saved ${params.periodKey} BI target.`, 'success');
+      showToast(`Saved ${params.periodKey} branch target.`, 'success');
       return target;
     },
-    [activeBusinessId, currentUser, queueMutationToOutbox, showToast]
+    [activeBusinessId, canEditAnalyticsTargets, currentUser, queueMutationToOutbox, showToast]
   );
 
   const saveAnalyticsSavedView = useCallback(
@@ -6270,6 +6846,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           const saleResp = await digitaxService.createSale(payload, {
             environment: env,
             expectedTaxPin: configuredTaxPin,
+            businessId: latestTx.businessId,
           });
 
           finalSale = saleResp?.id
@@ -6540,6 +7117,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           const cnResp = await digitaxService.createCreditNote(payload, {
             environment: env,
             expectedTaxPin: configuredTaxPin,
+            businessId: latestTx.businessId,
           });
 
           finalCn = cnResp?.id
@@ -6919,18 +7497,21 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const traderInvNum = formatTraderInvoiceNumber(receiptNum);
     const isSandboxEtims = Boolean(currentUser?.isDemoSession || isDemoBusinessId(activeBusinessId));
+    const shouldAutoTransmitEtims = currentBusiness?.taxSettings?.autoTransmitEtims !== false;
     const configuredTaxPin =
       currentBusiness?.taxSettings?.taxNumber || currentBusiness?.taxNumber || undefined;
-    const initialEtimsData: DigitaxEtimsData = {
-      traderInvoiceNumber: traderInvNum,
-      taxPin: configuredTaxPin,
-      customerTin: customer?.kraPin || undefined,
-      customerName: customer?.name || undefined,
-      status: isSandboxEtims ? 'COMPLETED' : 'PENDING',
-      attemptCount: 0,
-      ...(isSandboxEtims ? { verifiedAt: new Date().toISOString() } : {}),
-      isPartnerVerified: false,
-    };
+    const initialEtimsData: DigitaxEtimsData | undefined = shouldAutoTransmitEtims
+      ? {
+          traderInvoiceNumber: traderInvNum,
+          taxPin: configuredTaxPin,
+          customerTin: customer?.kraPin || undefined,
+          customerName: customer?.name || undefined,
+          status: isSandboxEtims ? 'COMPLETED' : 'PENDING',
+          attemptCount: 0,
+          ...(isSandboxEtims ? { verifiedAt: new Date().toISOString() } : {}),
+          isPartnerVerified: false,
+        }
+      : undefined;
 
     const newTx: Transaction = {
       id: `tx-${Date.now()}`,
@@ -6973,7 +7554,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       status: 'completed',
       syncedToCloud: isOnline,
       syncTimestamp: isOnline ? new Date().toISOString() : undefined,
-      etimsData: initialEtimsData,
+      ...(initialEtimsData ? { etimsData: initialEtimsData } : {}),
     };
 
     // Deduct stock from current location
@@ -7017,7 +7598,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     // Transmit itemized invoice to Digitax KRA eTIMS (or queue into IndexedDB outbox if offline)
-    const shouldAutoTransmitEtims = currentBusiness?.taxSettings?.autoTransmitEtims !== false;
     if (!isSandboxEtims && shouldAutoTransmitEtims) {
       if (isOnline && auth.currentUser) {
         void transmitSaleToDigitax(newTx, { buyerPin: customer?.kraPin });
@@ -7355,19 +7935,21 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const refundRefNumber = `REF-${Date.now().toString().slice(-6)}`;
       const timestamp = new Date().toISOString();
       const isSandboxRefund = Boolean(currentUser?.isDemoSession || isDemoBusinessId(activeBusinessId));
+      const shouldAutoTransmitCn = currentBusiness?.taxSettings?.autoTransmitEtims !== false;
       const anyNonRestocked = refundItemsRecord.some((ri) => !ri.restockToInventory);
-      const initialCreditNote: DigitaxCreditNoteData | undefined = !isSandboxRefund
-        ? {
-            status: 'PENDING',
-            saleId: targetTx.etimsData?.saleId,
-            originalTraderInvoiceNumber:
-              targetTx.etimsData?.traderInvoiceNumber ||
-              formatTraderInvoiceNumber(targetTx.receiptNumber),
-            traderInvoiceNumber: formatTraderInvoiceNumber(refundRefNumber),
-            reasonCode: deriveKraCreditNoteReasonCode(refundReason, anyNonRestocked),
-            attemptCount: 0,
-          }
-        : undefined;
+      const initialCreditNote: DigitaxCreditNoteData | undefined =
+        !isSandboxRefund && shouldAutoTransmitCn
+          ? {
+              status: 'PENDING',
+              saleId: targetTx.etimsData?.saleId,
+              originalTraderInvoiceNumber:
+                targetTx.etimsData?.traderInvoiceNumber ||
+                formatTraderInvoiceNumber(targetTx.receiptNumber),
+              traderInvoiceNumber: formatTraderInvoiceNumber(refundRefNumber),
+              reasonCode: deriveKraCreditNoteReasonCode(refundReason, anyNonRestocked),
+              attemptCount: 0,
+            }
+          : undefined;
 
       const newRefundRecord: RefundRecord = {
         id: `ref-${Date.now()}`,
@@ -7587,7 +8169,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       );
 
       // Auto-issue KRA eTIMS Credit Note (or enqueue into Sync Outbox if offline / awaiting sale signing)
-      const shouldAutoTransmitCn = currentBusiness?.taxSettings?.autoTransmitEtims !== false;
       if (!isSandboxRefund && shouldAutoTransmitCn) {
         if (isOnline && auth.currentUser) {
           void transmitCreditNoteToDigitax(updatedTx, newRefundRecord);
@@ -8046,12 +8627,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       localStorage.setItem(STORAGE_KEYS.IS_LOGGED_OUT, 'true');
       localStorage.setItem(STORAGE_KEYS.SESSION_CLEAN_EXIT, 'true');
 
-      firebaseSignOut(auth).catch((err) => console.warn('Firebase signout note:', err));
-
-      setCurrentUser(null);
-      setCart([]);
-      setActiveReceipt(null);
-      setIsPinLocked(false);
+      void resetClientSessionStateRef.current({
+        signOutFirebase: true,
+        markLoggedOut: true,
+        preservePendingCheckout: false,
+      });
 
       const reasonLabels = {
         timeout: 'Inactivity Timeout',
@@ -8169,13 +8749,59 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Boot-time IndexedDB hydration + idempotent legacy localStorage migration
   useEffect(() => {
     let cancelled = false;
+    const bootEpoch = authTransitionEpochRef.current;
+    const isExplicitlyLoggedOutOnBoot = localStorage.getItem(STORAGE_KEYS.IS_LOGGED_OUT) === 'true';
+
     hydrateTerminalDatabase()
       .then(async (hydrated) => {
-        if (cancelled) return;
+        if (cancelled || authTransitionEpochRef.current !== bootEpoch || isTearingDownSessionRef.current) return;
+
+        // If signed out on boot, clear stale tenant stores while preserving sync_outbox and branding/pricing
+        if (isExplicitlyLoggedOutOnBoot) {
+          await clearTenantTerminalCacheKeepOutbox().catch(() => {});
+          if (cancelled || authTransitionEpochRef.current !== bootEpoch || isTearingDownSessionRef.current) return;
+
+          if (hydrated.pricingTiers && hydrated.pricingTiers.length > 0) {
+            setPricingTiers(hydrated.pricingTiers);
+          }
+          if (hydrated.branding.loginBgGraphic) {
+            setLoginBgGraphicState(hydrated.branding.loginBgGraphic);
+            setLoginBgGraphicName(hydrated.branding.loginBgGraphicName || null);
+          }
+          if (hydrated.branding.platformLogo) {
+            setPlatformLogoState(hydrated.branding.platformLogo);
+            setPlatformLogoName(hydrated.branding.platformLogoName || null);
+          }
+          if (hydrated.branding.platformFavicon) {
+            setPlatformFaviconState(hydrated.branding.platformFavicon);
+            setPlatformFaviconName(hydrated.branding.platformFaviconName || null);
+          }
+          if (hydrated.branding.industryImages && Object.keys(hydrated.branding.industryImages).length > 0) {
+            setIndustryImagesState(hydrated.branding.industryImages);
+          }
+          setOutboxItems(hydrated.outbox || []);
+          setOpfsSnapshots(hydrated.opfsManifests || []);
+          const quota = await estimateBrowserStorageQuota();
+          if (cancelled || authTransitionEpochRef.current !== bootEpoch) return;
+          isIdbHydratedRef.current = false;
+          setIsStorageHydrated(true);
+          const opfsSupported = isOpfsSupported();
+          setStorageTelemetry({
+            engine: opfsSupported ? 'IndexedDB + OPFS' : 'IndexedDB (OPFS Restricted)',
+            usageBytes: quota.usageBytes,
+            quotaBytes: quota.quotaBytes,
+            usagePct: quota.usagePct,
+            opfsSupported,
+            migratedFromLocalStorageAt: hydrated.migrationReceipt?.migratedAt || null,
+            migratedKeysCount: hydrated.migrationReceipt?.migratedKeys.length || 0,
+            lastSnapshot: hydrated.opfsManifests[0] || null,
+          });
+          return;
+        }
 
         if (hydrated.businesses && hydrated.businesses.length > 0) {
           const cleaned = hydrated.businesses.filter(
-            (b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'
+            (b) => isValidBusinessOwnerEmail(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'
           );
           if (cleaned.length > 0) {
             const { uniqueBusinesses } = resolveBusinessUniquenessConflicts(cleaned);
@@ -8238,7 +8864,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setOpfsSnapshots(hydrated.opfsManifests || []);
 
         const quota = await estimateBrowserStorageQuota();
-        if (cancelled) return;
+        if (cancelled || authTransitionEpochRef.current !== bootEpoch) return;
 
         isIdbHydratedRef.current = true;
         setIsStorageHydrated(true);
@@ -8334,6 +8960,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setSyncStatus('synced');
         if (!isSilent) {
           showToast('Demo sandbox runs locally without cloud writes.', 'info');
+        }
+        return;
+      }
+
+      if (!auth.currentUser || !isActiveTenantSubscriptionAuthorized) {
+        if (!isSilent) {
+          showToast('Cloud sync paused until the active store session is authenticated.', 'info');
         }
         return;
       }
@@ -8704,7 +9337,16 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Automated outbox retry loop: checks every 10 seconds for pending or due exponential-backoff mutations
   useEffect(() => {
-    if (!isOnline || !hasActiveCloudSession || !auth.currentUser || !activeBusinessId || !isStorageHydrated) return;
+    if (
+      !isOnline ||
+      !hasActiveCloudSession ||
+      !auth.currentUser ||
+      !activeBusinessId ||
+      !isActiveTenantSubscriptionAuthorized ||
+      !isStorageHydrated
+    ) {
+      return;
+    }
 
     const intervalId = setInterval(() => {
       triggerCloudSync(true).catch((err) =>
@@ -8713,7 +9355,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }, 10000);
 
     return () => clearInterval(intervalId);
-  }, [isOnline, hasActiveCloudSession, activeBusinessId, isStorageHydrated, triggerCloudSync]);
+  }, [isOnline, hasActiveCloudSession, activeBusinessId, isActiveTenantSubscriptionAuthorized, isStorageHydrated, triggerCloudSync]);
 
   // Automated sync on network reconnect (online/offline) and tab focus/visibility
   useEffect(() => {
@@ -8762,6 +9404,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const lastBusinessesFetchRef = useRef<number>(0);
   const lastCategoriesFetchRef = useRef<Record<string, number>>({});
   const lastStaffFetchRef = useRef<Record<string, number>>({});
+  const [isTenantsLoading, setIsTenantsLoading] = useState<boolean>(false);
+  const [tenantsLoadError, setTenantsLoadError] = useState<string | null>(null);
   const [isStaffLoading, setIsStaffLoading] = useState<boolean>(false);
   const [isLoadingOlderTransactions, setIsLoadingOlderTransactions] = useState<boolean>(false);
   const [olderTransactionsLoadedFrom, setOlderTransactionsLoadedFrom] = useState<string | null>(null);
@@ -8774,33 +9418,116 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     async (force = false): Promise<Business[]> => {
       if (!isOnline || !auth.currentUser) return businessesRef.current;
       const email = (auth.currentUser.email || '').trim().toLowerCase();
-      if (email !== SUPER_ADMIN_EMAIL.toLowerCase()) return businessesRef.current;
-      if (!force && Date.now() - lastBusinessesFetchRef.current < ON_DEMAND_CACHE_TTL_MS) {
+      const isSuperAdminCaller =
+        email === SUPER_ADMIN_EMAIL.toLowerCase() || auth.currentUser.uid === SUPER_ADMIN_UID;
+      if (!isSuperAdminCaller) return businessesRef.current;
+
+      if (
+        !force &&
+        businessesRef.current.length > 1 &&
+        Date.now() - lastBusinessesFetchRef.current < ON_DEMAND_CACHE_TTL_MS
+      ) {
         return businessesRef.current;
       }
+
+      setIsTenantsLoading(true);
+      setTenantsLoadError(null);
       try {
-        const remoteBizs = await getBusinessesFromFirestore();
-        lastBusinessesFetchRef.current = Date.now();
-        if (remoteBizs && remoteBizs.length > 0) {
-          const validRemote = remoteBizs.filter(
-            (b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'
-          );
-          if (validRemote.length > 0) {
-            setBusinesses((prev) => {
-              const combined = [
-                ...prev.filter((b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'),
-                ...validRemote,
-              ];
-              const { uniqueBusinesses } = resolveBusinessUniquenessConflicts(combined);
-              return uniqueBusinesses.length > 0 ? uniqueBusinesses : validRemote;
-            });
-            return validRemote;
+        let remoteBizs: Business[] = [];
+        let primarySucceeded = false;
+        let primaryError: string | null = null;
+
+        if (isCurrentUserSuperAdmin()) {
+          try {
+            remoteBizs = await getBusinessesFromFirestore();
+            primarySucceeded = true;
+          } catch (err: any) {
+            primaryError = err?.message || 'Firestore tenant query failed.';
+            console.warn('Super Admin Firestore tenant list notice:', err);
+          }
+        } else {
+          primaryError = 'Client session claims missing email_verified for Super Admin.';
+        }
+
+        // Authenticated server fallback when client Firestore list is blocked, unverified-in-memory, or incomplete
+        let fallbackError: string | null = null;
+        let fallbackSucceeded = false;
+        if (!primarySucceeded || remoteBizs.length <= 1) {
+          try {
+            const idToken = await auth.currentUser.getIdToken(true).catch(() => '');
+            if (idToken) {
+              const resp = await fetch(resolveApiUrl('/api/admin/businesses'), {
+                method: 'GET',
+                headers: {
+                  Authorization: `Bearer ${idToken}`,
+                  Accept: 'application/json',
+                },
+              });
+              const payload = await resp.json().catch(() => null);
+              if (resp.ok && payload?.success && Array.isArray(payload.businesses)) {
+                if (payload.businesses.length >= remoteBizs.length) {
+                  remoteBizs = payload.businesses as Business[];
+                }
+                fallbackSucceeded = true;
+              } else {
+                fallbackError =
+                  payload?.error || `Server tenant endpoint returned HTTP ${resp.status}.`;
+              }
+            } else {
+              fallbackError = 'Could not obtain Firebase ID token for server fallback.';
+            }
+          } catch (err: any) {
+            fallbackError = err?.message || 'Network error calling server tenant fallback.';
           }
         }
-      } catch (err) {
+
+        if (!primarySucceeded && !fallbackSucceeded) {
+          const message =
+            fallbackError ||
+            primaryError ||
+            'Unable to fetch the full tenant directory from Firestore or the server.';
+          setTenantsLoadError(message);
+          return businessesRef.current;
+        }
+
+        lastBusinessesFetchRef.current = Date.now();
+        const validRemote = (remoteBizs || []).filter(
+          (b) =>
+            b &&
+            b.id &&
+            isValidBusinessOwnerEmail(b.ownerEmail) &&
+            b.id !== 'biz-soko' &&
+            b.id !== 'biz-quickmart'
+        );
+
+        if (validRemote.length > 0) {
+          setBusinesses((prev) => {
+            const combined = [
+              ...prev.filter(
+                (b) =>
+                  b &&
+                  b.id &&
+                  isValidBusinessOwnerEmail(b.ownerEmail) &&
+                  b.id !== 'biz-soko' &&
+                  b.id !== 'biz-quickmart'
+              ),
+              ...validRemote,
+            ];
+            const { uniqueBusinesses } = resolveBusinessUniquenessConflicts(combined);
+            return uniqueBusinesses.length > 0 ? uniqueBusinesses : validRemote;
+          });
+          return validRemote;
+        }
+
+        return businessesRef.current;
+      } catch (err: any) {
+        const message = err?.message || 'Unexpected error refreshing tenant directory.';
+        setTenantsLoadError(message);
         console.warn('Super Admin businesses refresh notice:', err);
+        return businessesRef.current;
+      } finally {
+        setIsTenantsLoading(false);
       }
-      return businessesRef.current;
     },
     [isOnline]
   );
@@ -8994,19 +9721,34 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       try {
-        const remoteBizs = isSuperAdminAccount
-          ? (await getBusinessByIdFromFirestore('biz-upfront').then((b) => (b ? [b] : [])))
-          : await getBusinessesByOwnerEmailFromFirestore(userEmail);
+        if (isSuperAdminAccount) {
+          const allBizs = await refreshAllBusinessesForSuperAdmin(true);
+          if (cancelled) return;
+          if (!allBizs.some((b) => b.id === 'biz-upfront')) {
+            const upfront = await getBusinessByIdFromFirestore('biz-upfront');
+            if (!cancelled && upfront) {
+              setBusinesses((prev) => {
+                const { uniqueBusinesses } = resolveBusinessUniquenessConflicts([...prev, upfront]);
+                return uniqueBusinesses.length > 0 ? uniqueBusinesses : [...prev, upfront];
+              });
+            }
+          }
+          setActiveBusinessIdState('biz-upfront');
+          localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, 'biz-upfront');
+          return;
+        }
+
+        const remoteBizs = await getBusinessesByOwnerEmailFromFirestore(userEmail);
 
         if (cancelled) return;
         if (remoteBizs.length > 0) {
           const validRemote = remoteBizs.filter(
-            (b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'
+            (b) => isValidBusinessOwnerEmail(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'
           );
           if (validRemote.length > 0) {
             setBusinesses((prev) => {
               const combined = [
-                ...prev.filter((b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'),
+                ...prev.filter((b) => isValidBusinessOwnerEmail(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'),
                 ...validRemote,
               ];
               const { uniqueBusinesses } = resolveBusinessUniquenessConflicts(combined);
@@ -9016,10 +9758,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             const targetBiz = validRemote[0];
             const validRemoteIds = new Set(validRemote.map((b) => b.id));
             setActiveBusinessIdState((prev) => {
-              if (isSA) {
-                localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, 'biz-upfront');
-                return 'biz-upfront';
-              }
               if (!prev || prev === 'biz-upfront' || prev === 'biz-soko' || prev === 'biz-quickmart' || !validRemoteIds.has(prev)) {
                 if (targetBiz) {
                   localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBiz.id);
@@ -9232,24 +9970,31 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // 14. Authentication Operations (Google OAuth & Credentials)
   const loginWithFirebaseGoogle = async (customStoreName?: string): Promise<boolean> => {
-    localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
+    const hadPriorUser = Boolean(currentUserRef.current);
+    activeManualLoginRef.current = true;
     try {
       setIsFirebaseAuthLoading(true);
+      await resetClientSessionStateRef.current({
+        signOutFirebase: true,
+        markLoggedOut: false,
+        preservePendingCheckout: !hadPriorUser,
+      });
+      localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
+      const loginEpoch = authTransitionEpochRef.current;
 
-      // Fast-path: Check if user is already authenticated in Firebase Auth client
-      let firebaseUser = auth.currentUser;
-      if (!firebaseUser || !firebaseUser.email) {
-        // Enforce a 20s timeout race so popup authorization never hangs indefinitely
-        const popupPromise = signInWithPopup(auth, googleProvider);
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Google authorization popup timed out. Please allow popups or use Direct Sign-In.')), 20000)
-        );
-        const userCredential = await Promise.race([popupPromise, timeoutPromise]);
-        firebaseUser = userCredential.user;
-      }
+      // Always invoke fresh Google account selection popup (never reuse prior auth.currentUser)
+      const popupPromise = signInWithPopup(auth, googleProvider);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Google authorization popup timed out. Please allow popups or use Direct Sign-In.')), 20000)
+      );
+      const userCredential = await Promise.race([popupPromise, timeoutPromise]);
+      const firebaseUser = userCredential.user;
 
       if (!firebaseUser || !firebaseUser.email) {
         throw new Error('No user data returned from Google Authentication.');
+      }
+      if (authTransitionEpochRef.current !== loginEpoch) {
+        return false;
       }
 
       const idToken = await firebaseUser.getIdToken().catch(() => '');
@@ -9261,12 +10006,16 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const normalizedEmail = firebaseUser.email.toLowerCase().trim();
       const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
 
-      // Enforce uniqueness: prioritize account last logged into
+      // Enforce uniqueness strictly against server records (ignore prior cached businesses)
       const { winner: matchedBiz, isExistingAccount } = await prioritizeAccountAndPurgeConflicts(
         normalizedEmail,
         firebaseUser.displayName || undefined,
-        customStoreName
+        customStoreName,
+        { ignoreCachedBusinesses: true }
       );
+      if (authTransitionEpochRef.current !== loginEpoch) {
+        return false;
+      }
 
       const targetBizId = isSuperAdminEmail ? 'biz-upfront' : matchedBiz.id;
 
@@ -9301,10 +10050,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         displayName: firebaseUser.displayName || '',
       });
 
-      // Set state after business doc and user profile are synced to Firestore
+      // Commit state only after fresh teardown, server resolution, and profile sync succeed
+      isIdbHydratedRef.current = true;
+      setIsForeignOutboxDismissed(false);
+      setFirebaseUser(firebaseUser);
+      setFirebaseEmailVerifiedState(Boolean(firebaseUser.emailVerified));
       setCurrentUser(authUser);
       setActiveBusinessIdState(targetBizId);
       localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
+      setSessionEpoch((prev) => prev + 1);
       setIsFirebaseAuthLoading(false);
 
       soundFx.playSuccess();
@@ -9365,6 +10119,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         );
       }
       return false;
+    } finally {
+      activeManualLoginRef.current = false;
     }
   };
 
@@ -9374,7 +10130,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     isSignUpMode: boolean = false,
     customStoreName?: string
   ): Promise<{ success: boolean; requiresVerification?: boolean; email?: string; error?: string }> => {
-    localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
     const email = emailInput.trim().toLowerCase();
     const password = passwordInput.trim();
 
@@ -9386,8 +10141,18 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, error: 'Password must be at least 6 characters long.' };
     }
 
+    const hadPriorUser = Boolean(currentUserRef.current);
+    activeManualLoginRef.current = true;
     try {
       setIsFirebaseAuthLoading(true);
+      await resetClientSessionStateRef.current({
+        signOutFirebase: true,
+        markLoggedOut: false,
+        preservePendingCheckout: !hadPriorUser,
+      });
+      localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
+      const loginEpoch = authTransitionEpochRef.current;
+
       let userCredential;
       let isNewlyCreated = false;
 
@@ -9414,8 +10179,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const normalizedEmail = firebaseUser.email.toLowerCase().trim();
       const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL.toLowerCase();
 
-      // Enforce Email Verification Gate for non-super-admin Email/Password accounts
-      if (!firebaseUser.emailVerified && !isSuperAdminEmail) {
+      // Enforce Email Verification Gate for Email/Password accounts (including super-admin unless canonical UID)
+      if (!firebaseUser.emailVerified && firebaseUser.uid !== SUPER_ADMIN_UID) {
         if (customStoreName) {
           sessionStorage.setItem('sokopos_pending_store_name', customStoreName);
         }
@@ -9443,8 +10208,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const { winner: matchedBiz, isExistingAccount } = await prioritizeAccountAndPurgeConflicts(
         normalizedEmail,
         firebaseUser.displayName || undefined,
-        customStoreName
+        customStoreName,
+        { ignoreCachedBusinesses: true }
       );
+      if (authTransitionEpochRef.current !== loginEpoch) {
+        return { success: false, error: 'Authentication was superseded by a newer login request.' };
+      }
 
       const targetBizId = isSuperAdminEmail ? 'biz-upfront' : matchedBiz.id;
       const role: UserRole = isSuperAdminEmail
@@ -9484,9 +10253,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         displayName: firebaseUser.displayName || '',
       });
 
+      isIdbHydratedRef.current = true;
+      setIsForeignOutboxDismissed(false);
+      setFirebaseUser(firebaseUser);
+      setFirebaseEmailVerifiedState(Boolean(firebaseUser.emailVerified));
       setCurrentUser(authUser);
       setActiveBusinessIdState(targetBizId);
       localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
+      setSessionEpoch((prev) => prev + 1);
       setIsFirebaseAuthLoading(false);
 
       soundFx.playSuccess();
@@ -9548,24 +10322,42 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       return { success: false, error: errorMessage };
+    } finally {
+      activeManualLoginRef.current = false;
     }
   };
 
   const loginWithFirebaseEmailOtp = async (
     customToken: string
   ): Promise<{ success: boolean; error?: string }> => {
-    localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
     const cleanToken = String(customToken || '').trim();
     if (!cleanToken) {
       return { success: false, error: 'Missing Firebase custom session token.' };
     }
 
+    const hadPriorUser = Boolean(currentUserRef.current);
+    activeManualLoginRef.current = true;
     try {
       setIsFirebaseAuthLoading(true);
+      await resetClientSessionStateRef.current({
+        signOutFirebase: true,
+        markLoggedOut: false,
+        preservePendingCheckout: !hadPriorUser,
+      });
+      localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
+      const loginEpoch = authTransitionEpochRef.current;
+
       const userCredential = await signInWithCustomToken(auth, cleanToken);
-      const firebaseUser = userCredential.user;
+      let firebaseUser = userCredential.user;
+      if (firebaseUser) {
+        await firebaseUser.reload().catch(() => {});
+        firebaseUser = auth.currentUser || firebaseUser;
+      }
       if (!firebaseUser || !firebaseUser.email) {
         throw new Error('No email profile returned from Firebase Custom Token session.');
+      }
+      if (authTransitionEpochRef.current !== loginEpoch) {
+        return { success: false, error: 'Authentication was superseded by a newer login request.' };
       }
 
       const normalizedEmail = firebaseUser.email.toLowerCase().trim();
@@ -9578,8 +10370,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       const { winner: matchedBiz, isExistingAccount } = await prioritizeAccountAndPurgeConflicts(
         normalizedEmail,
-        firebaseUser.displayName || undefined
+        firebaseUser.displayName || undefined,
+        undefined,
+        { ignoreCachedBusinesses: true }
       );
+      if (authTransitionEpochRef.current !== loginEpoch) {
+        return { success: false, error: 'Authentication was superseded by a newer login request.' };
+      }
 
       const targetBizId = isSuperAdminEmail ? 'biz-upfront' : matchedBiz.id;
       const role: UserRole = isSuperAdminEmail
@@ -9588,7 +10385,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ? 'business_owner'
         : 'manager';
 
-      const idToken = await firebaseUser.getIdToken().catch(() => '');
+      const idToken = await firebaseUser.getIdToken(true).catch(() => '');
       const tokenResult = await firebaseUser.getIdTokenResult().catch(() => null);
       const expirationTime = tokenResult?.expirationTime
         ? new Date(tokenResult.expirationTime).getTime()
@@ -9625,9 +10422,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         displayName: firebaseUser.displayName || '',
       });
 
+      isIdbHydratedRef.current = true;
+      setIsForeignOutboxDismissed(false);
+      setFirebaseUser(firebaseUser);
+      setFirebaseEmailVerifiedState(Boolean(firebaseUser.emailVerified));
       setCurrentUser(authUser);
       setActiveBusinessIdState(targetBizId);
       localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
+      setSessionEpoch((prev) => prev + 1);
       setIsFirebaseAuthLoading(false);
 
       soundFx.playSuccess();
@@ -9657,6 +10459,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         errorMessage = err.message;
       }
       return { success: false, error: errorMessage };
+    } finally {
+      activeManualLoginRef.current = false;
     }
   };
 
@@ -9746,7 +10550,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const { winner: matchedBiz, isExistingAccount } = await prioritizeAccountAndPurgeConflicts(
         normalizedEmail,
         refreshedUser.displayName || undefined,
-        pendingStoreName
+        pendingStoreName,
+        { ignoreCachedBusinesses: true }
       );
 
       const targetBizId = isSuperAdminEmail ? 'biz-upfront' : matchedBiz.id;
@@ -9781,10 +10586,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         displayName: refreshedUser.displayName || '',
       });
 
+      isIdbHydratedRef.current = true;
+      setIsForeignOutboxDismissed(false);
       setPendingVerificationEmail(null);
       setCurrentUser(authUser);
       setActiveBusinessIdState(targetBizId);
       localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
+      setSessionEpoch((prev) => prev + 1);
 
       soundFx.playSuccess();
       showToast(
@@ -9806,19 +10614,19 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const cancelEmailVerification = async (): Promise<void> => {
     setPendingVerificationEmail(null);
     sessionStorage.removeItem('sokopos_pending_store_name');
-    try {
-      await firebaseSignOut(auth);
-    } catch (err) {
-      console.warn('Sign out during cancelEmailVerification:', err);
-    }
+    await resetClientSessionStateRef.current({
+      signOutFirebase: true,
+      markLoggedOut: true,
+      preservePendingCheckout: false,
+    });
   };
 
   const loginWithGoogle = (email: string, name?: string, newBusinessName?: string): boolean => {
     localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
     const normalizedEmail = email.trim().toLowerCase();
 
-    if (!isRealGoogleAccount(normalizedEmail)) {
-      showToast('Validation Error: A verified Google Account (e.g. yourname@gmail.com) is required.', 'error');
+    if (!isValidBusinessOwnerEmail(normalizedEmail)) {
+      showToast('Validation Error: A valid business owner email address is required.', 'error');
       return false;
     }
 
@@ -9831,8 +10639,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         businessId: 'biz-upfront',
         businessName: 'Upfront Retail Solutions',
       };
+      isIdbHydratedRef.current = true;
+      setIsForeignOutboxDismissed(false);
       setCurrentUser(superAdminUser);
       setActiveBusinessIdState('biz-upfront');
+      setSessionEpoch((prev) => prev + 1);
       showToast('Authenticated as Platform Support', 'success');
       return true;
     }
@@ -9878,7 +10689,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         plan: 'free',
         status: 'active',
         currency: 'KES',
-        taxNumber: `P0${Math.floor(100000000 + Math.random() * 900000000)}Z`,
+        taxNumber: '',
         ...(capturedRefCode ? { referredByCode: capturedRefCode, referredAt: now } : {}),
       };
       if (capturedRefCode) {
@@ -9940,8 +10751,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       createdAt: matchedBiz.createdAt,
     };
 
+    isIdbHydratedRef.current = true;
+    setIsForeignOutboxDismissed(false);
     setCurrentUser(bizOwnerUser);
     setActiveBusinessIdState(matchedBiz.id);
+    setSessionEpoch((prev) => prev + 1);
     if (newBusinessName && emailMatches.length > 0) {
       showToast(
         `Account already exists: This Google account is already registered to "${matchedBiz.name}". You have been logged into your shop.`,
@@ -9958,7 +10772,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     pin: string,
     isDemo?: boolean
   ): Promise<boolean> => {
-    localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
     const trimmedInput = usernameOrId.trim().toLowerCase();
     const cleanCode = trimmedInput.replace(/^#/, '');
 
@@ -9968,35 +10781,44 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return false;
     }
 
-    // Search candidates strictly by unique ID, Username, or Staff Code (#7000/7000)
-    const matchesIdentity = (u: Cashier) =>
-      u.id.toLowerCase() === trimmedInput ||
-      u.username?.trim().toLowerCase() === trimmedInput ||
-      u.code?.trim().toLowerCase() === trimmedInput ||
-      u.code?.trim().toLowerCase().replace(/^#/, '') === cleanCode;
+    // Snapshot cached records before session teardown so offline staff PIN login remains resilient
+    const preResetUsers = [...allSystemUsers];
+    const preResetLocations = [...allLocations];
+    const preResetBusinesses = [...businesses];
+    const preResetProducts = [...allProducts];
+    const preResetCategories = [...allCategories];
+    const preResetCustomers = [...allCustomers];
+    const preResetSuppliers = [...allSuppliers];
+    const preResetTransactions = [...allTransactions];
+    const preResetShifts = [...allShifts];
 
-    let candidateUsers = allSystemUsers.filter(matchesIdentity);
-    let serverVerifiedLookup: Awaited<ReturnType<typeof verifyStaffPinViaServer>> | null = null;
+    activeManualLoginRef.current = true;
+    try {
+      await resetClientSessionStateRef.current({
+        preserveDemoIntent: Boolean(isDemo),
+        signOutFirebase: true,
+        markLoggedOut: false,
+        preservePendingCheckout: false,
+      });
+      localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
 
-    // If candidate not in memory and online, try targeted identity lookup (if signed in) or server credential vault
-    if (candidateUsers.length === 0 && isOnline) {
-      try {
-        let remoteCashiers: Cashier[] = [];
-        if (auth.currentUser && activeBusinessId && activeBusinessId !== 'biz-demo') {
-          remoteCashiers = await getTenantCashiersFromFirestore(activeBusinessId);
-        }
-        if (remoteCashiers && remoteCashiers.length > 0) {
-          setAllSystemUsers((prev) => {
-            const map = new Map<string, Cashier>();
-            prev.forEach((u) => map.set(u.id, u));
-            remoteCashiers.forEach((r) => map.set(r.id, { ...r, isPendingCloudSync: false }));
-            return Array.from(map.values());
-          });
-          candidateUsers = remoteCashiers.filter(matchesIdentity);
-        }
+      // Search candidates strictly by unique ID, Username, or Staff Code (#7000/7000)
+      const matchesIdentity = (u: Cashier) =>
+        u.id.toLowerCase() === trimmedInput ||
+        u.username?.trim().toLowerCase() === trimmedInput ||
+        u.code?.trim().toLowerCase() === trimmedInput ||
+        u.code?.trim().toLowerCase().replace(/^#/, '') === cleanCode;
 
-        // Fresh staff terminal with no Firebase Google session: verify directly via server vault
-        if (candidateUsers.length === 0) {
+      let candidateUsers = isDemo
+        ? INITIAL_SYSTEM_USERS.filter(matchesIdentity)
+        : !isOnline
+        ? preResetUsers.filter(matchesIdentity)
+        : [];
+      let serverVerifiedLookup: Awaited<ReturnType<typeof verifyStaffPinViaServer>> | null = null;
+
+      // Online staff terminal: verify directly via server credential vault first
+      if (candidateUsers.length === 0 && isOnline) {
+        try {
           const directVerify = await verifyStaffPinViaServer({
             pin,
             usernameOrCode: trimmedInput,
@@ -10008,12 +10830,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               id: directVerify.cashierId,
               businessId: directVerify.businessId,
               name: resolvedName,
-              initials: resolvedName
-                .split(' ')
-                .map((p) => p[0])
-                .join('')
-                .substring(0, 2)
-                .toUpperCase() || 'ST',
+              initials:
+                resolvedName
+                  .split(' ')
+                  .map((p) => p[0])
+                  .join('')
+                  .substring(0, 2)
+                  .toUpperCase() || 'ST',
               role: (directVerify.role as Cashier['role']) || 'cashier',
               code: directVerify.code || usernameOrId,
               username: directVerify.username || trimmedInput,
@@ -10022,12 +10845,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               avatarColor: 'bg-blue-600',
               shiftStartedAt: new Date().toISOString(),
             };
-            setAllSystemUsers((prev) => {
-              const map = new Map<string, Cashier>();
-              prev.forEach((u) => map.set(u.id, u));
-              map.set(synthesizedUser.id, synthesizedUser);
-              return Array.from(map.values());
-            });
             candidateUsers = [synthesizedUser];
           } else if (
             directVerify.error &&
@@ -10038,46 +10855,73 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             soundFx.playError();
             showToast(directVerify.error, 'error');
             return false;
+          } else if (candidateUsers.length === 0) {
+            candidateUsers = preResetUsers.filter(matchesIdentity);
           }
+        } catch (err: any) {
+          if (err?.message?.includes('locked') || err?.message?.includes('Too many')) {
+            soundFx.playError();
+            showToast(err.message, 'error');
+            return false;
+          }
+          console.warn('Targeted remote cashiers check on login:', err);
+          candidateUsers = preResetUsers.filter(matchesIdentity);
         }
-      } catch (err: any) {
-        if (err?.message?.includes('locked') || err?.message?.includes('Too many')) {
-          soundFx.playError();
-          showToast(err.message, 'error');
-          return false;
-        }
-        console.warn('Targeted remote cashiers check on login:', err);
       }
-    }
 
-    if (candidateUsers.length === 0) {
-      soundFx.playError();
-      showToast(`Staff ID or Username "${usernameOrId}" not found in system.`, 'error');
-      return false;
-    }
+      if (candidateUsers.length === 0) {
+        soundFx.playError();
+        showToast(`Staff ID or Username "${usernameOrId}" not found in system.`, 'error');
+        return false;
+      }
 
-    for (const matchedUser of candidateUsers) {
-      const isExplicitDemoUser = Boolean(isDemo) || matchedUser.businessId === 'biz-demo';
+      for (const matchedUser of candidateUsers) {
+        const isExplicitDemoUser = Boolean(isDemo) || matchedUser.businessId === 'biz-demo';
 
-      // Validate staff PIN strictly through protected /api/auth/verify-pin server route
-      let isValid = false;
-      let verifiedBusinessName = serverVerifiedLookup?.businessName;
-      let verifiedBusinessStatus = serverVerifiedLookup?.businessStatus;
-      try {
-        if (serverVerifiedLookup && serverVerifiedLookup.cashierId === matchedUser.id) {
-          isValid = serverVerifiedLookup.isValid;
-        } else {
-          const verifyRes = await verifyStaffPinViaServer({
-            pin,
-            cashierId: matchedUser.id,
-            businessId: matchedUser.businessId,
-            usernameOrCode: matchedUser.username || matchedUser.code,
-            fallbackHash: matchedUser.pin,
-          });
-          verifiedBusinessName = verifiedBusinessName || verifyRes.businessName;
-          verifiedBusinessStatus = verifiedBusinessStatus || verifyRes.businessStatus;
+        // Validate staff PIN strictly through protected /api/auth/verify-pin server route
+        let isValid = false;
+        let verifiedBusinessName = serverVerifiedLookup?.businessName;
+        let verifiedBusinessStatus = serverVerifiedLookup?.businessStatus;
+        try {
+          if (serverVerifiedLookup && serverVerifiedLookup.cashierId === matchedUser.id) {
+            isValid = serverVerifiedLookup.isValid;
+          } else {
+            const verifyRes = await verifyStaffPinViaServer({
+              pin,
+              cashierId: matchedUser.id,
+              businessId: matchedUser.businessId,
+              usernameOrCode: matchedUser.username || matchedUser.code,
+              fallbackHash: matchedUser.pin,
+            });
+            verifiedBusinessName = verifiedBusinessName || verifyRes.businessName;
+            verifiedBusinessStatus = verifiedBusinessStatus || verifyRes.businessStatus;
 
-          // Demo PIN bypass ONLY applies when explicitly in a demo flow or logging into a biz-demo account
+            // Demo PIN bypass ONLY applies when explicitly in a demo flow or logging into a biz-demo account
+            const isDemoMatch =
+              isExplicitDemoUser &&
+              pin === '1234' &&
+              (matchedUser.businessId === 'biz-demo' ||
+                matchedUser.code === '#7000' ||
+                matchedUser.id === appointedDemoCashierId ||
+                matchedUser.isAppointedDemo);
+
+            isValid = verifyRes.isValid || isDemoMatch;
+
+            if (!isValid && verifyRes.error) {
+              if (verifyRes.error.includes('Access Blocked') || verifyRes.error.includes('locked')) {
+                soundFx.playError();
+                showToast(verifyRes.error, 'error');
+                return false;
+              }
+            }
+          }
+        } catch (err: any) {
+          if (err?.message?.includes('locked') || err?.message?.includes('Too many')) {
+            soundFx.playError();
+            showToast(err.message, 'error');
+            return false;
+          }
+          console.warn('Server PIN verification fallback attempt:', err);
           const isDemoMatch =
             isExplicitDemoUser &&
             pin === '1234' &&
@@ -10085,138 +10929,132 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               matchedUser.code === '#7000' ||
               matchedUser.id === appointedDemoCashierId ||
               matchedUser.isAppointedDemo);
+          isValid = isDemoMatch || (await verifyPinOnServer(pin, matchedUser.pin));
+        }
 
-          isValid = verifyRes.isValid || isDemoMatch;
+        if (isValid) {
+          // Isolate demo sessions strictly to biz-demo; real staff members always land in their own businessId
+          const isDemoSessionActive = Boolean(isDemo) || matchedUser.businessId === 'biz-demo';
+          const targetBizId = isDemoSessionActive ? 'biz-demo' : matchedUser.businessId;
 
-          if (!isValid && verifyRes.error) {
-            if (verifyRes.error.includes('Access Blocked') || verifyRes.error.includes('locked')) {
-              soundFx.playError();
-              showToast(verifyRes.error, 'error');
-              return false;
-            }
+          if (!targetBizId) {
+            soundFx.playError();
+            showToast('Access Blocked: Staff member has no assigned business tenant.', 'error');
+            return false;
           }
-        }
-      } catch (err: any) {
-        if (err?.message?.includes('locked') || err?.message?.includes('Too many')) {
-          soundFx.playError();
-          showToast(err.message, 'error');
-          return false;
-        }
-        console.warn('Server PIN verification fallback attempt:', err);
-        const isDemoMatch =
-          isExplicitDemoUser &&
-          pin === '1234' &&
-          (matchedUser.businessId === 'biz-demo' ||
-            matchedUser.code === '#7000' ||
-            matchedUser.id === appointedDemoCashierId ||
-            matchedUser.isAppointedDemo);
-        isValid = isDemoMatch || (await verifyPinOnServer(pin, matchedUser.pin));
-      }
 
-      if (isValid) {
-        // Isolate demo sessions strictly to biz-demo; real staff members always land in their own businessId
-        const isDemoSessionActive = Boolean(isDemo) || matchedUser.businessId === 'biz-demo';
-        const targetBizId = isDemoSessionActive ? 'biz-demo' : matchedUser.businessId;
-
-        if (!targetBizId) {
-          soundFx.playError();
-          showToast('Access Blocked: Staff member has no assigned business tenant.', 'error');
-          return false;
-        }
-
-        // Resolve assigned location within targetBizId (never inherit a location from the previous business)
-        const targetBizLocations = allLocations.filter((l) => l.businessId === targetBizId);
-        const targetLocationId = isDemoSessionActive
-          ? 'loc-demo-01'
-          : (matchedUser.assignedLocationId && targetBizLocations.some((l) => l.id === matchedUser.assignedLocationId)
-              ? matchedUser.assignedLocationId
-              : targetBizLocations[0]?.id || matchedUser.assignedLocationId);
-
-        let biz = businesses.find((b) => b.id === targetBizId);
-        if (!biz && isOnline && auth.currentUser && (auth.currentUser.emailVerified || isCurrentUserSuperAdmin()) && !isDemoBusinessId(targetBizId)) {
-          try {
-            const singleBiz = await getBusinessByIdFromFirestore(targetBizId);
-            if (singleBiz) {
-              setBusinesses((prev) => {
-                const map = new Map<string, Business>();
-                prev.forEach((b) => map.set(b.id, b));
-                map.set(singleBiz.id, singleBiz);
-                return Array.from(map.values());
-              });
-              biz = singleBiz;
+          // Restore only verified targetBizId records (never leak any other tenant's cached data)
+          if (isDemoSessionActive) {
+            setBusinesses(INITIAL_BUSINESSES);
+            setAllProducts(INITIAL_PRODUCTS);
+            setAllCategories(INITIAL_CATEGORIES);
+            setAllLocations(INITIAL_LOCATIONS);
+            setAllSystemUsers(INITIAL_SYSTEM_USERS);
+            setAllCustomers(INITIAL_CUSTOMERS);
+            setAllSuppliers(INITIAL_SUPPLIERS);
+            setAllTransactions(INITIAL_TRANSACTIONS);
+            setAllShifts(INITIAL_SHIFTS);
+          } else {
+            const scopedBiz = preResetBusinesses.find((b) => b.id === targetBizId);
+            if (scopedBiz) {
+              setBusinesses([scopedBiz]);
             }
-          } catch (e) {
-            console.warn('Fetch remote business by ID for staff session:', e);
+            setAllLocations(preResetLocations.filter((l) => l.businessId === targetBizId));
+            setAllProducts(preResetProducts.filter((p) => p.businessId === targetBizId));
+            setAllCategories(preResetCategories.filter((c) => c.businessId === targetBizId));
+            setAllCustomers(preResetCustomers.filter((c) => c.businessId === targetBizId));
+            setAllSuppliers(preResetSuppliers.filter((s) => s.businessId === targetBizId));
+            setAllTransactions(preResetTransactions.filter((t) => t.businessId === targetBizId));
+            setAllShifts(preResetShifts.filter((s) => s.businessId === targetBizId));
+            const scopedStaff = preResetUsers.filter((u) => u.businessId === targetBizId);
+            setAllSystemUsers(scopedStaff.some((u) => u.id === matchedUser.id) ? scopedStaff : [matchedUser]);
           }
-        }
 
-        // Strict Check: Check if business is active or suspended
-        if ((biz && biz.status === 'suspended') || verifiedBusinessStatus === 'suspended') {
-          soundFx.playError();
-          showToast(
-            `Access Blocked: The business account "${biz?.name || verifiedBusinessName || targetBizId}" is currently suspended. Please contact the business owner.`,
-            'error'
+          // Resolve assigned location within targetBizId (never inherit a location from the previous business)
+          const targetBizLocations = (isDemoSessionActive ? INITIAL_LOCATIONS : preResetLocations).filter(
+            (l) => l.businessId === targetBizId
           );
-          return false;
+          const targetLocationId = isDemoSessionActive
+            ? 'loc-demo-01'
+            : matchedUser.assignedLocationId && targetBizLocations.some((l) => l.id === matchedUser.assignedLocationId)
+            ? matchedUser.assignedLocationId
+            : targetBizLocations[0]?.id || matchedUser.assignedLocationId;
+
+          const biz = (isDemoSessionActive ? INITIAL_BUSINESSES : preResetBusinesses).find((b) => b.id === targetBizId);
+
+          // Strict Check: Check if business is active or suspended
+          if ((biz && biz.status === 'suspended') || verifiedBusinessStatus === 'suspended') {
+            soundFx.playError();
+            showToast(
+              `Access Blocked: The business account "${biz?.name || verifiedBusinessName || targetBizId}" is currently suspended. Please contact the business owner.`,
+              'error'
+            );
+            return false;
+          }
+
+          const resolvedBizName = isDemoSessionActive
+            ? 'SokoPoS Demo Mart (Sandbox)'
+            : biz?.name || verifiedBusinessName || 'SokoPoS Terminal Store';
+
+          // Strict Session Lockdown: Bound strictly to targetBizId and matchedUser.role with masked PIN
+          const authUser: AuthUser = {
+            id: matchedUser.id,
+            email: `${matchedUser.username || matchedUser.code.replace(/^#/, '')}@${isDemoSessionActive ? 'demo' : biz?.code.toLowerCase() || 'pos'}.internal`,
+            name: matchedUser.name,
+            initials: matchedUser.initials,
+            authProvider: 'credentials',
+            role: matchedUser.role as UserRole,
+            businessId: targetBizId,
+            businessName: resolvedBizName,
+            username: matchedUser.username,
+            pin: PROTECTED_PIN_MASK,
+            assignedLocationId: targetLocationId,
+            createdAt: matchedUser.shiftStartedAt,
+            isDemoSession: isDemoSessionActive,
+          };
+
+          // Pin active tenant state strictly to this business
+          isIdbHydratedRef.current = !isDemoSessionActive;
+          setIsForeignOutboxDismissed(false);
+          setCurrentUser(authUser);
+          setActiveBusinessIdState(targetBizId);
+          localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
+
+          if (isDemoSessionActive) {
+            localStorage.setItem(STORAGE_KEYS.IS_DEMO_SESSION, 'true');
+            localStorage.removeItem('sokopos_demo_intent');
+          } else {
+            localStorage.removeItem(STORAGE_KEYS.IS_DEMO_SESSION);
+            localStorage.removeItem('sokopos_demo_intent');
+          }
+
+          setCurrentCashier(matchedUser);
+
+          if (targetLocationId) {
+            setCurrentLocationIdState(targetLocationId);
+            localStorage.setItem(STORAGE_KEYS.CURRENT_LOC, targetLocationId);
+          }
+
+          clearCart();
+          setActiveReceipt(null);
+          setActiveRefundReceipt(null);
+          setSessionEpoch((prev) => prev + 1);
+
+          soundFx.playSuccess();
+          showToast(
+            `Shift started for ${matchedUser.name} (${matchedUser.role}) at ${resolvedBizName}.`,
+            'success'
+          );
+          return true;
         }
-
-        const resolvedBizName = isDemoSessionActive
-          ? 'SokoPoS Demo Mart (Sandbox)'
-          : (biz?.name || verifiedBusinessName || 'SokoPoS Terminal Store');
-
-        // Strict Session Lockdown: Bound strictly to targetBizId and matchedUser.role with masked PIN
-        const authUser: AuthUser = {
-          id: matchedUser.id,
-          email: `${matchedUser.username || matchedUser.code.replace(/^#/, '')}@${isDemoSessionActive ? 'demo' : biz?.code.toLowerCase() || 'pos'}.internal`,
-          name: matchedUser.name,
-          initials: matchedUser.initials,
-          authProvider: 'credentials',
-          role: matchedUser.role as UserRole,
-          businessId: targetBizId,
-          businessName: resolvedBizName,
-          username: matchedUser.username,
-          pin: PROTECTED_PIN_MASK,
-          assignedLocationId: targetLocationId,
-          createdAt: matchedUser.shiftStartedAt,
-          isDemoSession: isDemoSessionActive,
-        };
-
-        // Pin active tenant state strictly to this business
-        setCurrentUser(authUser);
-        setActiveBusinessIdState(targetBizId);
-        localStorage.setItem(STORAGE_KEYS.ACTIVE_BIZ_ID, targetBizId);
-
-        if (isDemoSessionActive) {
-          localStorage.setItem(STORAGE_KEYS.IS_DEMO_SESSION, 'true');
-          localStorage.removeItem('sokopos_demo_intent');
-        } else {
-          localStorage.removeItem(STORAGE_KEYS.IS_DEMO_SESSION);
-          localStorage.removeItem('sokopos_demo_intent');
-        }
-
-        setCurrentCashier(matchedUser);
-
-        if (targetLocationId) {
-          setCurrentLocationIdState(targetLocationId);
-          localStorage.setItem(STORAGE_KEYS.CURRENT_LOC, targetLocationId);
-        }
-
-        clearCart();
-        setActiveReceipt(null);
-        setActiveRefundReceipt(null);
-
-        soundFx.playSuccess();
-        showToast(
-          `Shift started for ${matchedUser.name} (${matchedUser.role}) at ${resolvedBizName}.`,
-          'success'
-        );
-        return true;
       }
-    }
 
-    soundFx.playError();
-    showToast('Incorrect 4-digit PIN for this staff account. Try again.', 'error');
-    return false;
+      soundFx.playError();
+      showToast('Incorrect 4-digit PIN for this staff account. Try again.', 'error');
+      return false;
+    } finally {
+      activeManualLoginRef.current = false;
+    }
   };
 
   const logout = (): boolean => {
@@ -10241,36 +11079,17 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       );
     }
 
-    // 2. Mark session as explicitly signed out
-    localStorage.setItem(STORAGE_KEYS.IS_LOGGED_OUT, 'true');
-    localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
-    localStorage.removeItem(STORAGE_KEYS.IS_DEMO_SESSION);
-    localStorage.removeItem('sokopos_demo_intent');
+    // 2. Run strict session teardown (signs out Firebase, resets tenant & UI state, clears local/IDB tenant caches while keeping sync_outbox)
+    void resetClientSessionStateRef.current({
+      signOutFirebase: true,
+      markLoggedOut: true,
+      preservePendingCheckout: false,
+    });
 
-    // 3. Clear Firebase session if active
-    try {
-      firebaseSignOut(auth).catch((err) => {
-        console.warn('Firebase signout note:', err);
-      });
-    } catch (err) {
-      console.warn('Firebase signout exception:', err);
-    }
-
-    // 4. Reset server freshness timestamp for next login
-    setInventoryLastFetchedAt(null);
-
-    // 5. Clear user session completely
-    setFirebaseEmailVerifiedState(false);
-    setPendingVerificationEmail(null);
-    setCurrentUser(null);
-    clearCart();
-    setActiveReceipt(null);
-    setActiveRefundReceipt(null);
-    setIsPinLocked(false);
     soundFx.playBeep(440, 0.15);
-    showToast('Signed out of POS terminal. Session terminated successfully.', 'info');
+    showToast('Signed out of POS terminal. Session cleared securely.', 'info');
 
-    // 6. Navigate to root landing page
+    // 3. Navigate to root landing page
     if (typeof window !== 'undefined' && window.location.pathname !== '/') {
       window.history.pushState(null, '', '/');
       window.dispatchEvent(new PopStateEvent('popstate'));
@@ -10293,17 +11112,17 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const canonicalPlan = normalizePlanTier(plan);
 
     const trimmedEmail = ownerEmail.trim().toLowerCase();
-    if (!isRealGoogleAccount(trimmedEmail)) {
-      showToast('Validation Error: Business owner must have an authentic Google Account (e.g. name@gmail.com).', 'error');
-      throw new Error('Business owner must have an authentic Google Account (e.g. name@gmail.com).');
+    if (!isValidBusinessOwnerEmail(trimmedEmail)) {
+      showToast('Validation Error: Please enter a valid business owner email address (mock/test domains are excluded).', 'error');
+      throw new Error('Please enter a valid business owner email address (mock/test domains are excluded).');
     }
 
-    // Enforce uniqueness at email level: No two businesses may share the same Google account email
+    // Enforce uniqueness at email level: No two businesses may share the same owner email
     const existingWithEmail = businesses.find(
       (b) => b.ownerEmail.toLowerCase() === trimmedEmail
     );
     if (existingWithEmail) {
-      const errMsg = `Conflict Error: A business tenant ("${existingWithEmail.name}", ID: ${existingWithEmail.id}) is already registered with Google account ${trimmedEmail}. No two businesses may share the same Google account email.`;
+      const errMsg = `Conflict Error: A business tenant ("${existingWithEmail.name}", ID: ${existingWithEmail.id}) is already registered with owner email ${trimmedEmail}. No two businesses may share the same owner email.`;
       showToast(errMsg, 'error');
       throw new Error(errMsg);
     }
@@ -10327,7 +11146,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       plan: canonicalPlan,
       status: 'active',
       currency: 'KES',
-      taxNumber: `P0${Math.floor(100000000 + Math.random() * 900000000)}Z`,
+      taxNumber: '',
       ...(capturedRefCode ? { referredByCode: capturedRefCode, referredAt: new Date().toISOString() } : {}),
     };
     if (capturedRefCode) {
@@ -10379,7 +11198,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       'business',
       newBizId,
       'provision_business',
-      `Super-admin provisioned business tenant "${name}" associated with Google account ${ownerEmail}`,
+      `Super-admin provisioned business tenant "${name}" associated with owner account ${ownerEmail}`,
       null,
       newBusiness
     );
@@ -10388,20 +11207,20 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return newBusiness;
   };
 
-  // System Cleanup: Purge unverified accounts and enforce strict uniqueness across Google accounts and tenant IDs
+  // System Cleanup: Purge mock/placeholder domains and enforce strict uniqueness across owner emails and tenant IDs
   const performSystemCleanup = async (): Promise<{
     removedCount: number;
     removedBusinesses: string[];
   }> => {
-    // 1. Identify businesses lacking a real Google account
+    // 1. Identify businesses using invalid or mock/placeholder domains
     const fakeToRemove = businesses.filter(
-      (b) => !isRealGoogleAccount(b.ownerEmail) || b.id === 'biz-soko' || b.id === 'biz-quickmart'
+      (b) => !isValidBusinessOwnerEmail(b.ownerEmail) || b.id === 'biz-soko' || b.id === 'biz-quickmart'
     );
 
     // 2. Enforce uniqueness on remaining businesses (email & tenant ID levels)
     // Prioritizing the account last logged into
     const verifiedCandidates = businesses.filter(
-      (b) => isRealGoogleAccount(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'
+      (b) => isValidBusinessOwnerEmail(b.ownerEmail) && b.id !== 'biz-soko' && b.id !== 'biz-quickmart'
     );
     const { uniqueBusinesses, conflictsToDelete } = resolveBusinessUniquenessConflicts(verifiedCandidates);
 
@@ -10445,7 +11264,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       action: 'system_cleanup' as any,
       recordType: 'business',
       recordId: 'all',
-      description: `System Cleanup: Removed ${toRemove.length} business owner accounts lacking a real Google account. (${removedNames.join(', ') || 'Clean state verified'})`,
+      description: `System Cleanup: Removed ${toRemove.length} mock or duplicate tenant accounts. (${removedNames.join(', ') || 'Clean state verified'})`,
       beforeValue: { removedIds: Array.from(unverifiedIds) },
       afterValue: { remainingBusinessesCount: nextBizs.length },
     };
@@ -10453,9 +11272,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     soundFx.playSuccess();
     if (toRemove.length > 0) {
-      showToast(`System cleanup complete: Removed ${toRemove.length} business owner accounts lacking real Google accounts.`, 'success');
+      showToast(`System cleanup complete: Removed ${toRemove.length} mock or duplicate tenant accounts.`, 'success');
     } else {
-      showToast('System cleanup complete: All existing business accounts have verified Google identities.', 'success');
+      showToast('System cleanup complete: All existing tenant accounts use valid owner emails.', 'success');
     }
 
     return {
@@ -10796,6 +11615,12 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const updateBusinessProfile = (updates: Partial<Business>) => {
     if (!currentBusiness) return;
 
+    const isOwnerActing =
+      isSuperAdmin ||
+      currentUser?.role === 'business_owner' ||
+      (Boolean(currentUser?.email) &&
+        currentUser?.email?.toLowerCase() === currentBusiness.ownerEmail?.toLowerCase());
+
     if (!isSuperAdmin) {
       if (
         updates.currency !== undefined &&
@@ -10824,15 +11649,78 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           return;
         }
       }
+
+      const taxNumberChanged =
+        (updates.taxNumber !== undefined && updates.taxNumber !== currentBusiness.taxNumber) ||
+        (updates.taxSettings?.taxNumber !== undefined &&
+          updates.taxSettings.taxNumber !== currentBusiness.taxSettings?.taxNumber);
+      if (taxNumberChanged && !isOwnerActing) {
+        showToast('Only the store owner or Super Admin can modify the registered KRA PIN.', 'error');
+        return;
+      }
+    }
+
+    // Validate store KRA PIN updates (anti-forgery format + production anti-placeholder guard)
+    const effectiveEnv =
+      updates.taxSettings?.digitaxEnvironment ||
+      currentBusiness.taxSettings?.digitaxEnvironment ||
+      'sandbox';
+
+    let normalizedTopPin: string | undefined;
+    if (updates.taxNumber !== undefined) {
+      const check = validateKraPinStrict(updates.taxNumber, {
+        required: false,
+        allowPlaceholderInSandbox: effectiveEnv === 'sandbox',
+      });
+      if (!check.isValid) {
+        showToast(check.reason || 'Invalid Store KRA PIN format.', 'error');
+        return;
+      }
+      normalizedTopPin = check.normalized || '';
+    }
+
+    let normalizedTaxSettings = updates.taxSettings;
+    if (updates.taxSettings !== undefined) {
+      const settingsPin = updates.taxSettings.taxNumber;
+      const check = validateKraPinStrict(settingsPin, {
+        required: false,
+        allowPlaceholderInSandbox: effectiveEnv === 'sandbox',
+      });
+      if (!check.isValid) {
+        showToast(check.reason || 'Invalid KRA Tax PIN format.', 'error');
+        return;
+      }
+      const nextPin = check.normalized || '';
+      const pinChanged = nextPin !== (currentBusiness.taxSettings?.taxNumber || '').trim().toUpperCase();
+      normalizedTaxSettings = {
+        ...updates.taxSettings,
+        taxNumber: nextPin,
+        taxPinVerificationStatus:
+          updates.taxSettings.taxPinVerificationStatus ||
+          (pinChanged
+            ? check.isPlaceholder
+              ? 'sandbox_placeholder'
+              : 'unverified'
+            : currentBusiness.taxSettings?.taxPinVerificationStatus),
+      };
+      if (normalizedTopPin === undefined && settingsPin !== undefined) {
+        normalizedTopPin = nextPin;
+      }
     }
 
     // Never allow non-super-admins to tamper with protected billing/plan fields via profile updates
-    const safeUpdates: Partial<Business> = isSuperAdmin
+    const baseSafeUpdates: Partial<Business> = isSuperAdmin
       ? updates
       : (() => {
           const { plan: _p, status: _s, subscription: _sub, ...rest } = updates;
           return rest;
         })();
+
+    const safeUpdates: Partial<Business> = {
+      ...baseSafeUpdates,
+      ...(normalizedTopPin !== undefined ? { taxNumber: normalizedTopPin } : {}),
+      ...(normalizedTaxSettings !== undefined ? { taxSettings: normalizedTaxSettings } : {}),
+    };
 
     if (Object.keys(safeUpdates).length === 0) return;
 
@@ -10842,9 +11730,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setBusinesses((prev) =>
       prev.map((b) => (b.id === activeBusinessId ? updatedBiz : b))
     );
-    if (safeUpdates.taxNumber) {
+    if (safeUpdates.taxNumber !== undefined) {
       setAllLocations((prev) =>
-        prev.map((loc) => (loc.businessId === activeBusinessId ? { ...loc, taxId: safeUpdates.taxNumber! } : loc))
+        prev.map((loc) =>
+          loc.businessId === activeBusinessId ? { ...loc, taxId: safeUpdates.taxNumber || '' } : loc
+        )
       );
     }
     if (isOnline) {
@@ -11764,10 +12654,188 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [currentBusiness, currentUser?.name]);
 
+  const resetClientSessionState = useCallback(
+    async (options?: {
+      preserveDemoIntent?: boolean;
+      signOutFirebase?: boolean;
+      markLoggedOut?: boolean;
+      preservePendingCheckout?: boolean;
+    }) => {
+      authTransitionEpochRef.current += 1;
+      isTearingDownSessionRef.current = true;
+      setIsAuthTransitioning(true);
+      isIdbHydratedRef.current = false;
+
+      try {
+        if (options?.signOutFirebase !== false) {
+          try {
+            await firebaseSignOut(auth);
+          } catch (err) {
+            console.warn('Firebase signout during session reset:', err);
+          }
+        }
+
+        // Clear all in-memory fetch TTL & cursor refs
+        hasVerifiedConnectionRef.current = false;
+        lastBusinessesFetchRef.current = 0;
+        lastCategoriesFetchRef.current = {};
+        lastStaffFetchRef.current = {};
+        lastCustomersFetchRef.current = {};
+        lastSuppliersFetchRef.current = {};
+        lastBiFetchRef.current = {};
+        healedTenantsRef.current.clear();
+        notifiedPaymentRefsRef.current.clear();
+
+        // Reset auth & business identity state
+        setFirebaseUser(null);
+        setFirebaseEmailVerifiedState(false);
+        setPendingVerificationEmail(null);
+        setCurrentUser(null);
+        setActiveBusinessIdState(INITIAL_BUSINESSES[0].id);
+        setBusinesses(INITIAL_BUSINESSES);
+        setCurrentLocationIdState(INITIAL_LOCATIONS[0].id);
+        setCurrentCashier(INITIAL_SYSTEM_USERS[0]);
+        setIsForeignOutboxDismissed(false);
+        setIsTenantsLoading(false);
+        setTenantsLoadError(null);
+
+        // Reset tenant operational stores to clean defaults
+        setAllProducts(INITIAL_PRODUCTS);
+        setAllCategories(INITIAL_CATEGORIES);
+        setAllLocations(INITIAL_LOCATIONS);
+        setAllSystemUsers(INITIAL_SYSTEM_USERS);
+        setAllCustomers(INITIAL_CUSTOMERS);
+        setAllSuppliers(INITIAL_SUPPLIERS);
+        setAllTransactions(INITIAL_TRANSACTIONS);
+        setAllShifts(INITIAL_SHIFTS);
+        setAllSyncLogs(INITIAL_SYNC_LOGS);
+        setStoreSalesBackups([]);
+        setSuperAdminAuditLogs(INITIAL_SUPER_ADMIN_AUDIT_LOGS);
+        setAdminActivityLogs([]);
+        setSupervisorOverrideLogs([]);
+        setVoidRecords([]);
+        setAllAnalyticsRollups([]);
+        setAllAnalyticsTargets([]);
+        setAllAnalyticsSavedViews([]);
+        setBiLastSyncedAt(null);
+        setInventoryLastFetchedAt(null);
+        setOlderTransactionsLoadedFrom(null);
+
+        // Reset register, receipts, modals, and transient UI state
+        setCart([]);
+        setHeldOrders([]);
+        setSelectedCustomer(null);
+        setActiveReceipt(null);
+        setActiveRefundReceipt(null);
+        setIsReturnsModalOpen(false);
+        setSelectedReturnTx(null);
+        setIsPinLocked(false);
+        setIsSellingMode(false);
+        setIsBusinessSettingsOpen(false);
+        setBusinessSettingsDefaultTab('profile');
+        setIsShiftModalOpen(false);
+        setIsSubscriptionModalOpen(false);
+        setIsAffiliateModalOpen(false);
+        setIsMobileMenuOpen(false);
+        setUpgradePrompt(null);
+        setPendingDestructiveAction(null);
+        setLivePaymentRecordSnapshot(null);
+        setUnknownBarcodePrompt({ isOpen: false, barcode: null, metadata: null, source: null });
+        if (!options?.preservePendingCheckout) {
+          clearPendingSubscription();
+          clearPendingCheckoutIntent();
+        }
+
+        // Clear session & tenant localStorage/sessionStorage keys while preserving hardware/theme prefs
+        try {
+          if (options?.markLoggedOut) {
+            localStorage.setItem(STORAGE_KEYS.IS_LOGGED_OUT, 'true');
+          } else {
+            localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
+          }
+          localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+          localStorage.removeItem(STORAGE_KEYS.ACTIVE_BIZ_ID);
+          localStorage.removeItem(STORAGE_KEYS.CURRENT_LOC);
+          localStorage.removeItem(STORAGE_KEYS.SELLING_MODE);
+          if (!options?.preserveDemoIntent) {
+            localStorage.removeItem(STORAGE_KEYS.IS_DEMO_SESSION);
+            localStorage.removeItem('sokopos_demo_intent');
+          }
+          const lsKeysToRemove: string[] = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith('sokopos_held_orders_')) {
+              lsKeysToRemove.push(k);
+            }
+          }
+          lsKeysToRemove.forEach((k) => localStorage.removeItem(k));
+        } catch {}
+
+        try {
+          sessionStorage.removeItem('sokopos_pending_store_name');
+          sessionStorage.removeItem('sokopos_pending_partner_registration');
+          sessionStorage.removeItem('sokopos_redirect_in_progress');
+          if (!options?.preservePendingCheckout) {
+            sessionStorage.removeItem('sokopos_pending_checkout_intent');
+            sessionStorage.removeItem('sokopos_selected_checkout_pkg');
+          }
+          const ssKeysToRemove: string[] = [];
+          for (let i = 0; i < sessionStorage.length; i++) {
+            const k = sessionStorage.key(i);
+            if (k && k.startsWith('sokopos_handled_')) {
+              ssKeysToRemove.push(k);
+            }
+          }
+          ssKeysToRemove.forEach((k) => sessionStorage.removeItem(k));
+        } catch {}
+
+        // Clear cached IndexedDB tenant stores while preserving business-scoped sync_outbox
+        await clearTenantTerminalCacheKeepOutbox().catch((err) => {
+          console.warn('IndexedDB tenant cache teardown notice:', err);
+        });
+        const preservedOutbox = await getAllOutboxEntries().catch(() => []);
+        setOutboxItems(preservedOutbox);
+      } finally {
+        isTearingDownSessionRef.current = false;
+        setIsAuthTransitioning(false);
+      }
+    },
+    [clearPendingCheckoutIntent, clearPendingSubscription]
+  );
+
+  resetClientSessionStateRef.current = resetClientSessionState;
+
+  const foreignOutboxSummary = useMemo<ForeignOutboxSummary>(() => {
+    if (!currentUser || isDemoSession) {
+      return { count: 0, businessIds: [], dismissed: isForeignOutboxDismissed };
+    }
+    const foreignEntries = outboxItems.filter(
+      (item) =>
+        item &&
+        item.businessId &&
+        item.businessId !== activeBusinessId &&
+        !isDemoBusinessId(item.businessId)
+    );
+    const uniqueBizIds = Array.from(new Set(foreignEntries.map((e) => e.businessId)));
+    return {
+      count: foreignEntries.length,
+      businessIds: uniqueBizIds,
+      dismissed: isForeignOutboxDismissed,
+    };
+  }, [currentUser, isDemoSession, outboxItems, activeBusinessId, isForeignOutboxDismissed]);
+
+  const dismissForeignOutboxWarning = useCallback(() => {
+    setIsForeignOutboxDismissed(true);
+  }, []);
+
   return (
     <PosContext.Provider
       value={{
         currentUser,
+        isAuthTransitioning,
+        sessionEpoch,
+        foreignOutboxSummary,
+        dismissForeignOutboxWarning,
         pendingVerificationEmail,
         loginWithFirebaseGoogle,
         loginWithFirebaseEmailPassword,
@@ -11796,6 +12864,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updateBusinessStatus,
         performSystemCleanup,
         refreshAllBusinessesForSuperAdmin,
+        isTenantsLoading,
+        tenantsLoadError,
+        isValidBusinessOwnerEmail,
+        isGoogleEmailAccount,
         isRealGoogleAccount,
         requiresLegalConsent,
         recordMerchantLegalConsent,
@@ -11975,6 +13047,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addCustomer,
         updateCustomer,
         deleteCustomer,
+        anonymizeCustomer,
         adjustCustomerCredit,
         redeemCustomerLoyaltyPoints,
         refreshTenantCustomers,
@@ -11992,6 +13065,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         analyticsRollups,
         analyticsTargets,
         analyticsSavedViews,
+        canEditAnalyticsTargets,
+        lockedAnalyticsLocationId,
         isBiSyncing,
         isBiDataLoading,
         biLastSyncedAt,

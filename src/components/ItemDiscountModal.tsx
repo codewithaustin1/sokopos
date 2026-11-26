@@ -16,6 +16,7 @@ import {
 import { CartItem } from '../types';
 import { usePos } from '../context/PosContext';
 import { soundFx } from '../utils/audio';
+import { calculateMonthlyTargetPacing, getPeriodKey } from '../utils/biEngine';
 
 interface ItemDiscountModalProps {
   isOpen: boolean;
@@ -38,8 +39,35 @@ export const ItemDiscountModal: React.FC<ItemDiscountModalProps> = ({
     verifyManagerOverridePin,
     systemUsers,
     allSystemUsers,
+    analyticsTargets,
+    analyticsRollups,
+    transactions,
+    products,
+    shiftHistory,
     showToast,
   } = usePos();
+
+  const branchTargetPacing = useMemo(
+    () =>
+      calculateMonthlyTargetPacing({
+        periodKey: getPeriodKey(),
+        selectedLocationId: currentLocation.id,
+        targets: analyticsTargets,
+        transactions: transactions || [],
+        rollups: analyticsRollups || [],
+        products: products || [],
+        shifts: shiftHistory || [],
+        allowStoreFallback: true,
+      }),
+    [
+      currentLocation.id,
+      analyticsTargets,
+      transactions,
+      analyticsRollups,
+      products,
+      shiftHistory,
+    ]
+  );
 
   // Mode: 'percentage' or 'flat'
   const [discountType, setDiscountType] = useState<'percentage' | 'flat'>('flat');
@@ -477,6 +505,38 @@ export const ItemDiscountModal: React.FC<ItemDiscountModalProps> = ({
           ) : (
             /* VIEW B: MAIN DISCOUNT SELECTION & PRESETS */
             <>
+              {/* Branch Discount Ceiling Guardrail Warning (Non-Blocking) */}
+              {(() => {
+                const maxCeiling = branchTargetPacing.target?.maxDiscountPct ?? 0;
+                if (maxCeiling <= 0) return null;
+                const itemDiscountPct =
+                  originalUnitPrice > 0 ? (currentDiscountAmount / originalUnitPrice) * 100 : 0;
+                const itemExceedsCeiling = itemDiscountPct > maxCeiling;
+                if (!itemExceedsCeiling && !branchTargetPacing.discountBreached) return null;
+                return (
+                  <div
+                    className={`p-2.5 rounded-xl border text-xs flex items-start gap-2 ${
+                      itemExceedsCeiling
+                        ? 'bg-rose-50 border-rose-200 text-rose-800'
+                        : 'bg-amber-50 border-amber-200 text-amber-900'
+                    }`}
+                  >
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <p className="font-semibold">
+                        {itemExceedsCeiling
+                          ? `Exceeds ${maxCeiling.toFixed(1)}% branch discount ceiling`
+                          : `Branch MTD discounts (${branchTargetPacing.discountLeakagePct.toFixed(1)}%) exceed ${maxCeiling.toFixed(1)}% ceiling`}
+                      </p>
+                      <p className="text-[11px] opacity-90 font-mono tabular-nums mt-0.5">
+                        Line discount: {itemDiscountPct.toFixed(1)}% · Branch MTD:{' '}
+                        {branchTargetPacing.discountLeakagePct.toFixed(2)}%
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Type Switcher: Flat Amount vs. Percentage */}
               <div className="flex bg-slate-100 p-1 rounded-xl">
                 <button
