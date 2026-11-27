@@ -42,6 +42,7 @@ import {
   AnalyticsTarget,
   AnalyticsSavedView,
 } from '../types/reporting';
+import { normalizePricingTiersArray } from '../types/pricing';
 
 export enum OperationType {
   CREATE = 'create',
@@ -1700,69 +1701,13 @@ export async function clearAllBrandingSlotsInFirestore(
 // Global Pricing Tiers (platform_settings/pricing_tiers, 24h On-Demand Cache)
 // -------------------------------------------------------------
 const PRICING_TIERS_DOC_ID = 'pricing_tiers';
-const PRICING_TIERS_CACHE_KEY = 'sokopos_pricing_tiers_cache_v1';
+const PRICING_TIERS_CACHE_KEY = 'sokopos_pricing_tiers_cache_v2';
 const PRICING_TIERS_TTL_MS = 24 * 60 * 60 * 1000;
 let inFlightPricingTiersPromise: Promise<{
   tiers: PricingTier[];
   updatedAt?: string;
   updatedBy?: string;
 } | null> | null = null;
-
-function normalizePricingTiersArray(rawTiers: unknown): PricingTier[] | null {
-  if (!Array.isArray(rawTiers) || rawTiers.length === 0) return null;
-
-  const byId = new Map<string, any>();
-  for (const item of rawTiers) {
-    if (item && typeof item === 'object' && typeof item.id === 'string') {
-      byId.set(item.id.toLowerCase(), item);
-    }
-  }
-  if (byId.size === 0) return null;
-
-  const merged: PricingTier[] = DEFAULT_PRICING_TIERS.map((defTier) => {
-    const remote = byId.get(defTier.id.toLowerCase());
-    if (!remote) return defTier;
-
-    const monthlyPrice =
-      typeof remote.monthlyPrice === 'number' && Number.isFinite(remote.monthlyPrice) && remote.monthlyPrice >= 0
-        ? remote.monthlyPrice
-        : defTier.monthlyPrice;
-    const annualPrice =
-      typeof remote.annualPrice === 'number' && Number.isFinite(remote.annualPrice) && remote.annualPrice >= 0
-        ? remote.annualPrice
-        : defTier.annualPrice;
-    const consultationFee =
-      typeof remote.consultationFee === 'number' &&
-      Number.isFinite(remote.consultationFee) &&
-      remote.consultationFee >= 0
-        ? remote.consultationFee
-        : defTier.consultationFee;
-
-    return {
-      ...defTier,
-      ...remote,
-      id: defTier.id,
-      monthlyPrice,
-      annualPrice,
-      ...(consultationFee !== undefined ? { consultationFee } : {}),
-      maxBranches:
-        typeof remote.maxBranches === 'number' && Number.isFinite(remote.maxBranches)
-          ? remote.maxBranches
-          : defTier.maxBranches,
-      maxStaffUsers:
-        typeof remote.maxStaffUsers === 'number' && Number.isFinite(remote.maxStaffUsers)
-          ? remote.maxStaffUsers
-          : defTier.maxStaffUsers,
-      features: Array.isArray(remote.features)
-        ? remote.features.filter((f: unknown) => typeof f === 'string' && f.trim().length > 0)
-        : defTier.features,
-      isPopular: typeof remote.isPopular === 'boolean' ? remote.isPopular : defTier.isPopular,
-      isActive: typeof remote.isActive === 'boolean' ? remote.isActive : defTier.isActive,
-    };
-  });
-
-  return merged;
-}
 
 export async function getPricingTiersFromFirestore(forceRefresh = false): Promise<{
   tiers: PricingTier[];

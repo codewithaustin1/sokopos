@@ -3,8 +3,9 @@ import { ArrowLeft } from 'lucide-react';
 import { PublicSiteHeader } from './common/PublicSiteHeader';
 import { AppFooter } from './common/AppFooter';
 import { WhatsAppFloatingButton } from './landing/WhatsAppFloatingButton';
+import { PricingFeatureText } from './pricing/PricingFeatureText';
 import { usePos } from '../context/PosContext';
-import { DEFAULT_PRICING_TIERS } from '../types/pricing';
+import { DEFAULT_PRICING_TIERS, PricingTier } from '../types/pricing';
 import { scrollToTop } from '../utils/scrollUtils';
 import { trackPlatformEvent } from '../lib/telemetryService';
 
@@ -19,6 +20,7 @@ interface TierDefinition {
   name: string;
   alias: string;
   badge: string;
+  bundleLabel?: string;
   m: number;
   a: number;
   setup?: number;
@@ -32,101 +34,32 @@ interface TierDefinition {
   pop?: boolean;
 }
 
-const TIERS: TierDefinition[] = [
-  {
-    id: 'free',
-    name: 'Free',
-    alias: 'Free account',
-    badge: 'No monthly fee',
-    m: 0,
-    a: 0,
-    setup: 1999,
-    setupNote: 'Includes 1-on-1 printer pairing, stock upload and KRA tax advice.',
-    tagline: 'Lifetime free POS, with expert setup for a one-time fee.',
-    branches: '1',
-    staff: '1',
-    support: 'Setup consultation and community help',
-    cta: 'Book a setup session',
-    f: [
-      'Free cloud POS, forever',
-      '250 products with barcode scanning',
-      'Receipt printing, 58mm and 80mm',
-      'Offline selling that syncs later',
-      'M-Pesa, cash and split payments',
-      'Printer pairing and CSV stock upload',
-    ],
-  },
-  {
-    id: 'starter',
-    name: 'Starter',
-    alias: 'Basic',
-    badge: '',
-    m: 599,
-    a: 5990,
-    tagline: 'For solo kiosks, boutiques and quick checkout counters.',
-    branches: '1',
-    staff: '2',
-    support: 'Email and community help',
-    cta: 'Choose Starter',
-    f: [
-      'Barcode scanning and SKU lookup',
-      'Low-stock alerts',
-      'Receipt printing, 58mm and 80mm',
-      'Daily till closing and cash audit',
-      'Cash, M-Pesa and split payments',
-      'Offline selling that syncs later',
-    ],
-  },
-  {
-    id: 'business',
-    name: 'Business',
-    alias: 'Pro',
-    badge: 'Best value',
-    m: 1299,
-    a: 12990,
-    pop: true,
-    tagline: 'For busy mini-marts and multi-counter shops.',
-    branches: '3',
-    staff: '10',
-    support: 'Priority WhatsApp and phone support',
-    cta: 'Choose Business',
-    f: [
-      'Switch between branches instantly',
-      'Stock transfers between stores',
-      '15+ reports with CSV export',
-      'Purchase orders and stock receiving',
-      'Loyalty points and store credit',
-      'VAT and KRA tax reports',
-      'Refund approvals with audit logs',
-    ],
-  },
-  {
-    id: 'premium',
-    name: 'Premium',
-    alias: 'Enterprise',
-    badge: '',
-    m: 2999,
-    a: 29990,
-    tagline: 'For supermarkets, franchises and wholesale hubs.',
-    branches: 'Unlimited',
-    staff: 'Unlimited',
-    support: 'Dedicated account manager, 24/7 hotline',
-    cta: 'Choose Premium',
-    f: [
-      'Role-based access and PIN permissions',
-      'Multi-warehouse stock, batches and expiry alerts',
-      'Custom receipt branding',
-      'Full audit trail and shrinkage protection',
-      'Supplier debt and automatic reordering',
-      'Multi-currency support',
-    ],
-  },
-];
+function mapTierToDefinition(t: PricingTier): TierDefinition {
+  const isFree = t.id === 'free';
+  return {
+    id: t.id,
+    name: t.name,
+    alias: t.alias,
+    badge: t.badge || '',
+    bundleLabel: t.bundleLabel,
+    m: t.monthlyPrice,
+    a: t.annualPrice,
+    setup: isFree ? (t.consultationFee ?? 1999) : t.consultationFee,
+    setupNote: t.consultationDescription,
+    tagline: t.tagline,
+    branches: t.maxBranches === -1 ? 'Unlimited' : String(t.maxBranches),
+    staff: t.maxStaffUsers === -1 ? 'Unlimited' : String(t.maxStaffUsers),
+    support: t.supportLevel,
+    cta: isFree ? 'Book a setup session' : `Choose ${t.name}`,
+    f: t.features,
+    pop: Boolean(t.isPopular),
+  };
+}
 
 const STEPS: Record<string, string> = {
-  starter: 'Solo shops, kiosks and small counters.',
-  business: 'Mini-marts, boutiques and multi-counter shops.',
-  premium: 'Franchises, supermarkets and growing chains.',
+  starter: 'Solo shops, kiosks & single counters.',
+  business: 'Mini-marts, boutiques & multi-counter shops.',
+  premium: 'Supermarkets, franchises & wholesale hubs.',
 };
 
 function recommendTier(branchesCount: number): string {
@@ -162,26 +95,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
     const source = pricingTiers && pricingTiers.length > 0 ? pricingTiers : DEFAULT_PRICING_TIERS;
     const active = source.filter((t) => t.isActive !== false);
     const list = active.length > 0 ? active : DEFAULT_PRICING_TIERS;
-    return list.map((t) => {
-      const isFree = t.id === 'free';
-      return {
-        id: t.id,
-        name: t.name,
-        alias: t.alias,
-        badge: t.badge || '',
-        m: t.monthlyPrice,
-        a: t.annualPrice,
-        setup: isFree ? (t.consultationFee ?? 1999) : t.consultationFee,
-        setupNote: t.consultationDescription,
-        tagline: t.tagline,
-        branches: t.maxBranches === -1 ? 'Unlimited' : String(t.maxBranches),
-        staff: t.maxStaffUsers === -1 ? 'Unlimited' : String(t.maxStaffUsers),
-        support: t.supportLevel,
-        cta: isFree ? 'Book a setup session' : `Choose ${t.name}`,
-        f: t.features,
-        pop: Boolean(t.isPopular),
-      };
-    });
+    return list.map(mapTierToDefinition);
   }, [pricingTiers]);
 
   const firstPaidTier = liveTiers.find((t) => t.m > 0);
@@ -203,7 +117,9 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
     setSelectedBranches(n);
     const recId = recommendTier(n);
     setRecommendedId(recId);
-    const target = liveTiers.find((t) => t.id === recId) || TIERS.find((t) => t.id === recId);
+    const target =
+      liveTiers.find((t) => t.id === recId) ||
+      DEFAULT_PRICING_TIERS.map(mapTierToDefinition).find((t) => t.id === recId);
     if (target) {
       const extra = recId === 'starter' ? ' Starting out? The free plan also covers one branch.' : '';
       setStatusMessage(`${target.name} fits best: ${STEPS[recId]}${extra}`);
@@ -435,24 +351,44 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
           font-family: var(--display);
           font-weight: 700;
           font-size: 1.15rem;
+          font-variant-numeric: tabular-nums;
           color: var(--ink);
         }
         .sp-stats span {
           font-size: 0.82rem;
           color: var(--muted);
         }
+        .sp-bundle-label {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          font-size: 0.84rem;
+          font-weight: 700;
+          color: #14532d;
+          background: #ecfdf5;
+          border: 1px solid #bbf7d0;
+          border-radius: 9px;
+          padding: 6px 10px;
+          margin-bottom: 11px;
+          line-height: 1.3;
+        }
+        .sp-card.popular .sp-bundle-label {
+          background: #dcfce7;
+          border-color: #86efac;
+        }
         .sp-features {
           list-style: none;
-          margin: 0 0 20px;
+          margin: 0 0 18px;
           padding: 0;
           display: grid;
-          gap: 9px;
-          font-size: 0.95rem;
+          gap: 8px;
+          font-size: 0.9rem;
+          line-height: 1.38;
           color: var(--ink);
         }
         .sp-features li {
           position: relative;
-          padding-left: 26px;
+          padding-left: 24px;
         }
         .sp-features li::before {
           content: "";
@@ -647,7 +583,7 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
                 <p className="text-[#4c5a6b] text-[0.95rem] mt-0.5 mb-4">{t.alias}</p>
 
                 {/* Pricing amount */}
-                <div className="flex items-baseline gap-1.5 flex-wrap">
+                <div className="flex items-baseline gap-1.5 flex-wrap tabular-nums">
                   <span className="sp-display font-bold text-[2.4rem] leading-none tracking-tight text-[#0e1a2b]">
                     Ksh {fmt.format(big)}
                   </span>
@@ -655,10 +591,10 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
                 </div>
 
                 {/* Subtext description */}
-                <p className="text-[#4c5a6b] text-sm my-1.5 mb-3.5 min-h-[2.8em] leading-snug">{sub}</p>
+                <p className="text-[#4c5a6b] text-sm my-1.5 mb-3 min-h-[2.8em] leading-snug">{sub}</p>
 
                 {/* Tagline */}
-                <p className="text-[0.95rem] text-[#0e1a2b] mb-4 leading-normal">{t.tagline}</p>
+                <p className="text-[0.92rem] text-[#0e1a2b] mb-3.5 leading-snug min-h-[2.5em]">{t.tagline}</p>
 
                 {/* 2-Column Stats (Branches & Staff Logins) */}
                 <div className="sp-stats">
@@ -672,10 +608,23 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
                   </div>
                 </div>
 
+                {/* Highlighted Bundle Inheritance Banner */}
+                {t.bundleLabel && (
+                  <div className="sp-bundle-label">
+                    <span aria-hidden="true">+</span>
+                    <span>{t.bundleLabel}</span>
+                  </div>
+                )}
+
                 {/* Feature Checklist */}
                 <ul className="sp-features">
                   {t.f.map((feature, idx) => (
-                    <li key={idx}>{feature}</li>
+                    <li key={idx}>
+                      <PricingFeatureText
+                        text={feature}
+                        metricClassName="font-bold text-[#0e1a2b] tabular-nums"
+                      />
+                    </li>
                   ))}
                 </ul>
 

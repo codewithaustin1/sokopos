@@ -1831,7 +1831,7 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-3">
                               <div>
                                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
                                   Tagline / Marketing Subtitle
@@ -1840,6 +1840,19 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                                   type="text"
                                   value={currentTier.tagline}
                                   onChange={(e) => updatePricingTier(currentTier.id, { tagline: e.target.value })}
+                                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                  Bundle Inheritance Label
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Everything in Starter, plus:"
+                                  value={currentTier.bundleLabel || ''}
+                                  onChange={(e) => updatePricingTier(currentTier.id, { bundleLabel: e.target.value })}
                                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                               </div>
@@ -1940,14 +1953,14 @@ export const SuperAdminDashboardModal: React.FC<SuperAdminDashboardModalProps> =
                             <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px]">
                               <span className="text-slate-500 dark:text-slate-400 font-medium">Quick suggestions:</span>
                               {[
-                                '15+ Advanced Reports with CSV export',
-                                'Optical barcode scanning & fast SKU lookup',
-                                'Multi-branch stock transfers & sync',
-                                'Customer loyalty points & credit ledgers',
-                                'Automated VAT / KRA tax rate calculation',
+                                '15+ profit, stock & KRA VAT reports',
+                                'Unlimited SKUs & barcode scan',
+                                'Cross-branch transfers & live stock sync',
+                                'Purchase orders, loyalty & store credit',
                                 'M-Pesa STK Push direct integration',
-                                'White-label receipt branding & logo',
-                                'Batch expiry alerts & serial numbers',
+                                'Custom branded receipts & audit logs',
+                                'Batch numbering & expiry alerts',
+                                'Dedicated 24/7 account manager',
                               ].map((suggestion, sIdx) => {
                                 if (currentTier.features.includes(suggestion)) return null;
                                 return (

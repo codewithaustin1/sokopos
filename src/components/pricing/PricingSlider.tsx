@@ -11,6 +11,7 @@ import {
   Check,
 } from 'lucide-react';
 import { PricingTier, PackageTierId, SLIDER_TIER_STEPS, getRecommendedTierIdByBranches } from '../../types/pricing';
+import { PricingFeatureText } from './PricingFeatureText';
 
 interface PricingSliderProps {
   tiers: PricingTier[];
@@ -52,7 +53,8 @@ export const PricingSlider: React.FC<PricingSliderProps> = ({
         annualPrice: 12990,
         currency: 'KES',
         badge: 'Best Value',
-        tagline: 'Growing stores',
+        bundleLabel: 'Everything in Starter, plus:',
+        tagline: 'For busy mini-marts & multi-counter shops.',
         description: '',
         maxBranches: 3,
         maxStaffUsers: 10,
@@ -441,14 +443,30 @@ export const PricingSlider: React.FC<PricingSliderProps> = ({
           </div>
         </div>
 
-        {currentTier.features.length > 0 && (
-          <div className="pt-3 border-t border-slate-200 dark:border-slate-700/80 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-            {currentTier.features.slice(0, 3).map((feat, fIdx) => (
-              <div key={fIdx} className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
-                <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                <span className="truncate">{feat}</span>
+        {(currentTier.bundleLabel || currentTier.features.length > 0) && (
+          <div className="pt-3 border-t border-slate-200 dark:border-slate-700/80 space-y-2.5 text-xs">
+            {currentTier.bundleLabel && (
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/80 text-emerald-900 dark:text-emerald-200 font-semibold text-[11px]">
+                <span aria-hidden="true">+</span>
+                <span>{currentTier.bundleLabel}</span>
               </div>
-            ))}
+            )}
+            {currentTier.features.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2">
+                {currentTier.features.slice(0, 6).map((feat, fIdx) => (
+                  <div
+                    key={fIdx}
+                    className="flex items-start gap-2 text-slate-600 dark:text-slate-300 leading-snug"
+                  >
+                    <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                    <PricingFeatureText
+                      text={feat}
+                      metricClassName="font-semibold text-slate-900 dark:text-slate-100 tabular-nums"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

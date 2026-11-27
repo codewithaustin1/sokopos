@@ -53,6 +53,7 @@ import {
   IndustrySolutionId,
   BrandingSlotId,
 } from '../types';
+import { normalizePricingTiersArray } from '../types/pricing';
 import { digitaxService, DigitaxApiError } from '../services/digitaxService';
 import { bluetoothPrinterService } from '../services/bluetoothPrinterService';
 import type { ScannerBurstMetadata } from '../utils/backgroundScanner';
@@ -8743,8 +8744,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           await clearTenantTerminalCacheKeepOutbox().catch(() => {});
           if (cancelled || authTransitionEpochRef.current !== bootEpoch || isTearingDownSessionRef.current) return;
 
-          if (hydrated.pricingTiers && hydrated.pricingTiers.length > 0) {
-            setPricingTiers(hydrated.pricingTiers);
+          const normalizedBootPricing = normalizePricingTiersArray(hydrated.pricingTiers);
+          if (normalizedBootPricing && normalizedBootPricing.length > 0) {
+            setPricingTiers(normalizedBootPricing);
           }
           if (hydrated.branding.loginBgGraphic) {
             setLoginBgGraphicState(hydrated.branding.loginBgGraphic);
@@ -8819,8 +8821,9 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (hydrated.adminActivityLogs) setAdminActivityLogs(hydrated.adminActivityLogs);
         if (hydrated.supervisorOverrideLogs) setSupervisorOverrideLogs(hydrated.supervisorOverrideLogs);
         if (hydrated.voidRecords) setVoidRecords(hydrated.voidRecords);
-        if (hydrated.pricingTiers && hydrated.pricingTiers.length > 0) {
-          setPricingTiers(hydrated.pricingTiers);
+        const normalizedPricing = normalizePricingTiersArray(hydrated.pricingTiers);
+        if (normalizedPricing && normalizedPricing.length > 0) {
+          setPricingTiers(normalizedPricing);
         }
         if (hydrated.biRollups) setAllAnalyticsRollups(hydrated.biRollups);
         if (hydrated.biTargets) setAllAnalyticsTargets(hydrated.biTargets);

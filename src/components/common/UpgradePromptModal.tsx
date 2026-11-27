@@ -3,6 +3,7 @@ import { Lock, ArrowUpRight, Check, X, ShieldCheck } from 'lucide-react';
 import { usePos } from '../../context/PosContext';
 import { DEFAULT_PRICING_TIERS } from '../../types/pricing';
 import { formatTierDisplayName } from '../../utils/subscriptionEntitlements';
+import { PricingFeatureText } from '../pricing/PricingFeatureText';
 
 export const UpgradePromptModal: React.FC = () => {
   const {
@@ -153,17 +154,29 @@ export const UpgradePromptModal: React.FC = () => {
               </div>
             </div>
 
-            <ul className="space-y-1.5 pt-2 border-t border-slate-200 dark:border-slate-800">
-              {targetTier.features.slice(0, 4).map((feat, idx) => (
-                <li
-                  key={idx}
-                  className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300"
-                >
-                  <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-                  <span>{feat}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
+              {targetTier.bundleLabel && (
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/80 text-emerald-900 dark:text-emerald-200 text-[11px] font-semibold">
+                  <span aria-hidden="true">+</span>
+                  <span>{targetTier.bundleLabel}</span>
+                </div>
+              )}
+
+              <ul className="space-y-1.5">
+                {targetTier.features.slice(0, 5).map((feat, idx) => (
+                  <li
+                    key={idx}
+                    className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300"
+                  >
+                    <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                    <PricingFeatureText
+                      text={feat}
+                      metricClassName="font-semibold text-slate-900 dark:text-slate-100 tabular-nums"
+                    />
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
 
