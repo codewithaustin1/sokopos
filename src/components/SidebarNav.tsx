@@ -79,7 +79,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
     {
       id: 'register',
       tab: 'register' as const,
-      label: t('nav_sell', 'Sell'),
+      label: t('nav_sell', 'Register'),
       icon: ShoppingCart,
       badge: cartItemCount > 0 ? `${cartItemCount}` : null,
       allowed: can('sell'),

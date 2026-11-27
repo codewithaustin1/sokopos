@@ -66,7 +66,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             </span>
           )}
         </div>
-        <span className="text-[10px] tracking-tight mt-0.5">{t('nav_sell', 'Sell')}</span>
+        <span className="text-[10px] tracking-tight mt-0.5">{t('nav_sell', 'Register')}</span>
       </button>
 
       {/* Inventory Tab */}
