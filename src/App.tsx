@@ -47,7 +47,6 @@ import {
 import { isSuperAdminEmail } from './data/initialData';
 import { MobileBentoMenuOverlay } from './components/common/MobileBentoMenuOverlay';
 import { ToastContainer } from './components/common/ToastContainer';
-import { PwaUpdateBanner } from './components/common/PwaUpdateBanner';
 import { PendingSubscriptionBanner } from './components/common/PendingSubscriptionBanner';
 import { ForeignOutboxWarningBanner } from './components/common/ForeignOutboxWarningBanner';
 import {
@@ -669,7 +668,6 @@ function PosAppContent() {
       >
         {/* Framer Motion Toast Notification Stack */}
         <ToastContainer toasts={toasts} onDismiss={dismissToast} topOffsetClass="top-6" />
-        <PwaUpdateBanner />
 
         <PricingPageView
           onBackToLogin={() => {
@@ -715,7 +713,6 @@ function PosAppContent() {
       >
         <div className="w-9 h-9 rounded-full border-2 border-blue-600 border-t-transparent animate-spin mb-3" />
         <p className="text-sm font-semibold">Restoring your shop session...</p>
-        <PwaUpdateBanner />
       </div>
     );
   }
@@ -728,7 +725,6 @@ function PosAppContent() {
       >
         {/* Framer Motion Toast Notification Stack */}
         <ToastContainer toasts={toasts} onDismiss={dismissToast} topOffsetClass="top-6" />
-        <PwaUpdateBanner />
         <SignInView onLoginSuccess={navigateToTerminal} />
 
         {/* Hidden Dynamic Sitemap View triggered by console command */}
@@ -749,7 +745,6 @@ function PosAppContent() {
     >
       {/* Framer Motion Toast Notification Stack */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} topOffsetClass="top-20" />
-      <PwaUpdateBanner />
 
       {/* Persistent Platform Support Banner (Hidden in Demo Sessions) */}
       {!isDemoSession && (

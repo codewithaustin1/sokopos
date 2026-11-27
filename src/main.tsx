@@ -5,15 +5,11 @@ import App from './App.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import './index.css';
 import { registerSW } from 'virtual:pwa-register';
-import { registerPwaUpdateAvailable } from './lib/pwaUpdateStore';
 
-// Register Service Worker for offline caching without forced auto-reloads during active sessions
+// Register Service Worker for offline caching; updates activate cleanly on next visit without interrupting active sessions
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-  const updateSW = registerSW({
+  registerSW({
     immediate: true,
-    onNeedRefresh() {
-      registerPwaUpdateAvailable(updateSW);
-    },
     onRegisteredSW(_swUrl, registration) {
       if (registration) {
         setInterval(() => {

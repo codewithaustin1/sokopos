@@ -919,7 +919,14 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     };
   }, [isAuthModalOpen]);
 
-  // Auto-focus first input field upon modal opening
+  const isMobileOrCoarseDevice = () => {
+    if (typeof window === 'undefined') return false;
+    const coarse = window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
+    const noHover = window.matchMedia?.('(hover: none)')?.matches ?? false;
+    return coarse || noHover || window.innerWidth < 768;
+  };
+
+  // Auto-focus first input field upon modal opening (suppress native keyboard on mobile Staff tab)
   useEffect(() => {
     if (!isAuthModalOpen) return;
 
@@ -931,6 +938,15 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       } else if (activeTab === 'register') {
         shopNameInputRef.current?.focus();
       } else if (activeTab === 'staff') {
+        if (isMobileOrCoarseDevice()) {
+          if (
+            document.activeElement instanceof HTMLInputElement ||
+            document.activeElement instanceof HTMLTextAreaElement
+          ) {
+            document.activeElement.blur();
+          }
+          return;
+        }
         if (isDemoModeActive && !isEditingStaffId) {
           pinInputRef.current?.focus();
         } else {
@@ -1110,7 +1126,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     if (!pin || pin.length < 4) {
       setPinError('Enter all 4 digits of your PIN');
       soundFx.playError();
-      pinInputRef.current?.focus();
+      if (!isMobileOrCoarseDevice()) {
+        pinInputRef.current?.focus();
+      }
       return;
     }
 
@@ -1406,7 +1424,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     soundFx.playBeep(640, 0.04);
 
     setTimeout(() => {
-      pinInputRef.current?.focus();
+      if (!isMobileOrCoarseDevice()) {
+        pinInputRef.current?.focus();
+      }
     }, 120);
   };
 
@@ -2180,7 +2200,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   </h1>
 
                   <p className="text-base sm:text-lg text-[#334155] leading-relaxed max-w-[46ch] mb-7">
-                    Shopkeepers rarely love POS software—they rely on what survives the evening rush. SokoPoS solves M-Pesa matching, KRA eTIMS receipts, and offline stability seamlessly.
+                    Shop owners rarely love POS software—they rely on what survives the evening rush. SokoPoS solves M-Pesa matching, KRA eTIMS receipts, and offline stability seamlessly.
                   </p>
 
                   <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3 mb-4">
@@ -2970,6 +2990,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   id="tab-staff"
                   aria-selected={activeTab === 'staff'}
                   onClick={() => {
+                    if (
+                      isMobileOrCoarseDevice() &&
+                      (document.activeElement instanceof HTMLInputElement ||
+                        document.activeElement instanceof HTMLTextAreaElement)
+                    ) {
+                      document.activeElement.blur();
+                    }
                     setActiveTab('staff');
                     setPinError(null);
                     setEmailAuthError(null);
