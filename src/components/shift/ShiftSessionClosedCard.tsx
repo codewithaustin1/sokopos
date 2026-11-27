@@ -45,10 +45,10 @@ export const ShiftSessionClosedCard: React.FC<ShiftSessionClosedCardProps> = ({
       <div className="p-6 sm:p-7 space-y-4 bg-white">
         {/* Metadata Cards (2 Cards) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-          {/* Card 1: TERMINAL LOCATION */}
+          {/* Card 1: BRANCH */}
           <div className="bg-[#f0f4f8] border border-slate-200/90 rounded-2xl p-4 transition-all">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-              TERMINAL LOCATION
+              BRANCH
             </div>
             <div className="text-base font-bold text-slate-900 leading-snug truncate">
               {terminalLocation}
@@ -58,10 +58,10 @@ export const ShiftSessionClosedCard: React.FC<ShiftSessionClosedCardProps> = ({
             </div>
           </div>
 
-          {/* Card 2: LOGGED OPERATOR */}
+          {/* Card 2: OPERATOR */}
           <div className="bg-[#f0f4f8] border border-slate-200/90 rounded-2xl p-4 transition-all">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-              LOGGED OPERATOR
+              OPERATOR
             </div>
             <div className="text-base font-bold text-slate-900 leading-snug truncate">
               {operatorName}

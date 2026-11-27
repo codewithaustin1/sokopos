@@ -5,10 +5,23 @@ import App from './App.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import './index.css';
 import { registerSW } from 'virtual:pwa-register';
+import { registerPwaUpdateAvailable } from './lib/pwaUpdateStore';
 
-// Register Service Worker for 100% offline cold loading & asset caching
+// Register Service Worker for offline caching without forced auto-reloads during active sessions
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-  registerSW({ immediate: true });
+  const updateSW = registerSW({
+    immediate: true,
+    onNeedRefresh() {
+      registerPwaUpdateAvailable(updateSW);
+    },
+    onRegisteredSW(_swUrl, registration) {
+      if (registration) {
+        setInterval(() => {
+          registration.update().catch(() => {});
+        }, 60 * 60 * 1000);
+      }
+    },
+  });
 }
 
 

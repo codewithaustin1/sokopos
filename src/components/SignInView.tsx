@@ -30,6 +30,7 @@ import { LegalTab } from '../data/legalContent';
 import { LegalPageView } from './LegalPageView';
 import { WhatsAppFloatingButton } from './landing/WhatsAppFloatingButton';
 import { PublicSiteHeader } from './common/PublicSiteHeader';
+import { AppLogo } from './common/AppLogo';
 import { AppFooter } from './common/AppFooter';
 import { InteractiveGradientMesh } from './common/InteractiveGradientMesh';
 import { scrollToTop } from '../utils/scrollUtils';
@@ -143,6 +144,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   const [staffCredentialInput, setStaffCredentialInput] = useState<string>('');
   const [isEditingStaffId, setIsEditingStaffId] = useState<boolean>(false);
   const [enteredPin, setEnteredPin] = useState<string>('');
+  const [showStaffPin, setShowStaffPin] = useState<boolean>(false);
   const [pinError, setPinError] = useState<string | null>(null);
   const [isSubmittingTerminal, setIsSubmittingTerminal] = useState<boolean>(false);
   const pinInputRef = useRef<HTMLInputElement>(null);
@@ -2528,26 +2530,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             aria-modal="true"
             aria-labelledby="auth-modal-title"
             id="auth-modal-card"
-            style={{
-              fontFamily: '"Bricolage Grotesque", system-ui, -apple-system, "Segoe UI", sans-serif',
-            }}
-            className={`relative w-full bg-white rounded-3xl border border-[#d9e1e6] shadow-2xl shadow-slate-950/25 my-auto animate-in zoom-in-95 fade-in duration-200 ${
+            className={`relative w-full bg-white rounded-2xl border border-[#E2E8F0] shadow-2xl shadow-slate-950/20 overflow-hidden my-auto animate-in zoom-in-95 fade-in duration-200 ${
               isCheckoutContextActive
-                ? 'max-w-[460px] md:max-w-[780px] overflow-hidden grid grid-cols-1 md:grid-cols-[315px_1fr]'
-                : 'max-w-[420px] p-6 sm:p-7'
+                ? 'max-w-[460px] md:max-w-[780px] grid grid-cols-1 md:grid-cols-[310px_1fr]'
+                : 'max-w-[432px]'
             }`}
           >
-            {/* Dismissal X Button */}
-            <button
-              type="button"
-              id="auth-modal-close-btn"
-              onClick={closeAuthModal}
-              aria-label="Close dialog"
-              className="absolute top-3.5 right-3.5 p-2 rounded-xl text-[#4c5a6b] hover:text-[#090d16] hover:bg-slate-100 transition cursor-pointer z-20"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
             {/* LIVE PLAN SUMMARY & CONVERSION CARD (Visible when logged-out visitor enters via paid plan CTA) */}
             {isCheckoutContextActive && activeCheckoutTier && pendingCheckoutIntent && (() => {
               const isAnnualBilling = pendingCheckoutIntent.billingCycle === 'annual';
@@ -2573,7 +2561,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   className="bg-[#f8fafc] border-b md:border-b-0 md:border-r border-[#e2e8f0] p-5 sm:p-6 flex flex-col justify-between gap-5"
                 >
                   <div className="space-y-4">
-                    <div className="flex items-center justify-between pr-8 md:pr-0">
+                    <div className="flex items-center justify-between">
                       <span className="text-[11px] font-bold tracking-[0.08em] uppercase text-[#28a745]">
                         Checkout Summary
                       </span>
@@ -2706,21 +2694,35 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               );
             })()}
 
-            <div className={isCheckoutContextActive ? 'p-5 sm:p-7 flex flex-col justify-center' : ''}>
+            <div className="flex flex-col min-w-0 justify-between">
+              {/* Dedicated Brand Header Bar */}
+              <div className="flex items-center justify-between gap-3 px-6 py-3.5 border-b border-[#E2E8F0] bg-white">
+                <AppLogo theme="light" size="sm" showText />
+                <button
+                  type="button"
+                  id="auth-modal-close-btn"
+                  onClick={closeAuthModal}
+                  aria-label="Close dialog"
+                  className="w-10 h-10 -mr-2 rounded-lg text-[#475569] hover:text-[#0F172A] hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745] transition-colors cursor-pointer flex items-center justify-center shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
             {pendingOtpEmail ? (
-              <div id="p-verify-login-otp" className="space-y-4 pt-2 text-left">
+              <div id="p-verify-login-otp" className="px-6 pt-5 pb-6 space-y-4 text-left">
                 <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#28a745]">
                   <ShieldCheck className="w-6 h-6" />
                 </div>
                 <div>
-                  <h2 id="auth-modal-title" className="text-xl sm:text-[22px] font-extrabold text-[#090d16] tracking-tight mb-1">
+                  <h2 id="auth-modal-title" className="font-display text-xl sm:text-[22px] font-extrabold text-[#0F172A] tracking-tight mb-1">
                     Check your inbox
                   </h2>
-                  <p className="text-xs sm:text-[13px] text-[#475569] leading-relaxed">
+                  <p className="text-[13px] text-[#475569] leading-relaxed">
                     Type the 6-digit login code we sent to{' '}
-                    <span className="font-bold text-[#090d16]">{pendingOtpEmail}</span>.
+                    <span className="font-semibold text-[#0F172A]">{pendingOtpEmail}</span>.
                   </p>
-                  <p className="text-[11px] font-medium text-[#64748b] mt-1 font-mono tabular-nums">
+                  <p className="text-[11px] font-medium text-[#64748B] mt-1 font-mono tabular-nums">
                     {otpExpirySeconds > 0
                       ? `Expires in ${formatCountdownClock(otpExpirySeconds)}`
                       : 'Code expired · Request a fresh code below'}
@@ -2728,12 +2730,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 </div>
 
                 {loginOtpError && (
-                  <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                  <div className="p-3 rounded-[10px] bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-xs font-medium flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#DC2626]" />
                     <div className="min-w-0">
                       <span>{loginOtpError}</span>
                       {typeof otpRemainingAttempts === 'number' && otpRemainingAttempts > 0 && (
-                        <span className="block text-[11px] text-red-700 font-semibold mt-0.5 tabular-nums">
+                        <span className="block text-[11px] text-[#B91C1C] font-semibold mt-0.5 tabular-nums">
                           Tries left before reset: {otpRemainingAttempts}
                         </span>
                       )}
@@ -2741,11 +2743,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   </div>
                 )}
 
-                <form onSubmit={handleVerifyLoginOtp} className="space-y-3.5 pt-1">
+                <form onSubmit={handleVerifyLoginOtp} className="space-y-4 pt-1">
                   <div>
                     <label
                       htmlFor="email-otp-code-input"
-                      className="block text-xs font-bold text-[#0e1a2b] mb-1.5"
+                      className="block text-xs font-semibold text-[#0F172A] mb-1.5"
                     >
                       6-Digit Login Code
                     </label>
@@ -2761,7 +2763,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         setLoginOtpError(null);
                       }}
                       placeholder="000000"
-                      className="w-full h-13 px-4 rounded-xl border border-[#d9e1e6] bg-[#f8fafc] text-center font-mono tabular-nums text-2xl tracking-[0.4em] font-extrabold text-[#090d16] focus:outline-none focus:border-[#28a745] focus:bg-white transition"
+                      className="w-full h-13 px-4 rounded-[10px] border border-[#CBD5E1] bg-[#F8FAFC] text-center font-mono tabular-nums text-2xl tracking-[0.4em] font-extrabold text-[#0F172A] focus:outline-none focus:border-[#28a745] focus:ring-2 focus:ring-[#28a745]/15 focus:bg-white transition-all"
                       autoFocus
                     />
                   </div>
@@ -2769,7 +2771,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   <button
                     type="submit"
                     disabled={isAuthTransitioning || isVerifyingLoginOtp || loginOtpCode.length !== 6 || otpExpirySeconds <= 0}
-                    className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap"
+                    className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.99] disabled:opacity-60 text-white font-semibold text-sm rounded-[10px] transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745] focus-visible:ring-offset-2"
                   >
                     {isAuthTransitioning || isVerifyingLoginOtp ? (
                       <>
@@ -2817,29 +2819,29 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 </form>
               </div>
             ) : pendingVerificationEmail ? (
-              <div id="p-verify-email" className="space-y-4 pt-2">
+              <div id="p-verify-email" className="px-6 pt-5 pb-6 space-y-4">
                 <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-[#28a745]">
                   <Mail className="w-6 h-6" />
                 </div>
                 <div>
                   <h2
                     id="auth-modal-title"
-                    className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-1 text-left"
+                    className="font-display text-xl sm:text-[22px] font-extrabold text-[#0F172A] tracking-tight mb-1 text-left"
                   >
                     {verificationContext === 'partner'
                       ? 'Confirm your partner email'
                       : 'Confirm your email address'}
                   </h2>
-                  <p className="text-xs sm:text-[13px] text-[#556375] leading-relaxed text-left">
+                  <p className="text-[13px] text-[#475569] leading-relaxed text-left">
                     {verificationContext === 'partner'
                       ? 'We want to make sure your M-Pesa commission payouts go only to you. Open your inbox and click the link we sent to '
                       : 'So only you can access your shop cash totals and stock reports, click the confirmation link we sent to '}
-                    <span className="font-bold text-[#0e1a2b]">{pendingVerificationEmail}</span>.
+                    <span className="font-semibold text-[#0F172A]">{pendingVerificationEmail}</span>.
                   </p>
                 </div>
 
                 {verificationContext !== 'partner' && pendingCheckoutIntent && pendingCheckoutIntent.planId !== 'free' && (
-                  <div className="p-3 rounded-xl bg-[#ecfdf5] border border-[#a7f3d0] text-[#28a745] text-xs font-semibold flex items-start gap-2">
+                  <div className="p-3 rounded-[10px] bg-[#ecfdf5] border border-[#a7f3d0] text-[#15803d] text-xs font-semibold flex items-start gap-2">
                     <Zap className="w-4 h-4 shrink-0 mt-0.5 text-[#28a745]" />
                     <span>
                       Your <strong>{pendingCheckoutIntent.planName} Plan ({pendingCheckoutIntent.billingCycle === 'annual' ? 'Annual' : 'Monthly'})</strong> choice is saved—payment opens as soon as you confirm.
@@ -2848,15 +2850,15 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 )}
 
                 {verificationFeedback && (
-                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-medium flex items-start gap-2">
+                  <div className="p-3 rounded-[10px] bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-medium flex items-start gap-2">
                     <Check className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
                     <span>{verificationFeedback}</span>
                   </div>
                 )}
 
                 {verificationError && (
-                  <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                  <div className="p-3 rounded-[10px] bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-xs font-medium flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#DC2626]" />
                     <span>{verificationError}</span>
                   </div>
                 )}
@@ -2866,7 +2868,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     type="button"
                     onClick={handleCheckVerification}
                     disabled={isCheckingVerification}
-                    className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap"
+                    className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.99] disabled:opacity-60 text-white font-semibold text-sm rounded-[10px] transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745] focus-visible:ring-offset-2"
                   >
                     {isCheckingVerification ? (
                       <>
@@ -2882,7 +2884,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     type="button"
                     onClick={handleResendVerification}
                     disabled={isResendingVerification}
-                    className="w-full h-10 bg-[#f4f7f6] hover:bg-[#e9eff2] disabled:opacity-60 text-[#0e1a2b] font-bold text-xs rounded-xl border border-[#d9e1e6] transition-all cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap"
+                    className="w-full h-11 bg-white hover:bg-[#F8FAFC] disabled:opacity-60 text-[#0F172A] font-semibold text-xs rounded-[10px] border border-[#CBD5E1] transition-all cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745] focus-visible:ring-offset-2"
                   >
                     {isResendingVerification ? (
                       <>
@@ -2907,9 +2909,14 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               </div>
             ) : (
               <>
-            {/* Segmented Tab Switcher (Owner vs Partner vs Staff, matching attached design) */}
+            {/* Underline Role Tabs (Owner vs Partner vs Staff) */}
             {activeTab !== 'register' && (
-              <div className="bg-[#f0f3f6] p-1 rounded-xl grid grid-cols-3 gap-1 mb-5" role="tablist" id="seg">
+              <div
+                className="grid grid-cols-3 border-b border-[#E2E8F0] px-6 bg-white"
+                role="tablist"
+                aria-label="Account role"
+                id="seg"
+              >
                 <button
                   type="button"
                   role="tab"
@@ -2921,13 +2928,16 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     setEmailAuthError(null);
                     setPartnerAuthError(null);
                   }}
-                  className={`py-2 px-2 sm:px-3 rounded-lg font-bold text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center ${
+                  className={`relative min-h-[44px] py-3 px-2 text-sm font-semibold transition-colors cursor-pointer flex items-center justify-center whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#28a745] ${
                     activeTab === 'owner'
-                      ? 'bg-white text-[#0e1a2b] shadow-xs'
-                      : 'bg-transparent text-[#4c5a6b] hover:text-[#0e1a2b]'
+                      ? 'text-[#0F172A]'
+                      : 'text-[#64748B] hover:text-[#0F172A]'
                   }`}
                 >
-                  Owner
+                  <span>Owner</span>
+                  {activeTab === 'owner' && (
+                    <span className="absolute inset-x-2 bottom-0 h-[2px] rounded-full bg-[#28a745]" aria-hidden="true" />
+                  )}
                 </button>
                 <button
                   type="button"
@@ -2940,16 +2950,19 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     setEmailAuthError(null);
                     setPartnerAuthError(null);
                   }}
-                  className={`py-2 px-2 sm:px-3 rounded-lg font-bold text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-1 whitespace-nowrap ${
+                  className={`relative min-h-[44px] py-3 px-2 text-sm font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#28a745] ${
                     activeTab === 'partner'
-                      ? 'bg-white text-emerald-700 shadow-xs'
-                      : 'bg-transparent text-[#4c5a6b] hover:text-emerald-700'
+                      ? 'text-[#0F172A]'
+                      : 'text-[#64748B] hover:text-[#0F172A]'
                   }`}
                 >
                   <span>Partner</span>
-                  <span className="text-[11px] font-bold font-mono tabular-nums text-emerald-700">
-                    · 20%
+                  <span className="text-[11px] font-bold font-mono tabular-nums text-[#28a745]">
+                    20%
                   </span>
+                  {activeTab === 'partner' && (
+                    <span className="absolute inset-x-2 bottom-0 h-[2px] rounded-full bg-[#28a745]" aria-hidden="true" />
+                  )}
                 </button>
                 <button
                   type="button"
@@ -2962,16 +2975,21 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     setEmailAuthError(null);
                     setPartnerAuthError(null);
                   }}
-                  className={`py-2 px-2 sm:px-3 rounded-lg font-bold text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center ${
+                  className={`relative min-h-[44px] py-3 px-2 text-sm font-semibold transition-colors cursor-pointer flex items-center justify-center whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#28a745] ${
                     activeTab === 'staff'
-                      ? 'bg-white text-[#0e1a2b] shadow-xs'
-                      : 'bg-transparent text-[#4c5a6b] hover:text-[#0e1a2b]'
+                      ? 'text-[#0F172A]'
+                      : 'text-[#64748B] hover:text-[#0F172A]'
                   }`}
                 >
-                  Staff
+                  <span>Staff</span>
+                  {activeTab === 'staff' && (
+                    <span className="absolute inset-x-2 bottom-0 h-[2px] rounded-full bg-[#28a745]" aria-hidden="true" />
+                  )}
                 </button>
               </div>
             )}
+
+            <div className="px-6 pt-5 pb-6">
 
             {/* TAB 1: OWNER LOGIN (Email & Password Sign-In Flow / Password Reset) */}
             {activeTab === 'owner' && (
@@ -2982,18 +3000,18 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       <div>
                         <h2
                           id="auth-modal-title"
-                          className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight mb-1 text-left"
+                          className="font-display text-xl sm:text-[22px] font-extrabold text-[#0F172A] tracking-tight mb-1 text-left"
                         >
                           Reset your password
                         </h2>
-                        <p className="text-xs text-[#556375] mb-4 text-left">
+                        <p className="text-[13px] text-[#475569] leading-relaxed mb-4 text-left">
                           Enter your account email and we&apos;ll send a 6-digit verification code via Resend to securely reset your password.
                         </p>
 
                         {otpCapabilities &&
                           (!otpCapabilities.emailProviderConfigured || !otpCapabilities.customTokenConfigured) && (
-                            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-xs leading-relaxed mb-3.5">
-                              <span className="font-bold text-[#090d16] block mb-0.5">
+                            <div className="p-3 rounded-[10px] bg-[#F8FAFC] border border-[#E2E8F0] text-[#475569] text-xs leading-relaxed mb-4">
+                              <span className="font-semibold text-[#0F172A] block mb-0.5">
                                 Email OTP reset requires server secrets
                               </span>
                               {!otpCapabilities.emailProviderConfigured
@@ -3002,9 +3020,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                             </div>
                           )}
 
-                        <form onSubmit={handlePasswordResetSubmit} className="space-y-3 mb-4">
+                        <form onSubmit={handlePasswordResetSubmit} className="space-y-4">
                           <div>
-                            <label htmlFor="reset-email-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
+                            <label htmlFor="reset-email-input" className="block text-xs font-semibold text-[#0F172A] mb-1.5">
                               Your account email
                             </label>
                             <div className="relative flex items-center">
@@ -3022,21 +3040,21 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                                   setEmailAuthError(null);
                                   setResetEmailSuccessMessage(null);
                                 }}
-                                className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors"
+                                className="w-full h-11 pl-3.5 pr-10 rounded-[10px] border border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] placeholder-[#94A3B8] text-sm focus:bg-white focus:border-[#28a745] focus:ring-2 focus:ring-[#28a745]/15 focus:outline-none transition-all"
                               />
-                              <Mail className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
+                              <Mail className="w-4 h-4 text-[#94A3B8] absolute right-3.5 pointer-events-none" />
                             </div>
                           </div>
 
                           {emailAuthError && (
-                            <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
-                              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                            <div className="p-3 rounded-[10px] bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
+                              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#DC2626]" />
                               <span>{emailAuthError}</span>
                             </div>
                           )}
 
                           {resetEmailSuccessMessage && (
-                            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
+                            <div className="p-3 rounded-[10px] bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
                               <Check className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
                               <span>{resetEmailSuccessMessage}</span>
                             </div>
@@ -3045,7 +3063,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           <button
                             type="submit"
                             disabled={isSendingResetEmail}
-                            className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-2 whitespace-nowrap"
+                            className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.99] disabled:opacity-60 text-white font-semibold text-sm rounded-[10px] transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745] focus-visible:ring-offset-2"
                           >
                             {isSendingResetEmail ? (
                               <>
@@ -3086,21 +3104,21 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
                     {forgotPasswordStep === 'otp' && (
                       <div className="space-y-4 pt-1">
-                        <div className="w-11 h-11 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#28a745]">
+                        <div className="w-11 h-11 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#28a745]">
                           <ShieldCheck className="w-5 h-5" />
                         </div>
                         <div>
                           <h2
                             id="auth-modal-title"
-                            className="text-xl sm:text-[22px] font-extrabold text-[#090d16] tracking-tight mb-1"
+                            className="font-display text-xl sm:text-[22px] font-extrabold text-[#0F172A] tracking-tight mb-1"
                           >
                             Enter verification code
                           </h2>
-                          <p className="text-xs sm:text-[13px] text-[#475569] leading-relaxed">
+                          <p className="text-[13px] text-[#475569] leading-relaxed">
                             Type the 6-digit reset code we sent to{' '}
-                            <span className="font-bold text-[#090d16]">{ownerEmailInput.trim().toLowerCase()}</span>.
+                            <span className="font-semibold text-[#0F172A]">{ownerEmailInput.trim().toLowerCase()}</span>.
                           </p>
-                          <p className="text-[11px] font-medium text-[#64748b] mt-1 font-mono tabular-nums">
+                          <p className="text-[11px] font-medium text-[#64748B] mt-1 font-mono tabular-nums">
                             {resetOtpExpirySeconds > 0
                               ? `Expires in ${formatCountdownClock(resetOtpExpirySeconds)}`
                               : 'Code expired · Request a fresh code below'}
@@ -3108,12 +3126,12 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         </div>
 
                         {resetOtpError && (
-                          <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2">
-                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                          <div className="p-3 rounded-[10px] bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-xs font-medium flex items-start gap-2">
+                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#DC2626]" />
                             <div className="min-w-0">
                               <span>{resetOtpError}</span>
                               {typeof resetOtpRemainingAttempts === 'number' && resetOtpRemainingAttempts > 0 && (
-                                <span className="block text-[11px] text-red-700 font-semibold mt-0.5 tabular-nums">
+                                <span className="block text-[11px] text-[#B91C1C] font-semibold mt-0.5 tabular-nums">
                                   Tries left before lock: {resetOtpRemainingAttempts}
                                 </span>
                               )}
@@ -3121,11 +3139,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           </div>
                         )}
 
-                        <form onSubmit={handleVerifyResetOtpSubmit} className="space-y-3.5">
+                        <form onSubmit={handleVerifyResetOtpSubmit} className="space-y-4">
                           <div>
                             <label
                               htmlFor="reset-otp-code-input"
-                              className="block text-xs font-bold text-[#0e1a2b] mb-1.5"
+                              className="block text-xs font-semibold text-[#0F172A] mb-1.5"
                             >
                               6-Digit Reset Code
                             </label>
@@ -3141,7 +3159,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                                 setResetOtpError(null);
                               }}
                               placeholder="000000"
-                              className="w-full h-13 px-4 rounded-xl border border-[#d9e1e6] bg-[#f8fafc] text-center font-mono tabular-nums text-2xl tracking-[0.4em] font-extrabold text-[#090d16] focus:outline-none focus:border-[#28a745] focus:bg-white transition"
+                              className="w-full h-13 px-4 rounded-[10px] border border-[#CBD5E1] bg-[#F8FAFC] text-center font-mono tabular-nums text-2xl tracking-[0.4em] font-extrabold text-[#0F172A] focus:outline-none focus:border-[#28a745] focus:ring-2 focus:ring-[#28a745]/15 focus:bg-white transition-all"
                               autoFocus
                             />
                           </div>
@@ -3149,7 +3167,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           <button
                             type="submit"
                             disabled={isVerifyingResetOtp || resetOtpCode.length !== 6 || resetOtpExpirySeconds <= 0}
-                            className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap"
+                            className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.99] disabled:opacity-60 text-white font-semibold text-sm rounded-[10px] transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745] focus-visible:ring-offset-2"
                           >
                             {isVerifyingResetOtp ? (
                               <>
@@ -3169,7 +3187,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                               type="button"
                               onClick={handleResendResetOtp}
                               disabled={isSendingResetEmail || resetOtpResendCooldownSec > 0}
-                              className="text-xs font-bold text-[#28a745] hover:underline cursor-pointer disabled:text-slate-400 disabled:no-underline disabled:cursor-not-allowed font-mono tabular-nums"
+                              className="text-xs font-semibold text-[#28a745] hover:underline cursor-pointer disabled:text-slate-400 disabled:no-underline disabled:cursor-not-allowed font-mono tabular-nums"
                             >
                               {isSendingResetEmail
                                 ? 'Sending code...'
@@ -3185,7 +3203,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                                 setResetOtpError(null);
                                 setResetOtpRemainingAttempts(null);
                               }}
-                              className="text-xs font-bold text-slate-500 hover:text-slate-900 cursor-pointer"
+                              className="text-xs font-semibold text-[#475569] hover:text-[#0F172A] cursor-pointer"
                             >
                               Change email
                             </button>
@@ -3196,25 +3214,25 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
                     {forgotPasswordStep === 'new_password' && (
                       <div className="space-y-4 pt-1">
-                        <div className="w-11 h-11 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#28a745]">
+                        <div className="w-11 h-11 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#28a745]">
                           <KeyRound className="w-5 h-5" />
                         </div>
                         <div>
                           <h2
                             id="auth-modal-title"
-                            className="text-xl sm:text-[22px] font-extrabold text-[#090d16] tracking-tight mb-1"
+                            className="font-display text-xl sm:text-[22px] font-extrabold text-[#0F172A] tracking-tight mb-1"
                           >
                             Create a new password
                           </h2>
-                          <p className="text-xs text-[#475569] leading-relaxed">
+                          <p className="text-[13px] text-[#475569] leading-relaxed">
                             Identity verified for{' '}
-                            <span className="font-bold text-[#090d16]">{ownerEmailInput.trim().toLowerCase()}</span>. Choose a strong new password (at least 8 characters).
+                            <span className="font-semibold text-[#0F172A]">{ownerEmailInput.trim().toLowerCase()}</span>. Choose a strong new password (at least 8 characters).
                           </p>
                         </div>
 
-                        <form onSubmit={handleConfirmNewPasswordSubmit} className="space-y-3.5">
+                        <form onSubmit={handleConfirmNewPasswordSubmit} className="space-y-4">
                           <div>
-                            <label htmlFor="reset-new-password-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
+                            <label htmlFor="reset-new-password-input" className="block text-xs font-semibold text-[#0F172A] mb-1.5">
                               New password
                             </label>
                             <div className="relative flex items-center">
@@ -3231,14 +3249,14 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                                   setResetNewPassword(e.target.value);
                                   setEmailAuthError(null);
                                 }}
-                                className="w-full h-11 pl-3.5 pr-10 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors"
+                                className="w-full h-11 pl-3.5 pr-10 rounded-[10px] border border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] placeholder-[#94A3B8] text-sm focus:bg-white focus:border-[#28a745] focus:ring-2 focus:ring-[#28a745]/15 focus:outline-none transition-all"
                                 autoFocus
                               />
                               <button
                                 type="button"
                                 onClick={() => setShowResetNewPassword((prev) => !prev)}
                                 aria-label={showResetNewPassword ? 'Hide new password' : 'Show new password'}
-                                className="absolute right-2.5 p-1 text-[#556375] hover:text-[#0e1a2b] transition cursor-pointer"
+                                className="absolute right-2 p-1.5 rounded-lg text-[#475569] hover:text-[#0F172A] transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745]"
                               >
                                 {showResetNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                               </button>
@@ -3246,7 +3264,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           </div>
 
                           <div>
-                            <label htmlFor="reset-confirm-password-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
+                            <label htmlFor="reset-confirm-password-input" className="block text-xs font-semibold text-[#0F172A] mb-1.5">
                               Confirm new password
                             </label>
                             <div className="relative flex items-center">
@@ -3263,13 +3281,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                                   setResetConfirmPassword(e.target.value);
                                   setEmailAuthError(null);
                                 }}
-                                className="w-full h-11 pl-3.5 pr-10 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors"
+                                className="w-full h-11 pl-3.5 pr-10 rounded-[10px] border border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] placeholder-[#94A3B8] text-sm focus:bg-white focus:border-[#28a745] focus:ring-2 focus:ring-[#28a745]/15 focus:outline-none transition-all"
                               />
                               <button
                                 type="button"
                                 onClick={() => setShowResetConfirmPassword((prev) => !prev)}
                                 aria-label={showResetConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
-                                className="absolute right-2.5 p-1 text-[#556375] hover:text-[#0e1a2b] transition cursor-pointer"
+                                className="absolute right-2 p-1.5 rounded-lg text-[#475569] hover:text-[#0F172A] transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745]"
                               >
                                 {showResetConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                               </button>
@@ -3277,8 +3295,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           </div>
 
                           {emailAuthError && (
-                            <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
-                              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                            <div className="p-3 rounded-[10px] bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
+                              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#DC2626]" />
                               <span>{emailAuthError}</span>
                             </div>
                           )}
@@ -3286,7 +3304,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           <button
                             type="submit"
                             disabled={isConfirmingPasswordReset || resetNewPassword.length < 8 || resetConfirmPassword.length < 8}
-                            className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap"
+                            className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.99] disabled:opacity-60 text-white font-semibold text-sm rounded-[10px] transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745] focus-visible:ring-offset-2"
                           >
                             {isConfirmingPasswordReset ? (
                               <>
@@ -3308,7 +3326,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                                 setIsForgotPasswordMode(false);
                                 resetForgotPasswordFlowState();
                               }}
-                              className="text-xs font-bold text-slate-500 hover:text-slate-900 cursor-pointer"
+                              className="text-xs font-semibold text-[#475569] hover:text-[#0F172A] cursor-pointer"
                             >
                               Cancel &amp; return to sign in
                             </button>
@@ -3319,17 +3337,17 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
                     {forgotPasswordStep === 'done' && (
                       <div className="space-y-4 pt-1">
-                        <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#28a745]">
+                        <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-[#28a745]">
                           <Check className="w-6 h-6" />
                         </div>
                         <div>
                           <h2
                             id="auth-modal-title"
-                            className="text-xl sm:text-[22px] font-extrabold text-[#090d16] tracking-tight mb-1"
+                            className="font-display text-xl sm:text-[22px] font-extrabold text-[#0F172A] tracking-tight mb-1"
                           >
                             Password updated
                           </h2>
-                          <p className="text-xs sm:text-[13px] text-[#475569] leading-relaxed">
+                          <p className="text-[13px] text-[#475569] leading-relaxed">
                             {resetEmailSuccessMessage ||
                               `Your credentials for ${ownerEmailInput.trim().toLowerCase()} have been reset. Sign in below using your new password.`}
                           </p>
@@ -3343,7 +3361,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                             setOwnerPasswordInput('');
                             resetForgotPasswordFlowState();
                           }}
-                          className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap"
+                          className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.99] text-white font-semibold text-sm rounded-[10px] transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745] focus-visible:ring-offset-2"
                         >
                           <span>Back to sign in</span>
                           <ArrowRight className="w-4 h-4" />
@@ -3353,23 +3371,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   </div>
                 ) : (
                   <div>
-                    <h2
-                      id="auth-modal-title"
-                      className="text-xl sm:text-[22px] font-extrabold text-[#090d16] tracking-tight mb-1 text-left"
-                    >
-                      {isCheckoutContextActive ? 'Sign in to finish activating your shop' : 'Open your shop dashboard'}
+                    <h2 id="auth-modal-title" className="sr-only">
+                      {isCheckoutContextActive ? 'Sign in to finish activating your shop' : 'Owner Sign In'}
                     </h2>
-                    <p className="text-xs text-[#475569] mb-3.5 text-left">
-                      {isCheckoutContextActive && pendingCheckoutIntent
-                        ? `Sign in first, then complete your ${pendingCheckoutIntent.planName} (${pendingCheckoutIntent.billingCycle === 'annual' ? 'Annual' : 'Monthly'}) payment by M-Pesa or card.`
-                        : ownerLoginMethod === 'otp'
-                        ? 'Get a 6-digit login code sent to your inbox—no password to remember.'
-                        : 'Check today’s sales, M-Pesa totals, and stock levels from anywhere.'}
-                    </p>
 
                     {/* Owner Auth Method Switcher: Password vs Email Code (OTP) */}
                     <div
-                      className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#f0f3f6] border border-[#e2e8f0] mb-4"
+                      className="grid grid-cols-2 gap-1 p-1 rounded-[10px] bg-[#F1F5F9] border border-[#E2E8F0] mb-4"
                       role="radiogroup"
                       aria-label="Owner Sign-In Method"
                     >
@@ -3381,13 +3389,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           setOwnerLoginMethod('password');
                           setEmailAuthError(null);
                         }}
-                        className={`py-1.5 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
+                        className={`min-h-[36px] py-1.5 px-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745] ${
                           ownerLoginMethod === 'password'
-                            ? 'bg-white text-[#090d16] shadow-xs'
-                            : 'text-[#4c5a6b] hover:text-[#090d16]'
+                            ? 'bg-white text-[#0F172A] shadow-2xs border border-[#E2E8F0]/70'
+                            : 'text-[#475569] hover:text-[#0F172A]'
                         }`}
                       >
-                        <Lock className="w-3.5 h-3.5 shrink-0" />
+                        <Lock className={`w-3.5 h-3.5 shrink-0 ${ownerLoginMethod === 'password' ? 'text-[#28a745]' : ''}`} />
                         <span>Password</span>
                       </button>
                       <button
@@ -3398,21 +3406,21 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           setOwnerLoginMethod('otp');
                           setEmailAuthError(null);
                         }}
-                        className={`py-1.5 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
+                        className={`min-h-[36px] py-1.5 px-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745] ${
                           ownerLoginMethod === 'otp'
-                            ? 'bg-white text-[#28a745] shadow-xs'
-                            : 'text-[#4c5a6b] hover:text-[#090d16]'
+                            ? 'bg-white text-[#0F172A] shadow-2xs border border-[#E2E8F0]/70'
+                            : 'text-[#475569] hover:text-[#0F172A]'
                         }`}
                       >
-                        <Mail className="w-3.5 h-3.5 shrink-0" />
+                        <Mail className={`w-3.5 h-3.5 shrink-0 ${ownerLoginMethod === 'otp' ? 'text-[#28a745]' : ''}`} />
                         <span>Email Code</span>
                       </button>
                     </div>
 
                     {ownerLoginMethod === 'password' ? (
-                      <form id="emailForm" onSubmit={handleEmailFormSubmit} className="space-y-3.5 mb-4">
+                      <form id="emailForm" onSubmit={handleEmailFormSubmit} className="space-y-4">
                         <div>
-                          <label htmlFor="owner-email-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
+                          <label htmlFor="owner-email-input" className="block text-xs font-semibold text-[#0F172A] mb-1.5">
                             Email address
                           </label>
                           <div className="relative flex items-center">
@@ -3429,15 +3437,15 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                                 setOwnerEmailInput(e.target.value);
                                 setEmailAuthError(null);
                               }}
-                              className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors"
+                              className="w-full h-11 pl-3.5 pr-10 rounded-[10px] border border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] placeholder-[#94A3B8] text-sm focus:bg-white focus:border-[#28a745] focus:ring-2 focus:ring-[#28a745]/15 focus:outline-none transition-all"
                             />
-                            <Mail className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
+                            <Mail className="w-4 h-4 text-[#94A3B8] absolute right-3.5 pointer-events-none" />
                           </div>
                         </div>
 
                         <div>
-                          <div className="flex items-center justify-between mb-1">
-                            <label htmlFor="owner-password-input" className="block text-xs font-bold text-[#0e1a2b]">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label htmlFor="owner-password-input" className="block text-xs font-semibold text-[#0F172A]">
                               Password
                             </label>
                             <button
@@ -3446,7 +3454,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                                 resetForgotPasswordFlowState();
                                 setIsForgotPasswordMode(true);
                               }}
-                              className="text-[11px] font-bold text-[#28a745] hover:underline cursor-pointer"
+                              className="text-xs font-semibold text-[#28a745] hover:text-[#218838] hover:underline cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745]"
                             >
                               Forgot password?
                             </button>
@@ -3464,13 +3472,16 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                                 setOwnerPasswordInput(e.target.value);
                                 setEmailAuthError(null);
                               }}
-                              className="w-full h-11 pl-3.5 pr-10 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors"
+                              className="w-full h-11 pl-3.5 pr-11 rounded-[10px] border border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] placeholder-[#94A3B8] text-sm focus:bg-white focus:border-[#28a745] focus:ring-2 focus:ring-[#28a745]/15 focus:outline-none transition-all [&::-ms-reveal]:hidden [&::-ms-clear]:hidden"
                             />
                             <button
                               type="button"
+                              onMouseDown={(e) => e.preventDefault()}
                               onClick={() => setShowOwnerPassword((prev) => !prev)}
                               aria-label={showOwnerPassword ? 'Hide password' : 'Show password'}
-                              className="absolute right-2.5 p-1 text-[#556375] hover:text-[#0e1a2b] transition cursor-pointer"
+                              aria-pressed={showOwnerPassword}
+                              title={showOwnerPassword ? 'Hide password' : 'Show password'}
+                              className="absolute right-2 z-10 p-1.5 rounded-lg text-[#475569] hover:text-[#0F172A] hover:bg-slate-200/60 transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745]"
                             >
                               {showOwnerPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                             </button>
@@ -3479,8 +3490,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
                         {/* Error alert banner */}
                         {emailAuthError && (
-                          <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
-                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                          <div className="p-3 rounded-[10px] bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
+                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#DC2626]" />
                             <span>{emailAuthError}</span>
                           </div>
                         )}
@@ -3488,7 +3499,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         <button
                           type="submit"
                           disabled={isAuthTransitioning || isAuthenticatingEmail}
-                          className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1 whitespace-nowrap"
+                          className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.99] disabled:opacity-60 text-white font-semibold text-sm rounded-[10px] transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745] focus-visible:ring-offset-2"
                         >
                           {isAuthTransitioning || isAuthenticatingEmail ? (
                             <>
@@ -3508,11 +3519,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         </button>
                       </form>
                     ) : (
-                      <form id="emailOtpForm" onSubmit={handleSendPasswordlessOtp} className="space-y-3.5 mb-4">
+                      <form id="emailOtpForm" onSubmit={handleSendPasswordlessOtp} className="space-y-4">
                         {otpCapabilities &&
                           (!otpCapabilities.emailProviderConfigured || !otpCapabilities.customTokenConfigured) && (
-                            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-xs leading-relaxed">
-                              <span className="font-bold text-[#090d16] block mb-0.5">
+                            <div className="p-3 rounded-[10px] bg-[#F8FAFC] border border-[#E2E8F0] text-[#475569] text-xs leading-relaxed">
+                              <span className="font-semibold text-[#0F172A] block mb-0.5">
                                 Email code login needs server keys configured
                               </span>
                               {!otpCapabilities.customTokenConfigured
@@ -3522,7 +3533,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           )}
 
                         <div>
-                          <label htmlFor="owner-otp-email-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
+                          <label htmlFor="owner-otp-email-input" className="block text-xs font-semibold text-[#0F172A] mb-1.5">
                             Email address
                           </label>
                           <div className="relative flex items-center">
@@ -3539,15 +3550,15 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                                 setOwnerEmailInput(e.target.value);
                                 setEmailAuthError(null);
                               }}
-                              className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors"
+                              className="w-full h-11 pl-3.5 pr-10 rounded-[10px] border border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] placeholder-[#94A3B8] text-sm focus:bg-white focus:border-[#28a745] focus:ring-2 focus:ring-[#28a745]/15 focus:outline-none transition-all"
                             />
-                            <Mail className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
+                            <Mail className="w-4 h-4 text-[#94A3B8] absolute right-3.5 pointer-events-none" />
                           </div>
                         </div>
 
                         {emailAuthError && (
-                          <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
-                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                          <div className="p-3 rounded-[10px] bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
+                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#DC2626]" />
                             <span>{emailAuthError}</span>
                           </div>
                         )}
@@ -3555,7 +3566,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         <button
                           type="submit"
                           disabled={isSendingLoginOtp}
-                          className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1 whitespace-nowrap"
+                          className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.99] disabled:opacity-60 text-white font-semibold text-sm rounded-[10px] transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745] focus-visible:ring-offset-2"
                         >
                           {isSendingLoginOtp ? (
                             <>
@@ -3579,35 +3590,22 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
             {/* TAB 2: PARTNER PORTAL LOGIN / JOIN */}
             {activeTab === 'partner' && (
               <div id="p-partner">
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <h2
-                    id="auth-modal-title"
-                    className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight text-left"
-                  >
-                    {partnerMode === 'register' ? 'Join as a Partner' : 'Partner Sign In'}
-                  </h2>
-                  <span className="text-xs font-bold text-emerald-700 font-mono tabular-nums whitespace-nowrap shrink-0">
-                    20% recurring
-                  </span>
-                </div>
-                <p className="text-xs text-[#556375] mb-4 text-left">
-                  {partnerMode === 'register'
-                    ? 'Earn 20% every month via M-Pesa for every shop you help get started.'
-                    : 'Check your referral link, active shops, and M-Pesa payouts.'}
-                </p>
+                <h2 id="auth-modal-title" className="sr-only">
+                  {partnerMode === 'register' ? 'Join as a Partner' : 'Partner Sign In'}
+                </h2>
 
                 {/* Sub-toggle: Sign In vs Become Partner */}
-                <div className="bg-[#f4f7f6] p-1 rounded-xl grid grid-cols-2 gap-1 mb-4 border border-[#e2e8f0]">
+                <div className="bg-[#F1F5F9] p-1 rounded-[10px] grid grid-cols-2 gap-1 mb-4 border border-[#E2E8F0]">
                   <button
                     type="button"
                     onClick={() => {
                       setPartnerMode('signin');
                       setPartnerAuthError(null);
                     }}
-                    className={`py-1.5 px-3 rounded-lg font-bold text-xs transition cursor-pointer flex items-center justify-center ${
+                    className={`min-h-[36px] py-1.5 px-3 rounded-lg font-semibold text-xs transition-all cursor-pointer flex items-center justify-center whitespace-nowrap ${
                       partnerMode === 'signin'
-                        ? 'bg-white text-slate-900 shadow-xs'
-                        : 'text-slate-500 hover:text-slate-800'
+                        ? 'bg-white text-[#0F172A] shadow-2xs border border-[#E2E8F0]/70'
+                        : 'text-[#475569] hover:text-[#0F172A]'
                     }`}
                   >
                     Sign In
@@ -3618,20 +3616,20 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       setPartnerMode('register');
                       setPartnerAuthError(null);
                     }}
-                    className={`py-1.5 px-3 rounded-lg font-bold text-xs transition cursor-pointer flex items-center justify-center ${
+                    className={`min-h-[36px] py-1.5 px-3 rounded-lg font-semibold text-xs transition-all cursor-pointer flex items-center justify-center whitespace-nowrap ${
                       partnerMode === 'register'
-                        ? 'bg-white text-emerald-700 shadow-xs'
-                        : 'text-slate-500 hover:text-emerald-700'
+                        ? 'bg-white text-[#0F172A] shadow-2xs border border-[#E2E8F0]/70'
+                        : 'text-[#475569] hover:text-[#0F172A]'
                     }`}
                   >
                     Become Partner
                   </button>
                 </div>
 
-                <form id="partnerForm" onSubmit={handlePartnerFormSubmit} className="space-y-3.5 mb-4">
+                <form id="partnerForm" onSubmit={handlePartnerFormSubmit} className="space-y-4">
                   {partnerMode === 'register' && (
                     <div>
-                      <label htmlFor="partner-name-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
+                      <label htmlFor="partner-name-input" className="block text-xs font-semibold text-[#0F172A] mb-1.5">
                         Full Name / Agency Name
                       </label>
                       <input
@@ -3644,13 +3642,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           setPartnerNameInput(e.target.value);
                           setPartnerAuthError(null);
                         }}
-                        className="w-full h-11 px-3.5 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-emerald-600 focus:outline-none transition-colors"
+                        className="w-full h-11 px-3.5 rounded-[10px] border border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] placeholder-[#94A3B8] text-sm focus:bg-white focus:border-[#28a745] focus:ring-2 focus:ring-[#28a745]/15 focus:outline-none transition-all"
                       />
                     </div>
                   )}
 
                   <div>
-                    <label htmlFor="partner-email-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
+                    <label htmlFor="partner-email-input" className="block text-xs font-semibold text-[#0F172A] mb-1.5">
                       Email address
                     </label>
                     <div className="relative flex items-center">
@@ -3667,15 +3665,15 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           setPartnerEmailInput(e.target.value);
                           setPartnerAuthError(null);
                         }}
-                        className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-emerald-600 focus:outline-none transition-colors"
+                        className="w-full h-11 pl-3.5 pr-10 rounded-[10px] border border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] placeholder-[#94A3B8] text-sm focus:bg-white focus:border-[#28a745] focus:ring-2 focus:ring-[#28a745]/15 focus:outline-none transition-all"
                       />
-                      <Mail className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
+                      <Mail className="w-4 h-4 text-[#94A3B8] absolute right-3.5 pointer-events-none" />
                     </div>
                   </div>
 
                   {partnerMode === 'register' && (
                     <div>
-                      <label htmlFor="partner-phone-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
+                      <label htmlFor="partner-phone-input" className="block text-xs font-semibold text-[#0F172A] mb-1.5">
                         M-Pesa Payout Number
                       </label>
                       <div className="relative flex items-center">
@@ -3689,19 +3687,19 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                             setPartnerPhoneInput(e.target.value);
                             setPartnerAuthError(null);
                           }}
-                          className="w-full h-11 pl-3.5 pr-9 font-mono rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-emerald-600 focus:outline-none transition-colors"
+                          className="w-full h-11 pl-3.5 pr-10 font-mono rounded-[10px] border border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] placeholder-[#94A3B8] text-sm focus:bg-white focus:border-[#28a745] focus:ring-2 focus:ring-[#28a745]/15 focus:outline-none transition-all"
                         />
-                        <Phone className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
+                        <Phone className="w-4 h-4 text-[#94A3B8] absolute right-3.5 pointer-events-none" />
                       </div>
-                      <span className="text-[11px] text-slate-400 mt-0.5 block">
+                      <span className="text-[11px] text-[#64748B] mt-1 block">
                         Commission payouts are disbursed directly via Safaricom M-Pesa.
                       </span>
                     </div>
                   )}
 
                   <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label htmlFor="partner-password-input" className="block text-xs font-bold text-[#0e1a2b]">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label htmlFor="partner-password-input" className="block text-xs font-semibold text-[#0F172A]">
                         Password
                       </label>
                       {partnerMode === 'signin' && (
@@ -3713,7 +3711,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                             setIsForgotPasswordMode(true);
                             setOwnerEmailInput(partnerEmailInput);
                           }}
-                          className="text-[11px] font-bold text-[#28a745] hover:underline cursor-pointer"
+                          className="text-xs font-semibold text-[#28a745] hover:text-[#218838] hover:underline cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745]"
                         >
                           Forgot password?
                         </button>
@@ -3732,13 +3730,16 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           setPartnerPasswordInput(e.target.value);
                           setPartnerAuthError(null);
                         }}
-                        className="w-full h-11 pl-3.5 pr-10 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-emerald-600 focus:outline-none transition-colors"
+                        className="w-full h-11 pl-3.5 pr-11 rounded-[10px] border border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] placeholder-[#94A3B8] text-sm focus:bg-white focus:border-[#28a745] focus:ring-2 focus:ring-[#28a745]/15 focus:outline-none transition-all [&::-ms-reveal]:hidden [&::-ms-clear]:hidden"
                       />
                       <button
                         type="button"
+                        onMouseDown={(e) => e.preventDefault()}
                         onClick={() => setShowPartnerPassword((prev) => !prev)}
                         aria-label={showPartnerPassword ? 'Hide password' : 'Show password'}
-                        className="absolute right-2.5 p-1 text-[#556375] hover:text-[#0e1a2b] transition cursor-pointer"
+                        aria-pressed={showPartnerPassword}
+                        title={showPartnerPassword ? 'Hide password' : 'Show password'}
+                        className="absolute right-2 z-10 p-1.5 rounded-lg text-[#475569] hover:text-[#0F172A] hover:bg-slate-200/60 transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745]"
                       >
                         {showPartnerPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
@@ -3747,8 +3748,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
                   {partnerMode === 'register' && (
                     <div>
-                      <label htmlFor="partner-code-input" className="block text-xs font-bold text-[#0e1a2b] mb-1">
-                        Preferred Referral Code <span className="text-slate-400 font-normal">(optional)</span>
+                      <label htmlFor="partner-code-input" className="block text-xs font-semibold text-[#0F172A] mb-1.5">
+                        Preferred Referral Code <span className="text-[#64748B] font-normal">(optional)</span>
                       </label>
                       <input
                         type="text"
@@ -3759,7 +3760,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         onChange={(e) => {
                           setPartnerCodeInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''));
                         }}
-                        className="w-full h-11 px-3.5 font-mono uppercase rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-emerald-600 focus:outline-none transition-colors"
+                        className="w-full h-11 px-3.5 font-mono uppercase rounded-[10px] border border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] placeholder-[#94A3B8] text-sm focus:bg-white focus:border-[#28a745] focus:ring-2 focus:ring-[#28a745]/15 focus:outline-none transition-all"
                       />
                     </div>
                   )}
@@ -3767,7 +3768,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   {partnerMode === 'register' && (
                     <label
                       htmlFor="partner-terms-consent"
-                      className="flex items-start gap-2.5 p-2.5 rounded-xl bg-[#f8fafc] border border-[#e2e8f0] text-[11px] text-[#475569] leading-relaxed cursor-pointer select-none min-h-[44px]"
+                      className="flex items-start gap-2.5 p-2.5 rounded-[10px] bg-[#F8FAFC] border border-[#E2E8F0] text-[11px] text-[#475569] leading-relaxed cursor-pointer select-none min-h-[44px]"
                     >
                       <input
                         id="partner-terms-consent"
@@ -3777,7 +3778,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           setAcceptedPartnerTerms(e.target.checked);
                           if (e.target.checked) setPartnerAuthError(null);
                         }}
-                        className="mt-0.5 w-4 h-4 rounded border-[#cbd5e1] accent-[#28a745] cursor-pointer shrink-0"
+                        className="mt-0.5 w-4 h-4 rounded border-[#CBD5E1] accent-[#28a745] cursor-pointer shrink-0"
                       />
                       <span>
                         I agree to the Sokoplus Horizon{' '}
@@ -3787,7 +3788,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                             e.preventDefault();
                             navigateToLegalPage('terms');
                           }}
-                          className="font-bold text-[#28a745] hover:underline cursor-pointer"
+                          className="font-semibold text-[#28a745] hover:underline cursor-pointer"
                         >
                           Terms &amp; 12-Month Liability Cap
                         </button>
@@ -3798,7 +3799,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                             e.preventDefault();
                             navigateToLegalPage('privacy');
                           }}
-                          className="font-bold text-[#28a745] hover:underline cursor-pointer"
+                          className="font-semibold text-[#28a745] hover:underline cursor-pointer"
                         >
                           Privacy Policy
                         </button>
@@ -3809,7 +3810,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                             e.preventDefault();
                             navigateToLegalPage('ownership');
                           }}
-                          className="font-bold text-[#28a745] hover:underline cursor-pointer"
+                          className="font-semibold text-[#28a745] hover:underline cursor-pointer"
                         >
                           IP Notice
                         </button>
@@ -3820,8 +3821,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
                   {/* Error alert banner */}
                   {partnerAuthError && (
-                    <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
-                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                    <div className="p-3 rounded-[10px] bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#DC2626]" />
                       <span>{partnerAuthError}</span>
                     </div>
                   )}
@@ -3829,7 +3830,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   <button
                     type="submit"
                     disabled={isAuthTransitioning || isAuthenticatingPartner}
-                    className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.98] disabled:opacity-60 text-white font-bold text-sm rounded-xl transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 mt-1"
+                    className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.99] disabled:opacity-60 text-white font-semibold text-sm rounded-[10px] transition-all cursor-pointer shadow-xs flex items-center justify-center gap-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745] focus-visible:ring-offset-2"
                   >
                     {isAuthTransitioning || isAuthenticatingPartner ? (
                       <>
@@ -3856,15 +3857,10 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
             {/* TAB 2: STAFF SHIFT / PIN LOGIN */}
             {activeTab === 'staff' && (
-              <div id="p-staff" className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h2
-                    id="auth-modal-title"
-                    className="text-xl sm:text-[22px] font-extrabold text-[#0e1a2b] tracking-tight text-left"
-                  >
-                    Clock in to your till
-                  </h2>
-                </div>
+              <div id="p-staff" className="space-y-3.5">
+                <h2 id="auth-modal-title" className="sr-only">
+                  Clock in to your till
+                </h2>
 
                 {/* STAFF ID / USERNAME INPUT OR APPOINTED DEMO CASHIER CARD */}
                 {isDemoModeActive && !isEditingStaffId ? (
@@ -3906,8 +3902,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                     </button>
                   </div>
                 ) : (
-                  <div className="border border-[#d9e1e6] bg-[#f8fafc] rounded-2xl p-3 space-y-1.5 shadow-2xs">
-                    <label htmlFor="staff-credential-input" className="block text-xs font-bold text-[#0e1a2b]">
+                  <div className="border border-[#E2E8F0] bg-[#F8FAFC] rounded-xl p-3 space-y-1.5">
+                    <label htmlFor="staff-credential-input" className="block text-xs font-semibold text-[#0F172A]">
                       Your Staff ID or username
                     </label>
                     <div className="flex items-center gap-2">
@@ -3932,13 +3928,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           }
                         }}
                         placeholder="e.g. #1001 or cashier.a"
-                        className="flex-1 h-10 px-3.5 rounded-xl border border-[#d9e1e6] bg-white text-[#0e1a2b] font-bold text-sm focus:border-[#28a745] focus:outline-none transition-colors"
+                        className="flex-1 h-10 px-3.5 rounded-[10px] border border-[#CBD5E1] bg-white text-[#0F172A] font-semibold text-sm focus:border-[#28a745] focus:ring-2 focus:ring-[#28a745]/15 focus:outline-none transition-all"
                       />
                       {isDemoModeActive && (
                         <button
                           type="button"
                           onClick={() => setIsEditingStaffId(false)}
-                          className="h-10 px-3.5 bg-[#28a745] hover:bg-[#218838] text-white rounded-xl text-xs font-bold transition cursor-pointer shrink-0"
+                          className="h-10 px-3.5 bg-[#28a745] hover:bg-[#218838] text-white rounded-[10px] text-xs font-semibold transition cursor-pointer shrink-0"
                         >
                           Done
                         </button>
@@ -3949,15 +3945,15 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
                 {/* PIN SECTION */}
                 <div className="pt-1 text-center">
-                  <label htmlFor="staff-pin-entry-input" className="block text-sm font-bold text-[#0e1a2b] mb-1.5">
+                  <label htmlFor="staff-pin-entry-input" className="block text-xs font-semibold text-[#0F172A] mb-2">
                     Enter your 4-digit PIN
                   </label>
 
-                  {/* Standard Obscured PIN Input Field per secure-entry practice */}
-                  <div className="relative max-w-[200px] mx-auto mb-2">
+                  {/* Standard Obscured PIN Input Field with visibility toggle */}
+                  <div className="relative flex items-center max-w-[220px] mx-auto mb-2">
                     <input
                       ref={pinInputRef}
-                      type="password"
+                      type={showStaffPin ? 'text' : 'password'}
                       id="staff-pin-entry-input"
                       name="staffPin"
                       maxLength={4}
@@ -3975,8 +3971,19 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                       }}
                       placeholder="••••"
                       aria-label="4-digit secure PIN"
-                      className="w-full h-11 text-center font-mono text-2xl tracking-[0.4em] rounded-xl border border-[#d9e1e6] bg-[#f8fafc] text-[#0e1a2b] font-black focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors shadow-2xs select-none"
+                      className="w-full h-11 pl-10 pr-10 text-center font-mono text-2xl tracking-[0.35em] rounded-[10px] border border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] font-black focus:bg-white focus:border-[#28a745] focus:ring-2 focus:ring-[#28a745]/15 focus:outline-none transition-all select-none [&::-ms-reveal]:hidden [&::-ms-clear]:hidden"
                     />
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setShowStaffPin((prev) => !prev)}
+                      aria-label={showStaffPin ? 'Hide PIN' : 'Show PIN'}
+                      aria-pressed={showStaffPin}
+                      title={showStaffPin ? 'Hide PIN' : 'Show PIN'}
+                      className="absolute right-2 z-10 p-1.5 rounded-lg text-[#475569] hover:text-[#0F172A] hover:bg-slate-200/60 transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745]"
+                    >
+                      {showStaffPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
                   </div>
 
                   {/* 4 PIN Dots */}
@@ -3989,7 +3996,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           className={`w-3.5 h-3.5 rounded-full border-2 transition-all duration-150 ${
                             isFilled
                               ? 'bg-[#28a745] border-[#28a745] scale-110 shadow-2xs'
-                              : 'bg-[#f4f7f6] border-[#cbd5e1]'
+                              : 'bg-[#F8FAFC] border-[#CBD5E1]'
                           }`}
                         />
                       );
@@ -3997,18 +4004,18 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   </div>
 
                   {/* PIN error alert */}
-                  <div className="min-h-[20px] text-center text-xs text-[#c8231b] font-semibold" id="perr" role="alert">
+                  <div className="min-h-[20px] text-center text-xs text-[#B91C1C] font-semibold" id="perr" role="alert">
                     {pinError}
                   </div>
                 </div>
 
                 {/* Numeric Keypad */}
-                <div className="grid grid-cols-3 gap-2.5 my-1" id="pad">
+                <div className="grid grid-cols-3 gap-2 my-1" id="pad">
                   {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'Clear', '0', '⌫'].map((k) => (
                     <button
                       key={k}
                       type="button"
-                      className="h-13 sm:h-14 rounded-2xl border border-[#d9e1e6] bg-[#f8fafc] hover:bg-[#edf2f7] active:bg-[#28a745] active:text-white text-[#0e1a2b] font-bold text-lg sm:text-xl transition-all cursor-pointer shadow-2xs flex items-center justify-center select-none font-mono tabular-nums"
+                      className="h-12 sm:h-13 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] hover:bg-[#F1F5F9] active:bg-[#28a745] active:text-white text-[#0F172A] font-bold text-lg sm:text-xl transition-all cursor-pointer flex items-center justify-center select-none font-mono tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745]"
                       onClick={() => handleKeypadPress(k)}
                     >
                       {k === '⌫' ? (
@@ -4052,18 +4059,18 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               <div id="p-register">
                 <h2
                   id="auth-modal-title"
-                  className="text-xl sm:text-[22px] font-extrabold text-[#090d16] tracking-tight mb-1 text-left"
+                  className="font-display text-xl sm:text-[22px] font-extrabold text-[#0F172A] tracking-tight mb-1 text-left"
                 >
-                  {isCheckoutContextActive ? 'Set up your shop' : 'Set up your shop'}
+                  Set up your shop
                 </h2>
-                <p className="text-xs text-[#475569] mb-3 text-left">
+                <p className="text-[13px] text-[#475569] leading-relaxed mb-4 text-left">
                   {isCheckoutContextActive && pendingCheckoutIntent
                     ? `Name your shop first—then pay for ${pendingCheckoutIntent.planName} (${pendingCheckoutIntent.billingCycle === 'annual' ? 'Annual' : 'Monthly'}) via M-Pesa or card.`
                     : 'Takes under 2 minutes. Track every shilling, M-Pesa sale, and stock item from day one.'}
                 </p>
-                <form id="regForm" onSubmit={handleRegisterFormSubmit} className="space-y-3 mb-4">
+                <form id="regForm" onSubmit={handleRegisterFormSubmit} className="space-y-3.5">
                   <div>
-                    <label className="block text-xs font-bold text-[#0e1a2b] mb-1" htmlFor="shop">
+                    <label className="block text-xs font-semibold text-[#0F172A] mb-1.5" htmlFor="shop">
                       Your shop or business name
                     </label>
                     <input
@@ -4077,11 +4084,11 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         setShopNameInput(e.target.value);
                         setEmailAuthError(null);
                       }}
-                      className="w-full h-11 px-3.5 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors"
+                      className="w-full h-11 px-3.5 rounded-[10px] border border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] placeholder-[#94A3B8] text-sm focus:bg-white focus:border-[#28a745] focus:ring-2 focus:ring-[#28a745]/15 focus:outline-none transition-all"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-[#0e1a2b] mb-1" htmlFor="own">
+                    <label className="block text-xs font-semibold text-[#0F172A] mb-1.5" htmlFor="own">
                       Your email address
                     </label>
                     <div className="relative flex items-center">
@@ -4095,13 +4102,13 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           setShopEmailInput(e.target.value);
                           setEmailAuthError(null);
                         }}
-                        className="w-full h-11 pl-3.5 pr-9 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors"
+                        className="w-full h-11 pl-3.5 pr-10 rounded-[10px] border border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] placeholder-[#94A3B8] text-sm focus:bg-white focus:border-[#28a745] focus:ring-2 focus:ring-[#28a745]/15 focus:outline-none transition-all"
                       />
-                      <Mail className="w-4 h-4 text-[#8ca0b3] absolute right-3 pointer-events-none" />
+                      <Mail className="w-4 h-4 text-[#94A3B8] absolute right-3.5 pointer-events-none" />
                     </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-[#0e1a2b] mb-1" htmlFor="shop-pass">
+                    <label className="block text-xs font-semibold text-[#0F172A] mb-1.5" htmlFor="shop-pass">
                       Choose a password
                     </label>
                     <div className="relative flex items-center">
@@ -4116,13 +4123,16 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           setShopPasswordInput(e.target.value);
                           setEmailAuthError(null);
                         }}
-                        className="w-full h-11 pl-3.5 pr-10 rounded-xl border border-[#d9e1e6] bg-[#f4f7f6] text-[#0e1a2b] placeholder-[#8ca0b3] text-sm focus:bg-white focus:border-[#28a745] focus:outline-none transition-colors"
+                        className="w-full h-11 pl-3.5 pr-11 rounded-[10px] border border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] placeholder-[#94A3B8] text-sm focus:bg-white focus:border-[#28a745] focus:ring-2 focus:ring-[#28a745]/15 focus:outline-none transition-all [&::-ms-reveal]:hidden [&::-ms-clear]:hidden"
                       />
                       <button
                         type="button"
+                        onMouseDown={(e) => e.preventDefault()}
                         onClick={() => setShowShopPassword((prev) => !prev)}
                         aria-label={showShopPassword ? 'Hide password' : 'Show password'}
-                        className="absolute right-2.5 p-1 text-[#556375] hover:text-[#0e1a2b] transition cursor-pointer"
+                        aria-pressed={showShopPassword}
+                        title={showShopPassword ? 'Hide password' : 'Show password'}
+                        className="absolute right-2 z-10 p-1.5 rounded-lg text-[#475569] hover:text-[#0F172A] hover:bg-slate-200/60 transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745]"
                       >
                         {showShopPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
@@ -4131,7 +4141,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
                   <label
                     htmlFor="shop-terms-consent"
-                    className="flex items-start gap-2.5 p-2.5 rounded-xl bg-[#f8fafc] border border-[#e2e8f0] text-[11px] text-[#475569] leading-relaxed cursor-pointer select-none min-h-[44px]"
+                    className="flex items-start gap-2.5 p-2.5 rounded-[10px] bg-[#F8FAFC] border border-[#E2E8F0] text-[11px] text-[#475569] leading-relaxed cursor-pointer select-none min-h-[44px]"
                   >
                     <input
                       id="shop-terms-consent"
@@ -4141,7 +4151,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                         setAcceptedShopTerms(e.target.checked);
                         if (e.target.checked) setEmailAuthError(null);
                       }}
-                      className="mt-0.5 w-4 h-4 rounded border-[#cbd5e1] accent-[#28a745] cursor-pointer shrink-0"
+                      className="mt-0.5 w-4 h-4 rounded border-[#CBD5E1] accent-[#28a745] cursor-pointer shrink-0"
                     />
                     <span>
                       I accept the Sokoplus Horizon{' '}
@@ -4151,7 +4161,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           e.preventDefault();
                           navigateToLegalPage('terms');
                         }}
-                        className="font-bold text-[#28a745] hover:underline cursor-pointer"
+                        className="font-semibold text-[#28a745] hover:underline cursor-pointer"
                       >
                         Terms &amp; 12-Month Liability Cap
                       </button>
@@ -4162,7 +4172,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           e.preventDefault();
                           navigateToLegalPage('privacy');
                         }}
-                        className="font-bold text-[#28a745] hover:underline cursor-pointer"
+                        className="font-semibold text-[#28a745] hover:underline cursor-pointer"
                       >
                         Privacy Policy
                       </button>
@@ -4173,7 +4183,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                           e.preventDefault();
                           navigateToLegalPage('ownership');
                         }}
-                        className="font-bold text-[#28a745] hover:underline cursor-pointer"
+                        className="font-semibold text-[#28a745] hover:underline cursor-pointer"
                       >
                         IP Notice
                       </button>
@@ -4183,8 +4193,8 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
 
                   {/* Error alert banner */}
                   {emailAuthError && (
-                    <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[#c8231b] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
-                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                    <div className="p-3 rounded-[10px] bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-xs font-medium flex items-start gap-2 animate-in fade-in duration-150">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#DC2626]" />
                       <span>{emailAuthError}</span>
                     </div>
                   )}
@@ -4192,7 +4202,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   <button
                     type="submit"
                     disabled={isAuthTransitioning || isAuthenticatingEmail}
-                    className="w-full h-12 bg-[#28a745] hover:bg-[#218838] active:scale-[0.99] disabled:opacity-60 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs mt-1 whitespace-nowrap"
+                    className="w-full h-11 bg-[#28a745] hover:bg-[#218838] active:scale-[0.99] disabled:opacity-60 text-white font-semibold text-sm rounded-[10px] flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745] focus-visible:ring-offset-2"
                   >
                     {isAuthTransitioning || isAuthenticatingEmail ? (
                       <>
@@ -4214,9 +4224,9 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
               </div>
             )}
 
-            {/* Below Card Switcher: Dashed divider, question & action button */}
-            <div className="border-t border-dashed border-[#d9e1e6] pt-4 text-center" id="below">
-              <p className="text-xs sm:text-[13px] text-[#4c5a6b] font-medium mb-2.5" id="belowText">
+            {/* Below Card Switcher: Hairline divider, prompt & subtle outlined secondary button */}
+            <div className="border-t border-[#E2E8F0] pt-4 mt-5 text-center" id="below">
+              <p className="text-xs text-[#475569] font-medium mb-2.5" id="belowText">
                 {activeTab === 'register'
                   ? 'Already have a shop or partner account?'
                   : activeTab === 'partner'
@@ -4231,8 +4241,6 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                 onClick={() => {
                   if (activeTab === 'register') {
                     setActiveTab('owner');
-                  } else if (activeTab === 'partner') {
-                    setActiveTab('register');
                   } else {
                     setActiveTab('register');
                   }
@@ -4240,44 +4248,40 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
                   setEmailAuthError(null);
                   setPartnerAuthError(null);
                 }}
-                className={`w-full h-11 rounded-xl font-bold text-sm sm:text-[15px] flex items-center justify-center transition-all cursor-pointer whitespace-nowrap ${
-                  activeTab === 'register'
-                    ? 'bg-transparent text-[#090d16] border border-[#d9e1e6] hover:bg-slate-50'
-                    : isCheckoutContextActive
-                    ? 'bg-white text-[#090d16] border border-[#090d16] hover:bg-[#f8fafc] active:scale-[0.99]'
-                    : 'bg-[#c8231b] hover:bg-[#b01e17] active:scale-[0.99] text-white shadow-xs'
-                }`}
+                className="w-full h-11 rounded-[10px] font-semibold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap bg-white text-[#0F172A] border border-[#CBD5E1] hover:bg-[#F8FAFC] hover:border-[#94A3B8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#28a745] focus-visible:ring-offset-2"
               >
                 {activeTab === 'register'
                   ? 'Sign in instead'
                   : 'Set up a new shop'}
               </button>
-              <p className="mt-3 text-[11px] text-[#64748b] leading-snug">
-                SokoPoS&trade; by Sokoplus Horizon &middot;{' '}
+              <div className="mt-3.5 pt-1 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 text-[11px] text-[#64748B]">
+                <span className="font-medium text-[#64748B] whitespace-nowrap">SokoPoS&trade;</span>
+                <span aria-hidden="true">&middot;</span>
                 <button
                   type="button"
                   onClick={() => navigateToLegalPage('terms')}
-                  className="font-semibold text-[#475569] hover:text-[#28a745] hover:underline cursor-pointer"
+                  className="font-medium text-[#475569] hover:text-[#28a745] hover:underline cursor-pointer whitespace-nowrap"
                 >
                   Terms &amp; Liability Cap
                 </button>
-                {' · '}
+                <span aria-hidden="true">&middot;</span>
                 <button
                   type="button"
                   onClick={() => navigateToLegalPage('privacy')}
-                  className="font-semibold text-[#475569] hover:text-[#28a745] hover:underline cursor-pointer"
+                  className="font-medium text-[#475569] hover:text-[#28a745] hover:underline cursor-pointer whitespace-nowrap"
                 >
                   Privacy
                 </button>
-                {' · '}
+                <span aria-hidden="true">&middot;</span>
                 <button
                   type="button"
                   onClick={() => navigateToLegalPage('ownership')}
-                  className="font-semibold text-[#475569] hover:text-[#28a745] hover:underline cursor-pointer"
+                  className="font-medium text-[#475569] hover:text-[#28a745] hover:underline cursor-pointer whitespace-nowrap"
                 >
                   IP Notice
                 </button>
-              </p>
+              </div>
+            </div>
             </div>
               </>
             )}

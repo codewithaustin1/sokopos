@@ -1743,6 +1743,96 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
     }
   });
 
+  const STAFF_TERMINAL_SECRET =
+    (process.env.STAFF_TERMINAL_TOKEN_SECRET || process.env.SESSION_SECRET || '').trim() ||
+    crypto.randomBytes(32).toString('hex');
+  const STAFF_TERMINAL_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
+
+  interface StaffTerminalTokenPayload {
+    typ: 'staff_terminal';
+    cashierId: string;
+    businessId: string;
+    role: string;
+    exp: number;
+  }
+
+  function issueStaffTerminalToken(params: {
+    cashierId: string;
+    businessId: string;
+    role: string;
+  }): string {
+    const payload: StaffTerminalTokenPayload = {
+      typ: 'staff_terminal',
+      cashierId: params.cashierId,
+      businessId: params.businessId,
+      role: params.role,
+      exp: Date.now() + STAFF_TERMINAL_TOKEN_TTL_MS,
+    };
+    const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+    const sig = crypto
+      .createHmac('sha256', STAFF_TERMINAL_SECRET)
+      .update(encoded)
+      .digest('base64url');
+    return `${encoded}.${sig}`;
+  }
+
+  function verifyStaffTerminalToken(authHeader?: string): StaffTerminalTokenPayload | null {
+    const raw = String(authHeader || '').trim();
+    if (!raw.toLowerCase().startsWith('bearer ')) return null;
+    const token = raw.slice(7).trim();
+    const parts = token.split('.');
+    if (parts.length !== 2) return null;
+    const [encoded, sig] = parts;
+    if (!encoded || !sig) return null;
+
+    const expectedSig = crypto
+      .createHmac('sha256', STAFF_TERMINAL_SECRET)
+      .update(encoded)
+      .digest('base64url');
+    const sigBuf = Buffer.from(sig, 'utf8');
+    const expectedBuf = Buffer.from(expectedSig, 'utf8');
+    if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as StaffTerminalTokenPayload;
+      if (
+        !parsed ||
+        parsed.typ !== 'staff_terminal' ||
+        typeof parsed.cashierId !== 'string' ||
+        !parsed.cashierId ||
+        typeof parsed.businessId !== 'string' ||
+        !parsed.businessId ||
+        typeof parsed.exp !== 'number' ||
+        Date.now() > parsed.exp
+      ) {
+        return null;
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  function sanitizeBusinessForStaffTerminal(bizDoc: Record<string, any> | null): Record<string, any> | undefined {
+    if (!bizDoc || !bizDoc.id) return undefined;
+    const { securitySettings, ...rest } = bizDoc;
+    const safeSecurity =
+      securitySettings && typeof securitySettings === 'object'
+        ? {
+            twoFactorEnabled: Boolean(securitySettings.twoFactorEnabled),
+            twoFactorMethod: securitySettings.twoFactorMethod,
+            totpEnabled: Boolean(securitySettings.totpEnabled),
+            enforceForStaff: Boolean(securitySettings.enforceForStaff),
+          }
+        : undefined;
+    return {
+      ...rest,
+      ...(safeSecurity ? { securitySettings: safeSecurity } : {}),
+    };
+  }
+
   // Cryptographic PIN Verification with Bcrypt (Protected by 5-attempt / 15-minute rate limit)
   app.post('/api/auth/verify-pin', pinVerifyLimiter, async (req, res) => {
     try {
@@ -1850,8 +1940,16 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
 
         let businessName: string | undefined;
         let businessStatus: string | undefined;
+        let sanitizedBusiness: Record<string, any> | undefined;
+        let tenantLocations: Record<string, any>[] = [];
+        let assignedLocationId: string | undefined;
+
         if (targetCred.businessId && targetCred.businessId !== 'biz-demo') {
-          const bizDoc = await getFirestoreDoc('businesses', targetCred.businessId).catch(() => null);
+          const [bizDoc, locs, cashierDoc] = await Promise.all([
+            getFirestoreDoc('businesses', targetCred.businessId).catch(() => null),
+            queryFirestoreDocs('locations', 'businessId', targetCred.businessId, 100).catch(() => []),
+            getFirestoreDoc('cashiers', targetCred.cashierId).catch(() => null),
+          ]);
           if (bizDoc) {
             businessName = typeof bizDoc.name === 'string' ? bizDoc.name : undefined;
             businessStatus = typeof bizDoc.status === 'string' ? bizDoc.status : undefined;
@@ -1861,8 +1959,24 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
                 error: `Access Blocked: The business account "${businessName || targetCred.businessId}" is currently suspended. Please contact the business owner.`,
               });
             }
+            sanitizedBusiness = sanitizeBusinessForStaffTerminal(bizDoc);
+          }
+          if (Array.isArray(locs) && locs.length > 0) {
+            tenantLocations = locs.filter((l) => l && l.businessId === targetCred.businessId);
+          }
+          if (cashierDoc && typeof cashierDoc.assignedLocationId === 'string' && cashierDoc.assignedLocationId) {
+            assignedLocationId = cashierDoc.assignedLocationId;
           }
         }
+
+        const staffToken =
+          targetCred.businessId && targetCred.businessId !== 'biz-demo'
+            ? issueStaffTerminalToken({
+                cashierId: targetCred.cashierId,
+                businessId: targetCred.businessId,
+                role: targetCred.role,
+              })
+            : undefined;
 
         return res.json({
           valid: true,
@@ -1872,8 +1986,12 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
           role: targetCred.role,
           code: targetCred.code,
           username: targetCred.username,
+          assignedLocationId,
           businessName,
           businessStatus,
+          business: sanitizedBusiness,
+          locations: tenantLocations,
+          staffToken,
         });
       }
 
@@ -1906,6 +2024,72 @@ Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml
     } catch (err: any) {
       console.error('Error in /api/auth/verify-pin:', err);
       return res.status(500).json({ error: 'Cryptographic PIN verification failed' });
+    }
+  });
+
+  // Server-Authenticated Staff Terminal Bootstrap (hydrates business, branches & catalog on clean browsers)
+  app.get('/api/staff/terminal-bootstrap', async (req, res) => {
+    try {
+      const tokenPayload = verifyStaffTerminalToken(req.headers.authorization);
+      if (!tokenPayload) {
+        return res.status(401).json({
+          success: false,
+          error: 'Unauthorized: Valid Staff Terminal session token required.',
+        });
+      }
+
+      const targetBizId = tokenPayload.businessId;
+      if (!targetBizId || targetBizId === 'biz-demo') {
+        return res.status(400).json({
+          success: false,
+          error: 'Tenant bootstrap is only applicable to live shop accounts.',
+        });
+      }
+
+      const bizDoc = await getFirestoreDoc('businesses', targetBizId).catch(() => null);
+      if (bizDoc && bizDoc.status === 'suspended') {
+        return res.status(403).json({
+          success: false,
+          error: `Access Blocked: Business "${bizDoc.name || targetBizId}" is suspended.`,
+        });
+      }
+
+      const [locations, products, categories, customers, suppliers, transactions, rawCashiers] =
+        await Promise.all([
+          queryFirestoreDocs('locations', 'businessId', targetBizId, 100).catch(() => []),
+          queryFirestoreDocs('products', 'businessId', targetBizId, 500).catch(() => []),
+          queryFirestoreDocs('categories', 'businessId', targetBizId, 200).catch(() => []),
+          queryFirestoreDocs('customers', 'businessId', targetBizId, 300).catch(() => []),
+          queryFirestoreDocs('suppliers', 'businessId', targetBizId, 200).catch(() => []),
+          queryFirestoreDocs('transactions', 'businessId', targetBizId, 100).catch(() => []),
+          queryFirestoreDocs('cashiers', 'businessId', targetBizId, 100).catch(() => []),
+        ]);
+
+      const maskedCashiers = (Array.isArray(rawCashiers) ? rawCashiers : [])
+        .filter((c) => c && c.businessId === targetBizId)
+        .map((c) => ({
+          ...c,
+          pin: '••••••••',
+        }));
+
+      return res.json({
+        success: true,
+        businessId: targetBizId,
+        business: sanitizeBusinessForStaffTerminal(bizDoc),
+        locations: Array.isArray(locations) ? locations : [],
+        products: Array.isArray(products) ? products : [],
+        categories: Array.isArray(categories) ? categories : [],
+        customers: Array.isArray(customers) ? customers : [],
+        suppliers: Array.isArray(suppliers) ? suppliers : [],
+        transactions: Array.isArray(transactions) ? transactions : [],
+        cashiers: maskedCashiers,
+      });
+    } catch (err: any) {
+      console.error('Error in /api/staff/terminal-bootstrap:', err);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to hydrate staff terminal context.',
+      });
     }
   });
 

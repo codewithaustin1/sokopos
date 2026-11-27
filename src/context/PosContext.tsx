@@ -217,6 +217,9 @@ import {
   verifyManagerOverrideViaServer,
   saveStaffCredentialOnServer,
   checkStaffIdentityAvailabilityOnServer,
+  fetchStaffTerminalBootstrap,
+  clearStaffTerminalToken,
+  VerifyPinResult,
   PROTECTED_PIN_MASK,
   isProtectedPin,
   isBcryptHash,
@@ -257,6 +260,7 @@ export interface ForeignOutboxSummary {
 interface PosContextType {
   // Authentication & Multi-tenancy
   currentUser: AuthUser | null;
+  isFirebaseAuthLoading: boolean;
   isAuthTransitioning: boolean;
   sessionEpoch: number;
   foreignOutboxSummary: ForeignOutboxSummary;
@@ -1061,7 +1065,6 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
     } else {
       localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
-      localStorage.setItem(STORAGE_KEYS.IS_LOGGED_OUT, 'true');
     }
   }, [currentUser]);
 
@@ -1361,8 +1364,14 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!isStorageHydrated) return;
 
     const unverifiedIds = new Set<string>();
+    const activeCredBizId =
+      currentUserRef.current?.authProvider === 'credentials' ? currentUserRef.current.businessId : null;
     businesses.forEach((b) => {
-      if (b.id !== 'biz-demo' && (!isValidBusinessOwnerEmail(b.ownerEmail) || b.id === 'biz-soko' || b.id === 'biz-quickmart')) {
+      if (
+        b.id !== 'biz-demo' &&
+        b.id !== activeCredBizId &&
+        (!isValidBusinessOwnerEmail(b.ownerEmail) || b.id === 'biz-soko' || b.id === 'biz-quickmart')
+      ) {
         unverifiedIds.add(b.id);
       }
     });
@@ -8705,37 +8714,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   }, [hasAuthenticatedUser, forceLogoutSession]);
 
-  // Edge Case 4: Detect abnormal termination / system restart while a shift was open
+  // Keep open shifts active seamlessly across browser refreshes and StrictMode re-mounts.
+  // Shifts are only marked 'interrupted' on explicit forceLogoutSession() actions.
   useEffect(() => {
-    const wasCleanExit = localStorage.getItem(STORAGE_KEYS.SESSION_CLEAN_EXIT);
-    if (wasCleanExit === 'false') {
-      // System was terminated unexpectedly (e.g. reload, browser crash, restart) while running
-      setAllShifts((prev) =>
-        prev.map((s) => {
-          if (s.status === 'open') {
-            return {
-              ...s,
-              status: 'interrupted',
-              interruptedAt: new Date().toISOString(),
-              interruptionReason: 'system_restart',
-              interruptionNote: 'Flagged as interrupted following unexpected system restart / window reload. Attribution preserved.',
-            };
-          }
-          return s;
-        })
-      );
-    }
-    // Mark as running (not clean exit until explicit logout)
-    localStorage.setItem(STORAGE_KEYS.SESSION_CLEAN_EXIT, 'false');
-
-    const handleBeforeUnload = () => {
-      // Session clean exit remains false unless explicit logout occurred
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
+    localStorage.setItem(STORAGE_KEYS.SESSION_CLEAN_EXIT, 'true');
   }, []);
 
   // 13. Cloud Sync, Transactional IndexedDB Outbox & OPFS Snapshots
@@ -10841,7 +10823,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               code: directVerify.code || usernameOrId,
               username: directVerify.username || trimmedInput,
               pin: PROTECTED_PIN_MASK,
-              assignedLocationId: '',
+              assignedLocationId: directVerify.assignedLocationId || '',
               avatarColor: 'bg-blue-600',
               shiftStartedAt: new Date().toISOString(),
             };
@@ -10880,11 +10862,15 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         // Validate staff PIN strictly through protected /api/auth/verify-pin server route
         let isValid = false;
-        let verifiedBusinessName = serverVerifiedLookup?.businessName;
-        let verifiedBusinessStatus = serverVerifiedLookup?.businessStatus;
+        let activeVerifyResult: VerifyPinResult | null =
+          serverVerifiedLookup && serverVerifiedLookup.cashierId === matchedUser.id
+            ? serverVerifiedLookup
+            : null;
+        let verifiedBusinessName = activeVerifyResult?.businessName;
+        let verifiedBusinessStatus = activeVerifyResult?.businessStatus;
         try {
-          if (serverVerifiedLookup && serverVerifiedLookup.cashierId === matchedUser.id) {
-            isValid = serverVerifiedLookup.isValid;
+          if (activeVerifyResult) {
+            isValid = activeVerifyResult.isValid;
           } else {
             const verifyRes = await verifyStaffPinViaServer({
               pin,
@@ -10893,6 +10879,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               usernameOrCode: matchedUser.username || matchedUser.code,
               fallbackHash: matchedUser.pin,
             });
+            activeVerifyResult = verifyRes;
             verifiedBusinessName = verifiedBusinessName || verifyRes.businessName;
             verifiedBusinessStatus = verifiedBusinessStatus || verifyRes.businessStatus;
 
@@ -10943,8 +10930,13 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             return false;
           }
 
+          let hydratedBiz: Business | undefined;
+          let hydratedLocations: Location[] = [];
+
           // Restore only verified targetBizId records (never leak any other tenant's cached data)
           if (isDemoSessionActive) {
+            hydratedBiz = INITIAL_BUSINESSES.find((b) => b.id === 'biz-demo');
+            hydratedLocations = INITIAL_LOCATIONS;
             setBusinesses(INITIAL_BUSINESSES);
             setAllProducts(INITIAL_PRODUCTS);
             setAllCategories(INITIAL_CATEGORIES);
@@ -10955,32 +10947,111 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             setAllTransactions(INITIAL_TRANSACTIONS);
             setAllShifts(INITIAL_SHIFTS);
           } else {
-            const scopedBiz = preResetBusinesses.find((b) => b.id === targetBizId);
-            if (scopedBiz) {
-              setBusinesses([scopedBiz]);
+            const cachedBiz = preResetBusinesses.find((b) => b.id === targetBizId);
+            const serverBiz =
+              activeVerifyResult?.business && activeVerifyResult.business.id === targetBizId
+                ? activeVerifyResult.business
+                : undefined;
+            const serverLocations = Array.isArray(activeVerifyResult?.locations)
+              ? activeVerifyResult.locations.filter((l) => l && l.businessId === targetBizId)
+              : [];
+            const cachedLocations = preResetLocations.filter((l) => l.businessId === targetBizId);
+
+            // Hydrate full operational catalog & branches from server on fresh/cleared terminal browsers
+            const bootstrapRes = activeVerifyResult?.staffToken
+              ? await fetchStaffTerminalBootstrap(activeVerifyResult.staffToken)
+              : null;
+
+            const resolvedServerBiz =
+              bootstrapRes?.success && bootstrapRes.business?.id === targetBizId
+                ? bootstrapRes.business
+                : serverBiz;
+
+            hydratedBiz =
+              resolvedServerBiz ||
+              cachedBiz ||
+              ({
+                id: targetBizId,
+                name: verifiedBusinessName || 'SokoPoS Terminal Store',
+                code: targetBizId.replace(/^biz-/, '').substring(0, 4).toUpperCase() || 'SHOP',
+                ownerEmail: '',
+                ownerName: 'Store Owner',
+                createdAt: matchedUser.shiftStartedAt || new Date().toISOString(),
+                plan: 'starter',
+                status: verifiedBusinessStatus === 'suspended' ? 'suspended' : 'active',
+                currency: 'KES',
+                taxNumber: '',
+              } as Business);
+
+            hydratedLocations =
+              bootstrapRes?.success && bootstrapRes.locations && bootstrapRes.locations.length > 0
+                ? bootstrapRes.locations.filter((l) => l.businessId === targetBizId)
+                : serverLocations.length > 0
+                ? serverLocations
+                : cachedLocations;
+
+            setBusinesses([hydratedBiz]);
+            setAllLocations(hydratedLocations);
+
+            if (bootstrapRes?.success) {
+              const scopedCachedProducts = preResetProducts.filter((p) => p.businessId === targetBizId);
+              setAllProducts(
+                bootstrapRes.products && bootstrapRes.products.length > 0
+                  ? bootstrapRes.products.filter((p) => p.businessId === targetBizId)
+                  : scopedCachedProducts
+              );
+              const scopedCachedCats = preResetCategories.filter((c) => c.businessId === targetBizId);
+              setAllCategories(
+                bootstrapRes.categories && bootstrapRes.categories.length > 0
+                  ? bootstrapRes.categories.filter((c) => c.businessId === targetBizId)
+                  : scopedCachedCats
+              );
+              const scopedCachedCustomers = preResetCustomers.filter((c) => c.businessId === targetBizId);
+              setAllCustomers(
+                bootstrapRes.customers && bootstrapRes.customers.length > 0
+                  ? bootstrapRes.customers.filter((c) => c.businessId === targetBizId)
+                  : scopedCachedCustomers
+              );
+              const scopedCachedSuppliers = preResetSuppliers.filter((s) => s.businessId === targetBizId);
+              setAllSuppliers(
+                bootstrapRes.suppliers && bootstrapRes.suppliers.length > 0
+                  ? bootstrapRes.suppliers.filter((s) => s.businessId === targetBizId)
+                  : scopedCachedSuppliers
+              );
+              const scopedCachedTxs = preResetTransactions.filter((t) => t.businessId === targetBizId);
+              setAllTransactions(
+                bootstrapRes.transactions && bootstrapRes.transactions.length > 0
+                  ? bootstrapRes.transactions.filter((t) => t.businessId === targetBizId)
+                  : scopedCachedTxs
+              );
+              const bootstrapStaff = (bootstrapRes.cashiers || []).filter((u) => u.businessId === targetBizId);
+              const scopedCachedStaff = preResetUsers.filter((u) => u.businessId === targetBizId);
+              const mergedStaff = bootstrapStaff.length > 0 ? bootstrapStaff : scopedCachedStaff;
+              setAllSystemUsers(mergedStaff.some((u) => u.id === matchedUser.id) ? mergedStaff : [matchedUser, ...mergedStaff]);
+            } else {
+              setAllProducts(preResetProducts.filter((p) => p.businessId === targetBizId));
+              setAllCategories(preResetCategories.filter((c) => c.businessId === targetBizId));
+              setAllCustomers(preResetCustomers.filter((c) => c.businessId === targetBizId));
+              setAllSuppliers(preResetSuppliers.filter((s) => s.businessId === targetBizId));
+              setAllTransactions(preResetTransactions.filter((t) => t.businessId === targetBizId));
+              const scopedStaff = preResetUsers.filter((u) => u.businessId === targetBizId);
+              setAllSystemUsers(scopedStaff.some((u) => u.id === matchedUser.id) ? scopedStaff : [matchedUser]);
             }
-            setAllLocations(preResetLocations.filter((l) => l.businessId === targetBizId));
-            setAllProducts(preResetProducts.filter((p) => p.businessId === targetBizId));
-            setAllCategories(preResetCategories.filter((c) => c.businessId === targetBizId));
-            setAllCustomers(preResetCustomers.filter((c) => c.businessId === targetBizId));
-            setAllSuppliers(preResetSuppliers.filter((s) => s.businessId === targetBizId));
-            setAllTransactions(preResetTransactions.filter((t) => t.businessId === targetBizId));
             setAllShifts(preResetShifts.filter((s) => s.businessId === targetBizId));
-            const scopedStaff = preResetUsers.filter((u) => u.businessId === targetBizId);
-            setAllSystemUsers(scopedStaff.some((u) => u.id === matchedUser.id) ? scopedStaff : [matchedUser]);
           }
 
           // Resolve assigned location within targetBizId (never inherit a location from the previous business)
-          const targetBizLocations = (isDemoSessionActive ? INITIAL_LOCATIONS : preResetLocations).filter(
+          const targetBizLocations = (isDemoSessionActive ? INITIAL_LOCATIONS : hydratedLocations).filter(
             (l) => l.businessId === targetBizId
           );
+          const resolvedAssignedLocId = matchedUser.assignedLocationId || activeVerifyResult?.assignedLocationId || '';
           const targetLocationId = isDemoSessionActive
             ? 'loc-demo-01'
-            : matchedUser.assignedLocationId && targetBizLocations.some((l) => l.id === matchedUser.assignedLocationId)
-            ? matchedUser.assignedLocationId
-            : targetBizLocations[0]?.id || matchedUser.assignedLocationId;
+            : resolvedAssignedLocId && targetBizLocations.some((l) => l.id === resolvedAssignedLocId)
+            ? resolvedAssignedLocId
+            : targetBizLocations[0]?.id || resolvedAssignedLocId;
 
-          const biz = (isDemoSessionActive ? INITIAL_BUSINESSES : preResetBusinesses).find((b) => b.id === targetBizId);
+          const biz = hydratedBiz;
 
           // Strict Check: Check if business is active or suspended
           if ((biz && biz.status === 'suspended') || verifiedBusinessStatus === 'suspended') {
@@ -10999,7 +11070,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           // Strict Session Lockdown: Bound strictly to targetBizId and matchedUser.role with masked PIN
           const authUser: AuthUser = {
             id: matchedUser.id,
-            email: `${matchedUser.username || matchedUser.code.replace(/^#/, '')}@${isDemoSessionActive ? 'demo' : biz?.code.toLowerCase() || 'pos'}.internal`,
+            email: `${matchedUser.username || matchedUser.code.replace(/^#/, '')}@${isDemoSessionActive ? 'demo' : biz?.code?.toLowerCase() || 'pos'}.internal`,
             name: matchedUser.name,
             initials: matchedUser.initials,
             authProvider: 'credentials',
@@ -11028,7 +11099,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             localStorage.removeItem('sokopos_demo_intent');
           }
 
-          setCurrentCashier(matchedUser);
+          setCurrentCashier(
+            targetLocationId && !matchedUser.assignedLocationId
+              ? { ...matchedUser, assignedLocationId: targetLocationId }
+              : matchedUser
+          );
 
           if (targetLocationId) {
             setCurrentLocationIdState(targetLocationId);
@@ -11078,6 +11153,8 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         prev.map((s) => (s.id === activeShift.id ? closedShift : s))
       );
     }
+
+    localStorage.setItem(STORAGE_KEYS.SESSION_CLEAN_EXIT, 'true');
 
     // 2. Run strict session teardown (signs out Firebase, resets tenant & UI state, clears local/IDB tenant caches while keeping sync_outbox)
     void resetClientSessionStateRef.current({
@@ -12667,6 +12744,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       isIdbHydratedRef.current = false;
 
       try {
+        clearStaffTerminalToken();
         if (options?.signOutFirebase !== false) {
           try {
             await firebaseSignOut(auth);
@@ -12832,6 +12910,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     <PosContext.Provider
       value={{
         currentUser,
+        isFirebaseAuthLoading,
         isAuthTransitioning,
         sessionEpoch,
         foreignOutboxSummary,

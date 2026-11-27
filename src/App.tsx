@@ -47,6 +47,7 @@ import {
 import { isSuperAdminEmail } from './data/initialData';
 import { MobileBentoMenuOverlay } from './components/common/MobileBentoMenuOverlay';
 import { ToastContainer } from './components/common/ToastContainer';
+import { PwaUpdateBanner } from './components/common/PwaUpdateBanner';
 import { PendingSubscriptionBanner } from './components/common/PendingSubscriptionBanner';
 import { ForeignOutboxWarningBanner } from './components/common/ForeignOutboxWarningBanner';
 import {
@@ -65,6 +66,7 @@ function PosAppContent() {
     toasts,
     dismissToast,
     currentUser,
+    isFirebaseAuthLoading,
     isSuperAdmin,
     currentBusiness,
     updateBusinessStatus,
@@ -146,15 +148,27 @@ function PosAppContent() {
     };
   }, []);
 
-  // When unauthenticated, allow public SEO paths (/pricing, /faq, /terms, etc.) and redirect private /pos routes to '/'
+  const isExplicitlyLoggedOut =
+    typeof window !== 'undefined' &&
+    localStorage.getItem('sokopos_is_logged_out_v2') === 'true';
+  const isRestoringPrivateSession =
+    !currentUser &&
+    isFirebaseAuthLoading &&
+    !isPublicSeoPath(currentPath) &&
+    !isExplicitlyLoggedOut;
+
+  // When unauthenticated and Firebase auth finished checking, allow public SEO paths and redirect private /pos routes to '/'
   useEffect(() => {
     if (!currentUser && !isPublicSeoPath(currentPath)) {
+      if (isFirebaseAuthLoading && !isExplicitlyLoggedOut) {
+        return;
+      }
       if (typeof window !== 'undefined') {
         window.history.replaceState(null, '', '/');
       }
       setCurrentPath('/');
     }
-  }, [currentUser, currentPath]);
+  }, [currentUser, currentPath, isFirebaseAuthLoading, isExplicitlyLoggedOut]);
 
   // Synchronize <title>, <meta description>, canonical, robots, and JSON-LD on route transitions
   useEffect(() => {
@@ -655,6 +669,7 @@ function PosAppContent() {
       >
         {/* Framer Motion Toast Notification Stack */}
         <ToastContainer toasts={toasts} onDismiss={dismissToast} topOffsetClass="top-6" />
+        <PwaUpdateBanner />
 
         <PricingPageView
           onBackToLogin={() => {
@@ -692,6 +707,19 @@ function PosAppContent() {
     );
   }
 
+  if (isRestoringPrivateSession) {
+    return (
+      <div
+        id="pos-session-restoring"
+        className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans p-6"
+      >
+        <div className="w-9 h-9 rounded-full border-2 border-blue-600 border-t-transparent animate-spin mb-3" />
+        <p className="text-sm font-semibold">Restoring your shop session...</p>
+        <PwaUpdateBanner />
+      </div>
+    );
+  }
+
   if (isAtLandingPage) {
     return (
       <div
@@ -700,6 +728,7 @@ function PosAppContent() {
       >
         {/* Framer Motion Toast Notification Stack */}
         <ToastContainer toasts={toasts} onDismiss={dismissToast} topOffsetClass="top-6" />
+        <PwaUpdateBanner />
         <SignInView onLoginSuccess={navigateToTerminal} />
 
         {/* Hidden Dynamic Sitemap View triggered by console command */}
@@ -720,6 +749,7 @@ function PosAppContent() {
     >
       {/* Framer Motion Toast Notification Stack */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} topOffsetClass="top-20" />
+      <PwaUpdateBanner />
 
       {/* Persistent Platform Support Banner (Hidden in Demo Sessions) */}
       {!isDemoSession && (

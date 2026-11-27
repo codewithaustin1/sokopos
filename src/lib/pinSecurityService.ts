@@ -2,7 +2,24 @@ import bcrypt from 'bcryptjs';
 import { auth } from './firebase';
 import { resolveApiUrl } from './apiConfig';
 
+import type { Business, Cashier, Category, Customer, Location, Product, Supplier, Transaction } from '../types';
+
 export const PROTECTED_PIN_MASK = '••••••••';
+
+// In-memory Staff Terminal Bearer Token (never stored in localStorage/sessionStorage)
+let activeStaffTerminalToken: string | null = null;
+
+export function setStaffTerminalToken(token: string | null): void {
+  activeStaffTerminalToken = token;
+}
+
+export function getStaffTerminalToken(): string | null {
+  return activeStaffTerminalToken;
+}
+
+export function clearStaffTerminalToken(): void {
+  activeStaffTerminalToken = null;
+}
 
 export interface HashPinResult {
   hash: string;
@@ -18,8 +35,26 @@ export interface VerifyPinResult {
   name?: string;
   code?: string;
   username?: string;
+  assignedLocationId?: string;
   businessName?: string;
   businessStatus?: string;
+  business?: Business;
+  locations?: Location[];
+  staffToken?: string;
+  error?: string;
+}
+
+export interface StaffTerminalBootstrapResult {
+  success: boolean;
+  businessId?: string;
+  business?: Business;
+  locations?: Location[];
+  products?: Product[];
+  categories?: Category[];
+  customers?: Customer[];
+  suppliers?: Supplier[];
+  transactions?: Transaction[];
+  cashiers?: Cashier[];
   error?: string;
 }
 
@@ -211,6 +246,9 @@ export async function verifyStaffPinViaServer(params: {
 
     if (response.ok) {
       const data = await response.json();
+      if (data.staffToken) {
+        setStaffTerminalToken(String(data.staffToken));
+      }
       return {
         isValid: Boolean(data.valid),
         cashierId: data.cashierId,
@@ -219,8 +257,12 @@ export async function verifyStaffPinViaServer(params: {
         name: data.name,
         code: data.code,
         username: data.username,
+        assignedLocationId: data.assignedLocationId,
         businessName: data.businessName,
         businessStatus: data.businessStatus,
+        business: data.business,
+        locations: Array.isArray(data.locations) ? data.locations : undefined,
+        staffToken: data.staffToken,
       };
     }
   } catch (err: any) {
@@ -319,4 +361,48 @@ export async function verifyPinOnServer(pin: string, storedHashOrPin: string): P
 
   return result.isValid;
 }
+
+/**
+ * Hydrate verified tenant operational catalog & branch context for Staff PIN logins
+ * on clean or cleared terminal browsers using the memory-only staff token.
+ */
+export async function fetchStaffTerminalBootstrap(
+  staffToken?: string | null
+): Promise<StaffTerminalBootstrapResult> {
+  const token = staffToken || getStaffTerminalToken();
+  if (!token) {
+    return { success: false, error: 'Missing Staff Terminal session token.' };
+  }
+
+  try {
+    const response = await fetch(resolveApiUrl('/api/staff/terminal-bootstrap'), {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data?.success) {
+      return {
+        success: false,
+        error: data?.error || 'Failed to hydrate shop context from server.',
+      };
+    }
+    return {
+      success: true,
+      businessId: data.businessId,
+      business: data.business,
+      locations: Array.isArray(data.locations) ? data.locations : [],
+      products: Array.isArray(data.products) ? data.products : [],
+      categories: Array.isArray(data.categories) ? data.categories : [],
+      customers: Array.isArray(data.customers) ? data.customers : [],
+      suppliers: Array.isArray(data.suppliers) ? data.suppliers : [],
+      transactions: Array.isArray(data.transactions) ? data.transactions : [],
+      cashiers: Array.isArray(data.cashiers) ? data.cashiers : [],
+    };
+  } catch {
+    return { success: false, error: 'Server unreachable during staff terminal hydration.' };
+  }
+}
+
 
