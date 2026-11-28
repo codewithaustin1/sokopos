@@ -21,9 +21,19 @@ import {
   PauseCircle,
   Trash2,
   Target,
+  LayoutGrid,
+  Table2,
+  Smartphone,
+  Minus,
+  Plus,
+  CreditCard,
+  GitFork,
+  Wallet,
+  Lock,
+  Award,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
-import { CartItem } from '../types';
+import { CartItem, PaymentMethod } from '../types';
 import { ItemDiscountModal } from './ItemDiscountModal';
 import { VoidModal } from './VoidModal';
 import { CustomerSelectModal } from './CustomerSelectModal';
@@ -33,9 +43,10 @@ import { ShiftInitializationCard } from './shift/ShiftInitializationCard';
 import { Haptics } from '../utils/haptics';
 import { roundCashHalfUp, hasCents } from '../utils/cashRounding';
 import { calculateMonthlyTargetPacing, getPeriodKey } from '../utils/biEngine';
+import { getItemLineTotal } from '../utils/discountUtils';
 
 interface RegisterViewProps {
-  onProceedToPayment: () => void;
+  onProceedToPayment: (method?: PaymentMethod) => void;
   openBarcodeScanner: () => void;
 }
 
@@ -76,10 +87,17 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
     analyticsRollups,
     analyticsTargets,
     shiftHistory,
+    isSuperAdmin,
+    entitlements,
+    requireCapability,
+    loyaltySettings,
+    showToast,
     t,
   } = usePos();
 
   const canManageInventory = can('manageInventory');
+  const canUseStoreCredit = isSuperAdmin || entitlements.capabilities.loyaltyAndStoreCredit;
+  const canRedeemLoyalty = can('manageLoyalty');
 
   const [selectedCategory, setSelectedCategory] = useState<string>('All Items');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -93,6 +111,25 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
   const [isHeldOrdersOpen, setIsHeldOrdersOpen] = useState<boolean>(false);
   const [isBreakdownOpen, setIsBreakdownOpen] = useState<boolean>(false);
   const [isPaceBannerDismissed, setIsPaceBannerDismissed] = useState<boolean>(false);
+
+  const REGISTER_VIEW_MODE_KEY = 'sokopos_register_view_mode';
+  const [catalogViewMode, setCatalogViewMode] = useState<'cards' | 'table'>(() => {
+    try {
+      const saved = localStorage.getItem(REGISTER_VIEW_MODE_KEY);
+      return saved === 'table' ? 'table' : 'cards';
+    } catch {
+      return 'cards';
+    }
+  });
+
+  const handleSelectCatalogViewMode = (mode: 'cards' | 'table') => {
+    setCatalogViewMode(mode);
+    try {
+      localStorage.setItem(REGISTER_VIEW_MODE_KEY, mode);
+    } catch {
+      // Ignore storage errors
+    }
+  };
 
   const activePeriodKey = getPeriodKey();
   const registerTargetPacing = useMemo(
@@ -393,17 +430,20 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
     );
   }
 
+  const isTaxExclusive = currentBusiness?.taxSettings?.pricingType === 'exclusive';
+  const summarySubtotalAmount = isTaxExclusive ? cartSubtotal : cartTotal + cartDiscount;
+
   return (
-    <div id="register-pos-workspace" className="flex-1 flex flex-col md:flex-row overflow-hidden bg-slate-100 relative min-h-0 h-full w-full">
+    <div id="register-pos-workspace" className="flex-1 flex flex-col md:flex-row overflow-hidden bg-[#f8fafc] text-slate-950 relative min-h-0 h-full w-full">
       {/* Mobile Top Segmented View Switcher */}
-      <div className="md:hidden bg-white border-b border-slate-200 px-3 py-2 flex items-center gap-2 shrink-0 z-20">
+      <div className="md:hidden bg-white border-b border-slate-300 px-3 py-2 flex items-center gap-2 shrink-0 z-20">
         <button
           type="button"
           onClick={() => setMobileActiveView('catalog')}
-          className={`flex-1 min-h-[44px] py-2 px-3 rounded-lg text-xs font-semibold transition-colors duration-150 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+          className={`flex-1 min-h-[44px] py-2 px-3 rounded-lg text-xs font-bold transition-colors duration-150 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
             mobileActiveView === 'catalog'
-              ? 'bg-blue-600 text-white'
-              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              ? 'bg-[#1d4ed8] text-white'
+              : 'bg-[#f8fafc] border border-slate-300 text-slate-900 hover:bg-slate-100'
           }`}
         >
           <ShoppingBag className="w-3.5 h-3.5 shrink-0" />
@@ -413,16 +453,16 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         <button
           type="button"
           onClick={() => setMobileActiveView('cart')}
-          className={`flex-1 min-h-[44px] py-2 px-3 rounded-lg text-xs font-semibold transition-colors duration-150 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+          className={`flex-1 min-h-[44px] py-2 px-3 rounded-lg text-xs font-bold transition-colors duration-150 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
             mobileActiveView === 'cart'
-              ? 'bg-blue-600 text-white'
-              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              ? 'bg-[#1d4ed8] text-white'
+              : 'bg-[#f8fafc] border border-slate-300 text-slate-900 hover:bg-slate-100'
           }`}
         >
           <ShoppingCart className="w-3.5 h-3.5 shrink-0" />
-          <span className="tabular-nums">Cart ({totalCartCount})</span>
+          <span className="tabular-nums">Order ({totalCartCount})</span>
           {totalCartCount > 0 && (
-            <span className={`text-[11px] font-mono tabular-nums ${mobileActiveView === 'cart' ? 'text-blue-100' : 'text-slate-500'}`}>
+            <span className={`text-[11px] font-mono tabular-nums ${mobileActiveView === 'cart' ? 'text-blue-100' : 'text-slate-600'}`}>
               · {currentLocation.currency} {cartTotal.toFixed(0)}
             </span>
           )}
@@ -431,25 +471,116 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
 
       {/* Products Workspace (Left / 62% on desktop, full screen on mobile catalog view) */}
       <div
-        className={`flex-1 md:w-[62%] p-3 sm:p-4 flex flex-col gap-3 border-r border-slate-200 bg-slate-50 overflow-hidden relative min-h-0 ${
+        className={`flex-1 md:w-[62%] p-3 sm:p-4 flex flex-col gap-2.5 sm:gap-3 border-r border-slate-300 bg-[#f8fafc] overflow-hidden relative min-h-0 ${
           mobileActiveView === 'catalog' ? 'flex' : 'hidden md:flex'
         }`}
       >
-        {/* Unified Single-Row Command Bar (Search + Scan + Progressive More Menu) */}
+        {/* Prominent Walk-in Customer Selector Bar */}
+        <div className="shrink-0">
+          {!selectedCustomer ? (
+            <button
+              id="register-customer-selector-btn"
+              type="button"
+              onClick={() => setIsCustomerSelectOpen(true)}
+              className="w-full min-h-[44px] bg-white hover:bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 flex items-center justify-between gap-2 transition-colors duration-150 cursor-pointer text-left focus-visible:outline-2 focus-visible:outline-[#1d4ed8]"
+              title="Select customer for loyalty points or store credit"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-200 text-[#1d4ed8] flex items-center justify-center shrink-0">
+                  <User className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 flex items-center gap-1.5 flex-wrap">
+                  <span className="text-xs sm:text-sm font-bold text-slate-950 truncate">
+                    Walk-in Customer
+                  </span>
+                  <span className="hidden sm:inline text-xs text-slate-500">
+                    · Tap to assign loyalty or credit tab
+                  </span>
+                </div>
+              </div>
+              <span className="inline-flex items-center gap-1 text-xs font-bold text-[#1d4ed8] shrink-0 whitespace-nowrap">
+                <span>Assign</span>
+                <ChevronDown className="w-3.5 h-3.5" />
+              </span>
+            </button>
+          ) : (
+            <div className="w-full min-h-[44px] bg-white border-2 border-[#1d4ed8] rounded-xl px-3 py-1.5 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-[#1d4ed8] text-white font-bold text-xs flex items-center justify-center shrink-0">
+                  {selectedCustomer.name.slice(0, 2).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs sm:text-sm font-bold text-slate-950 truncate">
+                      {selectedCustomer.name}
+                    </span>
+                    <span className="text-[11px] font-mono tabular-nums text-slate-600 truncate">
+                      {selectedCustomer.phone}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px] tabular-nums">
+                    <span className="text-slate-700 font-semibold inline-flex items-center gap-1">
+                      <Star className="w-3 h-3 fill-amber-500 text-amber-600" />
+                      {selectedCustomer.loyaltyPoints || 0} pts
+                    </span>
+                    <span className="text-slate-300" aria-hidden="true">·</span>
+                    <span
+                      className={`font-bold font-mono tabular-nums ${
+                        (selectedCustomer.storeCreditBalance || 0) < 0
+                          ? 'text-[#b91c1c]'
+                          : (selectedCustomer.storeCreditBalance || 0) > 0
+                          ? 'text-[#047857]'
+                          : 'text-slate-600'
+                      }`}
+                    >
+                      {(selectedCustomer.storeCreditBalance || 0) < 0
+                        ? `Tab: -${currentLocation.currency} ${Math.abs(selectedCustomer.storeCreditBalance).toFixed(0)}`
+                        : (selectedCustomer.storeCreditBalance || 0) > 0
+                        ? `Credit: +${currentLocation.currency} ${selectedCustomer.storeCreditBalance.toFixed(0)}`
+                        : 'Tab: Clear'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsCustomerSelectOpen(true)}
+                  className="min-h-[40px] px-2.5 text-xs font-bold text-[#1d4ed8] hover:bg-blue-50 rounded-lg transition cursor-pointer whitespace-nowrap"
+                  title="Change customer"
+                >
+                  Change
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedCustomer(null)}
+                  className="min-w-[40px] min-h-[40px] flex items-center justify-center text-slate-500 hover:text-[#b91c1c] rounded-lg hover:bg-red-50 transition cursor-pointer"
+                  title="Reset to Walk-in Customer"
+                  aria-label="Reset to Walk-in Customer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Unified Single-Row Command Bar (Search + Scan + Cards/Express Table Toggle + More) */}
         <div className="flex items-center gap-2 shrink-0">
           {/* Quick Search with Barcode Enter support & Ctrl+F shortcut */}
           <div ref={searchContainerRef} className="relative flex-1 min-w-0">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               id="register-search-input"
               ref={searchInputRef}
               type="text"
-              placeholder={t('reg_search_placeholder', 'Search product, SKU or scan barcode...')}
+              placeholder={t('reg_search_placeholder', 'Product name / SKU / Barcode...')}
               value={searchQuery}
               onFocus={() => setIsSearchFocused(true)}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={handleSearchKeyDown}
-              className="w-full min-h-[44px] bg-white border border-slate-300 rounded-lg py-2 pl-9 pr-32 text-base sm:text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition"
+              className="w-full min-h-[44px] bg-white border border-slate-300 rounded-xl py-2 pl-9 pr-28 sm:pr-32 text-base sm:text-xs font-semibold text-slate-950 placeholder:text-slate-500 focus:outline-none focus:border-[#1d4ed8] focus:ring-2 focus:ring-blue-100 transition"
             />
             <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
               {searchQuery && (
@@ -460,35 +591,35 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                     searchInputRef.current?.focus();
                   }}
                   title="Clear search"
-                  className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-md transition cursor-pointer"
+                  className="min-w-[34px] min-h-[34px] flex items-center justify-center hover:bg-slate-100 text-slate-500 hover:text-slate-900 rounded-lg transition cursor-pointer"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-4 h-4" />
                 </button>
               )}
               <button
                 type="button"
                 onClick={openBarcodeScanner}
-                className="min-h-[34px] px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
+                className="min-h-[34px] px-2.5 py-1 bg-[#f8fafc] hover:bg-slate-200 border border-slate-300 text-slate-900 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
                 title="Open Camera Scanner (F2)"
               >
-                <Scan className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <Scan className="w-3.5 h-3.5 text-slate-700 shrink-0" />
                 <span>{t('action_scan', 'Scan')}</span>
               </button>
             </div>
 
             {/* Recent Searches Dropdown Popover */}
             {isSearchFocused && (
-              <div className="absolute top-full left-0 right-0 mt-1.5 z-40 bg-white rounded-xl shadow-md border border-slate-200 py-1.5 overflow-hidden">
-                <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-100 text-[11px]">
-                  <div className="flex items-center gap-1.5 font-semibold text-slate-500">
-                    <Clock className="w-3.5 h-3.5 text-slate-400" />
+              <div className="absolute top-full left-0 right-0 mt-1.5 z-40 bg-white rounded-xl shadow-lg border border-slate-300 py-1.5 overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-200 text-[11px]">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-700">
+                    <Clock className="w-3.5 h-3.5 text-slate-500" />
                     <span>Recent Searches</span>
                   </div>
                   {recentSearches.length > 0 && (
                     <button
                       type="button"
                       onClick={clearAllRecentSearches}
-                      className="min-h-[32px] px-2 text-[11px] font-medium text-slate-500 hover:text-red-600 rounded transition cursor-pointer"
+                      className="min-h-[32px] px-2 text-[11px] font-bold text-slate-600 hover:text-[#b91c1c] rounded transition cursor-pointer"
                     >
                       Clear All
                     </button>
@@ -512,11 +643,11 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                           className="flex items-center justify-between pl-3 pr-1.5 py-1 hover:bg-slate-50 transition-colors cursor-pointer group text-xs min-h-[44px]"
                         >
                           <div className="flex items-center gap-2 min-w-0 flex-1">
-                            <Clock className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 shrink-0" />
-                            <span className="font-medium text-slate-700 group-hover:text-blue-700 truncate">
+                            <Clock className="w-3.5 h-3.5 text-slate-500 group-hover:text-[#1d4ed8] shrink-0" />
+                            <span className="font-semibold text-slate-900 group-hover:text-[#1d4ed8] truncate">
                               {term}
                             </span>
-                            <span className="text-[11px] text-slate-400 tabular-nums shrink-0">
+                            <span className="text-[11px] text-slate-500 tabular-nums shrink-0">
                               · {matchCount} {matchCount === 1 ? 'match' : 'matches'}
                             </span>
                           </div>
@@ -525,7 +656,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                             onClick={(e) => removeRecentSearch(term, e)}
                             title={`Remove "${term}" from history`}
                             aria-label={`Remove "${term}" from recent searches`}
-                            className="min-w-[40px] min-h-[40px] flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition shrink-0 ml-1 cursor-pointer"
+                            className="min-w-[40px] min-h-[40px] flex items-center justify-center text-slate-500 hover:text-[#b91c1c] hover:bg-red-50 rounded-lg transition shrink-0 ml-1 cursor-pointer"
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>
@@ -534,15 +665,53 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                     })}
                   </div>
                 ) : (
-                  <div className="px-3 py-3 text-center text-slate-400 text-xs">
-                    <p className="font-medium text-slate-500">No recent searches yet</p>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
+                  <div className="px-3 py-3 text-center text-slate-500 text-xs">
+                    <p className="font-semibold text-slate-700">No recent searches yet</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
                       Products searched by name, SKU or barcode will appear here.
                     </p>
                   </div>
                 )}
               </div>
             )}
+          </div>
+
+          {/* Segmented View Switcher: Product Cards vs Express Table */}
+          <div
+            role="group"
+            aria-label="Catalog display mode"
+            className="inline-flex items-center bg-white border border-slate-300 rounded-xl p-0.5 shrink-0"
+          >
+            <button
+              id="register-cards-view-toggle"
+              type="button"
+              onClick={() => handleSelectCatalogViewMode('cards')}
+              aria-pressed={catalogViewMode === 'cards'}
+              title="Visual Product Cards (Best for loose & un-barcoded goods)"
+              className={`min-h-[40px] px-2.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap ${
+                catalogViewMode === 'cards'
+                  ? 'bg-[#1d4ed8] text-white'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden lg:inline">Cards</span>
+            </button>
+            <button
+              id="register-express-table-toggle"
+              type="button"
+              onClick={() => handleSelectCatalogViewMode('table')}
+              aria-pressed={catalogViewMode === 'table'}
+              title="Express Table (High-density barcode & tabular entry)"
+              className={`min-h-[40px] px-2.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap ${
+                catalogViewMode === 'table'
+                  ? 'bg-[#1d4ed8] text-white'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Table2 className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">Express</span>
+            </button>
           </div>
 
           {/* Progressive Register Quick Actions Popover */}
@@ -552,24 +721,24 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               type="button"
               aria-expanded={isQuickActionsOpen}
               onClick={() => setIsQuickActionsOpen((prev) => !prev)}
-              className="min-h-[44px] px-3 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap"
+              className="min-h-[44px] px-3 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-900 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap"
               title="More Register Actions"
             >
-              <MoreHorizontal className="w-4 h-4 text-slate-500 shrink-0" />
-              <span className="hidden sm:inline">More</span>
+              <MoreHorizontal className="w-4 h-4 text-slate-700 shrink-0" />
+              <span className="hidden xl:inline">More</span>
             </button>
 
             {isQuickActionsOpen && (
-              <div className="absolute right-0 top-full mt-1.5 w-64 bg-white rounded-xl shadow-lg border border-slate-200 p-1.5 z-40 text-xs">
+              <div className="absolute right-0 top-full mt-1.5 w-64 bg-white rounded-xl shadow-lg border border-slate-300 p-1.5 z-40 text-xs">
                 <button
                   type="button"
                   onClick={() => {
                     setIsQuickActionsOpen(false);
                     setIsCustomerSelectOpen(true);
                   }}
-                  className="w-full min-h-[40px] flex items-center gap-2.5 px-3 py-2 rounded-lg text-left font-medium text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                  className="w-full min-h-[44px] flex items-center gap-2.5 px-3 py-2 rounded-lg text-left font-semibold text-slate-900 hover:bg-slate-100 transition cursor-pointer"
                 >
-                  <User className="w-4 h-4 text-slate-500 shrink-0" />
+                  <User className="w-4 h-4 text-slate-600 shrink-0" />
                   <span className="truncate">
                     {selectedCustomer ? `Customer: ${selectedCustomer.name}` : 'Assign Customer'}
                   </span>
@@ -582,13 +751,13 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                       setMobileActiveView('cart');
                       setIsHeldOrdersOpen(true);
                     }}
-                    className="w-full min-h-[40px] flex items-center justify-between gap-2.5 px-3 py-2 rounded-lg text-left font-medium text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                    className="w-full min-h-[44px] flex items-center justify-between gap-2.5 px-3 py-2 rounded-lg text-left font-semibold text-slate-900 hover:bg-slate-100 transition cursor-pointer"
                   >
                     <span className="flex items-center gap-2.5">
-                      <PauseCircle className="w-4 h-4 text-slate-500 shrink-0" />
+                      <PauseCircle className="w-4 h-4 text-slate-600 shrink-0" />
                       <span>{t('reg_resume_cart', 'Held Orders')}</span>
                     </span>
-                    <span className="text-[11px] font-mono font-semibold text-blue-600 tabular-nums">
+                    <span className="text-[11px] font-mono font-bold text-[#1d4ed8] tabular-nums">
                       {heldOrders.length}
                     </span>
                   </button>
@@ -601,9 +770,9 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                         setIsQuickActionsOpen(false);
                         openReturnsModal(null);
                       }}
-                      className="w-full min-h-[40px] flex items-center gap-2.5 px-3 py-2 rounded-lg text-left font-medium text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                      className="w-full min-h-[44px] flex items-center gap-2.5 px-3 py-2 rounded-lg text-left font-semibold text-slate-900 hover:bg-slate-100 transition cursor-pointer"
                     >
-                      <RotateCcw className="w-4 h-4 text-slate-500 shrink-0" />
+                      <RotateCcw className="w-4 h-4 text-slate-600 shrink-0" />
                       <span>{t('nav_returns', 'Returns & Refunds')}</span>
                     </button>
                     <button
@@ -612,30 +781,30 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                         setIsQuickActionsOpen(false);
                         openShiftManagement();
                       }}
-                      className="w-full min-h-[40px] flex items-center gap-2.5 px-3 py-2 rounded-lg text-left font-medium text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                      className="w-full min-h-[44px] flex items-center gap-2.5 px-3 py-2 rounded-lg text-left font-semibold text-slate-900 hover:bg-slate-100 transition cursor-pointer"
                     >
-                      <Clock className="w-4 h-4 text-slate-500 shrink-0" />
+                      <Clock className="w-4 h-4 text-slate-600 shrink-0" />
                       <span>Shift &amp; Till Drawer</span>
                     </button>
                   </>
                 )}
 
-                <div className="mt-1 pt-1.5 px-3 pb-1 border-t border-slate-100 text-[11px] text-slate-500 space-y-1">
-                  <div className="flex items-center gap-1.5 font-semibold text-slate-600">
-                    <Keyboard className="w-3.5 h-3.5 text-slate-400" />
+                <div className="mt-1 pt-1.5 px-3 pb-1 border-t border-slate-200 text-[11px] text-slate-600 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                    <Keyboard className="w-3.5 h-3.5 text-slate-600" />
                     <span>Shortcuts</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Search catalog</span>
-                    <kbd className="font-mono text-slate-600">Ctrl+F</kbd>
+                    <kbd className="font-mono font-semibold text-slate-900">Ctrl+F</kbd>
                   </div>
                   <div className="flex justify-between">
                     <span>Exact Cash</span>
-                    <kbd className="font-mono text-slate-600">F1</kbd>
+                    <kbd className="font-mono font-semibold text-slate-900">F1</kbd>
                   </div>
                   <div className="flex justify-between">
                     <span>Pay / Checkout</span>
-                    <kbd className="font-mono text-slate-600">Enter / Space</kbd>
+                    <kbd className="font-mono font-semibold text-slate-900">Enter / Space</kbd>
                   </div>
                 </div>
               </div>
@@ -643,30 +812,22 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
           </div>
         </div>
 
-        {/* Non-Blocking Daily Target Pacing Strip (Revenue Only, No Margin Exposure) */}
+        {/* Non-Blocking Daily Target Pacing Strip */}
         {registerTargetPacing.hasRevenueTarget && !isPaceBannerDismissed && (
-          <div
-            className={`px-3 py-1.5 rounded-lg border flex items-center justify-between gap-2 text-xs shrink-0 ${
-              registerTargetPacing.revenueStatus === 'behind'
-                ? 'bg-rose-50/70 border-rose-200 text-rose-900'
-                : registerTargetPacing.revenueStatus === 'watch'
-                ? 'bg-amber-50/70 border-amber-200 text-amber-900'
-                : 'bg-white border-slate-200 text-slate-700'
-            }`}
-          >
+          <div className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white flex items-center justify-between gap-2 text-xs shrink-0 text-slate-900">
             <div className="flex items-center gap-2 min-w-0 flex-wrap">
               <Target
                 className={`w-3.5 h-3.5 shrink-0 ${
                   registerTargetPacing.revenueStatus === 'behind'
-                    ? 'text-rose-600'
+                    ? 'text-[#b91c1c]'
                     : registerTargetPacing.revenueStatus === 'watch'
-                    ? 'text-amber-600'
-                    : 'text-emerald-600'
+                    ? 'text-slate-700'
+                    : 'text-[#047857]'
                 }`}
               />
-              <span className="font-semibold truncate">{currentLocation.name} Pace</span>
+              <span className="font-bold truncate">{currentLocation.name} Pace</span>
               <span className="text-slate-300" aria-hidden="true">·</span>
-              <span className="font-mono tabular-nums">
+              <span className="font-mono font-semibold tabular-nums">
                 {registerTargetPacing.revenueRemaining <= 0
                   ? `Month goal met (${registerTargetPacing.revenuePct.toFixed(0)}%)`
                   : `Today ${currentLocation.currency} ${registerTargetPacing.todayNetRevenue.toLocaleString(
@@ -678,7 +839,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                     )} daily target`}
               </span>
               <span className="text-slate-300 hidden sm:inline" aria-hidden="true">·</span>
-              <span className="font-semibold hidden sm:inline whitespace-nowrap">
+              <span className="font-bold hidden sm:inline whitespace-nowrap">
                 {registerTargetPacing.revenueStatus === 'achieved'
                   ? 'Goal Achieved'
                   : registerTargetPacing.revenueStatus === 'on_track'
@@ -692,7 +853,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               type="button"
               onClick={() => setIsPaceBannerDismissed(true)}
               aria-label="Dismiss daily pace indicator"
-              className="p-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer shrink-0"
+              className="p-1 rounded text-slate-500 hover:text-slate-950 cursor-pointer shrink-0"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -706,10 +867,10 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               key={cat}
               type="button"
               onClick={() => setSelectedCategory(cat)}
-              className={`min-h-[44px] px-3.5 py-2 rounded-lg text-xs font-semibold transition-all duration-150 active:scale-[0.98] whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-blue-600 ${
+              className={`min-h-[44px] px-3.5 py-2 rounded-xl text-xs font-bold transition-all duration-150 active:scale-[0.98] whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#1d4ed8] ${
                 selectedCategory === cat
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                  ? 'bg-[#1d4ed8] text-white border border-[#1d4ed8]'
+                  : 'bg-white border border-slate-300 text-slate-900 hover:bg-slate-100'
               }`}
             >
               {cat}
@@ -717,17 +878,17 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
           ))}
         </div>
 
-        {/* Product Cards Grid */}
+        {/* Catalog Viewport: Product Cards Grid OR High-Density Express Table */}
         <div className="flex-1 overflow-y-auto pr-0.5 sm:pr-1 pb-20 md:pb-0">
           {filteredProducts.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center p-8 text-slate-400 text-center">
-              <ShoppingBag className="w-12 h-12 mb-3 stroke-1 text-slate-300" />
-              <p className="text-sm font-semibold text-slate-700">
+            <div className="h-full flex flex-col items-center justify-center p-8 text-slate-500 text-center bg-white border border-slate-300 rounded-xl">
+              <ShoppingBag className="w-12 h-12 mb-3 stroke-1 text-slate-400" />
+              <p className="text-sm font-bold text-slate-900">
                 {searchQuery.trim()
                   ? `No items match "${searchQuery.trim()}"`
                   : 'No items match your criteria'}
               </p>
-              <p className="text-xs text-slate-500 mt-1 max-w-sm">
+              <p className="text-xs text-slate-600 mt-1 max-w-sm">
                 {searchQuery.trim()
                   ? !isSellingMode && canManageInventory
                     ? 'You can add this barcode or SKU directly to your catalog, or clear the search.'
@@ -742,7 +903,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                     <button
                       type="button"
                       onClick={() => openUnknownBarcodeModal(searchQuery.trim(), { source: 'search' })}
-                      className="min-h-[44px] px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+                      className="min-h-[44px] px-4 py-2 rounded-xl bg-[#1d4ed8] hover:bg-[#1e40af] text-white text-xs font-bold inline-flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
                     >
                       <PackagePlus className="w-4 h-4" />
                       <span>Add &quot;{searchQuery.trim()}&quot; to Inventory</span>
@@ -754,15 +915,15 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                       setSearchQuery('');
                       searchInputRef.current?.focus();
                     }}
-                    className="min-h-[44px] px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition cursor-pointer whitespace-nowrap"
+                    className="min-h-[44px] px-4 py-2 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 text-slate-900 text-xs font-bold transition cursor-pointer whitespace-nowrap"
                   >
                     Clear Search
                   </button>
                 </div>
               )}
             </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-3 gap-2.5 sm:gap-3">
+          ) : catalogViewMode === 'cards' ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3">
               {filteredProducts.map((prod) => {
                 const stock = prod.stockByLocation[currentLocation.id] ?? 0;
                 const isOutOfStock = stock <= 0;
@@ -781,22 +942,22 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                       addToCart(prod);
                     }}
                     title={isOutOfStock ? `Cannot sell ${prod.name}: 0 stock available` : `Add ${prod.name} to cart`}
-                    className={`border rounded-xl p-3.5 min-h-[96px] flex flex-col justify-between text-left transition-all duration-150 select-none relative touch-manipulation ${
+                    className={`rounded-xl p-3.5 min-h-[96px] flex flex-col justify-between text-left transition-all duration-150 select-none relative touch-manipulation ${
                       isOutOfStock
-                        ? 'bg-slate-50/90 border-red-200/80 opacity-60 cursor-not-allowed'
+                        ? 'bg-slate-100 border border-slate-300 opacity-65 cursor-not-allowed'
                         : inCart
-                        ? 'bg-blue-50/35 border-blue-600 cursor-pointer hover:bg-blue-50/60 active:scale-[0.98]'
-                        : 'bg-white border-slate-200 cursor-pointer hover:border-blue-400 active:scale-[0.98] group'
+                        ? 'bg-blue-50/70 border-2 border-[#1d4ed8] cursor-pointer hover:bg-blue-50 active:scale-[0.98]'
+                        : 'bg-white border border-slate-300 cursor-pointer hover:border-[#1d4ed8] active:scale-[0.98] group'
                     }`}
                   >
                     {inCart && (
-                      <div className="absolute top-2.5 right-2.5 bg-blue-600 text-white text-[11px] font-mono font-bold tabular-nums min-w-[24px] h-[24px] px-1.5 rounded-md flex items-center justify-center">
+                      <div className="absolute top-2.5 right-2.5 bg-[#1d4ed8] text-white text-[11px] font-mono font-bold tabular-nums min-w-[24px] h-[24px] px-1.5 rounded-md flex items-center justify-center">
                         {inCart.quantity}
                       </div>
                     )}
 
                     <div className="w-full pr-7">
-                      <h4 className={`text-xs sm:text-[13px] font-semibold leading-snug line-clamp-2 ${isOutOfStock ? 'text-slate-500' : 'text-slate-900 group-hover:text-blue-600 transition-colors'}`}>
+                      <h4 className={`text-xs sm:text-[13px] font-bold leading-snug line-clamp-2 ${isOutOfStock ? 'text-slate-600' : 'text-slate-950 group-hover:text-[#1d4ed8] transition-colors'}`}>
                         {prod.name}
                       </h4>
                     </div>
@@ -804,23 +965,23 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                     <div className="mt-3 flex items-baseline justify-between gap-2 w-full">
                       <div className="min-w-0">
                         {isOutOfStock ? (
-                          <span className="text-[11px] text-red-600 font-semibold inline-flex items-center gap-1">
+                          <span className="text-[11px] text-[#b91c1c] font-bold inline-flex items-center gap-1">
                             <AlertTriangle className="w-3 h-3 shrink-0" />
-                            <span>Out of stock</span>
+                            <span>Out</span>
                           </span>
                         ) : isLowStock ? (
-                          <span className="text-[11px] text-amber-700 font-semibold tabular-nums">
-                            {stock} left (Low)
+                          <span className="text-[11px] text-slate-700 font-bold tabular-nums">
+                            {stock} left
                           </span>
                         ) : (
-                          <span className="text-[11px] text-slate-400 font-medium tabular-nums">
-                            {stock} in stock
+                          <span className="text-[11px] text-slate-600 font-medium tabular-nums">
+                            {stock} stock
                           </span>
                         )}
                       </div>
 
                       <div className="text-right shrink-0">
-                        <div className={`text-xs sm:text-sm font-bold font-mono tabular-nums tracking-tight ${isOutOfStock ? 'text-slate-400 line-through' : 'text-blue-600'}`}>
+                        <div className={`text-xs sm:text-sm font-bold font-mono tabular-nums tracking-tight ${isOutOfStock ? 'text-slate-500 line-through' : 'text-[#1d4ed8]'}`}>
                           {currentLocation.currency} {prod.sellingPrice.toFixed(2)}
                         </div>
                       </div>
@@ -829,39 +990,215 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                 );
               })}
             </div>
+          ) : (
+            /* Express Table Mode: High-Density Supermarket Tabular Scan & Touch Entry */
+            <div className="bg-white border border-slate-300 rounded-xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-slate-100 border-b border-slate-300 text-[11px] font-bold uppercase tracking-wide text-slate-800 sticky top-0 z-10">
+                    <tr>
+                      <th className="py-2.5 px-3">Product</th>
+                      <th className="py-2.5 px-2 text-center">Qty</th>
+                      <th className="py-2.5 px-3 text-right whitespace-nowrap">
+                        Unit ({currentLocation.currency})
+                      </th>
+                      <th className="py-2.5 px-3 text-right whitespace-nowrap">
+                        Subtotal ({currentLocation.currency})
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 text-xs sm:text-[13px]">
+                    {filteredProducts.map((prod) => {
+                      const stock = prod.stockByLocation[currentLocation.id] ?? 0;
+                      const isOutOfStock = stock <= 0;
+                      const isLowStock = stock > 0 && stock <= prod.reorderPoint;
+                      const inCart = cart.find((item) => item.productId === prod.id);
+                      const rowSubtotal = inCart ? getItemLineTotal(inCart) : 0;
+
+                      return (
+                        <tr
+                          key={prod.id}
+                          className={`transition-colors ${
+                            isOutOfStock
+                              ? 'bg-slate-100/80 opacity-65'
+                              : inCart
+                              ? 'bg-blue-50/70'
+                              : 'bg-white hover:bg-slate-50'
+                          }`}
+                        >
+                          <td className="py-2 px-3 align-middle">
+                            <button
+                              type="button"
+                              disabled={isOutOfStock}
+                              onClick={() => {
+                                if (searchQuery.trim()) {
+                                  saveRecentSearch(searchQuery.trim());
+                                }
+                                addToCart(prod);
+                              }}
+                              className="w-full text-left min-h-[44px] flex flex-col justify-center cursor-pointer disabled:cursor-not-allowed"
+                            >
+                              <div className="font-bold text-slate-950 leading-snug line-clamp-1">
+                                {prod.name}
+                              </div>
+                              <div className="text-[11px] text-slate-600 font-mono tabular-nums flex items-center gap-1.5 mt-0.5">
+                                <span>{prod.sku || prod.barcode}</span>
+                                <span className="text-slate-300" aria-hidden="true">·</span>
+                                {isOutOfStock ? (
+                                  <span className="font-sans font-bold text-[#b91c1c]">Out of stock</span>
+                                ) : isLowStock ? (
+                                  <span className="font-sans font-bold text-slate-800">{stock} left</span>
+                                ) : (
+                                  <span className="font-sans text-slate-600">{stock} in stock</span>
+                                )}
+                              </div>
+                            </button>
+                          </td>
+
+                          <td className="py-2 px-2 align-middle text-center">
+                            {isOutOfStock ? (
+                              <span className="text-[11px] font-bold text-[#b91c1c]">—</span>
+                            ) : inCart ? (
+                              <div className="inline-flex items-center border border-slate-300 rounded-lg bg-white overflow-hidden">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    Haptics.light();
+                                    if (inCart.quantity <= 1) {
+                                      handleOpenLineItemVoid(inCart);
+                                    } else {
+                                      updateCartQuantity(prod.id, inCart.quantity - 1);
+                                    }
+                                  }}
+                                  className="w-11 h-11 flex items-center justify-center text-slate-900 hover:bg-slate-100 active:bg-blue-100 transition cursor-pointer touch-manipulation"
+                                  aria-label={`Decrease quantity of ${prod.name}`}
+                                  title="Decrease quantity"
+                                >
+                                  <Minus className="w-4 h-4" />
+                                </button>
+                                <span className="min-w-[28px] px-1 text-center font-mono font-bold tabular-nums text-[#1d4ed8]">
+                                  {inCart.quantity}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    Haptics.light();
+                                    addToCart(prod, 1);
+                                  }}
+                                  className="w-11 h-11 flex items-center justify-center text-slate-900 hover:bg-slate-100 active:bg-blue-100 transition cursor-pointer touch-manipulation"
+                                  aria-label={`Increase quantity of ${prod.name}`}
+                                  title="Increase quantity"
+                                >
+                                  <Plus className="w-4 h-4" />
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (searchQuery.trim()) {
+                                    saveRecentSearch(searchQuery.trim());
+                                  }
+                                  addToCart(prod, 1);
+                                }}
+                                className="min-h-[44px] px-3 rounded-lg border border-slate-300 bg-white hover:border-[#1d4ed8] hover:text-[#1d4ed8] text-slate-950 text-xs font-bold inline-flex items-center justify-center gap-1 transition cursor-pointer touch-manipulation whitespace-nowrap"
+                                aria-label={`Add ${prod.name} to order`}
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>Add</span>
+                              </button>
+                            )}
+                          </td>
+
+                          <td className="py-2 px-3 align-middle text-right font-mono font-semibold tabular-nums text-slate-900 whitespace-nowrap">
+                            {prod.sellingPrice.toFixed(2)}
+                          </td>
+
+                          <td className="py-2 px-3 align-middle text-right font-mono font-bold tabular-nums whitespace-nowrap">
+                            {inCart ? (
+                              <span className="text-[#1d4ed8]">{rowSubtotal.toFixed(2)}</span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           )}
         </div>
       </div>
 
-      {/* Cart & Checkout Sidebar (Right / 38% on desktop, full screen on mobile cart view) */}
+      {/* Order Summary & Checkout Rail (Right / 38% on desktop, full screen on mobile cart view) */}
       <div
-        className={`md:w-[38%] bg-white flex flex-col justify-between border-t md:border-t-0 md:border-l border-slate-200 h-full min-h-0 overflow-hidden relative ${
+        className={`md:w-[38%] bg-white flex flex-col justify-between border-t md:border-t-0 md:border-l border-slate-300 h-full min-h-0 overflow-hidden relative ${
           mobileActiveView === 'cart' ? 'flex flex-1' : 'hidden md:flex'
         }`}
       >
-        {/* Cart Header */}
-        <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 border-b border-slate-200 flex justify-between items-center bg-white shrink-0 gap-2 relative">
-          <div className="min-w-0">
-            <h2 className="font-display font-bold text-slate-900 text-sm sm:text-base truncate">
-              {t('reg_cart_title', 'Active Order')}
+        {/* Rail Header */}
+        <div className="px-3.5 py-2.5 sm:px-4 border-b border-slate-300 flex justify-between items-center bg-white shrink-0 gap-2">
+          <div className="min-w-0 flex items-center gap-2">
+            <ShoppingCart className="w-4 h-4 text-[#1d4ed8] shrink-0" />
+            <h2 className="font-display font-bold text-slate-950 text-sm sm:text-base truncate">
+              Order Summary
               <span className="text-slate-300 font-normal"> · </span>
-              <span className="text-blue-600 font-mono font-semibold tabular-nums">
+              <span className="text-[#1d4ed8] font-mono font-bold tabular-nums">
                 {totalCartCount} {totalCartCount === 1 ? t('reg_item', 'item') : t('reg_items', 'items')}
               </span>
             </h2>
           </div>
-          <div className="flex items-center gap-1 shrink-0">
-            {!selectedCustomer && (
-              <button
-                type="button"
-                onClick={() => setIsCustomerSelectOpen(true)}
-                className="min-h-[40px] px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150 flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-                title="Assign customer for loyalty or store credit"
-              >
-                <User className="w-3.5 h-3.5 shrink-0" />
-                <span>+ Customer</span>
-              </button>
-            )}
+
+          <button
+            type="button"
+            onClick={() => setMobileActiveView('catalog')}
+            className="md:hidden min-h-[40px] px-3 py-1.5 text-xs font-bold text-[#1d4ed8] border border-slate-300 bg-[#f8fafc] hover:bg-slate-100 rounded-lg transition-colors cursor-pointer whitespace-nowrap"
+          >
+            + Add Items
+          </button>
+        </div>
+
+        {/* Mobile Cart Customer Quick Strip (Desktop keeps Walk-in Customer bar visible on left) */}
+        <div className="md:hidden px-3.5 py-2 bg-[#f8fafc] border-b border-slate-300 shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsCustomerSelectOpen(true)}
+            className="w-full min-h-[40px] flex items-center justify-between gap-2 text-left cursor-pointer"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <User className="w-4 h-4 text-[#1d4ed8] shrink-0" />
+              <span className="text-xs font-bold text-slate-950 truncate">
+                {selectedCustomer ? selectedCustomer.name : 'Walk-in Customer'}
+              </span>
+              {selectedCustomer && (
+                <span className="text-[11px] font-mono text-slate-600 tabular-nums shrink-0">
+                  · {selectedCustomer.loyaltyPoints || 0} pts
+                </span>
+              )}
+            </div>
+            <span className="text-xs font-bold text-[#1d4ed8] shrink-0">
+              {selectedCustomer ? 'Change' : 'Assign'}
+            </span>
+          </button>
+        </div>
+
+        {/* Separated Clean Secondary Utility Bar (Quiet neutral controls, Void isolated far right) */}
+        <div className="px-3 py-1.5 bg-[#f8fafc] border-b border-slate-300 flex items-center justify-between gap-1.5 shrink-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              id="register-hold-cart-btn"
+              type="button"
+              disabled={cart.length === 0}
+              onClick={() => holdActiveCart()}
+              className="min-h-[40px] px-2.5 py-1.5 bg-[#EE8C03] hover:bg-[#d47c02] disabled:opacity-45 disabled:bg-slate-200 disabled:text-slate-500 border border-[#EE8C03] disabled:border-slate-300 text-xs font-bold text-white rounded-lg transition-colors duration-150 flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed whitespace-nowrap"
+              title="Place current basket on hold to serve next customer"
+            >
+              <PauseCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>{t('reg_hold_cart', 'Hold')}</span>
+            </button>
+
             {heldOrders.length > 0 && (
               <div ref={heldOrdersRef} className="relative">
                 <button
@@ -869,28 +1206,26 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                   type="button"
                   aria-expanded={isHeldOrdersOpen}
                   onClick={() => setIsHeldOrdersOpen((prev) => !prev)}
-                  className={`min-h-[40px] px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-colors duration-150 flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  className={`min-h-[40px] px-2.5 py-1.5 border text-xs font-bold rounded-lg transition-colors duration-150 flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
                     isHeldOrdersOpen
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-slate-700 hover:text-blue-700 hover:bg-slate-100'
+                      ? 'bg-[#3d17b5] border-[#3d17b5] text-white'
+                      : 'bg-[#4E21DF] hover:bg-[#411ab8] border-[#4E21DF] text-white'
                   }`}
                   title="Resume or manage held baskets"
                 >
                   <Clock className="w-3.5 h-3.5 shrink-0" />
-                  <span className="tabular-nums">
-                    Held ({heldOrders.length})
-                  </span>
+                  <span className="tabular-nums">Held ({heldOrders.length})</span>
                 </button>
 
                 {isHeldOrdersOpen && (
-                  <div className="absolute right-0 top-full mt-1.5 w-72 sm:w-80 bg-white rounded-xl shadow-lg border border-slate-200 p-2 z-40 text-xs">
-                    <div className="px-2 py-1.5 border-b border-slate-100 flex items-center justify-between">
-                      <span className="font-bold text-slate-800">Held Orders</span>
-                      <span className="text-[11px] text-slate-400 tabular-nums">
+                  <div className="absolute left-0 top-full mt-1.5 w-72 sm:w-80 bg-white rounded-xl shadow-lg border border-slate-300 p-2 z-40 text-xs">
+                    <div className="px-2 py-1.5 border-b border-slate-200 flex items-center justify-between">
+                      <span className="font-bold text-slate-950">Held Orders</span>
+                      <span className="text-[11px] font-semibold text-slate-600 tabular-nums">
                         {heldOrders.length} parked
                       </span>
                     </div>
-                    <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 mt-1">
+                    <div className="max-h-64 overflow-y-auto divide-y divide-slate-200 mt-1">
                       {heldOrders.map((order) => {
                         const itemCount = order.items.reduce((sum, i) => sum + i.quantity, 0);
                         const heldTime = new Date(order.heldAt).toLocaleTimeString([], {
@@ -900,12 +1235,12 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                         return (
                           <div key={order.id} className="py-2 px-1.5 flex items-center justify-between gap-2">
                             <div className="min-w-0 flex-1">
-                              <div className="font-semibold text-slate-900 truncate">
+                              <div className="font-bold text-slate-950 truncate">
                                 {order.customerName || 'Walk-in Basket'}
                               </div>
-                              <div className="text-[11px] text-slate-500 tabular-nums mt-0.5">
+                              <div className="text-[11px] text-slate-600 tabular-nums mt-0.5">
                                 {heldTime} · {itemCount} item{itemCount !== 1 ? 's' : ''} ·{' '}
-                                <span className="font-mono font-semibold text-slate-700">
+                                <span className="font-mono font-bold text-slate-900">
                                   {currentLocation.currency} {order.total.toFixed(2)}
                                 </span>
                               </div>
@@ -917,7 +1252,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                                   resumeHeldOrder(order.id);
                                   setIsHeldOrdersOpen(false);
                                 }}
-                                className="min-h-[36px] px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-semibold transition cursor-pointer whitespace-nowrap"
+                                className="min-h-[40px] px-3 py-1 bg-[#1d4ed8] hover:bg-[#1e40af] text-white rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap"
                               >
                                 Resume
                               </button>
@@ -926,9 +1261,9 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                                 onClick={() => discardHeldOrder(order.id)}
                                 aria-label="Discard held order"
                                 title="Discard held order"
-                                className="min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                                className="min-w-[40px] min-h-[40px] flex items-center justify-center text-slate-500 hover:text-[#b91c1c] hover:bg-red-50 rounded-lg transition cursor-pointer"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
                           </div>
@@ -939,115 +1274,45 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
                 )}
               </div>
             )}
-            {cart.length > 0 && (
-              <button
-                id="register-hold-cart-btn"
-                type="button"
-                onClick={() => holdActiveCart()}
-                className="min-h-[40px] px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150 flex items-center gap-1 cursor-pointer whitespace-nowrap"
-                title="Place current basket on hold to serve next customer"
-              >
-                <PauseCircle className="w-3.5 h-3.5 shrink-0" />
-                <span>{t('reg_hold_cart', 'Hold')}</span>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setMobileActiveView('catalog')}
-              className="md:hidden min-h-[40px] px-2.5 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer whitespace-nowrap"
-            >
-              + Add
-            </button>
-            {cart.length > 0 && (
+
+            {!isSellingMode && (
               <button
                 type="button"
-                onClick={handleOpenCartVoid}
-                className="min-h-[40px] px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-150 cursor-pointer whitespace-nowrap"
-                title="Cancel sale and record audited cart void"
+                onClick={() => openReturnsModal(null)}
+                className="min-h-[40px] px-2.5 py-1.5 bg-white hover:bg-slate-100 border border-slate-300 text-xs font-bold text-slate-900 rounded-lg transition-colors duration-150 flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                title="Process returns or refunds"
               >
-                {t('reg_clear_cart', 'Clear')}
+                <RotateCcw className="w-3.5 h-3.5 text-slate-700 shrink-0" />
+                <span>Returns</span>
               </button>
             )}
           </div>
+
+          <button
+            type="button"
+            disabled={cart.length === 0}
+            onClick={handleOpenCartVoid}
+            className="min-h-[40px] px-2.5 py-1.5 bg-[#E81715] hover:bg-[#c81210] border border-[#E81715] disabled:opacity-45 disabled:bg-slate-200 disabled:border-slate-300 disabled:text-slate-500 text-xs font-bold text-white rounded-lg transition-colors duration-150 flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed whitespace-nowrap shrink-0"
+            title="Cancel sale and record audited cart void"
+          >
+            <Trash2 className="w-3.5 h-3.5 shrink-0" />
+            <span>{t('reg_clear_cart', 'Void')}</span>
+          </button>
         </div>
 
-        {/* Assigned Customer Strip (Only shown once a customer is attached) */}
-        {selectedCustomer && (
-          <div className="px-3.5 sm:px-4 py-1.5 bg-slate-50/70 border-b border-slate-200 shrink-0">
-            <div className="min-h-[44px] py-0.5 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                  {selectedCustomer.name.slice(0, 2).toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-bold text-slate-900 truncate">
-                      {selectedCustomer.name}
-                    </span>
-                    <span className="text-[11px] font-mono tabular-nums text-slate-400 truncate">
-                      {selectedCustomer.phone}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-[11px] mt-0.5 tabular-nums">
-                    <span className="text-amber-700 font-semibold inline-flex items-center gap-1">
-                      <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
-                      {selectedCustomer.loyaltyPoints || 0} pts
-                    </span>
-                    <span className="text-slate-300" aria-hidden="true">·</span>
-                    <span
-                      className={`font-semibold font-mono tabular-nums ${
-                        (selectedCustomer.storeCreditBalance || 0) < 0
-                          ? 'text-red-600'
-                          : (selectedCustomer.storeCreditBalance || 0) > 0
-                          ? 'text-emerald-600'
-                          : 'text-slate-500'
-                      }`}
-                    >
-                      {(selectedCustomer.storeCreditBalance || 0) < 0
-                        ? `Tab: -${currentLocation.currency} ${Math.abs(selectedCustomer.storeCreditBalance).toFixed(0)}`
-                        : (selectedCustomer.storeCreditBalance || 0) > 0
-                        ? `Credit: +${currentLocation.currency} ${selectedCustomer.storeCreditBalance.toFixed(0)}`
-                        : 'Tab: Clear'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIsCustomerSelectOpen(true)}
-                  className="min-h-[40px] px-2.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer whitespace-nowrap"
-                  title="Change customer"
-                >
-                  Change
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedCustomer(null)}
-                  className="min-w-[40px] min-h-[40px] flex items-center justify-center text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition cursor-pointer"
-                  title="Remove customer assignment (Walk-in)"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Cart Item List - Bounded scrolling container */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 divide-y divide-slate-100 overscroll-contain">
+        <div className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-4 divide-y divide-slate-200 overscroll-contain bg-white">
           {cart.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center p-8 text-center text-slate-400">
-              <ShoppingBag className="w-10 h-10 mb-2 stroke-1 text-slate-300" />
-              <div className="text-xs font-semibold text-slate-600">{t('reg_empty_cart', 'Your cart is empty')}</div>
-              <p className="text-[11px] text-slate-400 mt-1 max-w-[220px]">
-                {t('reg_empty_cart_sub', 'Scan a barcode, search, or click any product card to start checkout.')}
+            <div className="h-full flex flex-col items-center justify-center p-8 text-center text-slate-500">
+              <ShoppingBag className="w-10 h-10 mb-2 stroke-1 text-slate-400" />
+              <div className="text-xs font-bold text-slate-900">{t('reg_empty_cart', 'Your order is empty')}</div>
+              <p className="text-[11px] text-slate-600 mt-1 max-w-[220px]">
+                {t('reg_empty_cart_sub', 'Scan a barcode, search, or tap any product to start checkout.')}
               </p>
               <button
                 type="button"
                 onClick={() => setMobileActiveView('catalog')}
-                className="mt-3 md:hidden min-h-[40px] text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors"
+                className="mt-3 md:hidden min-h-[44px] text-xs font-bold text-white bg-[#1d4ed8] hover:bg-[#1e40af] px-4 py-2 rounded-xl transition-colors"
               >
                 Browse Catalog
               </button>
@@ -1069,30 +1334,52 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
           )}
         </div>
 
-        {/* Totals & Checkout Box - Permanently Sticky at Bottom */}
-        <div className="shrink-0 sticky bottom-0 z-20 bg-white border-t border-slate-200 p-3 sm:p-4 space-y-2">
-          {cartDiscount > 0 && (
-            <div className="flex justify-between text-xs text-emerald-700 font-semibold">
-              <span className="flex items-center gap-1">
-                <Tag className="w-3.5 h-3.5" />
-                <span>{t('reg_discount', 'Discount')}</span>
-              </span>
-              <span className="font-mono tabular-nums">
-                - {currentLocation.currency} {cartDiscount.toFixed(2)}
+        {/* Totals & 3 Primary Tender Keys - Permanently Sticky at Bottom */}
+        <div className="shrink-0 sticky bottom-0 z-20 bg-white border-t border-slate-300 p-3 sm:p-4 space-y-2.5">
+          {/* Structured Order Summary Metrics */}
+          <div className="space-y-1 text-xs">
+            <div className="flex justify-between items-center text-slate-700">
+              <span className="font-semibold">Total Quantity</span>
+              <span className="font-mono font-bold tabular-nums text-slate-950">
+                {totalCartCount}
               </span>
             </div>
-          )}
+
+            <div className="flex justify-between items-center text-slate-700">
+              <span className="font-semibold">
+                {isTaxExclusive ? t('reg_subtotal', 'Subtotal (Net)') : 'Subtotal'}
+              </span>
+              <span className="font-mono font-bold tabular-nums text-slate-950">
+                {currentLocation.currency} {summarySubtotalAmount.toFixed(2)}
+              </span>
+            </div>
+
+            {isTaxExclusive && (
+              <div className="flex justify-between items-center text-slate-700">
+                <span className="font-semibold">
+                  {currentBusiness?.taxSettings?.taxLabel || 'VAT'} (Exclusive)
+                </span>
+                <span className="font-mono font-bold tabular-nums text-slate-950">
+                  {currentLocation.currency} {cartTax.toFixed(2)}
+                </span>
+              </div>
+            )}
+
+            <div className="flex justify-between items-center">
+              <span className={`font-semibold inline-flex items-center gap-1 ${cartDiscount > 0 ? 'text-[#047857]' : 'text-slate-700'}`}>
+                {cartDiscount > 0 && <Tag className="w-3.5 h-3.5" />}
+                <span>{t('reg_discount', 'Discount')}</span>
+              </span>
+              <span className={`font-mono font-bold tabular-nums ${cartDiscount > 0 ? 'text-[#047857]' : 'text-slate-950'}`}>
+                {cartDiscount > 0 ? '- ' : ''}{currentLocation.currency} {cartDiscount.toFixed(2)}
+              </span>
+            </div>
+          </div>
 
           {cartDiscount > 0 &&
             (isCartOverDiscountCeiling || registerTargetPacing.discountBreached) &&
             branchDiscountCeilingPct > 0 && (
-              <div
-                className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-medium flex items-center gap-1.5 ${
-                  isCartOverDiscountCeiling
-                    ? 'bg-rose-50 border-rose-200 text-rose-800'
-                    : 'bg-amber-50 border-amber-200 text-amber-900'
-                }`}
-              >
+              <div className="px-2.5 py-1.5 rounded-lg border border-red-300 bg-red-50 text-[#b91c1c] text-[11px] font-bold flex items-center gap-1.5">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate font-mono tabular-nums">
                   {isCartOverDiscountCeiling
@@ -1102,95 +1389,233 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               </div>
             )}
 
-          {/* Progressive Tax & Rounding Breakdown */}
-          {isBreakdownOpen && (
-            <div className="space-y-1.5 pb-2 border-b border-slate-100 text-xs text-slate-500">
-              <div className="flex justify-between">
-                <span>{t('reg_subtotal', 'Subtotal (Net)')}</span>
-                <span className="font-mono font-medium tabular-nums text-slate-700">
-                  {currentLocation.currency} {cartSubtotal.toFixed(2)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span>
-                  {currentBusiness?.taxSettings?.taxLabel || 'VAT'}
-                  <span className="text-slate-400">
-                    {' '}· {currentBusiness?.taxSettings?.pricingType === 'exclusive' ? 'Exclusive' : 'Inclusive'}
-                    {cartTaxBreakdown && cartTaxBreakdown.length > 1 ? ` · ${cartTaxBreakdown.length} Rates` : ''}
-                  </span>
-                </span>
-                <span className="font-mono font-medium tabular-nums text-slate-700">
-                  {currentLocation.currency} {cartTax.toFixed(2)}
-                </span>
-              </div>
-              {hasCents(cartTotal) && (
-                <div className="text-[11px] text-slate-500 flex justify-between items-center pt-0.5 tabular-nums">
-                  <span>
-                    Cash: <strong className="font-mono text-slate-700">{currentLocation.currency} {roundCashHalfUp(cartTotal).toFixed(2)}</strong>
-                  </span>
-                  <span>
-                    Electronic: <strong className="font-mono text-slate-700">{currentLocation.currency} {cartTotal.toFixed(2)}</strong>
-                  </span>
+          {/* Progressive Tax & Cash Rounding Breakdown */}
+          {cart.length > 0 && (
+            <div>
+              <button
+                id="register-breakdown-toggle-btn"
+                type="button"
+                aria-expanded={isBreakdownOpen}
+                onClick={() => setIsBreakdownOpen((prev) => !prev)}
+                className="text-[11px] font-bold text-slate-600 hover:text-slate-950 inline-flex items-center gap-1 py-0.5 rounded transition cursor-pointer whitespace-nowrap"
+              >
+                <span>{isBreakdownOpen ? 'Hide tax & rounding' : 'Tax & rounding details'}</span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform duration-150 ${
+                    isBreakdownOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+
+              {isBreakdownOpen && (
+                <div className="mt-1.5 p-2.5 rounded-lg bg-[#f8fafc] border border-slate-300 space-y-1 text-[11px] text-slate-700">
+                  <div className="flex justify-between">
+                    <span>Net (Ex-Tax)</span>
+                    <span className="font-mono font-bold tabular-nums text-slate-950">
+                      {currentLocation.currency} {cartSubtotal.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>
+                      {currentBusiness?.taxSettings?.taxLabel || 'VAT'} ·{' '}
+                      {isTaxExclusive ? 'Exclusive' : 'Inclusive'}
+                      {cartTaxBreakdown && cartTaxBreakdown.length > 1 ? ` · ${cartTaxBreakdown.length} Rates` : ''}
+                    </span>
+                    <span className="font-mono font-bold tabular-nums text-slate-950">
+                      {currentLocation.currency} {cartTax.toFixed(2)}
+                    </span>
+                  </div>
+                  {hasCents(cartTotal) && (
+                    <div className="pt-1 border-t border-slate-200 flex justify-between items-center tabular-nums">
+                      <span>
+                        Cash: <strong className="font-mono text-slate-950">{currentLocation.currency} {roundCashHalfUp(cartTotal).toFixed(2)}</strong>
+                      </span>
+                      <span>
+                        Electronic: <strong className="font-mono text-slate-950">{currentLocation.currency} {cartTotal.toFixed(2)}</strong>
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           )}
 
-          <div className="flex justify-between items-center gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="font-display text-sm sm:text-base font-bold text-slate-900">
-                {t('reg_total', 'Total')}
-              </span>
-              {cart.length > 0 && (
-                <button
-                  id="register-breakdown-toggle-btn"
-                  type="button"
-                  aria-expanded={isBreakdownOpen}
-                  onClick={() => setIsBreakdownOpen((prev) => !prev)}
-                  className="text-[11px] font-medium text-slate-500 hover:text-slate-800 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded hover:bg-slate-100 transition cursor-pointer whitespace-nowrap"
-                >
-                  <span>{isBreakdownOpen ? 'Hide' : 'Breakdown'}</span>
-                  <ChevronDown
-                    className={`w-3 h-3 transition-transform duration-150 ${
-                      isBreakdownOpen ? 'rotate-180' : ''
-                    }`}
-                  />
-                </button>
-              )}
-            </div>
-            <span className="text-blue-600 font-mono font-bold tabular-nums text-lg sm:text-xl">
+          {/* Glare-Resistant High-Contrast Amount Due Hero Banner */}
+          <div className="bg-slate-950 text-white rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-2">
+            <span className="font-display text-xs sm:text-sm font-bold uppercase tracking-wide text-slate-200">
+              Amount Due
+            </span>
+            <span className="font-mono font-bold tabular-nums text-xl sm:text-2xl text-white tracking-tight">
               {currentLocation.currency} {cartTotal.toFixed(2)}
             </span>
           </div>
 
-          {/* Checkout Buttons: Secondary Exact Cash + Sole Primary Pay CTA */}
-          <div className="flex items-center gap-2 pt-0.5">
-            <button
-              id="register-exact-cash-btn"
-              type="button"
-              disabled={cart.length === 0}
-              onClick={() => settleExactCash()}
-              className="bg-white hover:bg-slate-50 active:scale-[0.985] border border-slate-300 disabled:opacity-50 disabled:bg-slate-50 text-slate-800 font-bold min-h-[48px] px-3.5 sm:px-4 rounded-xl transition-all duration-150 text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-blue-600"
-              title="Instant single-tap cash checkout with standard half-up rounding (Shortcut: F1)"
-            >
-              <Banknote className="w-4 h-4 text-slate-500 shrink-0" />
-              <span className="hidden sm:inline">{t('pay_exact_amount', 'Exact Cash')}</span>
-              <span className="sm:hidden">{t('pay_cash', 'Cash')}</span>
-            </button>
-
-            <button
-              id="register-settle-btn"
-              type="button"
-              disabled={cart.length === 0}
-              onClick={onProceedToPayment}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 active:scale-[0.985] disabled:bg-slate-300 text-white font-bold min-h-[48px] px-5 rounded-xl transition-all duration-150 text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed whitespace-nowrap group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-              title="Pay / Proceed to Checkout (Shortcuts: Space, Enter)"
-            >
-              <span className="text-sm font-bold font-mono tabular-nums truncate">
-                {t('reg_pay_button', 'Pay')} {currentLocation.currency} {cartTotal.toFixed(2)}
+          {/* Payment Methods Area (Migrated with Compact Scroller & Intelligent Tender Colors) */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="font-bold uppercase tracking-wide text-slate-600">
+                Payment Methods
               </span>
-              <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform duration-150 shrink-0" />
-            </button>
+              <span className="font-semibold text-slate-500">
+                Scroll for all 7
+              </span>
+            </div>
+
+            <div
+              className="grid grid-cols-2 gap-2 max-h-[106px] overflow-y-auto pr-1 overscroll-contain [scrollbar-width:thin] [scrollbar-color:#94a3b8_transparent]"
+              role="group"
+              aria-label="Payment methods"
+            >
+              {/* 1. Exact Cash (1-Tap Instant Settlement) */}
+              <button
+                id="register-exact-cash-btn"
+                type="button"
+                disabled={cart.length === 0}
+                onClick={() => settleExactCash()}
+                className="bg-white hover:bg-emerald-50 active:scale-[0.98] border-2 border-[#059E39] disabled:opacity-45 disabled:bg-slate-100 disabled:border-slate-300 disabled:text-slate-500 text-[#059E39] font-bold min-h-[44px] px-2.5 py-2 rounded-xl transition-all duration-150 text-xs flex items-center justify-between gap-1.5 cursor-pointer disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-[#059E39]"
+                title="Instant single-tap exact cash checkout (Shortcut: F1)"
+              >
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <Banknote className="w-4 h-4 shrink-0" />
+                  <span className="truncate">{t('pay_exact_amount', 'Exact Cash')}</span>
+                </span>
+                <span className="text-[10px] font-mono opacity-85 shrink-0 hidden sm:inline">
+                  1-Tap
+                </span>
+              </button>
+
+              {/* 2. M-Pesa */}
+              <button
+                id="register-mpesa-btn"
+                type="button"
+                disabled={cart.length === 0}
+                onClick={() => onProceedToPayment('mpesa')}
+                className="bg-[#44B703] hover:bg-[#389902] active:scale-[0.98] disabled:bg-slate-300 disabled:text-slate-500 text-white font-bold min-h-[44px] px-2.5 py-2 rounded-xl transition-all duration-150 text-xs flex items-center justify-between gap-1.5 cursor-pointer disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#44B703]"
+                title="Collect payment via M-Pesa Till QR or STK Push (F2)"
+              >
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <Smartphone className="w-4 h-4 shrink-0" />
+                  <span className="truncate">M-Pesa</span>
+                </span>
+                <span className="text-[10px] font-mono opacity-90 shrink-0 hidden sm:inline">
+                  QR/STK
+                </span>
+              </button>
+
+              {/* 3. Cash (Drawer Tender & Change Calculator) */}
+              <button
+                id="register-settle-btn"
+                type="button"
+                disabled={cart.length === 0}
+                onClick={() => onProceedToPayment('cash')}
+                className="bg-[#059E39] hover:bg-[#04842f] active:scale-[0.98] disabled:bg-slate-300 disabled:text-slate-500 text-white font-bold min-h-[44px] px-2.5 py-2 rounded-xl transition-all duration-150 text-xs flex items-center justify-between gap-1.5 cursor-pointer disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#059E39]"
+                title="Cash tender with note buttons & change calculator (F1 / Enter)"
+              >
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <Banknote className="w-4 h-4 shrink-0" />
+                  <span className="truncate">{t('pay_cash', 'Cash')}</span>
+                </span>
+                <span className="text-[10px] font-mono opacity-90 shrink-0 hidden sm:inline">
+                  Change
+                </span>
+              </button>
+
+              {/* 4. Card (PDQ / Online Card) */}
+              <button
+                id="register-card-btn"
+                type="button"
+                disabled={cart.length === 0}
+                onClick={() => onProceedToPayment('card')}
+                className="bg-[#0655E3] hover:bg-[#0546bd] active:scale-[0.98] disabled:bg-slate-300 disabled:text-slate-500 text-white font-bold min-h-[44px] px-2.5 py-2 rounded-xl transition-all duration-150 text-xs flex items-center justify-between gap-1.5 cursor-pointer disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0655E3]"
+                title="Card checkout via PDQ terminal or Paystack (F3)"
+              >
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <CreditCard className="w-4 h-4 shrink-0" />
+                  <span className="truncate">Card</span>
+                </span>
+                <span className="text-[10px] font-mono opacity-90 shrink-0 hidden sm:inline">
+                  PDQ
+                </span>
+              </button>
+
+              {/* 5. Split Payment */}
+              <button
+                id="register-split-btn"
+                type="button"
+                disabled={cart.length === 0}
+                onClick={() => onProceedToPayment('split')}
+                className="bg-[#038BF9] hover:bg-[#0273cf] active:scale-[0.98] disabled:bg-slate-300 disabled:text-slate-500 text-white font-bold min-h-[44px] px-2.5 py-2 rounded-xl transition-all duration-150 text-xs flex items-center justify-between gap-1.5 cursor-pointer disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#038BF9]"
+                title="Split payment across Cash, M-Pesa, Card or Credit (F5)"
+              >
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <GitFork className="w-4 h-4 rotate-90 shrink-0" />
+                  <span className="truncate">Split Pay</span>
+                </span>
+                <span className="text-[10px] font-mono opacity-90 shrink-0 hidden sm:inline">
+                  Multi
+                </span>
+              </button>
+
+              {/* 6. Store Credit / Daftari Tab */}
+              <button
+                id="register-credit-btn"
+                type="button"
+                disabled={cart.length === 0}
+                onClick={() => {
+                  if (!requireCapability('loyaltyAndStoreCredit')) return;
+                  onProceedToPayment('store_credit');
+                }}
+                className="bg-[#711CF4] hover:bg-[#5e15d1] active:scale-[0.98] disabled:bg-slate-300 disabled:text-slate-500 text-white font-bold min-h-[44px] px-2.5 py-2 rounded-xl transition-all duration-150 text-xs flex items-center justify-between gap-1.5 cursor-pointer disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#711CF4]"
+                title="Charge to customer Store Credit / Daftari tab (F4)"
+              >
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <Wallet className="w-4 h-4 shrink-0" />
+                  <span className="truncate">Store Credit</span>
+                </span>
+                <span className="text-[10px] font-mono opacity-90 shrink-0 flex items-center gap-0.5">
+                  {!canUseStoreCredit ? (
+                    <Lock className="w-3 h-3" />
+                  ) : (
+                    <span className="hidden sm:inline">Tab</span>
+                  )}
+                </span>
+              </button>
+
+              {/* 7. Loyalty Points Redemption */}
+              <button
+                id="register-loyalty-btn"
+                type="button"
+                disabled={cart.length === 0}
+                onClick={() => {
+                  if (!requireCapability('loyaltyAndStoreCredit')) return;
+                  if (!canRedeemLoyalty) {
+                    showToast('Permission Denied: Your role cannot redeem loyalty points.', 'error');
+                    return;
+                  }
+                  onProceedToPayment('loyalty_points');
+                }}
+                className="bg-[#FA148B] hover:bg-[#d90f77] active:scale-[0.98] disabled:bg-slate-300 disabled:text-slate-500 text-white font-bold min-h-[44px] px-2.5 py-2 rounded-xl transition-all duration-150 text-xs flex items-center justify-between gap-1.5 cursor-pointer disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FA148B]"
+                title={
+                  !loyaltySettings.enabled
+                    ? 'Loyalty points program is disabled in Store Settings'
+                    : 'Redeem customer loyalty points toward this sale (F6)'
+                }
+              >
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <Award className="w-4 h-4 shrink-0" />
+                  <span className="truncate">Loyalty Pts</span>
+                </span>
+                <span className="text-[10px] font-mono opacity-90 shrink-0 flex items-center gap-0.5">
+                  {!canUseStoreCredit || !canRedeemLoyalty ? (
+                    <Lock className="w-3 h-3" />
+                  ) : selectedCustomer ? (
+                    <span className="tabular-nums">{selectedCustomer.loyaltyPoints || 0}</span>
+                  ) : (
+                    <span className="hidden sm:inline">Pts</span>
+                  )}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1235,7 +1660,7 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
         <aside
           id="mobile-sticky-cart-pill"
           aria-label="Active order quick checkout bar"
-          className={`md:hidden fixed inset-x-0 z-30 bg-white border-t border-slate-200 px-3 py-1.5 flex items-center justify-between gap-2 ${
+          className={`md:hidden fixed inset-x-0 z-30 bg-white border-t border-slate-300 px-3 py-1.5 flex items-center justify-between gap-2 ${
             isSellingMode
               ? 'bottom-0 pb-[max(0.375rem,env(safe-area-inset-bottom,0px))]'
               : 'bottom-[calc(54px+env(safe-area-inset-bottom,0px))]'
@@ -1248,22 +1673,22 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
               setMobileActiveView('cart');
             }}
             className="flex items-center gap-2.5 min-w-0 flex-1 min-h-[44px] text-left cursor-pointer active:opacity-80"
-            title="Inspect Active Cart"
+            title="Inspect Active Order"
           >
-            <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-200 text-[#1d4ed8] flex items-center justify-center shrink-0">
               <ShoppingCart className="w-4 h-4" />
             </div>
             <div className="min-w-0">
-              <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5 truncate tabular-nums">
+              <div className="text-xs font-bold text-slate-950 flex items-center gap-1.5 truncate tabular-nums">
                 <span>{totalCartCount} item{totalCartCount !== 1 ? 's' : ''}</span>
                 <span className="text-slate-300" aria-hidden="true">·</span>
-                <span className="text-blue-700 font-mono">
+                <span className="text-[#1d4ed8] font-mono">
                   {currentLocation.currency} {cartTotal.toFixed(2)}
                 </span>
               </div>
-              <div className="text-[11px] text-slate-500 truncate flex items-center gap-0.5">
+              <div className="text-[11px] text-slate-600 truncate flex items-center gap-0.5">
                 <span>View order</span>
-                <ChevronRight className="w-3 h-3 text-slate-400 inline" />
+                <ChevronRight className="w-3 h-3 text-slate-500 inline" />
               </div>
             </div>
           </button>
@@ -1272,9 +1697,9 @@ export const RegisterView: React.FC<RegisterViewProps> = ({
             type="button"
             onClick={() => {
               Haptics.light();
-              onProceedToPayment();
+              onProceedToPayment('cash');
             }}
-            className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-xs min-h-[44px] px-4 rounded-lg flex items-center gap-1.5 transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap"
+            className="bg-[#1d4ed8] hover:bg-[#1e40af] active:bg-blue-900 text-white font-bold text-xs min-h-[44px] px-4 rounded-xl flex items-center gap-1.5 transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap"
             title="Pay / Proceed to Checkout"
           >
             <span>Pay</span>

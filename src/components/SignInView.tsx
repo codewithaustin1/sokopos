@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowRight,
@@ -27,7 +27,6 @@ import { usePos } from '../context/PosContext';
 import { Cashier } from '../types';
 import { soundFx } from '../utils/audio';
 import { LegalTab } from '../data/legalContent';
-import { LegalPageView } from './LegalPageView';
 import { WhatsAppFloatingButton } from './landing/WhatsAppFloatingButton';
 import { PublicSiteHeader } from './common/PublicSiteHeader';
 import { AppLogo } from './common/AppLogo';
@@ -39,7 +38,13 @@ import {
   normalizePathname,
   resolveLegacyHashToPath,
 } from '../utils/seoConfig';
-import { AffiliatePortalModal } from './AffiliatePortalModal';
+
+const LegalPageView = lazy(() =>
+  import('./LegalPageView').then((m) => ({ default: m.LegalPageView }))
+);
+const AffiliatePortalModal = lazy(() =>
+  import('./AffiliatePortalModal').then((m) => ({ default: m.AffiliatePortalModal }))
+);
 import {
   enrollAffiliate,
   fetchAffiliateDashboard,
@@ -54,6 +59,7 @@ import { trackPlatformEvent } from '../lib/telemetryService';
 import { SolutionsGallery } from './landing/SolutionsGallery';
 import { HeroCounterPreview } from './landing/KenyanCounterSimulators';
 import { LifecycleShowcase } from './landing/LifecycleShowcase';
+import { ZeroSetupTcoComparison } from './landing/ZeroSetupTcoComparison';
 
 // Isolated Animated Counter Subcomponent: Keeps main-thread 60fps by updating the DOM ref directly without React state churn
 const AnimatedMetricCounter: React.FC<{ target?: number; duration?: number }> = React.memo(
@@ -129,6 +135,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
     isAffiliateModalOpen,
     setIsAffiliateModalOpen,
     isAuthTransitioning,
+    activateTerminalSession,
   } = usePos();
 
   const [activeTab, setActiveTab] = useState<'owner' | 'partner' | 'staff' | 'register'>('owner');
@@ -812,6 +819,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   }, [isAuthModalOpen, activeTab]);
 
   const openAuthModal = (targetTab: 'owner' | 'partner' | 'staff' | 'register' = 'owner') => {
+    activateTerminalSession();
     previousFocusRef.current = document.activeElement as HTMLElement | null;
     setIsDemoModeActive(false);
     localStorage.removeItem('sokopos_demo_intent');
@@ -1399,6 +1407,7 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   };
 
   const handleLaunchDemoSandbox = () => {
+    activateTerminalSession();
     setIsDemoModeActive(true);
     localStorage.setItem('sokopos_demo_intent', 'true');
     setActiveTab('staff');
@@ -1433,11 +1442,19 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
   // Render Full-Page Legal, FAQ, or Compliance view as the Body of this SPA (Zero floating modals)
   if (activeLegalPage) {
     return (
-      <LegalPageView
-        currentTab={activeLegalPage}
-        onTabChange={navigateToLegalPage}
-        onBackToLogin={returnToLogin}
-      />
+      <Suspense
+        fallback={
+          <div className="min-h-screen w-full flex items-center justify-center bg-[#f8fafc] text-slate-600 text-sm font-medium">
+            <div className="w-7 h-7 rounded-full border-2 border-[#28a745] border-t-transparent animate-spin" />
+          </div>
+        }
+      >
+        <LegalPageView
+          currentTab={activeLegalPage}
+          onTabChange={navigateToLegalPage}
+          onBackToLogin={returnToLogin}
+        />
+      </Suspense>
     );
   }
 
@@ -2395,50 +2412,16 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
           </div>
         </section>
 
-        {/* SECTION 4: COMPARISON TABLE (#compare) */}
+        {/* SECTION 4: ZERO SETUP FEE YEAR-1 TCO COMPARISON & SALES SHEET (#compare) */}
         <section className="sp-s sp-reveal" id="compare">
           <div className="sp-wrap">
-            <h2 className="sp-t text-balance">
-              What changes when you leave <span className="sp-hl-legacy">paper books and legacy tills</span> behind
-            </h2>
-            <div className="sp-scroll">
-              <table className="sp-table">
-                <thead>
-                  <tr>
-                    <th>Everyday shop need</th>
-                    <th>With SokoPoS</th>
-                    <th>Legacy desktop POS</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr className="sp-stagger-item" style={{ '--stagger-index': 0 } as React.CSSProperties}>
-                    <td>Runs on the phone or tablet you already own</td>
-                    <td className="y">Yes</td>
-                    <td className="n">Costly hardware bundle</td>
-                  </tr>
-                  <tr className="sp-stagger-item" style={{ '--stagger-index': 1 } as React.CSSProperties}>
-                    <td>Matches M-Pesa payments to each receipt</td>
-                    <td className="y">Built in</td>
-                    <td className="n">Manual SMS check</td>
-                  </tr>
-                  <tr className="sp-stagger-item" style={{ '--stagger-index': 2 } as React.CSSProperties}>
-                    <td>Prints KRA eTIMS verification receipts</td>
-                    <td className="y">Built in</td>
-                    <td className="n">Extra fees or manual</td>
-                  </tr>
-                  <tr className="sp-stagger-item" style={{ '--stagger-index': 3 } as React.CSSProperties}>
-                    <td>Keeps checking out customers offline</td>
-                    <td className="y">Yes</td>
-                    <td className="n">Local machine only</td>
-                  </tr>
-                  <tr className="sp-stagger-item" style={{ '--stagger-index': 4 } as React.CSSProperties}>
-                    <td>See live cash &amp; stock away from the shop</td>
-                    <td className="y">From anywhere</td>
-                    <td className="n">Only at the counter</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <ZeroSetupTcoComparison
+              pricingTiers={pricingTiers}
+              onLaunchDemo={handleLaunchDemoSandbox}
+              onCreateAccount={() => openAuthModal('register')}
+              onViewPricing={navigateToPricing}
+              variant="landing"
+            />
           </div>
         </section>
 
@@ -4319,22 +4302,26 @@ export const SignInView: React.FC<SignInViewProps> = ({ onLoginSuccess }) => {
       )}
 
       {/* PUBLIC & OWNER AFFILIATE / PARTNER PORTAL */}
-      <AffiliatePortalModal
-        isOpen={isAffiliateModalOpen}
-        onClose={() => setIsAffiliateModalOpen(false)}
-        onRequestAuth={(targetTab = 'partner') => {
-          setIsAffiliateModalOpen(false);
-          openAuthModal(targetTab);
-        }}
-        onSwitchToPos={() => {
-          setIsAffiliateModalOpen(false);
-          onLoginSuccess?.();
-        }}
-        onOpenStoreRegistration={() => {
-          setIsAffiliateModalOpen(false);
-          openAuthModal('register');
-        }}
-      />
+      {isAffiliateModalOpen && (
+        <Suspense fallback={null}>
+          <AffiliatePortalModal
+            isOpen={isAffiliateModalOpen}
+            onClose={() => setIsAffiliateModalOpen(false)}
+            onRequestAuth={(targetTab = 'partner') => {
+              setIsAffiliateModalOpen(false);
+              openAuthModal(targetTab);
+            }}
+            onSwitchToPos={() => {
+              setIsAffiliateModalOpen(false);
+              onLoginSuccess?.();
+            }}
+            onOpenStoreRegistration={() => {
+              setIsAffiliateModalOpen(false);
+              openAuthModal('register');
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 };

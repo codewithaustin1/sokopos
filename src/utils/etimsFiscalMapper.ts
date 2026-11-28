@@ -177,6 +177,8 @@ export function mapPaymentMethodToKraCode(
       return '02';
     case 'store_credit':
       return '03'; // Credit / Store Tab
+    case 'loyalty_points':
+      return '05'; // Other / Loyalty Points Redemption
     case 'cash':
     default:
       return '01';

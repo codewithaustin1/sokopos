@@ -101,7 +101,13 @@ export function generateReceiptPdf({
     printRow('Cashier:', transaction.cashierName, 7.5, false);
     printRow('Terminal:', transaction.terminalName, 7.5, false);
 
-    const paymentLabel = transaction.paymentMethod.toUpperCase() +
+    const formattedMethod =
+      transaction.paymentMethod === 'loyalty_points'
+        ? 'LOYALTY POINTS'
+        : transaction.paymentMethod === 'store_credit'
+        ? 'STORE CREDIT'
+        : transaction.paymentMethod.toUpperCase();
+    const paymentLabel = formattedMethod +
       (transaction.paymentDetails.mpesaCode ? ` (${transaction.paymentDetails.mpesaCode})` : '') +
       (transaction.paymentDetails.cardLast4 ? ` (*${transaction.paymentDetails.cardLast4})` : '');
     printRow('Payment:', paymentLabel, 7.5, true);
@@ -117,7 +123,8 @@ export function generateReceiptPdf({
       if (
         transaction.customerPreviousPoints !== undefined ||
         transaction.customerCurrentPoints !== undefined ||
-        (transaction.loyaltyPointsEarned !== undefined && transaction.loyaltyPointsEarned > 0)
+        (transaction.loyaltyPointsEarned !== undefined && transaction.loyaltyPointsEarned > 0) ||
+        (transaction.loyaltyPointsRedeemed !== undefined && transaction.loyaltyPointsRedeemed > 0)
       ) {
         const prevPts = transaction.customerPreviousPoints ?? 0;
         const curPts =
@@ -181,7 +188,18 @@ export function generateReceiptPdf({
     doc.setFillColor(245, 247, 250);
     doc.rect(5, y - 2, pageWidth - 10, 7.5, 'F');
     doc.setTextColor(15, 23, 42);
-    printRow(`TOTAL PAID (${transaction.paymentMethod.toUpperCase()}):`, `${currency} ${transaction.total.toFixed(2)}`, 9, true);
+    printRow(
+      `TOTAL PAID (${
+        transaction.paymentMethod === 'loyalty_points'
+          ? 'LOYALTY POINTS'
+          : transaction.paymentMethod === 'store_credit'
+          ? 'STORE CREDIT'
+          : transaction.paymentMethod.toUpperCase()
+      }):`,
+      `${currency} ${transaction.total.toFixed(2)}`,
+      9,
+      true
+    );
     y += 1.5;
 
     // Cash Tender / Change
@@ -196,8 +214,21 @@ export function generateReceiptPdf({
       printRow('SPLIT BREAKDOWN:', '', 7.5, true);
       if (transaction.paymentDetails.splitBreakdown && transaction.paymentDetails.splitBreakdown.length > 0) {
         transaction.paymentDetails.splitBreakdown.forEach((b) => {
-          const methodLabel = b.method === 'mpesa' ? 'M-Pesa' : b.method === 'store_credit' ? 'Store Credit' : b.method.toUpperCase();
-          const ref = b.mpesaCode ? ` (${b.mpesaCode})` : b.cardLast4 ? ` (*${b.cardLast4})` : '';
+          const methodLabel =
+            b.method === 'mpesa'
+              ? 'M-Pesa'
+              : b.method === 'store_credit'
+              ? 'Store Credit'
+              : b.method === 'loyalty_points'
+              ? 'Loyalty Points'
+              : b.method.toUpperCase();
+          const ref = b.mpesaCode
+            ? ` (${b.mpesaCode})`
+            : b.cardLast4
+            ? ` (*${b.cardLast4})`
+            : b.loyaltyPointsRedeemed
+            ? ` (-${b.loyaltyPointsRedeemed} pts)`
+            : '';
           printRow(` - ${methodLabel}${ref}:`, `${currency} ${b.amount.toFixed(2)}`, 7, false);
         });
       }

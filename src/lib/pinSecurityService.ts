@@ -1,4 +1,3 @@
-import bcrypt from 'bcryptjs';
 import { auth } from './firebase';
 import { resolveApiUrl } from './apiConfig';
 
@@ -113,7 +112,8 @@ export async function hashPinOnServer(pin: string): Promise<string> {
     console.warn('Server PIN hashing request failed, using local cryptographic bcrypt fallback:', err);
   }
 
-  // Cryptographic fallback (pure JS bcrypt in browser)
+  // Cryptographic fallback (pure JS bcrypt in browser, dynamically loaded on demand)
+  const { default: bcrypt } = await import('bcryptjs');
   const salt = bcrypt.genSaltSync(10);
   return bcrypt.hashSync(pin, salt);
 }
@@ -276,6 +276,7 @@ export async function verifyStaffPinViaServer(params: {
   if (fallbackHash && !isProtectedPin(fallbackHash)) {
     try {
       if (isBcryptHash(fallbackHash)) {
+        const { default: bcrypt } = await import('bcryptjs');
         const isValid = bcrypt.compareSync(pin, fallbackHash);
         return { isValid };
       }

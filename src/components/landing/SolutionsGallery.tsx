@@ -363,6 +363,8 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
               <img
                 src={currentResolvedImage}
                 alt={currentIndustry.imageAlt}
+                loading="lazy"
+                decoding="async"
                 referrerPolicy="no-referrer"
                 onError={() => markImageFailed(currentIndustry.id)}
                 className="w-full h-full object-cover transition-transform duration-500 motion-reduce:transition-none"
@@ -474,6 +476,8 @@ export const SolutionsGallery: React.FC<SolutionsGalleryProps> = ({
                       <img
                         src={activeModalImage}
                         alt={activeModalIndustry.imageAlt}
+                        loading="lazy"
+                        decoding="async"
                         referrerPolicy="no-referrer"
                         onError={() => markImageFailed(activeModalIndustry.id)}
                         className="w-full h-full object-cover"

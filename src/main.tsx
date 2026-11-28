@@ -6,18 +6,29 @@ import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import './index.css';
 import { registerSW } from 'virtual:pwa-register';
 
-// Register Service Worker for offline caching; updates activate cleanly on next visit without interrupting active sessions
+// Register Service Worker only in production; in dev mode clean up any stale dev-sw registrations so Vite dynamic imports never get intercepted
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-  registerSW({
-    immediate: true,
-    onRegisteredSW(_swUrl, registration) {
-      if (registration) {
-        setInterval(() => {
-          registration.update().catch(() => {});
-        }, 60 * 60 * 1000);
-      }
-    },
-  });
+  if (import.meta.env.PROD) {
+    registerSW({
+      immediate: true,
+      onRegisteredSW(_swUrl, registration) {
+        if (registration) {
+          setInterval(() => {
+            registration.update().catch(() => {});
+          }, 60 * 60 * 1000);
+        }
+      },
+    });
+  } else {
+    navigator.serviceWorker
+      .getRegistrations()
+      .then((registrations) => {
+        registrations.forEach((registration) => {
+          void registration.unregister();
+        });
+      })
+      .catch(() => {});
+  }
 }
 
 

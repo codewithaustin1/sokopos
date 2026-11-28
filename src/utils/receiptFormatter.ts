@@ -23,7 +23,13 @@ export function formatTransactionReceiptText(
     `Receipt: ${transaction.receiptNumber}`,
     `Date: ${dateStr}`,
     `Cashier: ${transaction.cashierName}`,
-    `Payment: ${transaction.paymentMethod.toUpperCase()}${
+    `Payment: ${
+      transaction.paymentMethod === 'loyalty_points'
+        ? 'LOYALTY POINTS'
+        : transaction.paymentMethod === 'store_credit'
+        ? 'STORE CREDIT'
+        : transaction.paymentMethod.toUpperCase()
+    }${
       transaction.paymentDetails.mpesaCode ? ` (${transaction.paymentDetails.mpesaCode})` : ''
     }${
       transaction.paymentDetails.cardLast4 ? ` (*${transaction.paymentDetails.cardLast4})` : ''
@@ -39,7 +45,8 @@ export function formatTransactionReceiptText(
             : []),
           ...(transaction.customerPreviousPoints !== undefined ||
           transaction.customerCurrentPoints !== undefined ||
-          (transaction.loyaltyPointsEarned !== undefined && transaction.loyaltyPointsEarned > 0)
+          (transaction.loyaltyPointsEarned !== undefined && transaction.loyaltyPointsEarned > 0) ||
+          (transaction.loyaltyPointsRedeemed !== undefined && transaction.loyaltyPointsRedeemed > 0)
             ? [
                 `Previous Points: ${transaction.customerPreviousPoints ?? 0} pts`,
                 ...(transaction.loyaltyPointsEarned && transaction.loyaltyPointsEarned > 0
@@ -101,8 +108,21 @@ export function formatTransactionReceiptText(
     lines.push('SPLIT TENDER BREAKDOWN:');
     if (transaction.paymentDetails.splitBreakdown && transaction.paymentDetails.splitBreakdown.length > 0) {
       transaction.paymentDetails.splitBreakdown.forEach((b) => {
-        const methodLabel = b.method === 'mpesa' ? 'M-Pesa' : b.method === 'store_credit' ? 'Store Credit' : b.method.toUpperCase();
-        const ref = b.mpesaCode ? ` (${b.mpesaCode})` : b.cardLast4 ? ` (*${b.cardLast4})` : '';
+        const methodLabel =
+          b.method === 'mpesa'
+            ? 'M-Pesa'
+            : b.method === 'store_credit'
+            ? 'Store Credit'
+            : b.method === 'loyalty_points'
+            ? 'Loyalty Points'
+            : b.method.toUpperCase();
+        const ref = b.mpesaCode
+          ? ` (${b.mpesaCode})`
+          : b.cardLast4
+          ? ` (*${b.cardLast4})`
+          : b.loyaltyPointsRedeemed
+          ? ` (-${b.loyaltyPointsRedeemed} pts)`
+          : '';
         lines.push(` - ${methodLabel}${ref}: ${currency} ${b.amount.toFixed(2)}`);
       });
     }

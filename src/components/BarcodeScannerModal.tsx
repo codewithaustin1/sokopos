@@ -26,6 +26,9 @@ import {
   BrowserMultiFormatReader,
   DecodeHintType,
   BarcodeFormat,
+  NotFoundException,
+  ChecksumException,
+  FormatException,
 } from '@zxing/library';
 import { usePos } from '../context/PosContext';
 import { soundFx } from '../utils/audio';
@@ -81,6 +84,9 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const scanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scanRunIdRef = useRef<number>(0);
   const lastScannedCodeRef = useRef<string>('');
   const lastScannedTimeRef = useRef<number>(0);
   const feedbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -100,10 +106,13 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
     ];
     hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
 
-    // 200ms interval between decode attempts to ensure video frames are rendered and avoid 0-width canvas IndexSizeError
     readerRef.current = new BrowserMultiFormatReader(hints, 200);
 
     return () => {
+      if (scanTimeoutRef.current) {
+        clearTimeout(scanTimeoutRef.current);
+        scanTimeoutRef.current = null;
+      }
       if (readerRef.current) {
         try {
           readerRef.current.reset();
@@ -114,7 +123,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
     };
   }, []);
 
-  // Handle open/close
+  // Handle open/close & tab switches (decoupled from selectedDeviceId to avoid double-start races)
   useEffect(() => {
     if (!isOpen) {
       stopCamera();
@@ -124,17 +133,121 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
       return;
     }
 
-    // Modal opened: Start camera if on camera tab
     if (activeTab === 'camera') {
-      startCamera();
+      void startCamera();
+    } else {
+      stopCamera();
     }
 
     return () => {
       stopCamera();
     };
-  }, [isOpen, activeTab, selectedDeviceId]);
+  }, [isOpen, activeTab]);
 
-  const startCamera = async () => {
+  const scheduleNextDecodeTick = (runId: number) => {
+    if (scanRunIdRef.current !== runId) return;
+    if (scanTimeoutRef.current) {
+      clearTimeout(scanTimeoutRef.current);
+    }
+    scanTimeoutRef.current = setTimeout(() => {
+      if (scanRunIdRef.current !== runId) return;
+      const video = videoRef.current;
+      const reader = readerRef.current;
+      if (!video || !reader) return;
+
+      // Guard against 0-width/0-height frames that throw IndexSizeError in CanvasRenderingContext2D.getImageData
+      if (
+        video.paused ||
+        video.ended ||
+        video.readyState < 2 ||
+        video.videoWidth <= 0 ||
+        video.videoHeight <= 0
+      ) {
+        scheduleNextDecodeTick(runId);
+        return;
+      }
+
+      try {
+        const result = reader.decode(video);
+        const rawText = result?.getText();
+        if (rawText) {
+          onBarcodeDetected(rawText);
+        }
+      } catch (err: any) {
+        const isExpectedMiss =
+          err instanceof NotFoundException ||
+          err instanceof ChecksumException ||
+          err instanceof FormatException ||
+          err?.name === 'NotFoundException' ||
+          err?.name === 'ChecksumException' ||
+          err?.name === 'FormatException';
+
+        if (!isExpectedMiss) {
+          // Reset reader so any stale 0-width cached captureCanvas is cleared cleanly without killing the loop
+          try {
+            reader.reset();
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      if (scanRunIdRef.current === runId) {
+        scheduleNextDecodeTick(runId);
+      }
+    }, 180);
+  };
+
+  const waitForVideoDimensions = (video: HTMLVideoElement, runId: number): Promise<boolean> => {
+    return new Promise((resolve) => {
+      if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+        resolve(true);
+        return;
+      }
+
+      let settled = false;
+      const cleanup = () => {
+        video.removeEventListener('loadedmetadata', checkReady);
+        video.removeEventListener('loadeddata', checkReady);
+        video.removeEventListener('playing', checkReady);
+        clearTimeout(fallbackTimer);
+      };
+
+      const finish = (ok: boolean) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(ok);
+      };
+
+      const checkReady = () => {
+        if (scanRunIdRef.current !== runId) {
+          finish(false);
+          return;
+        }
+        if (video.videoWidth > 0 && video.videoHeight > 0) {
+          finish(true);
+        }
+      };
+
+      const fallbackTimer = setTimeout(() => {
+        finish(
+          scanRunIdRef.current === runId &&
+            video.videoWidth > 0 &&
+            video.videoHeight > 0
+        );
+      }, 4000);
+
+      video.addEventListener('loadedmetadata', checkReady);
+      video.addEventListener('loadeddata', checkReady);
+      video.addEventListener('playing', checkReady);
+    });
+  };
+
+  const startCamera = async (deviceIdOverride?: string) => {
+    stopCamera();
+    const runId = ++scanRunIdRef.current;
+
     setCameraError(null);
     setIsStartingCamera(true);
 
@@ -148,26 +261,20 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
         throw new Error('Barcode reader is not initialized.');
       }
 
-      // Reset any active stream
-      try {
-        reader.reset();
-      } catch {
-        // ignore
-      }
-
       // Enumerate available video inputs
       let devices: MediaDeviceInfo[] = [];
       try {
-        devices = await reader.listVideoInputDevices();
+        const allDevices = await navigator.mediaDevices.enumerateDevices();
+        devices = allDevices.filter((d) => d.kind === 'videoinput');
+        if (scanRunIdRef.current !== runId) return;
         setVideoDevices(devices);
       } catch (err) {
         console.warn('Could not enumerate video devices:', err);
       }
 
       // Determine which device to use
-      let chosenDeviceId = selectedDeviceId;
+      let chosenDeviceId = deviceIdOverride !== undefined ? deviceIdOverride : selectedDeviceId;
       if (!chosenDeviceId && devices.length > 0) {
-        // Prefer rear/environment camera on smartphones
         const backCam = devices.find(
           (d) =>
             d.label.toLowerCase().includes('back') ||
@@ -175,34 +282,60 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
             d.label.toLowerCase().includes('environment')
         );
         chosenDeviceId = backCam ? backCam.deviceId : devices[devices.length - 1].deviceId;
-        setSelectedDeviceId(chosenDeviceId);
+        if (chosenDeviceId) {
+          setSelectedDeviceId(chosenDeviceId);
+        }
       }
 
-      if (!videoRef.current) {
+      if (!videoRef.current || scanRunIdRef.current !== runId) {
         setIsStartingCamera(false);
         return;
       }
 
-      // Start continuous scanning with ZXing
-      await reader.decodeFromVideoDevice(
-        chosenDeviceId || undefined,
-        videoRef.current,
-        (result, error) => {
-          if (result) {
-            const rawText = result.getText();
-            if (rawText) {
-              onBarcodeDetected(rawText);
-            }
-          }
-          // Errors occur on frames where no barcode is visible; this is expected
+      let stream: MediaStream;
+      try {
+        const videoConstraints: MediaTrackConstraints = chosenDeviceId
+          ? { deviceId: { exact: chosenDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+          : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } };
+        stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
+      } catch (constraintErr: any) {
+        if (
+          chosenDeviceId &&
+          (constraintErr?.name === 'OverconstrainedError' || constraintErr?.name === 'NotFoundError')
+        ) {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        } else {
+          throw constraintErr;
         }
-      );
+      }
 
-      // Apply continuous auto-focus constraints if available
-      if (videoRef.current && videoRef.current.srcObject instanceof MediaStream) {
-        const track = videoRef.current.srcObject.getVideoTracks()[0];
-        if (track && (track as any).applyConstraints) {
-          (track as any).applyConstraints({
+      if (scanRunIdRef.current !== runId || !videoRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
+      streamRef.current = stream;
+      const video = videoRef.current;
+      video.srcObject = stream;
+      video.setAttribute('playsinline', 'true');
+      video.muted = true;
+
+      // Refresh device labels now that permission is granted
+      try {
+        const refreshed = await navigator.mediaDevices.enumerateDevices();
+        const refreshedVideos = refreshed.filter((d) => d.kind === 'videoinput');
+        if (scanRunIdRef.current === runId && refreshedVideos.length > 0) {
+          setVideoDevices(refreshedVideos);
+        }
+      } catch {
+        // ignore
+      }
+
+      // Apply continuous auto-focus constraints before starting decode loop
+      const track = stream.getVideoTracks()[0];
+      if (track && (track as any).applyConstraints) {
+        await (track as any)
+          .applyConstraints({
             advanced: [
               {
                 focusMode: 'continuous',
@@ -210,16 +343,28 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
                 height: { ideal: 720 },
               } as any,
             ],
-          }).catch(() => {});
-        }
+          })
+          .catch(() => {});
       }
 
+      if (scanRunIdRef.current !== runId) return;
+
+      try {
+        await video.play();
+      } catch {
+        // AutoPlay may already be playing or require user gesture
+      }
+
+      await waitForVideoDimensions(video, runId);
+      if (scanRunIdRef.current !== runId) return;
+
+      reader.reset();
       setIsCameraActive(true);
       setIsStartingCamera(false);
-
-      // Check if video track supports flashlight / torch
       checkTorchSupport();
+      scheduleNextDecodeTick(runId);
     } catch (err: any) {
+      if (scanRunIdRef.current !== runId) return;
       console.warn('Barcode camera startup failed:', err);
       setIsCameraActive(false);
       setIsStartingCamera(false);
@@ -267,12 +412,21 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
   };
 
   const stopCamera = () => {
+    scanRunIdRef.current += 1;
+    if (scanTimeoutRef.current) {
+      clearTimeout(scanTimeoutRef.current);
+      scanTimeoutRef.current = null;
+    }
     if (readerRef.current) {
       try {
         readerRef.current.reset();
       } catch {
         // ignore
       }
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
     }
     if (videoRef.current && videoRef.current.srcObject instanceof MediaStream) {
       videoRef.current.srcObject.getTracks().forEach((track) => track.stop());
@@ -568,7 +722,13 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
                   <SwitchCamera className="w-4 h-4 text-slate-500 shrink-0" />
                   <select
                     value={selectedDeviceId}
-                    onChange={(e) => setSelectedDeviceId(e.target.value)}
+                    onChange={(e) => {
+                      const nextId = e.target.value;
+                      setSelectedDeviceId(nextId);
+                      if (isOpen && activeTab === 'camera') {
+                        void startCamera(nextId);
+                      }
+                    }}
                     disabled={videoDevices.length <= 1}
                     className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-600 max-w-[200px] truncate"
                   >
@@ -607,7 +767,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
 
                   <button
                     type="button"
-                    onClick={startCamera}
+                    onClick={() => void startCamera()}
                     disabled={isStartingCamera}
                     className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 transition cursor-pointer"
                     title="Restart camera video stream"
@@ -651,7 +811,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen
                     <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
                       <button
                         type="button"
-                        onClick={startCamera}
+                        onClick={() => void startCamera()}
                         className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
                       >
                         <RefreshCw className="w-3.5 h-3.5" /> Try Camera Again

@@ -110,15 +110,15 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
   };
 
   return (
-    <div className="relative overflow-hidden group select-none border-b border-slate-100 last:border-b-0">
+    <div className="relative overflow-hidden group select-none border-b border-slate-200 last:border-b-0">
       {/* Background Revealed Action Layer (Swipe Left Action) */}
       <div
-        className="absolute inset-y-0 right-0 w-24 bg-red-600 flex items-center justify-center text-white cursor-pointer z-0 transition-opacity"
+        className="absolute inset-y-0 right-0 w-24 bg-[#b91c1c] flex items-center justify-center text-white cursor-pointer z-0 transition-opacity"
         onClick={handleVoidClick}
       >
         <button
           type="button"
-          className="flex flex-col items-center justify-center gap-1 w-full h-full text-white font-black text-[11px] active:bg-red-700"
+          className="flex flex-col items-center justify-center gap-1 w-full h-full text-white font-bold text-[11px] active:bg-red-800"
           title="Remove line item"
         >
           <Trash2 className="w-5 h-5" />
@@ -136,7 +136,7 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
           transform: `translateX(${swipeOffset}px)`,
           transition: isDragging ? 'none' : 'transform 0.2s cubic-bezier(0.25, 1, 0.5, 1)',
         }}
-        className="relative z-10 bg-white py-3 sm:py-3.5 px-1 sm:px-1.5 flex items-center justify-between gap-2.5 transition-colors group-hover:bg-slate-50/50"
+        className="relative z-10 bg-white py-3 px-1.5 flex items-center justify-between gap-2 transition-colors group-hover:bg-slate-50"
       >
         {/* Left: Product Name, Price, and Active Discount */}
         <div
@@ -144,11 +144,11 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
           className="flex-1 min-w-0 pr-1 cursor-pointer group/item select-none"
           title="Tap to add or edit discount"
         >
-          <h4 className="text-xs sm:text-sm font-semibold text-slate-900 truncate group-hover/item:text-blue-600 transition-colors">
+          <h4 className="text-xs sm:text-[13px] font-bold text-slate-950 truncate group-hover/item:text-[#1d4ed8] transition-colors">
             {item.productName}
           </h4>
           <div className="flex items-center flex-wrap gap-1.5 mt-0.5">
-            <span className="text-[11px] text-slate-500 font-mono tabular-nums">
+            <span className="text-[11px] text-slate-600 font-mono tabular-nums">
               {currency} {item.unitPrice.toFixed(2)}
             </span>
             {discountBadge ? (
@@ -158,7 +158,7 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
                   e.stopPropagation();
                   onOpenDiscountModal(item);
                 }}
-                className="inline-flex items-center gap-1 text-[11px] text-emerald-700 hover:text-emerald-800 font-semibold transition-colors cursor-pointer whitespace-nowrap"
+                className="inline-flex items-center gap-1 text-[11px] text-[#047857] hover:text-emerald-900 font-bold transition-colors cursor-pointer whitespace-nowrap"
                 title="Click to edit or remove discount"
               >
                 <span aria-hidden="true">·</span>
@@ -166,7 +166,7 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
                 <span>{discountBadge}</span>
               </button>
             ) : (
-              <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 group-hover/item:text-blue-600 transition-colors duration-150">
+              <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 group-hover/item:text-[#1d4ed8] transition-colors duration-150">
                 <span aria-hidden="true">·</span>
                 <Tag className="w-3 h-3 shrink-0" />
                 <span className="sm:hidden">Discount</span>
@@ -176,66 +176,60 @@ export const CartLineItem: React.FC<CartLineItemProps> = ({
               </span>
             )}
             {item.discountReason && (
-              <span className="text-[11px] text-slate-400 truncate max-w-[120px]">
+              <span className="text-[11px] text-slate-500 truncate max-w-[120px]">
                 · {item.discountReason}
               </span>
             )}
           </div>
         </div>
 
-        {/* Right: Generous 48×48px Touch Steppers + Total + Delete Button */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-          {/* Quantity Stepper with Generous Touch Target (48×48px on touch screens, 40×40px on desktop) */}
-          <div className="flex items-center border border-slate-200 rounded-xl sm:rounded-lg bg-slate-50 overflow-hidden">
-            {/* Minus Button: 48×48px mobile touch zone */}
+        {/* Right: >=44x44px Touch Steppers + Tabular Line Total + Void Button */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <div className="flex items-center border border-slate-300 rounded-lg bg-[#f8fafc] overflow-hidden">
             <button
               type="button"
               onClick={handleMinusClick}
-              className="w-12 h-12 sm:w-9 sm:h-9 flex items-center justify-center text-slate-700 hover:bg-slate-200 active:bg-blue-100 active:scale-95 font-bold transition-all duration-150 cursor-pointer touch-manipulation select-none"
+              className="w-11 h-11 flex items-center justify-center text-slate-900 hover:bg-slate-200 active:bg-blue-100 active:scale-95 font-bold transition-all duration-150 cursor-pointer touch-manipulation select-none"
               title="Decrease quantity"
               aria-label={`Decrease quantity of ${item.productName}`}
             >
-              <Minus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+              <Minus className="w-4 h-4" />
             </button>
 
-            {/* Quantity Number */}
-            <span className="min-w-[34px] sm:min-w-[28px] text-center text-sm sm:text-xs font-bold text-slate-900 font-mono tabular-nums select-none px-1">
+            <span className="min-w-[30px] text-center text-xs sm:text-sm font-bold text-slate-950 font-mono tabular-nums select-none px-1">
               {item.quantity}
             </span>
 
-            {/* Plus Button: 48×48px mobile touch zone */}
             <button
               type="button"
               onClick={handlePlusClick}
-              className="w-12 h-12 sm:w-9 sm:h-9 flex items-center justify-center text-slate-700 hover:bg-slate-200 active:bg-blue-100 active:scale-95 font-bold transition-all duration-150 cursor-pointer touch-manipulation select-none"
+              className="w-11 h-11 flex items-center justify-center text-slate-900 hover:bg-slate-200 active:bg-blue-100 active:scale-95 font-bold transition-all duration-150 cursor-pointer touch-manipulation select-none"
               title="Increase quantity"
               aria-label={`Increase quantity of ${item.productName}`}
             >
-              <Plus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+              <Plus className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Line Subtotal */}
-          <div className="text-right min-w-[68px] sm:min-w-[78px]">
-            <div className="text-xs sm:text-sm font-bold text-slate-900 font-mono tabular-nums">
+          <div className="text-right min-w-[66px] sm:min-w-[74px]">
+            <div className="text-xs sm:text-sm font-bold text-slate-950 font-mono tabular-nums">
               {currency} {lineTotal.toFixed(2)}
             </div>
             {discountBadge && (
-              <div className="text-[10px] text-slate-400 line-through font-mono tabular-nums">
+              <div className="text-[10px] text-slate-500 line-through font-mono tabular-nums">
                 {currency} {(item.unitPrice * item.quantity).toFixed(2)}
               </div>
             )}
           </div>
 
-          {/* Desktop / Tap Trash Button */}
           <button
             type="button"
             onClick={handleVoidClick}
-            className="text-slate-400 hover:text-red-600 transition-colors min-w-[44px] min-h-[44px] sm:min-w-[36px] sm:min-h-[36px] flex items-center justify-center cursor-pointer touch-manipulation rounded-lg hover:bg-red-50"
+            className="text-slate-500 hover:text-[#b91c1c] transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center cursor-pointer touch-manipulation rounded-lg hover:bg-red-50"
             title="Void line item with supervisor audit"
             aria-label={`Remove ${item.productName} from cart`}
           >
-            <Trash2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+            <Trash2 className="w-4 h-4" />
           </button>
         </div>
       </div>

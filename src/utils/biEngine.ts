@@ -173,11 +173,13 @@ export function extractTenderBreakdown(tx: Transaction): {
   cash: number;
   card: number;
   storeCredit: number;
+  loyaltyPoints: number;
 } {
   let mpesa = 0;
   let cash = 0;
   let card = 0;
   let storeCredit = 0;
+  let loyaltyPoints = 0;
   const netFactor =
     tx.total > 0 ? Math.max(0, (tx.total - calcTransactionRefundTotal(tx)) / tx.total) : 1;
 
@@ -187,6 +189,7 @@ export function extractTenderBreakdown(tx: Transaction): {
     else if (m === 'cash') cash += val;
     else if (m === 'card') card += val;
     else if (m === 'store_credit') storeCredit += val;
+    else if (m === 'loyalty_points') loyaltyPoints += val;
   };
 
   if (tx.paymentMethod === 'split') {
@@ -211,6 +214,7 @@ export function extractTenderBreakdown(tx: Transaction): {
     cash: round2(cash),
     card: round2(card),
     storeCredit: round2(storeCredit),
+    loyaltyPoints: round2(loyaltyPoints),
   };
 }
 
@@ -261,6 +265,7 @@ export function buildDailyRollupsFromData(params: {
       cashTotal: 0,
       cardTotal: 0,
       storeCreditTotal: 0,
+      loyaltyPointsTotal: 0,
       uncostedRevenue: 0,
       updatedAt: nowIso,
     };
@@ -291,6 +296,7 @@ export function buildDailyRollupsFromData(params: {
     bucket.cashTotal = round2(bucket.cashTotal + tender.cash);
     bucket.cardTotal = round2(bucket.cardTotal + tender.card);
     bucket.storeCreditTotal = round2(bucket.storeCreditTotal + tender.storeCredit);
+    bucket.loyaltyPointsTotal = round2((bucket.loyaltyPointsTotal || 0) + tender.loyaltyPoints);
   }
 
   for (const shift of shifts) {
@@ -795,11 +801,12 @@ export function calculateTenderMix(params: {
   selectedLocationId: string;
 }): TenderMixRow[] {
   const { transactions, rollups, dateRange, selectedLocationId } = params;
-  const acc: Record<'mpesa' | 'cash' | 'card' | 'store_credit', { amount: number; txCount: number }> = {
+  const acc: Record<'mpesa' | 'cash' | 'card' | 'store_credit' | 'loyalty_points', { amount: number; txCount: number }> = {
     mpesa: { amount: 0, txCount: 0 },
     cash: { amount: 0, txCount: 0 },
     card: { amount: 0, txCount: 0 },
     store_credit: { amount: 0, txCount: 0 },
+    loyalty_points: { amount: 0, txCount: 0 },
   };
 
   const liveCovered = new Set<string>();
@@ -826,6 +833,10 @@ export function calculateTenderMix(params: {
       acc.store_credit.amount += t.storeCredit;
       acc.store_credit.txCount += 1;
     }
+    if (t.loyaltyPoints > 0) {
+      acc.loyalty_points.amount += t.loyaltyPoints;
+      acc.loyalty_points.txCount += 1;
+    }
   }
 
   const startKey = toLocalDateKey(dateRange.start);
@@ -838,10 +849,11 @@ export function calculateTenderMix(params: {
     acc.cash.amount += r.cashTotal || 0;
     acc.card.amount += r.cardTotal || 0;
     acc.store_credit.amount += r.storeCreditTotal || 0;
+    acc.loyalty_points.amount += r.loyaltyPointsTotal || 0;
   }
 
   const total =
-    acc.mpesa.amount + acc.cash.amount + acc.card.amount + acc.store_credit.amount;
+    acc.mpesa.amount + acc.cash.amount + acc.card.amount + acc.store_credit.amount + acc.loyalty_points.amount;
 
   const list: TenderMixRow[] = [
     {
@@ -871,6 +883,13 @@ export function calculateTenderMix(params: {
       amount: round2(acc.store_credit.amount),
       sharePct: total > 0 ? round2((acc.store_credit.amount / total) * 100) : 0,
       txCount: acc.store_credit.txCount,
+    },
+    {
+      method: 'loyalty_points',
+      label: 'Loyalty Points',
+      amount: round2(acc.loyalty_points.amount),
+      sharePct: total > 0 ? round2((acc.loyalty_points.amount / total) * 100) : 0,
+      txCount: acc.loyalty_points.txCount,
     },
   ];
 

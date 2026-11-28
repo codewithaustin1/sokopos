@@ -263,6 +263,7 @@ interface PosContextType {
   currentUser: AuthUser | null;
   isFirebaseAuthLoading: boolean;
   isAuthTransitioning: boolean;
+  activateTerminalSession: () => void;
   sessionEpoch: number;
   foreignOutboxSummary: ForeignOutboxSummary;
   dismissForeignOutboxWarning: () => void;
@@ -1031,6 +1032,27 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   );
 
   // 2. Authentication State
+  const [isTerminalDbActivated, setIsTerminalDbActivated] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    const isExplicitlyLoggedOut = localStorage.getItem(STORAGE_KEYS.IS_LOGGED_OUT) === 'true';
+    const hasLocalSession =
+      !isExplicitlyLoggedOut &&
+      Boolean(
+        localStorage.getItem(STORAGE_KEYS.CURRENT_USER) ||
+          localStorage.getItem(STORAGE_KEYS.ACTIVE_BIZ_ID)
+      );
+    const pathname = (window.location.pathname || '/').toLowerCase();
+    const isPrivatePath = pathname.startsWith('/pos');
+    const isOAuthRedirect = sessionStorage.getItem('sokopos_redirect_in_progress') === 'true';
+    const search = window.location.search || '';
+    const hasPaymentCallback =
+      search.includes('payment_ref=') || search.includes('reference=') || search.includes('trxref=');
+    return hasLocalSession || isPrivatePath || isOAuthRedirect || hasPaymentCallback;
+  });
+  const activateTerminalSession = useCallback(() => {
+    setIsTerminalDbActivated(true);
+  }, []);
+
   const [isFirebaseAuthLoading, setIsFirebaseAuthLoading] = useState<boolean>(true);
   const [pendingVerificationEmail, setPendingVerificationEmail] = useState<string | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
@@ -1245,6 +1267,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       // Clear logged out flag since an authentic Firebase user is active
       localStorage.removeItem(STORAGE_KEYS.IS_LOGGED_OUT);
+      setIsTerminalDbActivated(true);
 
       setIsFirebaseAuthLoading(true);
       try {
@@ -7443,7 +7466,49 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // Customer, Loyalty, and Store Credit handling
     const customer = selectedCustomer;
     let loyaltyPointsEarned = 0;
-    const loyaltyPointsRedeemed = details.loyaltyPointsRedeemed || 0;
+    const loyaltyRate =
+      loyaltySettings.pointsPerCurrencyUnit > 0 ? loyaltySettings.pointsPerCurrencyUnit : 10;
+    const loyaltyCurrencyAmount =
+      paymentMethod === 'loyalty_points'
+        ? guardrail.payableAmount
+        : paymentMethod === 'split'
+        ? (details.splitBreakdown
+            ?.filter((b) => b.method === 'loyalty_points')
+            .reduce((sum, b) => sum + (b.amount || 0), 0) || 0)
+        : 0;
+    let loyaltyPointsRedeemed = details.loyaltyPointsRedeemed || 0;
+
+    if (loyaltyCurrencyAmount > 0) {
+      if (!isSuperAdmin && !requireCapability('loyaltyAndStoreCredit')) {
+        throw new Error('Loyalty points payment requires a Business plan or higher.');
+      }
+      if (!can('manageLoyalty')) {
+        soundFx.playError();
+        showToast('Permission Denied: Your role is not authorized to redeem loyalty points.', 'error');
+        throw new Error('Permission denied for loyalty points redemption.');
+      }
+      if (!loyaltySettings.enabled) {
+        soundFx.playError();
+        showToast('Loyalty points program is currently disabled in Store Settings.', 'error');
+        throw new Error('Loyalty points program is disabled.');
+      }
+      if (!customer) {
+        soundFx.playError();
+        showToast('Loyalty Points payment requires an assigned customer profile.', 'error');
+        throw new Error('Loyalty points payment requires an assigned customer profile.');
+      }
+      const requiredPoints = Math.ceil(loyaltyCurrencyAmount * loyaltyRate);
+      loyaltyPointsRedeemed = Math.max(requiredPoints, loyaltyPointsRedeemed);
+      if ((customer.loyaltyPoints || 0) < loyaltyPointsRedeemed) {
+        soundFx.playError();
+        showToast(
+          `Insufficient Loyalty Points: ${customer.name} has ${customer.loyaltyPoints || 0} pts, needs ${loyaltyPointsRedeemed} pts.`,
+          'error'
+        );
+        throw new Error('Insufficient customer loyalty points balance.');
+      }
+    }
+
     const isStoreCreditPayment = paymentMethod === 'store_credit';
     const splitStoreCreditAmount = paymentMethod === 'split'
       ? (details.splitBreakdown?.find((b) => b.method === 'store_credit')?.amount || details.storeCreditUsed || 0)
@@ -7475,9 +7540,10 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     const previousPoints = customer ? (customer.loyaltyPoints || 0) : undefined;
-    if (customer && loyaltySettings.enabled) {
+    const eligibleEarnAmount = Math.max(0, guardrail.payableAmount - loyaltyCurrencyAmount);
+    if (customer && loyaltySettings.enabled && eligibleEarnAmount > 0) {
       const spendPerPt = loyaltySettings.spendPerPoint > 0 ? loyaltySettings.spendPerPoint : 100;
-      loyaltyPointsEarned = Math.floor(guardrail.payableAmount / spendPerPt);
+      loyaltyPointsEarned = Math.floor(eligibleEarnAmount / spendPerPt);
     }
     const currentPoints = customer && previousPoints !== undefined
       ? Math.max(0, previousPoints + loyaltyPointsEarned - loyaltyPointsRedeemed)
@@ -7559,6 +7625,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       paymentMethod,
       paymentDetails: {
         ...details,
+        ...(loyaltyPointsRedeemed > 0 ? { loyaltyPointsRedeemed } : {}),
         roundingDifference: guardrail.roundingDifference,
       },
       status: 'completed',
@@ -8729,8 +8796,11 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     isOnlineRef.current = isOnline;
   }, [isOnline]);
 
-  // Boot-time IndexedDB hydration + idempotent legacy localStorage migration
+  // Boot-time IndexedDB hydration + idempotent legacy localStorage migration (deferred on clean public landing visits)
   useEffect(() => {
+    if (!isTerminalDbActivated) {
+      return;
+    }
     let cancelled = false;
     const bootEpoch = authTransitionEpochRef.current;
     const isExplicitlyLoggedOutOnBoot = localStorage.getItem(STORAGE_KEYS.IS_LOGGED_OUT) === 'true';
@@ -8910,7 +8980,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return () => {
       cancelled = true;
     };
-  }, [refreshStorageQuotaTelemetry]);
+  }, [isTerminalDbActivated, refreshStorageQuotaTelemetry]);
 
   const tenantOutboxItems = useMemo(
     () => outboxItems.filter((item) => item.businessId === activeBusinessId),
@@ -9957,6 +10027,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const loginWithFirebaseGoogle = async (customStoreName?: string): Promise<boolean> => {
     const hadPriorUser = Boolean(currentUserRef.current);
     activeManualLoginRef.current = true;
+    setIsTerminalDbActivated(true);
     try {
       setIsFirebaseAuthLoading(true);
       await resetClientSessionStateRef.current({
@@ -10128,6 +10199,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const hadPriorUser = Boolean(currentUserRef.current);
     activeManualLoginRef.current = true;
+    setIsTerminalDbActivated(true);
     try {
       setIsFirebaseAuthLoading(true);
       await resetClientSessionStateRef.current({
@@ -10322,6 +10394,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const hadPriorUser = Boolean(currentUserRef.current);
     activeManualLoginRef.current = true;
+    setIsTerminalDbActivated(true);
     try {
       setIsFirebaseAuthLoading(true);
       await resetClientSessionStateRef.current({
@@ -10778,6 +10851,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const preResetShifts = [...allShifts];
 
     activeManualLoginRef.current = true;
+    setIsTerminalDbActivated(true);
     try {
       await resetClientSessionStateRef.current({
         preserveDemoIntent: Boolean(isDemo),
@@ -12915,6 +12989,7 @@ export const PosProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         currentUser,
         isFirebaseAuthLoading,
         isAuthTransitioning,
+        activateTerminalSession,
         sessionEpoch,
         foreignOutboxSummary,
         dismissForeignOutboxWarning,

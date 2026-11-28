@@ -4,6 +4,7 @@ import { PublicSiteHeader } from './common/PublicSiteHeader';
 import { AppFooter } from './common/AppFooter';
 import { WhatsAppFloatingButton } from './landing/WhatsAppFloatingButton';
 import { PricingFeatureText } from './pricing/PricingFeatureText';
+import { ZeroSetupTcoComparison } from './landing/ZeroSetupTcoComparison';
 import { usePos } from '../context/PosContext';
 import { DEFAULT_PRICING_TIERS, PricingTier } from '../types/pricing';
 import { scrollToTop } from '../utils/scrollUtils';
@@ -650,6 +651,18 @@ export const PricingPageView: React.FC<PricingPageViewProps> = ({
         <p className="mt-7 text-[#4c5a6b] text-sm max-w-[70ch] leading-relaxed">
           Yearly billing covers ten months instead of twelve. The free plan has no monthly fee; the one-time setup session is paid once.
         </p>
+
+        {/* Transparent Year-1 TCO Comparison & Downloadable Sales Sheet */}
+        <section
+          aria-label="Zero setup fee Year-1 cost comparison"
+          className="mt-14 pt-12 border-t border-[#d9e1e6]"
+        >
+          <ZeroSetupTcoComparison
+            pricingTiers={pricingTiers}
+            onCreateAccount={currentUser ? undefined : onBackToLogin}
+            variant="pricing"
+          />
+        </section>
 
         {/* Action Bar at bottom of document */}
         <div className="mt-10 pt-6 border-t border-[#d9e1e6] flex flex-col sm:flex-row items-center justify-between gap-4">

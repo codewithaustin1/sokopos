@@ -3,40 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { PosProvider, usePos } from './context/PosContext';
-import { Header } from './components/Header';
-import { SuperAdminBanner } from './components/SuperAdminBanner';
-import { RegisterView } from './components/RegisterView';
-import { InventoryView } from './components/InventoryView';
-import { AnalyticsView } from './components/AnalyticsView';
-import { ReportsView } from './components/ReportsView';
-import { CloudSyncView } from './components/CloudSyncView';
-import { StaffManagementView } from './components/StaffManagementView';
-import { ShiftManagementView } from './components/ShiftManagementView';
-import { CustomerManagementView } from './components/CustomerManagementView';
-import { SupplierManagementView } from './components/SupplierManagementView';
-import { BarcodeScannerModal } from './components/BarcodeScannerModal';
-import { PaymentModal } from './components/PaymentModal';
-import { ReceiptModal } from './components/ReceiptModal';
-import { RefundReceiptModal } from './components/RefundReceiptModal';
-import { ReturnsModal } from './components/ReturnsModal';
-import { PinLockModal } from './components/PinLockModal';
-import { SuperAdminDashboardModal } from './components/SuperAdminDashboardModal';
-import { DestructiveConfirmModal } from './components/DestructiveConfirmModal';
 import { SignInView } from './components/SignInView';
-import { SignOutConfirmModal } from './components/SignOutConfirmModal';
-import { BusinessProfileSettingsModal } from './components/BusinessProfileSettingsModal';
-import { SubscriptionActivationModal } from './components/SubscriptionActivationModal';
-import { MobileBottomNav } from './components/MobileBottomNav';
-import { SidebarNav } from './components/SidebarNav';
 import { Lock, AlertTriangle } from 'lucide-react';
 import { PaymentMethod, BusinessPlanTier } from './types';
 import { useBackgroundScanner } from './hooks/useBackgroundScanner';
-import { ScannerInterceptHUD } from './components/ScannerInterceptHUD';
-import { InventoryQuickCheckHUD } from './components/InventoryQuickCheckHUD';
-import { DynamicSitemapModal } from './components/DynamicSitemapModal';
-import { PricingPageView } from './components/PricingPageView';
 import { getSystemPaths, generateSitemapJson } from './utils/sitemapManifest';
 import {
   isPublicSeoPath,
@@ -45,20 +17,61 @@ import {
   syncDocumentHeadSeo,
 } from './utils/seoConfig';
 import { isSuperAdminEmail } from './data/initialData';
-import { MobileBentoMenuOverlay } from './components/common/MobileBentoMenuOverlay';
 import { ToastContainer } from './components/common/ToastContainer';
-import { PendingSubscriptionBanner } from './components/common/PendingSubscriptionBanner';
-import { ForeignOutboxWarningBanner } from './components/common/ForeignOutboxWarningBanner';
 import {
   verifyServerPayment,
   loadPendingSubscriptionCheckout,
   clearPendingSubscriptionCheckout,
 } from './lib/paymentService';
-import { AffiliatePortalModal } from './components/AffiliatePortalModal';
 import { trackPlatformEvent } from './lib/telemetryService';
-import { UpgradePromptModal } from './components/common/UpgradePromptModal';
-import { LegalConsentModal } from './components/LegalConsentModal';
 import { auth } from './lib/firebase';
+import { prefetchEssentialPosChunks, schedulePosBackgroundPrefetch } from './utils/chunkPrefetch';
+import { lazyWithRetry, SilentLazyBoundary } from './utils/lazyWithRetry';
+
+// Lazy-loaded POS Workspace Chrome & Feature Modules (split out of initial public landing TTI)
+const Header = lazyWithRetry(() => import('./components/Header').then((m) => ({ default: m.Header })));
+const SuperAdminBanner = lazyWithRetry(() => import('./components/SuperAdminBanner').then((m) => ({ default: m.SuperAdminBanner })));
+const SidebarNav = lazyWithRetry(() => import('./components/SidebarNav').then((m) => ({ default: m.SidebarNav })));
+const MobileBottomNav = lazyWithRetry(() => import('./components/MobileBottomNav').then((m) => ({ default: m.MobileBottomNav })));
+const PendingSubscriptionBanner = lazyWithRetry(() => import('./components/common/PendingSubscriptionBanner').then((m) => ({ default: m.PendingSubscriptionBanner })));
+const ForeignOutboxWarningBanner = lazyWithRetry(() => import('./components/common/ForeignOutboxWarningBanner').then((m) => ({ default: m.ForeignOutboxWarningBanner })));
+
+const RegisterView = lazyWithRetry(() => import('./components/RegisterView').then((m) => ({ default: m.RegisterView })));
+const InventoryView = lazyWithRetry(() => import('./components/InventoryView').then((m) => ({ default: m.InventoryView })));
+const AnalyticsView = lazyWithRetry(() => import('./components/AnalyticsView').then((m) => ({ default: m.AnalyticsView })));
+const ReportsView = lazyWithRetry(() => import('./components/ReportsView').then((m) => ({ default: m.ReportsView })));
+const CloudSyncView = lazyWithRetry(() => import('./components/CloudSyncView').then((m) => ({ default: m.CloudSyncView })));
+const StaffManagementView = lazyWithRetry(() => import('./components/StaffManagementView').then((m) => ({ default: m.StaffManagementView })));
+const ShiftManagementView = lazyWithRetry(() => import('./components/ShiftManagementView').then((m) => ({ default: m.ShiftManagementView })));
+const CustomerManagementView = lazyWithRetry(() => import('./components/CustomerManagementView').then((m) => ({ default: m.CustomerManagementView })));
+const SupplierManagementView = lazyWithRetry(() => import('./components/SupplierManagementView').then((m) => ({ default: m.SupplierManagementView })));
+
+const BarcodeScannerModal = lazyWithRetry(() => import('./components/BarcodeScannerModal').then((m) => ({ default: m.BarcodeScannerModal })));
+const PaymentModal = lazyWithRetry(() => import('./components/PaymentModal').then((m) => ({ default: m.PaymentModal })));
+const ReceiptModal = lazyWithRetry(() => import('./components/ReceiptModal').then((m) => ({ default: m.ReceiptModal })));
+const RefundReceiptModal = lazyWithRetry(() => import('./components/RefundReceiptModal').then((m) => ({ default: m.RefundReceiptModal })));
+const ReturnsModal = lazyWithRetry(() => import('./components/ReturnsModal').then((m) => ({ default: m.ReturnsModal })));
+const PinLockModal = lazyWithRetry(() => import('./components/PinLockModal').then((m) => ({ default: m.PinLockModal })));
+const SuperAdminDashboardModal = lazyWithRetry(() => import('./components/SuperAdminDashboardModal').then((m) => ({ default: m.SuperAdminDashboardModal })));
+const DestructiveConfirmModal = lazyWithRetry(() => import('./components/DestructiveConfirmModal').then((m) => ({ default: m.DestructiveConfirmModal })));
+const SignOutConfirmModal = lazyWithRetry(() => import('./components/SignOutConfirmModal').then((m) => ({ default: m.SignOutConfirmModal })));
+const BusinessProfileSettingsModal = lazyWithRetry(() => import('./components/BusinessProfileSettingsModal').then((m) => ({ default: m.BusinessProfileSettingsModal })));
+const SubscriptionActivationModal = lazyWithRetry(() => import('./components/SubscriptionActivationModal').then((m) => ({ default: m.SubscriptionActivationModal })));
+const InventoryQuickCheckHUD = lazyWithRetry(() => import('./components/InventoryQuickCheckHUD').then((m) => ({ default: m.InventoryQuickCheckHUD })));
+const ScannerInterceptHUD = lazyWithRetry(() => import('./components/ScannerInterceptHUD').then((m) => ({ default: m.ScannerInterceptHUD })));
+const DynamicSitemapModal = lazyWithRetry(() => import('./components/DynamicSitemapModal').then((m) => ({ default: m.DynamicSitemapModal })));
+const PricingPageView = lazyWithRetry(() => import('./components/PricingPageView').then((m) => ({ default: m.PricingPageView })));
+const MobileBentoMenuOverlay = lazyWithRetry(() => import('./components/common/MobileBentoMenuOverlay').then((m) => ({ default: m.MobileBentoMenuOverlay })));
+const AffiliatePortalModal = lazyWithRetry(() => import('./components/AffiliatePortalModal').then((m) => ({ default: m.AffiliatePortalModal })));
+const UpgradePromptModal = lazyWithRetry(() => import('./components/common/UpgradePromptModal').then((m) => ({ default: m.UpgradePromptModal })));
+const LegalConsentModal = lazyWithRetry(() => import('./components/LegalConsentModal').then((m) => ({ default: m.LegalConsentModal })));
+
+const PosWorkspaceFallback = () => (
+  <div className="flex-1 flex flex-col items-center justify-center p-6 text-slate-500 dark:text-slate-400">
+    <div className="w-7 h-7 rounded-full border-2 border-blue-600 border-t-transparent animate-spin mb-2.5" />
+    <span className="text-xs font-medium">Loading terminal module...</span>
+  </div>
+);
 
 function PosAppContent() {
   const {
@@ -109,6 +122,7 @@ function PosAppContent() {
     requiresLegalConsent,
     isSellingMode,
     sessionEpoch,
+    upgradePrompt,
   } = usePos();
 
   // URL Path Routing: Keep clean public paths indexable while protecting private /pos routes
@@ -179,6 +193,18 @@ function PosAppContent() {
       syncDocumentHeadSeo(currentPath);
     }
   }, [currentPath, isPricingPageOpen, isAtLandingPage]);
+
+  // Background-cache essential POS terminal chunks cleanly during idle time on public pages
+  // or immediately when entering the active POS session so offline checkouts stay 100% resilient
+  useEffect(() => {
+    if (currentUser && !isAtLandingPage) {
+      prefetchEssentialPosChunks();
+      return;
+    }
+    if (isAtLandingPage && !isPricingPageOpen) {
+      return schedulePosBackgroundPrefetch();
+    }
+  }, [currentUser, isAtLandingPage, isPricingPageOpen]);
 
   // Automatic transition to terminal upon returning from Google OAuth redirect
   useEffect(() => {
@@ -666,41 +692,63 @@ function PosAppContent() {
         id="pos-pricing-page-container"
         className="h-screen w-screen overflow-y-auto scroll-smooth font-sans relative"
       >
-        {/* Framer Motion Toast Notification Stack */}
+        {/* CSS-Animated Toast Notification Stack */}
         <ToastContainer toasts={toasts} onDismiss={dismissToast} topOffsetClass="top-6" />
 
-        <PricingPageView
-          onBackToLogin={() => {
-            closePricingPage();
-          }}
-          onSelectPlan={(planId) => {
-            if (currentUser) {
-              if (planId !== 'free') {
-                setIsSubscriptionModalOpen(true);
-              }
-            } else if (planId !== 'free') {
+        <Suspense
+          fallback={
+            <div className="min-h-screen w-full flex items-center justify-center bg-[#f8fafc] text-slate-600 text-sm font-medium">
+              <div className="w-7 h-7 rounded-full border-2 border-[#28a745] border-t-transparent animate-spin" />
+            </div>
+          }
+        >
+          <PricingPageView
+            onBackToLogin={() => {
               closePricingPage();
-            }
-          }}
-        />
+            }}
+            onSelectPlan={(planId) => {
+              if (currentUser) {
+                if (planId !== 'free') {
+                  setIsSubscriptionModalOpen(true);
+                }
+              } else if (planId !== 'free') {
+                closePricingPage();
+              }
+            }}
+          />
+        </Suspense>
 
         {/* Global Subscription Activation Modal */}
-        <SubscriptionActivationModal
-          isOpen={isSubscriptionModalOpen}
-          onClose={() => setIsSubscriptionModalOpen(false)}
-          onSuccess={() => {
-            setIsSubscriptionModalOpen(false);
-            closePricingPage();
-          }}
-        />
+        {isSubscriptionModalOpen && (
+          <Suspense fallback={null}>
+            <SubscriptionActivationModal
+              isOpen={isSubscriptionModalOpen}
+              onClose={() => setIsSubscriptionModalOpen(false)}
+              onSuccess={() => {
+                setIsSubscriptionModalOpen(false);
+                closePricingPage();
+              }}
+            />
+          </Suspense>
+        )}
 
         {/* Hidden Dynamic Sitemap View triggered by console command */}
-        <DynamicSitemapModal
-          isOpen={isSitemapOpen}
-          onClose={() => setIsSitemapOpen(false)}
-        />
+        {isSitemapOpen && (
+          <Suspense fallback={null}>
+            <DynamicSitemapModal
+              isOpen={isSitemapOpen}
+              onClose={() => setIsSitemapOpen(false)}
+            />
+          </Suspense>
+        )}
 
-        <UpgradePromptModal />
+        {upgradePrompt && (
+          <SilentLazyBoundary>
+            <Suspense fallback={null}>
+              <UpgradePromptModal />
+            </Suspense>
+          </SilentLazyBoundary>
+        )}
       </div>
     );
   }
@@ -723,15 +771,19 @@ function PosAppContent() {
         id="pos-landing-viewport"
         className="h-screen w-screen overflow-y-auto scroll-smooth dark-scrollbar font-sans bg-[#f8fafc] relative"
       >
-        {/* Framer Motion Toast Notification Stack */}
+        {/* CSS-Animated Toast Notification Stack */}
         <ToastContainer toasts={toasts} onDismiss={dismissToast} topOffsetClass="top-6" />
         <SignInView onLoginSuccess={navigateToTerminal} />
 
         {/* Hidden Dynamic Sitemap View triggered by console command */}
-        <DynamicSitemapModal
-          isOpen={isSitemapOpen}
-          onClose={() => setIsSitemapOpen(false)}
-        />
+        {isSitemapOpen && (
+          <Suspense fallback={null}>
+            <DynamicSitemapModal
+              isOpen={isSitemapOpen}
+              onClose={() => setIsSitemapOpen(false)}
+            />
+          </Suspense>
+        )}
       </div>
     );
   }
@@ -748,25 +800,39 @@ function PosAppContent() {
 
       {/* Persistent Platform Support Banner (Hidden in Demo Sessions) */}
       {!isDemoSession && (
-        <SuperAdminBanner
-          onOpenAuditLog={() => handleOpenSuperAdmin('audit')}
-          onOpenProvisionModal={() => handleOpenSuperAdmin('provision')}
-          onOpenBrandingModal={() => handleOpenSuperAdmin('branding')}
-        />
+        <SilentLazyBoundary>
+          <Suspense fallback={null}>
+            <SuperAdminBanner
+              onOpenAuditLog={() => handleOpenSuperAdmin('audit')}
+              onOpenProvisionModal={() => handleOpenSuperAdmin('provision')}
+              onOpenBrandingModal={() => handleOpenSuperAdmin('branding')}
+            />
+          </Suspense>
+        </SilentLazyBoundary>
       )}
 
       {/* Main Top Header */}
-      <Header
-        openBarcodeScanner={() => setIsScannerOpen(true)}
-        openSignOutModal={() => setIsSignOutModalOpen(true)}
-        openSuperAdminModal={handleOpenSuperAdmin}
-      />
+      <Suspense fallback={<div className="h-14 border-b border-slate-200 dark:border-slate-800 shrink-0" />}>
+        <Header
+          openBarcodeScanner={() => setIsScannerOpen(true)}
+          openSignOutModal={() => setIsSignOutModalOpen(true)}
+          openSuperAdminModal={handleOpenSuperAdmin}
+        />
+      </Suspense>
 
       {/* Recoverable Pending / Verified Subscription Banner */}
-      <PendingSubscriptionBanner />
+      <SilentLazyBoundary>
+        <Suspense fallback={null}>
+          <PendingSubscriptionBanner />
+        </Suspense>
+      </SilentLazyBoundary>
 
       {/* Cross-account Preserved Offline Outbox Warning Banner */}
-      <ForeignOutboxWarningBanner />
+      <SilentLazyBoundary>
+        <Suspense fallback={null}>
+          <ForeignOutboxWarningBanner />
+        </Suspense>
+      </SilentLazyBoundary>
 
       {/* Alert Banner if current tenant is suspended (Authenticated Sessions Only) */}
       {!isDemoSession && currentBusiness?.status === 'suspended' && isSuperAdmin && (
@@ -800,12 +866,14 @@ function PosAppContent() {
       <div className="flex-1 flex overflow-hidden relative min-h-0 min-w-0">
         {/* Left Vertical Navigation (Hidden across all roles when Selling Mode is ON) */}
         {!isSellingMode && (
-          <SidebarNav
-            currentTab={currentTab}
-            setCurrentTab={handleSetCurrentTab}
-            openBarcodeScanner={() => setIsScannerOpen(true)}
-            openSuperAdminModal={handleOpenSuperAdmin}
-          />
+          <Suspense fallback={<div className="hidden lg:block w-20 shrink-0 border-r border-slate-200 dark:border-slate-800" />}>
+            <SidebarNav
+              currentTab={currentTab}
+              setCurrentTab={handleSetCurrentTab}
+              openBarcodeScanner={() => setIsScannerOpen(true)}
+              openSuperAdminModal={handleOpenSuperAdmin}
+            />
+          </Suspense>
         )}
 
         {/* Primary Tab Viewport OR Initial Legal Consent Gate OR Suspended Subscription Screen */}
@@ -872,138 +940,212 @@ function PosAppContent() {
               isSellingMode ? 'pb-0' : 'pb-14 lg:pb-0'
             } min-w-0 min-h-0`}
           >
-            {(isSellingMode || currentTab === 'register') && (
-              <RegisterView
-                onProceedToPayment={() => handleOpenPayment('cash')}
-                openBarcodeScanner={() => setIsScannerOpen(true)}
-              />
-            )}
-            {!isSellingMode && currentTab === 'inventory' && <InventoryView />}
-            {!isSellingMode && currentTab === 'suppliers' && <SupplierManagementView />}
-            {!isSellingMode && currentTab === 'analytics' && (
-              <AnalyticsView
-                onNavigateToReports={() => handleSetCurrentTab('reports')}
-                onNavigateToInventory={() => handleSetCurrentTab('inventory')}
-                onNavigateToRegister={() => handleSetCurrentTab('register')}
-              />
-            )}
-            {!isSellingMode && currentTab === 'reports' && <ReportsView />}
-            {!isSellingMode && currentTab === 'cloud-sync' && <CloudSyncView />}
-            {!isSellingMode && currentTab === 'staff' && <StaffManagementView />}
-            {!isSellingMode && currentTab === 'shifts' && <ShiftManagementView />}
-            {!isSellingMode && currentTab === 'customers' && (
-              <CustomerManagementView
-                onAssignCustomerToCart={(cust) => {
-                  setSelectedCustomer(cust);
-                  setCurrentTab('register');
-                }}
-              />
-            )}
-            {!isSellingMode && currentTab === 'settings' && (
-              <BusinessProfileSettingsModal
-                initialTab={businessSettingsDefaultTab}
-                onClose={handleCloseSettings}
-              />
-            )}
-            {!isSellingMode && !isDemoSession && currentTab === 'super-admin' && isSuperAdmin && (
-              <SuperAdminDashboardModal
-                defaultTab={superAdminModalDefaultTab}
-                onClose={() => setCurrentTab('register')}
-              />
-            )}
+            <Suspense fallback={<PosWorkspaceFallback />}>
+              {(isSellingMode || currentTab === 'register') && (
+                <RegisterView
+                  onProceedToPayment={handleOpenPayment}
+                  openBarcodeScanner={() => setIsScannerOpen(true)}
+                />
+              )}
+              {!isSellingMode && currentTab === 'inventory' && <InventoryView />}
+              {!isSellingMode && currentTab === 'suppliers' && <SupplierManagementView />}
+              {!isSellingMode && currentTab === 'analytics' && (
+                <AnalyticsView
+                  onNavigateToReports={() => handleSetCurrentTab('reports')}
+                  onNavigateToInventory={() => handleSetCurrentTab('inventory')}
+                  onNavigateToRegister={() => handleSetCurrentTab('register')}
+                />
+              )}
+              {!isSellingMode && currentTab === 'reports' && <ReportsView />}
+              {!isSellingMode && currentTab === 'cloud-sync' && <CloudSyncView />}
+              {!isSellingMode && currentTab === 'staff' && <StaffManagementView />}
+              {!isSellingMode && currentTab === 'shifts' && <ShiftManagementView />}
+              {!isSellingMode && currentTab === 'customers' && (
+                <CustomerManagementView
+                  onAssignCustomerToCart={(cust) => {
+                    setSelectedCustomer(cust);
+                    setCurrentTab('register');
+                  }}
+                />
+              )}
+              {!isSellingMode && currentTab === 'settings' && (
+                <BusinessProfileSettingsModal
+                  initialTab={businessSettingsDefaultTab}
+                  onClose={handleCloseSettings}
+                />
+              )}
+              {!isSellingMode && !isDemoSession && currentTab === 'super-admin' && isSuperAdmin && (
+                <SuperAdminDashboardModal
+                  defaultTab={superAdminModalDefaultTab}
+                  onClose={() => setCurrentTab('register')}
+                />
+              )}
+            </Suspense>
           </main>
         )}
       </div>
 
       {/* Mobile Bottom Navigation Bar (< lg screens, hidden across all roles in Selling Mode) */}
       {!isSellingMode && (
-        <MobileBottomNav
-          currentTab={currentTab}
-          setCurrentTab={handleSetCurrentTab}
-          openBarcodeScanner={() => setIsScannerOpen(true)}
-          onRequestSignOut={() => setIsSignOutModalOpen(true)}
-        />
+        <Suspense fallback={null}>
+          <MobileBottomNav
+            currentTab={currentTab}
+            setCurrentTab={handleSetCurrentTab}
+            openBarcodeScanner={() => setIsScannerOpen(true)}
+            onRequestSignOut={() => setIsSignOutModalOpen(true)}
+          />
+        </Suspense>
       )}
 
       {/* Global Modals & Safeguards */}
-      <BarcodeScannerModal
-        isOpen={isScannerOpen}
-        onClose={() => setIsScannerOpen(false)}
-      />
+      {isScannerOpen && (
+        <Suspense fallback={null}>
+          <BarcodeScannerModal
+            isOpen={isScannerOpen}
+            onClose={() => setIsScannerOpen(false)}
+          />
+        </Suspense>
+      )}
 
-      <PaymentModal
-        isOpen={isPaymentOpen}
-        onClose={() => setIsPaymentOpen(false)}
-        initialMethod={paymentInitialMethod}
-      />
+      {isPaymentOpen && (
+        <Suspense fallback={null}>
+          <PaymentModal
+            isOpen={isPaymentOpen}
+            onClose={() => setIsPaymentOpen(false)}
+            initialMethod={paymentInitialMethod}
+          />
+        </Suspense>
+      )}
 
-      <SubscriptionActivationModal
-        isOpen={isSubscriptionModalOpen}
-        onClose={() => setIsSubscriptionModalOpen(false)}
-        onSuccess={() => {
-          setIsSubscriptionModalOpen(false);
-        }}
-      />
+      {isSubscriptionModalOpen && (
+        <Suspense fallback={null}>
+          <SubscriptionActivationModal
+            isOpen={isSubscriptionModalOpen}
+            onClose={() => setIsSubscriptionModalOpen(false)}
+            onSuccess={() => {
+              setIsSubscriptionModalOpen(false);
+            }}
+          />
+        </Suspense>
+      )}
 
-      <ReceiptModal />
-      <RefundReceiptModal />
-      <ReturnsModal />
+      {activeReceipt && (
+        <Suspense fallback={null}>
+          <ReceiptModal />
+        </Suspense>
+      )}
+      {activeRefundReceipt && (
+        <Suspense fallback={null}>
+          <RefundReceiptModal />
+        </Suspense>
+      )}
+      {isReturnsModalOpen && (
+        <Suspense fallback={null}>
+          <ReturnsModal />
+        </Suspense>
+      )}
 
-      <PinLockModal />
+      <SilentLazyBoundary>
+        <Suspense fallback={null}>
+          <PinLockModal />
+        </Suspense>
+      </SilentLazyBoundary>
 
-      <SignOutConfirmModal
-        isOpen={isSignOutModalOpen}
-        onClose={() => setIsSignOutModalOpen(false)}
-      />
+      {isSignOutModalOpen && (
+        <Suspense fallback={null}>
+          <SignOutConfirmModal
+            isOpen={isSignOutModalOpen}
+            onClose={() => setIsSignOutModalOpen(false)}
+          />
+        </Suspense>
+      )}
 
       {/* Destructive Action Confirmation Safeguard Modal */}
-      <DestructiveConfirmModal />
+      <SilentLazyBoundary>
+        <Suspense fallback={null}>
+          <DestructiveConfirmModal />
+        </Suspense>
+      </SilentLazyBoundary>
 
       {/* Inventory Quick-Check / Quick-Add Modal for Unified Unrecognized Barcode Onboarding */}
-      <InventoryQuickCheckHUD
-        isOpen={(unknownBarcodePrompt.isOpen || isQuickCheckOpen) && !isSellingMode}
-        barcode={unknownBarcodePrompt.barcode || quickCheckBarcode}
-        metadata={unknownBarcodePrompt.metadata || quickCheckMetadata}
-        source={unknownBarcodePrompt.source || 'hardware'}
-        onClose={() => {
-          closeQuickCheck();
-          closeUnknownBarcodeModal();
-        }}
-      />
+      {(unknownBarcodePrompt.isOpen || isQuickCheckOpen) && !isSellingMode && (
+        <SilentLazyBoundary>
+          <Suspense fallback={null}>
+            <InventoryQuickCheckHUD
+              isOpen={(unknownBarcodePrompt.isOpen || isQuickCheckOpen) && !isSellingMode}
+              barcode={unknownBarcodePrompt.barcode || quickCheckBarcode}
+              metadata={unknownBarcodePrompt.metadata || quickCheckMetadata}
+              source={unknownBarcodePrompt.source || 'hardware'}
+              onClose={() => {
+                closeQuickCheck();
+                closeUnknownBarcodeModal();
+              }}
+            />
+          </Suspense>
+        </SilentLazyBoundary>
+      )}
 
       {/* Persistent Background Hardware Scanner Interception Telemetry HUD */}
-      <ScannerInterceptHUD />
+      <SilentLazyBoundary>
+        <Suspense fallback={null}>
+          <ScannerInterceptHUD />
+        </Suspense>
+      </SilentLazyBoundary>
 
       {/* Hidden Dynamic Sitemap View triggered by console command */}
-      <DynamicSitemapModal
-        isOpen={isSitemapOpen}
-        onClose={() => setIsSitemapOpen(false)}
-      />
+      {isSitemapOpen && (
+        <SilentLazyBoundary>
+          <Suspense fallback={null}>
+            <DynamicSitemapModal
+              isOpen={isSitemapOpen}
+              onClose={() => setIsSitemapOpen(false)}
+            />
+          </Suspense>
+        </SilentLazyBoundary>
+      )}
 
       {/* Single Immersive Bento Overlay (Managed globally, hidden in Selling Mode) */}
-      <MobileBentoMenuOverlay
-        isOpen={isMobileMenuOpen && !isSellingMode}
-        onClose={() => setIsMobileMenuOpen(false)}
-        onNavigateTab={(tab) => {
-          handleSetCurrentTab(tab);
-          setIsMobileMenuOpen(false);
-        }}
-        isLoggedIn={true}
-      />
+      {isMobileMenuOpen && !isSellingMode && (
+        <Suspense fallback={null}>
+          <MobileBentoMenuOverlay
+            isOpen={isMobileMenuOpen && !isSellingMode}
+            onClose={() => setIsMobileMenuOpen(false)}
+            onNavigateTab={(tab) => {
+              handleSetCurrentTab(tab);
+              setIsMobileMenuOpen(false);
+            }}
+            isLoggedIn={true}
+          />
+        </Suspense>
+      )}
 
-      <AffiliatePortalModal
-        isOpen={isAffiliateModalOpen}
-        onClose={() => setIsAffiliateModalOpen(false)}
-        onSwitchToPos={() => setIsAffiliateModalOpen(false)}
-      />
+      {isAffiliateModalOpen && (
+        <Suspense fallback={null}>
+          <AffiliatePortalModal
+            isOpen={isAffiliateModalOpen}
+            onClose={() => setIsAffiliateModalOpen(false)}
+            onSwitchToPos={() => setIsAffiliateModalOpen(false)}
+          />
+        </Suspense>
+      )}
 
-      <UpgradePromptModal />
+      {upgradePrompt && (
+        <SilentLazyBoundary>
+          <Suspense fallback={null}>
+            <UpgradePromptModal />
+          </Suspense>
+        </SilentLazyBoundary>
+      )}
 
       {/* Mandatory Initial Merchant Legal Consent Gate (Blocks POS until recorded in Firestore) */}
-      <LegalConsentModal
-        isOpen={requiresLegalConsent}
-        onRequestSignOut={() => setIsSignOutModalOpen(true)}
-      />
+      {requiresLegalConsent && (
+        <Suspense fallback={null}>
+          <LegalConsentModal
+            isOpen={requiresLegalConsent}
+            onRequestSignOut={() => setIsSignOutModalOpen(true)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

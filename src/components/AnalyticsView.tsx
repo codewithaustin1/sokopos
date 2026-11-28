@@ -1530,6 +1530,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
                                 ? 'bg-blue-600'
                                 : t.method === 'card'
                                 ? 'bg-slate-700'
+                                : t.method === 'loyalty_points'
+                                ? 'bg-pink-700'
                                 : 'bg-amber-500'
                             }`}
                             style={{ width: `${Math.min(100, t.sharePct)}%` }}

@@ -225,6 +225,8 @@ export function calculatePaymentMethodReport(
     cash: 'Cash Register Drawer',
     card: 'Card Terminal (Visa/Mastercard)',
     split: 'Split Tender',
+    store_credit: 'Store Credit / Daftari Tab',
+    loyalty_points: 'Loyalty Points Redemption',
   };
 
   const methods: PaymentMethodSummary[] = Object.entries(methodMap).map(([method, d]) => ({

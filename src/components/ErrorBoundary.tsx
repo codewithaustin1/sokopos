@@ -1,5 +1,8 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Trash2, ShieldAlert } from 'lucide-react';
+import { isChunkLoadError } from '../utils/lazyWithRetry';
+
+const CHUNK_RELOAD_GUARD_KEY = 'sokopos_chunk_reload_at';
 
 interface Props {
   children: ReactNode;
@@ -29,6 +32,21 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('[SokoPoS ErrorBoundary] Uncaught runtime error caught:', error, errorInfo);
+
+    // If a lazy module fetch failed (e.g. stale asset hash or dev server restart), perform one guarded reload
+    if (typeof window !== 'undefined' && isChunkLoadError(error)) {
+      try {
+        const lastReload = Number(sessionStorage.getItem(CHUNK_RELOAD_GUARD_KEY) || '0');
+        if (!Number.isFinite(lastReload) || Date.now() - lastReload > 15_000) {
+          sessionStorage.setItem(CHUNK_RELOAD_GUARD_KEY, String(Date.now()));
+          window.location.reload();
+          return;
+        }
+      } catch {
+        // Ignore storage restrictions
+      }
+    }
+
     this.setState({ error, errorInfo });
   }
 

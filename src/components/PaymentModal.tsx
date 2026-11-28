@@ -24,6 +24,7 @@ import {
   Trash2,
   RefreshCw,
   Landmark,
+  Award,
 } from 'lucide-react';
 import PaystackPop from '@paystack/inline-js';
 import { safeConfetti } from '../utils/confetti';
@@ -36,6 +37,7 @@ import { calculatePaymentGuardrails, roundCashHalfUp } from '../utils/cashRoundi
 import { CustomerFacingMpesaQrModal } from './CustomerFacingMpesaQrModal';
 import { CustomerSelectModal } from './CustomerSelectModal';
 import { initiateServerPayment, verifyServerPayment } from '../lib/paymentService';
+import { HardenedKenyanPhoneInput } from './common/HardenedKenyanPhoneInput';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -68,10 +70,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
     isSuperAdmin,
     entitlements,
     requireCapability,
+    loyaltySettings,
+    can,
     isSellingMode,
   } = usePos();
 
   const canUseStoreCredit = isSuperAdmin || entitlements.capabilities.loyaltyAndStoreCredit;
+  const canRedeemLoyalty = can('manageLoyalty');
 
   const isDemoMode = Boolean(
     currentUser?.isDemoSession ||
@@ -98,7 +103,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
   // Split payment state
   interface SplitRowState {
     id: string;
-    method: 'cash' | 'mpesa' | 'card' | 'store_credit';
+    method: 'cash' | 'mpesa' | 'card' | 'store_credit' | 'loyalty_points';
     amount: string;
     cashTendered?: string;
     mpesaCode?: string;
@@ -151,6 +156,25 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
   );
   const cashPayable = useMemo(() => roundCashHalfUp(cartTotal), [cartTotal]);
 
+  const loyaltyRate =
+    loyaltySettings.pointsPerCurrencyUnit > 0 ? loyaltySettings.pointsPerCurrencyUnit : 10;
+  const requiredLoyaltyPoints = useMemo(
+    () => Math.ceil(currentGuardrail.payableAmount * loyaltyRate),
+    [currentGuardrail.payableAmount, loyaltyRate]
+  );
+  const availableLoyaltyPoints = selectedCustomer?.loyaltyPoints || 0;
+  const customerLoyaltyValue = useMemo(
+    () => Number((availableLoyaltyPoints / loyaltyRate).toFixed(2)),
+    [availableLoyaltyPoints, loyaltyRate]
+  );
+  const hasEnoughLoyaltyPoints = Boolean(
+    selectedCustomer && loyaltySettings.enabled && availableLoyaltyPoints >= requiredLoyaltyPoints
+  );
+  const maxRedeemableLoyaltyCurrency = useMemo(
+    () => Number(Math.min(cartTotal, Math.floor(customerLoyaltyValue * 100) / 100).toFixed(2)),
+    [cartTotal, customerLoyaltyValue]
+  );
+
   // Cash state initialized to cash payable
   const [cashTendered, setCashTendered] = useState<string>(roundCashHalfUp(cartTotal).toString());
 
@@ -202,9 +226,30 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
         const potentialDebt = Math.max(0, -((selectedCustomer.storeCreditBalance || 0) - amt));
         if (potentialDebt > (selectedCustomer.creditLimit || 0)) return false;
       }
+      if (row.method === 'loyalty_points') {
+        if (!canUseStoreCredit || !canRedeemLoyalty || !loyaltySettings.enabled || !selectedCustomer) {
+          return false;
+        }
+      }
+    }
+    const splitLoyaltyCurrency = splitRows
+      .filter((r) => r.method === 'loyalty_points')
+      .reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+    if (splitLoyaltyCurrency > 0 && Math.ceil(splitLoyaltyCurrency * loyaltyRate) > availableLoyaltyPoints) {
+      return false;
     }
     return true;
-  }, [selectedMethod, isSplitBalanced, splitRows, selectedCustomer]);
+  }, [
+    selectedMethod,
+    isSplitBalanced,
+    splitRows,
+    selectedCustomer,
+    canUseStoreCredit,
+    canRedeemLoyalty,
+    loyaltySettings.enabled,
+    loyaltyRate,
+    availableLoyaltyPoints,
+  ]);
 
   // Synchronize initialMethod and default cash tendered when modal is opened
   useEffect(() => {
@@ -220,6 +265,14 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
   const handleSelectMethod = (method: PaymentMethod) => {
     if (method === 'store_credit' && !requireCapability('loyaltyAndStoreCredit')) {
       return;
+    }
+    if (method === 'loyalty_points') {
+      if (!requireCapability('loyaltyAndStoreCredit')) return;
+      if (!canRedeemLoyalty) {
+        soundFx?.playError?.();
+        showToast('Permission Denied: Your role cannot redeem loyalty points.', 'error');
+        return;
+      }
     }
     setSelectedMethod(method);
     if (method === 'cash') {
@@ -663,6 +716,32 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
     }
     if (selectedMethod === 'cash' && tenderedAmount < currentGuardrail.payableAmount) return;
 
+    if (selectedMethod === 'loyalty_points') {
+      if (!loyaltySettings.enabled) {
+        soundFx?.playError?.();
+        showToast('Loyalty points program is currently disabled in Store Settings.', 'error');
+        return;
+      }
+      if (!canRedeemLoyalty) {
+        soundFx?.playError?.();
+        showToast('Permission Denied: Your role cannot redeem loyalty points.', 'error');
+        return;
+      }
+      if (!selectedCustomer) {
+        soundFx?.playError?.();
+        showToast('Please assign a customer profile to redeem loyalty points.', 'error');
+        return;
+      }
+      if (!hasEnoughLoyaltyPoints) {
+        soundFx?.playError?.();
+        showToast(
+          `Insufficient points: ${selectedCustomer.name} has ${availableLoyaltyPoints} pts, needs ${requiredLoyaltyPoints} pts.`,
+          'error'
+        );
+        return;
+      }
+    }
+
     if (selectedMethod === 'split') {
       if (!isSplitValid) {
         soundFx?.playError?.();
@@ -679,7 +758,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
             );
           }
         } else {
-          showToast('Please check split tender amounts and cash tendered.', 'error');
+          showToast('Please check split tender amounts, points balance, and cash tendered.', 'error');
         }
         return;
       }
@@ -728,6 +807,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
         notes: `Charged to ${selectedCustomer?.name || 'Customer'}'s store credit tab`,
         roundingDifference: 0,
       };
+    } else if (selectedMethod === 'loyalty_points') {
+      details = {
+        loyaltyPointsRedeemed: requiredLoyaltyPoints,
+        notes: `Redeemed ${requiredLoyaltyPoints} loyalty points (${currentLocation.currency} ${currentGuardrail.payableAmount.toFixed(2)})`,
+        roundingDifference: 0,
+      };
     } else if (selectedMethod === 'split') {
       const activeRows = splitRows.filter((r) => (parseFloat(r.amount) || 0) > 0);
       const cashRow = activeRows.find((r) => r.method === 'cash');
@@ -774,6 +859,16 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
             cardNetwork: r.cardNetwork || cardNetwork,
           };
         }
+        if (r.method === 'loyalty_points') {
+          const pts = Math.ceil(amt * loyaltyRate);
+          return {
+            id: r.id,
+            method: 'loyalty_points',
+            amount: amt,
+            loyaltyPointsRedeemed: pts,
+            notes: `Redeemed ${pts} loyalty points (${currentLocation.currency} ${amt.toFixed(2)})`,
+          };
+        }
         return {
           id: r.id,
           method: 'store_credit',
@@ -781,6 +876,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
           notes: `Split charged to ${selectedCustomer?.name || 'Customer'}'s store credit tab`,
         };
       });
+
+      const totalSplitLoyaltyCurrency = activeRows
+        .filter((r) => r.method === 'loyalty_points')
+        .reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+      const totalSplitLoyaltyPts =
+        totalSplitLoyaltyCurrency > 0 ? Math.ceil(totalSplitLoyaltyCurrency * loyaltyRate) : undefined;
 
       details = {
         splitBreakdown,
@@ -790,6 +891,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
         cardLast4: cardRow?.cardLast4 || (cardRow ? cardLast4 : undefined),
         cardNetwork: cardRow?.cardNetwork || (cardRow ? cardNetwork : undefined),
         storeCreditUsed: creditRow ? parseFloat(creditRow.amount) || 0 : undefined,
+        loyaltyPointsRedeemed: totalSplitLoyaltyPts,
         roundingDifference: 0,
       };
     }
@@ -831,9 +933,20 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
     splitRemaining,
     splitRows,
     currentLocation.currency,
+    selectedCustomer,
+    loyaltySettings.enabled,
+    canRedeemLoyalty,
+    hasEnoughLoyaltyPoints,
+    availableLoyaltyPoints,
+    requiredLoyaltyPoints,
+    loyaltyRate,
+    gatewayStkReceipt,
+    gatewayStkRef,
+    gatewayStkProvider,
+    cardGatewayRef,
   ]);
 
-  // Modal keyboard shortcuts: Esc to close, F1 Cash, F2 M-Pesa, F3 Card, F4 Store Credit, F5 Split, Enter to Complete
+  // Modal keyboard shortcuts: Esc to close, F1 Cash, F2 M-Pesa, F3 Card, F4 Store Credit, F5 Split, F6 Loyalty Points, Enter to Complete
   useEffect(() => {
     if (!isOpen) return;
 
@@ -868,6 +981,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
         handleSelectMethod('split');
         return;
       }
+      if (e.key === 'F6') {
+        e.preventDefault();
+        handleSelectMethod('loyalty_points');
+        return;
+      }
       if (e.key === 'Enter') {
         const isCreditLimitExceeded =
           selectedMethod === 'store_credit' &&
@@ -883,7 +1001,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
           (selectedMethod === 'split'
             ? isSplitValid
             : !(selectedMethod === 'cash' && tenderedAmount < currentGuardrail.payableAmount) &&
-              !(selectedMethod === 'store_credit' && (!selectedCustomer || !selectedCustomer.isCreditAllowed || isCreditLimitExceeded)));
+              !(selectedMethod === 'store_credit' && (!selectedCustomer || !selectedCustomer.isCreditAllowed || isCreditLimitExceeded)) &&
+              !(selectedMethod === 'loyalty_points' && (!loyaltySettings.enabled || !canRedeemLoyalty || !selectedCustomer || !hasEnoughLoyaltyPoints)));
         if (canComplete) {
           e.preventDefault();
           handleCompletePayment();
@@ -893,7 +1012,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose, isProcessing, hasZeroStock, selectedMethod, tenderedAmount, currentGuardrail.payableAmount, handleCompletePayment, cashPayable, selectedCustomer, isSplitValid]);
+  }, [isOpen, onClose, isProcessing, hasZeroStock, selectedMethod, tenderedAmount, currentGuardrail.payableAmount, handleCompletePayment, cashPayable, selectedCustomer, isSplitValid, activeShift, loyaltySettings.enabled, canRedeemLoyalty, hasEnoughLoyaltyPoints]);
 
   if (!isOpen) return null;
 
@@ -1035,134 +1154,92 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
               </div>
             </div>
 
-            <h3 className="text-xs font-semibold text-slate-500">
-              Select Payment Method
-            </h3>
-
-            {/* Method Tabs (Clean Bordered Tiles, Zero Decorative Status Dots) */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
-              {/* M-PESA (F2) */}
+            {/* Compact Tender Switcher Strip (Primary selection migrated to Register) */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 [scrollbar-width:thin]">
               <button
                 type="button"
                 onClick={() => handleSelectMethod('mpesa')}
-                title="Select M-Pesa (Shortcut: F2)"
-                className={`p-3 min-h-[88px] rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all duration-150 active:scale-[0.98] text-center cursor-pointer relative touch-manipulation ${
+                title="M-Pesa (F2)"
+                className={`min-h-[40px] px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 whitespace-nowrap ${
                   selectedMethod === 'mpesa'
-                    ? 'border-emerald-600 bg-emerald-50/70 text-emerald-950'
-                    : 'border-slate-200 hover:border-slate-300 text-slate-700 bg-white'
+                    ? 'bg-[#44B703] border-[#44B703] text-white'
+                    : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-50'
                 }`}
               >
-                <div className="absolute top-2 right-2">
-                  <kbd className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-100 border border-slate-200 text-slate-500 font-semibold">
-                    F2
-                  </kbd>
-                </div>
-                <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white font-bold flex items-center justify-center text-xs">
-                  M
-                </div>
-                <span className="font-bold text-xs whitespace-nowrap">M-PESA</span>
-                <span className="text-[10px] text-emerald-700 font-medium flex items-center gap-0.5 whitespace-nowrap">
-                  <QrCode className="w-3 h-3 shrink-0" /> Dynamic QR
-                </span>
+                <Smartphone className="w-3.5 h-3.5 shrink-0" />
+                <span>M-PESA</span>
               </button>
 
-              {/* Cash (F1) */}
               <button
                 type="button"
                 onClick={() => handleSelectMethod('cash')}
-                title="Select Cash (Shortcut: F1)"
-                className={`p-3 min-h-[88px] rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all duration-150 active:scale-[0.98] text-center cursor-pointer relative touch-manipulation ${
+                title="Cash (F1)"
+                className={`min-h-[40px] px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 whitespace-nowrap ${
                   selectedMethod === 'cash'
-                    ? 'border-blue-600 bg-blue-50/70 text-blue-950'
-                    : 'border-slate-200 hover:border-slate-300 text-slate-700 bg-white'
+                    ? 'bg-[#059E39] border-[#059E39] text-white'
+                    : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-50'
                 }`}
               >
-                <div className="absolute top-2 right-2">
-                  <kbd className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-100 border border-slate-200 text-slate-500 font-semibold">
-                    F1
-                  </kbd>
-                </div>
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs ${selectedMethod === 'cash' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                  <Banknote className="w-4 h-4" />
-                </div>
-                <span className="font-bold text-xs whitespace-nowrap">Cash</span>
-                <span className="text-[10px] text-slate-500 whitespace-nowrap">
-                  {currentGuardrail.hasCents ? 'Half-Up Rounded' : 'Drawer Tender'}
-                </span>
+                <Banknote className="w-3.5 h-3.5 shrink-0" />
+                <span>Cash</span>
               </button>
 
-              {/* Card (F3) */}
               <button
                 type="button"
                 onClick={() => handleSelectMethod('card')}
-                title="Select Card (Shortcut: F3)"
-                className={`p-3 min-h-[88px] rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all duration-150 active:scale-[0.98] text-center cursor-pointer relative touch-manipulation ${
+                title="Card (F3)"
+                className={`min-h-[40px] px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 whitespace-nowrap ${
                   selectedMethod === 'card'
-                    ? 'border-purple-600 bg-purple-50/70 text-purple-950'
-                    : 'border-slate-200 hover:border-slate-300 text-slate-700 bg-white'
+                    ? 'bg-[#0655E3] border-[#0655E3] text-white'
+                    : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-50'
                 }`}
               >
-                <div className="absolute top-2 right-2">
-                  <kbd className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-100 border border-slate-200 text-slate-500 font-semibold">
-                    F3
-                  </kbd>
-                </div>
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs ${selectedMethod === 'card' ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                  <CreditCard className="w-4 h-4" />
-                </div>
-                <span className="font-bold text-xs whitespace-nowrap">Card</span>
-                <span className="text-[10px] text-slate-500 whitespace-nowrap">Exact Charge</span>
+                <CreditCard className="w-3.5 h-3.5 shrink-0" />
+                <span>Card</span>
               </button>
 
-              {/* Split Tender (F5) */}
               <button
                 type="button"
                 onClick={() => handleSelectMethod('split')}
-                title="Select Split Payment (Shortcut: F5)"
-                className={`p-3 min-h-[88px] rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all duration-150 active:scale-[0.98] text-center cursor-pointer relative touch-manipulation ${
+                title="Split Payment (F5)"
+                className={`min-h-[40px] px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 whitespace-nowrap ${
                   selectedMethod === 'split'
-                    ? 'border-amber-600 bg-amber-50/70 text-amber-950'
-                    : 'border-slate-200 hover:border-slate-300 text-slate-700 bg-white'
+                    ? 'bg-[#038BF9] border-[#038BF9] text-white'
+                    : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-50'
                 }`}
               >
-                <div className="absolute top-2 right-2">
-                  <kbd className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-100 border border-slate-200 text-slate-500 font-semibold">
-                    F5
-                  </kbd>
-                </div>
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs ${selectedMethod === 'split' ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-700'}`}>
-                  <GitFork className="w-4 h-4 rotate-90" />
-                </div>
-                <span className="font-bold text-xs whitespace-nowrap">Split Tender</span>
-                <span className="text-[10px] text-amber-700 font-medium whitespace-nowrap">
-                  Multi-Method
-                </span>
+                <GitFork className="w-3.5 h-3.5 rotate-90 shrink-0" />
+                <span>Split</span>
               </button>
 
-              {/* Store Credit (F4) */}
               <button
                 type="button"
                 onClick={() => handleSelectMethod('store_credit')}
-                title="Select Store Credit / Daftari Tab (Shortcut: F4)"
-                className={`p-3 min-h-[88px] rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all duration-150 active:scale-[0.98] text-center cursor-pointer relative col-span-2 sm:col-span-1 touch-manipulation ${
+                title="Store Credit / Daftari Tab (F4)"
+                className={`min-h-[40px] px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 whitespace-nowrap ${
                   selectedMethod === 'store_credit'
-                    ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950'
-                    : 'border-slate-200 hover:border-slate-300 text-slate-700 bg-white'
+                    ? 'bg-[#711CF4] border-[#711CF4] text-white'
+                    : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-50'
                 }`}
               >
-                <div className="absolute top-2 right-2 flex items-center gap-1">
-                  {!canUseStoreCredit && <Lock className="w-3 h-3 text-slate-400" />}
-                  <kbd className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-100 border border-slate-200 text-slate-500 font-semibold">
-                    F4
-                  </kbd>
-                </div>
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs ${selectedMethod === 'store_credit' ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-700'}`}>
-                  <Wallet className="w-4 h-4" />
-                </div>
-                <span className="font-bold text-xs whitespace-nowrap">Store Credit</span>
-                <span className="text-[10px] text-slate-500 whitespace-nowrap">
-                  {selectedCustomer ? 'Daftari Tab' : 'Assign Client'}
-                </span>
+                <Wallet className="w-3.5 h-3.5 shrink-0" />
+                <span>Store Credit</span>
+                {!canUseStoreCredit && <Lock className="w-3 h-3 opacity-75 shrink-0" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSelectMethod('loyalty_points')}
+                title="Redeem Loyalty Points (F6)"
+                className={`min-h-[40px] px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 whitespace-nowrap ${
+                  selectedMethod === 'loyalty_points'
+                    ? 'bg-[#FA148B] border-[#FA148B] text-white'
+                    : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-50'
+                }`}
+              >
+                <Award className="w-3.5 h-3.5 shrink-0" />
+                <span>Loyalty Pts</span>
+                {(!canUseStoreCredit || !canRedeemLoyalty) && <Lock className="w-3 h-3 opacity-75 shrink-0" />}
               </button>
             </div>
 
@@ -1368,24 +1445,20 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                       </div>
 
                       <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
                           Customer Mobile Number
                         </label>
-                        <div className="flex gap-2">
-                          <span className="bg-slate-200 text-slate-700 font-bold px-3 py-2 rounded-lg text-xs flex items-center">
-                            +254
-                          </span>
-                          <input
-                            type="text"
-                            value={mpesaPhone}
-                            onChange={(e) => {
-                              setMpesaPhone(e.target.value);
-                              setMpesaPromptSent(false);
-                            }}
-                            placeholder="712 345 678"
-                            className="flex-1 bg-white border border-slate-300 font-bold text-slate-800 rounded-lg px-3 py-2 text-xs focus:outline-hidden focus:border-emerald-500"
-                          />
-                        </div>
+                        <HardenedKenyanPhoneInput
+                          id="pos-mpesa-phone-input"
+                          value={mpesaPhone}
+                          onChange={(formatted, msisdn, isValid) => {
+                            const nine = msisdn.slice(3);
+                            const grouped = nine.length === 9 ? `${nine.slice(0, 3)} ${nine.slice(3, 6)} ${nine.slice(6, 9)}` : nine;
+                            setMpesaPhone(grouped);
+                            setMpesaPromptSent(false);
+                          }}
+                          showValidationBanner={true}
+                        />
                       </div>
 
                       {!isDemoMode && !isPaystackSubaccountVerified && (
@@ -1866,6 +1939,168 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                 </div>
               )}
 
+              {/* Loyalty Points Redemption Panel */}
+              {selectedMethod === 'loyalty_points' && (
+                <div className="space-y-3.5">
+                  <div className="flex justify-between items-center gap-2">
+                    <h4 className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+                      <Award className="w-4 h-4 text-[#FA148B] shrink-0" />
+                      <span>Loyalty Points Redemption</span>
+                    </h4>
+                    <span className="text-[11px] text-[#FA148B] font-mono font-semibold tabular-nums">
+                      {loyaltyRate} pts = {currentLocation.currency} 1.00
+                    </span>
+                  </div>
+
+                  {!loyaltySettings.enabled ? (
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-2 text-xs text-amber-900">
+                      <div className="flex items-center gap-2 font-bold">
+                        <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+                        <span>Loyalty Program Disabled</span>
+                      </div>
+                      <p className="text-[11px] text-amber-800">
+                        Loyalty points earning and redemption are currently turned off in Store Settings.
+                      </p>
+                      {canConfigureSettlement && (
+                        <button
+                          type="button"
+                          onClick={() => openBusinessSettings('loyalty')}
+                          className="min-h-[38px] px-3 py-1.5 bg-amber-700 hover:bg-amber-800 text-white font-semibold rounded-lg text-xs cursor-pointer transition"
+                        >
+                          Enable in Store Settings
+                        </button>
+                      )}
+                    </div>
+                  ) : !selectedCustomer ? (
+                    <div className="text-center py-6 bg-white border border-dashed border-slate-300 rounded-xl space-y-2 p-4">
+                      <Award className="w-8 h-8 text-pink-300 mx-auto" />
+                      <div className="text-xs font-bold text-slate-700">No Customer Assigned</div>
+                      <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
+                        Redeeming loyalty points requires an active customer profile. Please assign or select a customer.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomerSelectOpen(true)}
+                        className="min-h-[44px] px-4 py-2 bg-[#FA148B] hover:bg-[#d90f77] text-white font-semibold text-xs rounded-xl transition cursor-pointer"
+                      >
+                        + Assign Customer Profile
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3 py-2.5 border-y border-slate-200 text-xs">
+                        <div>
+                          <span className="text-[11px] text-slate-500 block font-medium">
+                            Available Balance
+                          </span>
+                          <span className="font-bold text-slate-900 font-mono tabular-nums">
+                            {availableLoyaltyPoints} pts
+                          </span>
+                          <span className="block text-[11px] text-slate-500 font-mono tabular-nums">
+                            Value: {currentLocation.currency} {customerLoyaltyValue.toFixed(2)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[11px] text-slate-500 block font-medium">
+                            Points Required
+                          </span>
+                          <span className="font-bold text-[#FA148B] font-mono tabular-nums">
+                            {requiredLoyaltyPoints} pts
+                          </span>
+                          <span className="block text-[11px] text-slate-500 font-mono tabular-nums">
+                            Covers: {currentLocation.currency} {currentGuardrail.payableAmount.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="bg-pink-50/70 border border-pink-200 rounded-xl p-3 space-y-1.5 text-xs">
+                        <div className="flex justify-between font-semibold text-slate-700">
+                          <span>Points Redeemed This Sale:</span>
+                          <span className="font-mono tabular-nums text-[#FA148B] font-bold">
+                            -{requiredLoyaltyPoints} pts
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-[11px] text-slate-600 pt-1.5 border-t border-pink-100">
+                          <span>Projected Points Balance After Sale:</span>
+                          <span
+                            className={`font-mono tabular-nums font-bold ${
+                              hasEnoughLoyaltyPoints ? 'text-emerald-700' : 'text-red-600'
+                            }`}
+                          >
+                            {availableLoyaltyPoints - requiredLoyaltyPoints} pts
+                          </span>
+                        </div>
+                      </div>
+
+                      {!hasEnoughLoyaltyPoints && (
+                        <div className="p-3 bg-red-50 border border-red-200 rounded-xl space-y-2.5 text-xs text-red-800">
+                          <div className="flex items-start gap-2 font-bold">
+                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                            <span>
+                              Insufficient Points: {selectedCustomer.name} needs{' '}
+                              {requiredLoyaltyPoints - availableLoyaltyPoints} more pts to pay the full{' '}
+                              {currentLocation.currency} {currentGuardrail.payableAmount.toFixed(2)}.
+                            </span>
+                          </div>
+                          {maxRedeemableLoyaltyCurrency >= 1 && cartTotal > maxRedeemableLoyaltyCurrency && (
+                            <div className="flex flex-wrap gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const ptsAmt = maxRedeemableLoyaltyCurrency;
+                                  const rest = Number((cartTotal - ptsAmt).toFixed(2));
+                                  setSplitRows([
+                                    {
+                                      id: 'split-loyalty-1',
+                                      method: 'loyalty_points',
+                                      amount: ptsAmt.toString(),
+                                    },
+                                    {
+                                      id: 'split-mpesa-2',
+                                      method: 'mpesa',
+                                      amount: rest.toString(),
+                                      mpesaCode: `QX${Math.floor(1000 + Math.random() * 9000)}K`,
+                                    },
+                                  ]);
+                                  setSelectedMethod('split');
+                                }}
+                                className="min-h-[40px] px-3 py-1.5 bg-[#FA148B] hover:bg-[#d90f77] text-white font-bold rounded-lg text-xs cursor-pointer transition"
+                              >
+                                Split: {currentLocation.currency} {maxRedeemableLoyaltyCurrency.toFixed(2)} Pts + M-Pesa
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const ptsAmt = maxRedeemableLoyaltyCurrency;
+                                  const rest = Number((cartTotal - ptsAmt).toFixed(2));
+                                  setSplitRows([
+                                    {
+                                      id: 'split-loyalty-1',
+                                      method: 'loyalty_points',
+                                      amount: ptsAmt.toString(),
+                                    },
+                                    {
+                                      id: 'split-cash-2',
+                                      method: 'cash',
+                                      amount: rest.toString(),
+                                      cashTendered: rest.toString(),
+                                    },
+                                  ]);
+                                  setSelectedMethod('split');
+                                }}
+                                className="min-h-[40px] px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 font-bold rounded-lg text-xs cursor-pointer transition"
+                              >
+                                Split: Pts + Cash
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Split Tender Panel */}
               {selectedMethod === 'split' && (
                 <div className="space-y-3.5">
@@ -1921,6 +2156,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                             ? 'bg-emerald-500'
                             : row.method === 'card'
                             ? 'bg-purple-500'
+                            : row.method === 'loyalty_points'
+                            ? 'bg-[#FA148B]'
                             : 'bg-indigo-500';
                         return (
                           <div
@@ -2019,6 +2256,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                               ? 'border-emerald-200'
                               : row.method === 'card'
                               ? 'border-purple-200'
+                              : row.method === 'loyalty_points'
+                              ? 'border-pink-200'
                               : 'border-indigo-200'
                           }`}
                         >
@@ -2034,6 +2273,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                                   const newMethod = e.target.value as any;
                                   if (newMethod === 'store_credit' && !requireCapability('loyaltyAndStoreCredit')) {
                                     return;
+                                  }
+                                  if (newMethod === 'loyalty_points') {
+                                    if (!requireCapability('loyaltyAndStoreCredit')) return;
+                                    if (!canRedeemLoyalty) {
+                                      showToast('Permission Denied: Your role cannot redeem loyalty points.', 'error');
+                                      return;
+                                    }
                                   }
                                   setSplitRows((prev) =>
                                     prev.map((r) =>
@@ -2060,6 +2306,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                                 <option value="card">Card Terminal</option>
                                 <option value="store_credit">
                                   Store Credit / Tab{!canUseStoreCredit ? ' (Business+)' : ''}
+                                </option>
+                                <option value="loyalty_points">
+                                  Loyalty Points{!canUseStoreCredit ? ' (Business+)' : ''}
                                 </option>
                               </select>
                             </div>
@@ -2276,6 +2525,47 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                                   )}
                                 </div>
                               )}
+
+                              {row.method === 'loyalty_points' && (
+                                <div>
+                                  <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                                    Points redemption ({loyaltyRate} pts = {currentLocation.currency} 1)
+                                  </label>
+                                  {!loyaltySettings.enabled ? (
+                                    <div className="text-[11px] font-semibold text-amber-800 bg-amber-50 p-1.5 rounded-lg border border-amber-200">
+                                      Loyalty program disabled
+                                    </div>
+                                  ) : !selectedCustomer ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setIsCustomerSelectOpen(true)}
+                                      className="w-full px-2 py-1.5 bg-pink-50 hover:bg-pink-100 text-[#FA148B] border border-pink-200 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
+                                    >
+                                      <User className="w-3 h-3" />
+                                      <span>+ Assign Customer</span>
+                                    </button>
+                                  ) : (
+                                    (() => {
+                                      const rowPts = Math.ceil(rowAmount * loyaltyRate);
+                                      const isRowPtsOk = availableLoyaltyPoints >= rowPts;
+                                      return (
+                                        <div
+                                          className={`text-[11px] font-mono p-1.5 rounded-lg border flex justify-between items-center gap-1 ${
+                                            isRowPtsOk
+                                              ? 'bg-pink-50/70 border-pink-200 text-slate-700'
+                                              : 'bg-red-50 border-red-200 text-red-700'
+                                          }`}
+                                        >
+                                          <span className="truncate">-{rowPts} pts</span>
+                                          <span className="font-bold shrink-0">
+                                            Avail: {availableLoyaltyPoints}
+                                          </span>
+                                        </div>
+                                      );
+                                    })()
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -2284,14 +2574,17 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                   </div>
 
                   {/* Add Tender Button */}
-                  {splitRows.length < 4 && (
+                  {splitRows.length < 5 && (
                     <button
                       type="button"
                       onClick={() => {
                         const usedMethods = new Set(splitRows.map((r) => r.method));
-                        const allMethods: ('cash' | 'mpesa' | 'card' | 'store_credit')[] = canUseStoreCredit
-                          ? ['cash', 'mpesa', 'card', 'store_credit']
-                          : ['cash', 'mpesa', 'card'];
+                        const allMethods: ('cash' | 'mpesa' | 'card' | 'store_credit' | 'loyalty_points')[] =
+                          canUseStoreCredit
+                            ? canRedeemLoyalty && loyaltySettings.enabled
+                              ? ['cash', 'mpesa', 'card', 'store_credit', 'loyalty_points']
+                              : ['cash', 'mpesa', 'card', 'store_credit']
+                            : ['cash', 'mpesa', 'card'];
                         const nextMethod = allMethods.find((m) => !usedMethods.has(m)) || 'cash';
                         const rem = Math.max(0, splitRemaining);
                         setSplitRows((prev) => [
@@ -2310,7 +2603,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                       className="w-full py-2 border-2 border-dashed border-slate-300 hover:border-amber-400 bg-slate-50 hover:bg-amber-50/50 rounded-xl text-xs font-bold text-slate-600 hover:text-amber-900 transition flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Add Another Payment Method ({splitRows.length}/4)</span>
+                      <span>Add Another Payment Method ({splitRows.length}/5)</span>
                     </button>
                   )}
                 </div>
@@ -2422,17 +2715,50 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                     </p>
                   )}
 
-                  {selectedCustomer && (
-                    <div className="pt-2.5 mt-1 border-t border-slate-200 flex items-center justify-between text-xs text-amber-800">
-                      <span className="flex items-center gap-1 font-semibold">
-                        <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                        <span>Loyalty Points to Earn</span>
-                      </span>
-                      <span className="font-bold font-mono tabular-nums">
-                        +{Math.floor(currentGuardrail.payableAmount / 100)} pts
-                      </span>
-                    </div>
-                  )}
+                  {selectedCustomer && loyaltySettings.enabled && (() => {
+                    const loyaltyCurrencyUsed =
+                      selectedMethod === 'loyalty_points'
+                        ? currentGuardrail.payableAmount
+                        : selectedMethod === 'split'
+                        ? splitRows
+                            .filter((r) => r.method === 'loyalty_points')
+                            .reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0)
+                        : 0;
+                    const spendPerPt =
+                      loyaltySettings.spendPerPoint > 0 ? loyaltySettings.spendPerPoint : 100;
+                    const eligibleEarn = Math.max(
+                      0,
+                      currentGuardrail.payableAmount - loyaltyCurrencyUsed
+                    );
+                    const ptsToEarn = Math.floor(eligibleEarn / spendPerPt);
+                    const ptsToRedeem =
+                      loyaltyCurrencyUsed > 0 ? Math.ceil(loyaltyCurrencyUsed * loyaltyRate) : 0;
+
+                    return (
+                      <div className="pt-2.5 mt-1 border-t border-slate-200 space-y-1">
+                        {ptsToRedeem > 0 && (
+                          <div className="flex items-center justify-between text-xs text-[#FA148B]">
+                            <span className="flex items-center gap-1 font-semibold">
+                              <Award className="w-3.5 h-3.5 shrink-0" />
+                              <span>Loyalty Points to Redeem</span>
+                            </span>
+                            <span className="font-bold font-mono tabular-nums">
+                              -{ptsToRedeem} pts
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between text-xs text-amber-800">
+                          <span className="flex items-center gap-1 font-semibold">
+                            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                            <span>Loyalty Points to Earn</span>
+                          </span>
+                          <span className="font-bold font-mono tabular-nums">
+                            +{ptsToEarn} pts
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Split Allocation breakdown in Order Summary */}
                   {selectedMethod === 'split' && (
@@ -2452,7 +2778,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                           return (
                             <div key={r.id} className="flex justify-between text-xs text-slate-700">
                               <span className="capitalize font-medium text-slate-600">
-                                {r.method === 'mpesa' ? 'M-Pesa' : r.method === 'store_credit' ? 'Store Credit' : r.method}:
+                                {r.method === 'mpesa'
+                                  ? 'M-Pesa'
+                                  : r.method === 'store_credit'
+                                  ? 'Store Credit'
+                                  : r.method === 'loyalty_points'
+                                  ? 'Loyalty Points'
+                                  : r.method}:
                               </span>
                               <span className="font-mono tabular-nums font-bold">
                                 {currentLocation.currency} {amt.toFixed(2)}
@@ -2536,7 +2868,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                     (!selectedCustomer ||
                       !selectedCustomer.isCreditAllowed ||
                       Math.max(0, -((selectedCustomer.storeCreditBalance || 0) - currentGuardrail.payableAmount)) >
-                        (selectedCustomer.creditLimit || 0)))
+                        (selectedCustomer.creditLimit || 0))) ||
+                  (selectedMethod === 'loyalty_points' &&
+                    (!loyaltySettings.enabled ||
+                      !canRedeemLoyalty ||
+                      !selectedCustomer ||
+                      !hasEnoughLoyaltyPoints))
                 }
                 className="w-full min-h-[48px] bg-emerald-600 hover:bg-emerald-700 active:scale-[0.985] disabled:bg-slate-300 text-white font-bold py-3.5 px-4 rounded-xl transition-all duration-150 text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed whitespace-nowrap"
               >
@@ -2568,7 +2905,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                   <>
                     <CheckCircle className="w-4 h-4" />
                     <span>
-                      {selectedMethod === 'split' ? 'Complete Split Sale' : 'Complete Sale'} ({currentLocation.currency} {currentGuardrail.payableAmount.toFixed(2)})
+                      {selectedMethod === 'split'
+                        ? 'Complete Split Sale'
+                        : selectedMethod === 'loyalty_points'
+                        ? `Redeem ${requiredLoyaltyPoints} Pts`
+                        : 'Complete Sale'}{' '}
+                      ({currentLocation.currency} {currentGuardrail.payableAmount.toFixed(2)})
                     </span>
                     <kbd className="hidden sm:inline-block text-[10px] bg-emerald-800/60 border border-emerald-400/40 text-emerald-100 px-1.5 py-0.5 rounded font-mono font-bold ml-1.5">
                       Enter ↵
@@ -2599,7 +2941,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                 </p>
               ) : selectedMethod === 'split' && isSplitBalanced && !isSplitValid ? (
                 <p className="text-[10px] text-red-600 font-bold text-center mt-1.5">
-                  Please verify tender amounts (each portion must be &gt; 0, and cash tendered must cover cash portion).
+                  Please verify tender amounts, customer assignment, loyalty points balance, and cash tendered.
                 </p>
               ) : selectedMethod === 'store_credit' && !selectedCustomer ? (
                 <p className="text-[10px] text-indigo-700 font-bold text-center mt-1.5">
@@ -2616,6 +2958,18 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, ini
                 <p className="text-[10px] text-red-600 font-bold text-center mt-1.5">
                   Sale exceeds {selectedCustomer.name}'s approved credit limit of {currentLocation.currency}{' '}
                   {(selectedCustomer.creditLimit || 0).toFixed(2)}.
+                </p>
+              ) : selectedMethod === 'loyalty_points' && !loyaltySettings.enabled ? (
+                <p className="text-[10px] text-amber-700 font-bold text-center mt-1.5">
+                  Loyalty points program is disabled in Store Settings.
+                </p>
+              ) : selectedMethod === 'loyalty_points' && !selectedCustomer ? (
+                <p className="text-[10px] text-[#FA148B] font-bold text-center mt-1.5">
+                  Please assign a customer profile to redeem loyalty points.
+                </p>
+              ) : selectedMethod === 'loyalty_points' && selectedCustomer && !hasEnoughLoyaltyPoints ? (
+                <p className="text-[10px] text-red-600 font-bold text-center mt-1.5">
+                  {selectedCustomer.name} has {availableLoyaltyPoints} pts (needs {requiredLoyaltyPoints} pts). Use Split Pay to combine points + M-Pesa/Cash.
                 </p>
               ) : null}
             </div>

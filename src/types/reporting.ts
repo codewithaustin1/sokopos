@@ -185,6 +185,7 @@ export interface AnalyticsDailyRollup {
   cashTotal: number;
   cardTotal: number;
   storeCreditTotal: number;
+  loyaltyPointsTotal?: number;
   uncostedRevenue: number;
   updatedAt: string;
 }
@@ -343,7 +344,7 @@ export interface BranchBenchmarkRow {
 }
 
 export interface TenderMixRow {
-  method: 'mpesa' | 'cash' | 'card' | 'store_credit';
+  method: 'mpesa' | 'cash' | 'card' | 'store_credit' | 'loyalty_points';
   label: string;
   amount: number;
   sharePct: number;

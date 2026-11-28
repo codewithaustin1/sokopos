@@ -1981,6 +1981,7 @@ function pickRollupDoc(r: AnalyticsDailyRollup): AnalyticsDailyRollup {
     cashTotal: Number(r.cashTotal || 0),
     cardTotal: Number(r.cardTotal || 0),
     storeCreditTotal: Number(r.storeCreditTotal || 0),
+    loyaltyPointsTotal: Number(r.loyaltyPointsTotal || 0),
     uncostedRevenue: Number(r.uncostedRevenue || 0),
     updatedAt: r.updatedAt || new Date().toISOString(),
   };

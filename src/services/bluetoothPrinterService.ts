@@ -145,7 +145,7 @@ class BluetoothPrinterService {
     printData += `Date: ${new Date(transaction.timestamp).toLocaleString()}\n`;
     printData += `Cashier: ${transaction.cashierName}\n`;
     printData += `Terminal: ${transaction.terminalName}\n`;
-    printData += `Payment: ${transaction.paymentMethod.toUpperCase()}\n`;
+    printData += `Payment: ${transaction.paymentMethod.replace(/_/g, ' ').toUpperCase()}\n`;
     
     if (transaction.customerName) {
       printData += `Customer: ${transaction.customerName}\n`;

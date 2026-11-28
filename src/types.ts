@@ -1,6 +1,6 @@
 import type { PricingTier } from './types/pricing';
 
-export type PaymentMethod = 'mpesa' | 'cash' | 'card' | 'split' | 'store_credit';
+export type PaymentMethod = 'mpesa' | 'cash' | 'card' | 'split' | 'store_credit' | 'loyalty_points';
 
 export interface CustomerCreditLedgerEntry {
   id: string;
@@ -452,7 +452,7 @@ export interface RefundRecord {
 
 export interface SplitPaymentTender {
   id: string;
-  method: 'cash' | 'mpesa' | 'card' | 'store_credit';
+  method: 'cash' | 'mpesa' | 'card' | 'store_credit' | 'loyalty_points';
   amount: number;
   cashTendered?: number;
   cashChange?: number;
@@ -461,6 +461,7 @@ export interface SplitPaymentTender {
   mpesaType?: 'buy_goods' | 'paybill';
   cardLast4?: string;
   cardNetwork?: string;
+  loyaltyPointsRedeemed?: number;
   notes?: string;
 }
 
@@ -508,6 +509,7 @@ export interface Transaction {
     roundingDifference?: number;
     notes?: string;
     storeCreditUsed?: number;
+    loyaltyPointsRedeemed?: number;
     paymentProvider?: 'paystack' | 'daraja';
     paymentReference?: string;
     splitBreakdown?: SplitPaymentTender[];

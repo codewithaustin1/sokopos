@@ -104,7 +104,9 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header
       id="main-pos-header"
-      className="bg-white border-b border-slate-200 h-14 sm:h-16 px-3 sm:px-4 md:px-6 flex items-center justify-between gap-3 shrink-0 z-30 relative"
+      className={`border-b h-14 sm:h-16 px-3 sm:px-4 md:px-6 flex items-center justify-between gap-3 shrink-0 z-50 sticky top-0 shadow-xs transition-colors ${
+        isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-900'
+      }`}
     >
       {/* Zone 1: Brand & Active Branch Switcher */}
       <div className="flex items-center gap-2 sm:gap-3.5 min-w-0">

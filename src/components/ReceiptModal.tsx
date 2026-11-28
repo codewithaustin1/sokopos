@@ -401,7 +401,13 @@ export const ReceiptModal: React.FC = () => {
             <div className="flex justify-between items-center">
               <span className="text-slate-500">Payment:</span>
               <span className="font-bold text-emerald-700 uppercase">
-                {activeReceipt.paymentMethod === 'split' ? 'SPLIT TENDER' : activeReceipt.paymentMethod}
+                {activeReceipt.paymentMethod === 'split'
+                  ? 'SPLIT TENDER'
+                  : activeReceipt.paymentMethod === 'loyalty_points'
+                  ? 'LOYALTY POINTS'
+                  : activeReceipt.paymentMethod === 'store_credit'
+                  ? 'STORE CREDIT'
+                  : activeReceipt.paymentMethod}
                 {activeReceipt.paymentDetails.mpesaCode && ` (${activeReceipt.paymentDetails.mpesaCode})`}
                 {activeReceipt.paymentDetails.cardLast4 && ` (*${activeReceipt.paymentDetails.cardLast4})`}
               </span>
@@ -434,7 +440,8 @@ export const ReceiptModal: React.FC = () => {
                 {/* Loyalty Rewards Ledger for Existing Customer */}
                 {(activeReceipt.customerPreviousPoints !== undefined ||
                   activeReceipt.customerCurrentPoints !== undefined ||
-                  (activeReceipt.loyaltyPointsEarned !== undefined && activeReceipt.loyaltyPointsEarned > 0)) && (
+                  (activeReceipt.loyaltyPointsEarned !== undefined && activeReceipt.loyaltyPointsEarned > 0) ||
+                  (activeReceipt.loyaltyPointsRedeemed !== undefined && activeReceipt.loyaltyPointsRedeemed > 0)) && (
                   <div className="mt-1.5 pt-2 border-t border-dashed border-amber-300/80 space-y-1 text-left">
                     <div className="text-[11px] font-bold text-amber-900 flex items-center justify-between pb-1">
                       <span className="flex items-center gap-1">
@@ -576,7 +583,15 @@ export const ReceiptModal: React.FC = () => {
             )}
 
             <div className="flex justify-between text-sm font-black text-slate-900 pt-2 border-t border-slate-200">
-              <span>TOTAL PAID ({activeReceipt.paymentMethod.toUpperCase()}):</span>
+              <span>
+                TOTAL PAID (
+                {activeReceipt.paymentMethod === 'loyalty_points'
+                  ? 'LOYALTY POINTS'
+                  : activeReceipt.paymentMethod === 'store_credit'
+                  ? 'STORE CREDIT'
+                  : activeReceipt.paymentMethod.toUpperCase()}
+                ):
+              </span>
               <span>
                 {currentLocation.currency} {activeReceipt.total.toFixed(2)}
               </span>
@@ -620,9 +635,20 @@ export const ReceiptModal: React.FC = () => {
                   activeReceipt.paymentDetails.splitBreakdown.map((b, idx) => (
                     <div key={b.id || idx} className="flex justify-between items-center py-0.5">
                       <span className="font-medium text-slate-700 capitalize flex items-center gap-1">
-                        <span>{b.method === 'mpesa' ? 'M-Pesa' : b.method === 'store_credit' ? 'Store Credit' : b.method}</span>
+                        <span>
+                          {b.method === 'mpesa'
+                            ? 'M-Pesa'
+                            : b.method === 'store_credit'
+                            ? 'Store Credit'
+                            : b.method === 'loyalty_points'
+                            ? 'Loyalty Points'
+                            : b.method}
+                        </span>
                         {b.mpesaCode && <span className="text-[9px] font-mono text-emerald-700">({b.mpesaCode})</span>}
                         {b.cardLast4 && <span className="text-[9px] font-mono text-purple-700">(*{b.cardLast4})</span>}
+                        {b.loyaltyPointsRedeemed && (
+                          <span className="text-[9px] font-mono text-pink-700">(-{b.loyaltyPointsRedeemed} pts)</span>
+                        )}
                       </span>
                       <span className="font-mono font-bold text-slate-900">
                         {currentLocation.currency} {b.amount.toFixed(2)}

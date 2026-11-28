@@ -44,9 +44,48 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
-          maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+          // Precache core shell & PWA icons only; heavy vendor libraries, JPGs, & optional media cache at runtime / idle
+          globPatterns: [
+            '*.{ico,png,svg,html}',
+            'sounds/*.{mp3,wav,ogg}',
+            'assets/*.css',
+            'assets/*.{woff,woff2}',
+            'assets/index-*.js',
+            'assets/vendor-react-*.js',
+            'assets/vendor-firebase-*.js',
+            'assets/vendor-icons-*.js',
+          ],
+          globIgnores: ['**/*.jpg', '**/assets/aistudio/**', '**/assets/*vendor-pdf*', '**/assets/*vendor-charts*', '**/assets/*vendor-scanner*'],
           runtimeCaching: [
+            {
+              urlPattern: /\/assets\/.*\.js$/i,
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'pos-js-chunks-cache',
+                expiration: {
+                  maxEntries: 80,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              urlPattern: /\/assets\/.*\.(?:jpg|jpeg|webp|png)$/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'pos-media-assets-cache',
+                expiration: {
+                  maxEntries: 40,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
               handler: 'CacheFirst',
@@ -78,11 +117,38 @@ export default defineConfig(() => {
           ],
         },
         devOptions: {
-          enabled: true,
-          type: 'module',
+          enabled: false,
         },
       }),
     ],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined;
+            if (id.includes('react-dom') || id.includes('/react/') || id.includes('scheduler')) {
+              return 'vendor-react';
+            }
+            if (id.includes('firebase')) {
+              return 'vendor-firebase';
+            }
+            if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-vendor')) {
+              return 'vendor-charts';
+            }
+            if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('canvg') || id.includes('qrcode') || id.includes('dompurify')) {
+              return 'vendor-pdf';
+            }
+            if (id.includes('@zxing') || id.includes('jsbarcode')) {
+              return 'vendor-scanner';
+            }
+            if (id.includes('lucide-react')) {
+              return 'vendor-icons';
+            }
+            return undefined;
+          },
+        },
+      },
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

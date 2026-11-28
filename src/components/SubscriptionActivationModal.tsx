@@ -33,6 +33,7 @@ import { trackPlatformEvent } from '../lib/telemetryService';
 import { auth } from '../lib/firebase';
 import { formatTierDisplayName, normalizePlanTier } from '../utils/subscriptionEntitlements';
 import { printSubscriptionReceipt } from '../utils/subscriptionReceiptPrint';
+import { HardenedKenyanPhoneInput } from './common/HardenedKenyanPhoneInput';
 
 interface SubscriptionActivationModalProps {
   isOpen: boolean;
@@ -1031,42 +1032,15 @@ export const SubscriptionActivationModal: React.FC<SubscriptionActivationModalPr
                       >
                         M-Pesa Phone Number
                       </label>
-                      <input
+                      <HardenedKenyanPhoneInput
                         id="sub-mpesa-phone-input"
-                        type="tel"
-                        inputMode="tel"
-                        autoComplete="tel"
-                        required
                         value={phoneNumber}
-                        onChange={(e) => {
-                          setPhoneNumber(e.target.value);
+                        onChange={(formatted, msisdn, isValid) => {
+                          setPhoneNumber(formatted);
                           if (paymentError) setPaymentError(null);
                         }}
-                        onBlur={() => setPhoneTouched(true)}
-                        placeholder="07XXXXXXXX or +2547XXXXXXXX"
-                        aria-invalid={phoneTouched && !phoneValidation.valid}
-                        className={`w-full px-3 py-2 text-xs bg-white border rounded-xl text-slate-900 font-mono font-medium focus:outline-hidden focus:ring-2 ${
-                          phoneTouched && !phoneValidation.valid
-                            ? 'border-red-400 focus:ring-red-500'
-                            : phoneValidation.valid
-                            ? 'border-emerald-400 focus:ring-emerald-500'
-                            : 'border-slate-300 focus:ring-blue-500'
-                        }`}
+                        showValidationBanner={true}
                       />
-                      {phoneValidation.valid ? (
-                        <p className="mt-1 text-[10px] text-emerald-700 font-medium flex items-center gap-1">
-                          <Check className="w-3 h-3 shrink-0" />
-                          <span>STK Push target: {phoneValidation.formattedDisplay}</span>
-                        </p>
-                      ) : phoneTouched ? (
-                        <p className="mt-1 text-[10px] text-red-600 font-medium">
-                          Use 07XXXXXXXX, 01XXXXXXXX, or +2547XXXXXXXX
-                        </p>
-                      ) : (
-                        <p className="mt-1 text-[10px] text-slate-500">
-                          Accepted: 07XXXXXXXX, 01XXXXXXXX, or +2547XXXXXXXX
-                        </p>
-                      )}
                     </div>
                   ) : (
                     <div>
